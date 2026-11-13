@@ -15,11 +15,17 @@ Addon interface version: `16001`.
 
 | Addon | Job | Status |
 |-------|-----|--------|
-| QuestDots | Quest objective icons on the map and minimap, no blue haze | Untested in game. Needs the QuestieDB data addon, not bundled yet |
+| QuestDots | Quest objective icons on the map and minimap, no blue haze | Untested in game |
+| QuestieDB | Quest location data that QuestDots reads. Downloaded unmodified from the [official release](https://github.com/Questie/QuestieDB/releases) at build time | Untested in game |
+
+QuestieDB carries its data file under two names (`_Forever` and `_Camelot`)
+because it isn't confirmed which one the client loads. The build keeps both
+until testing settles it; `QUESTIEDB_TOC=Forever scripts/build.sh` (or
+`Camelot`) keeps just one and halves the size.
 
 ## Planned
 
-- QuestieDB data, trimmed per faction (separate Horde and Alliance bundles)
+- Later, once everything works: QuestieDB trimmed per faction (separate Horde and Alliance bundles)
 - Direction arrow to the tracked quest objective
 - One big bag with sorting
 - Auto-sell junk, optional auto-repair
@@ -30,4 +36,5 @@ Addon interface version: `16001`.
 
 - `addons/` — one folder per addon, exactly as it should land in `AddOns`
 - `scripts/build.sh` — builds the zip
+- `vendor/` — downloaded third-party releases (not committed)
 - `dist/` — build output (not committed)
