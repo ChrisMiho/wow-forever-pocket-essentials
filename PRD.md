@@ -1,4 +1,4 @@
-# Mobile Addon Bundle — Product Requirements
+# WoW Forever Pocket Essentials — Product Requirements
 
 Read this whole file before doing anything in this repo. It is the source of
 truth for what is being built and why. If something here turns out to be wrong,

@@ -1,4 +1,4 @@
-# Mobile Addon Bundle
+# WoW Forever Pocket Essentials
 
 A small, lightweight set of addons for playing WoW Forever on a handheld
 (built around a Retroid Pocket 6 running the game through Droid Deck).
