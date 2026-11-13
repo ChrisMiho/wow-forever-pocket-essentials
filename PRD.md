@@ -84,6 +84,13 @@ The owner currently avoids chatting because targets are too small to tap.
 - Some way to arrange the interface that does not depend on fiddly touch
   dragging. Not yet explored; needs a conversation with the owner first.
 
+### 6. Settings panel
+Added 2026-11-13; not yet scoped or designed.
+- One touch-friendly place in game where each feature of the bundle can be
+  turned on or off, with big targets and no typed commands.
+- Mockups of this and the other screens should be agreed with the owner
+  before anything is built.
+
 ## Non-goals
 
 - Matching the desktop addon setup feature for feature.
@@ -115,7 +122,7 @@ unproven.
 |---|---|---|
 | QuestDots (`addons/QuestDots`) | Custom addon written by a previous agent, unprompted. Draws objective icons on map and minimap, hides the haze, tapping an icon tracks that quest. Settings only via typed `/qd` commands. No arrow. Only shows quests already in the log | Untested |
 | QuestieDB | Official Questie data addon, Forever build 1.1.0. Downloaded at build time, not stored in the repo. QuestDots depends on it | Untested |
-| `scripts/build.sh` | Downloads QuestieDB, combines it with `addons/`, writes `dist/MobileAddonBundle.zip` | Runs on the Mac; output untested on device |
+| `scripts/build.sh` | Downloads QuestieDB, combines it with `addons/`, writes `dist/wow-forever-pocket-essentials.zip` | Runs on the Mac; output untested on device |
 | Arrow, bags, vendor, chat, UI layout | Nothing | Not started, not researched |
 
 ## Roadmap

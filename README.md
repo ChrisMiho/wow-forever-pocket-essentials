@@ -6,7 +6,7 @@ Addon interface version: `16001`.
 
 ## Install
 
-1. Run `scripts/build.sh`. It writes `dist/MobileAddonBundle.zip`.
+1. Run `scripts/build.sh`. It writes `dist/wow-forever-pocket-essentials.zip`.
 2. Copy the zip to the device.
 3. Extract it into the game's `Interface/AddOns` folder. Each addon's folder
    sits at the root of the zip.

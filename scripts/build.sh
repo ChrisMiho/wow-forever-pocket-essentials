@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds dist/MobileAddonBundle.zip with every addon folder at the zip root,
+# Builds dist/wow-forever-pocket-essentials.zip with every addon folder at the zip root,
 # ready to extract straight into the game's Interface/AddOns folder.
 #
 # The bundle is the folders in addons/ plus QuestieDB, which is downloaded from
@@ -60,12 +60,12 @@ for dir in "$stage"/*/; do
 done
 
 # --- Zip ------------------------------------------------------------------------
-out="$PWD/dist/MobileAddonBundle.zip"
+out="$PWD/dist/wow-forever-pocket-essentials.zip"
 mkdir -p dist
 rm -f "$out"
 (cd "$stage" && zip -qr -X "$out" . -x '*.DS_Store')
 
-echo "Built dist/MobileAddonBundle.zip ($(du -h "$out" | cut -f1)) with:"
+echo "Built dist/wow-forever-pocket-essentials.zip ($(du -h "$out" | cut -f1)) with:"
 for dir in "$stage"/*/; do
     echo "  $(basename "$dir")  $(du -sh "$dir" | cut -f1)"
 done
