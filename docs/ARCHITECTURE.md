@@ -133,4 +133,3 @@ authors believed about the game.
 - Whether quests under a collapsed header in the quest log are still seen
   (if not, their icons vanish while collapsed).
 - How long QuestieDB takes to load on the handheld.
-- How much faction trimming would save. Not measured.

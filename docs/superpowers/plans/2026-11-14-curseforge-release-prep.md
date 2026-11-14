@@ -37,9 +37,10 @@
 - **Framing:** the project exists **to help anyone playing WoW Forever on a handheld**. Dev notes may say the reference test device is a Retroid Pocket 6 running Droid Deck.
   - No faction mentions.
   - No "the owner" wording in README, CurseForge copy or code comments. "The owner" stays only in PRD.md's working rules and in CLAUDE.md, where it means the maintainer.
-- **Status everywhere:** **"In progress: version 0.1.0 is written but has not run on a device yet."** No doc may claim a feature works.
+- **Status everywhere:** **"In progress: version 0.0.1 is written but has not run on a device yet."** No doc may claim a feature works.
 - **Pace:** stop at every 🛑 and wait for the owner (PRD rule 1). Gaps the audit finds are reported, not built.
-- **Version:** the addon becomes `0.1.0`. TOC, CHANGELOG and CurseForge zip name must agree.
+- **Version:** semantic versioning starting at **`0.0.1`** (owner, checkpoint 1; Task 1 originally wrote 0.1.0 and was corrected). TOC, CHANGELOG and CurseForge zip name must agree. Never call a build "alpha" in copy; CurseForge release type is **Release**, and the 0.0.x version signals it is early.
+- **Faction builds are cut** (owner, checkpoint 1): not parked, not mentioned.
 
 **QuestieDB**
 - **Pin 1.1.1:**
@@ -243,6 +244,7 @@ Expected: no output.
     - Handlers go through `PE:Safe` or `PE:Wrap`.
     - Nothing ticks while its feature is off.
     - Features default off until device-tested.
+    - Semantic versioning; bump the TOC `## Version` and add a CHANGELOG entry together.
     - Verify every new API in `github.com/Gethe/wow-ui-source`, branch `forever`, and log unverified ones in `docs/ARCHITECTURE.md`.
   - **Gotchas:**
     - The client's internal name is "Camelot".
@@ -308,7 +310,7 @@ Expected: FileNotFoundError.
 - Modify: `README.md`
 - Create: `CHANGELOG.md`
 
-- [ ] **Step 1: Write `CHANGELOG.md`** in Keep-a-Changelog format: `## [0.1.0] - Unreleased`, with the seven features under "Added (untested on device)" and "QuestieDB 1.1.1" under Dependencies.
+- [ ] **Step 1: Write `CHANGELOG.md`** in Keep-a-Changelog format: `## [0.0.1] - Unreleased`, with the seven features under "Added (untested on device)" and "QuestieDB 1.1.1" under Dependencies.
 - [ ] **Step 2: Rewrite `README.md` in this order:**
   1. Banner.
   2. Pitch.
@@ -325,7 +327,7 @@ Expected: FileNotFoundError.
   13. Licence: GPL-3.0.
 - [ ] **Step 3: Verify.** Run:
 ```bash
-grep -q 'In progress: version 0.1.0 is written but has not run on a device yet' README.md \
+grep -q 'In progress: version 0.0.1 is written but has not run on a device yet' README.md \
  && grep -q QuestDots README.md && grep -q Questie README.md && grep -q Shagu README.md \
  && ! grep -n -i -E '\bthe owner\b|horde' README.md && echo PASS
 ```
@@ -340,7 +342,7 @@ Then rerun the full Task 7 check. Expected: `PASS` both times.
 - [ ] **Step 1: Write `summary.txt`.** At most 120 characters (the CurseForge limit is unconfirmed). Draft: `Big, touch- and controller-friendly helpers for playing WoW Forever on a handheld.`
 - [ ] **Step 2: Write `description.md`.**
   - Banner first, with a note in FIELDS.md to upload it to the Images tab and re-link it.
-  - Early-alpha status; testers wanted.
+  - Early (0.0.x) status: written but not yet device-tested; testers wanted.
   - Who it's for.
   - Features.
   - "Requires QuestieDB for quest features", with the link.
@@ -351,7 +353,7 @@ Then rerun the full Task 7 check. Expected: `PASS` both times.
   - Name `Pocket Essentials`, the summary, the avatar path.
   - Main category "Map & Minimap"; additional "Quests & Leveling", "Bags & Inventory", "Chat & Communication", and the closest fourth. Mark these "confirm names in the form".
   - Licence GPL-3.0; source and issues URLs; description in Markdown mode.
-  - File: `dist/PocketEssentials-0.1.0.zip`, flavor Forever, 1.60.1, **Alpha**, changelog from CHANGELOG.
+  - File: `dist/PocketEssentials-0.0.1.zip`, flavor Forever, 1.60.1, release type **Release**, changelog from CHANGELOG.
   - Relation: QuestieDB 1696795, **Required**.
   - After creation, add `## X-Curse-Project-ID: <id>` to the TOC.
   - A screenshot to-do list for the device: settings window, map icons, arrow, bag plus Sort, chat picker.

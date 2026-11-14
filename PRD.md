@@ -10,7 +10,7 @@ change.
 These rules come from the owner (the maintainer) and override your defaults.
 
 1. **Go slowly, one item at a time.** Pick the single next item from
-   "Roadmap", agree on it with the owner, and finish it before starting
+   the current "Roadmap" phase, agree on it with the owner, and finish it before starting
    another. Do not build ahead.
 2. **Nothing counts as working until it has run on the device.** The owner is
    the only one who can test in game. After each change that affects the game,
@@ -112,14 +112,14 @@ Chatting is hard on a handheld because targets are too small to tap.
 - One zip, with each addon's folder at the zip root: `PocketEssentials` and
   `QuestieDB`.
 - Built by `scripts/build.sh` so it is repeatable.
+- Versioning: semantic versioning (MAJOR.MINOR.PATCH), starting at 0.0.1.
+  The version lives in `PocketEssentials.toc` and `CHANGELOG.md` and must match.
 - CurseForge: PocketEssentials alone, QuestieDB as a required dependency
   (project 1696795). GitHub zip: both folders, QuestieDB pinned at 1.1.1.
-- **Later, not now:** separate Horde and Alliance builds with the other
-  faction's quest data removed. Parked until the bundle works.
 
 ## Status
 
-In progress: version 0.1.0 is written but has not run on a device yet.
+In progress: version 0.0.1 is written but has not run on a device yet.
 
 **Nothing in this repo has run in the game.** Version 1 was written on a Mac
 with no game client. Every line was checked against Blizzard's published
@@ -139,7 +139,7 @@ until its step in the test plan passes.
 | Sell junk automatically | Sells every grey item at vendors | Untested |
 | Repair automatically | Repairs from your own money at vendors that can | Untested |
 | Big chat buttons | Picker with one big button per channel plus the last six whisperers; badge on the round button for unanswered whispers | Untested |
-| Layout helper (experimental) | One-tap switch to Blizzard's Gamepad layout and back; a dormant path to install a ready-made handheld layout. **No nudge arrows** (see below) | Untested |
+| Layout helper (experimental) | One-tap switch to Blizzard's Gamepad layout and back; a dormant path to install a ready-made handheld layout. **No nudge arrows** (see `docs/DECISIONS.md`) | Untested |
 | QuestieDB | Official Questie data addon, Forever build 1.1.1, shipped unmodified. Only the two quest features need it | Untested |
 | `scripts/build.sh` | Downloads QuestieDB (pinned checksum), checks the addon's file list, writes `dist/wow-forever-pocket-essentials.zip` | Runs on the Mac |
 
@@ -158,13 +158,11 @@ Rules 1 and 2 apply: one phase at a time, one item at a time.
    the reference device.
 2. **Performance and user-experience polish.** Fix what the test results
    show, and flip defaults to on for features that pass.
-3. **First CurseForge upload as an Alpha.** Use `curseforge/FIELDS.md`.
+3. **First CurseForge upload (0.0.1).** Use `curseforge/FIELDS.md`.
 4. **New features.** Parked until phase 2 is done; see "Parked ideas".
 
 ## Parked ideas
 
-- Faction builds: separate Horde and Alliance zips with the other faction's
-  quest data removed.
 - Improved Forever's radial wheels.
 - A bundled handheld layout (needs one exported from the device first; see
   `docs/TESTING.md` step 9).

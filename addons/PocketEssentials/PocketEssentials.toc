@@ -4,7 +4,7 @@
 ## X-License: GPL-3.0
 ## X-Website: https://github.com/ChrisMiho/wow-forever-pocket-essentials
 ## Notes: Handheld-friendly helpers for WoW Forever: quest icons, a quest arrow, one big bag, auto sell junk and repair, and big chat buttons. Each feature has its own on/off switch.
-## Version: 0.1.0
+## Version: 0.0.1
 ## SavedVariables: PocketEssentialsDB
 ## OptionalDeps: QuestieDB
 ## IconTexture: Interface\Icons\INV_Misc_Bag_08
