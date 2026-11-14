@@ -151,15 +151,15 @@ that say "Not needed" are skipped.
 
 | Goal bullet | Where | Built |
 |---|---|---|
-| 1. Icons on the world map and minimap for kill, loot, interact and turn-in objectives | `QuestIcons.lua` `RefreshWorldMap`, `UpdateMinimap`; `QuestData.lua` `KIND_LABEL` | Yes: all four kinds get their own icon on both the map and the minimap |
-| 1. Hide Blizzard's blue "haze" areas | `QuestIcons.lua` `SetWorldMapHaze`, `ZeroMinimapBlobs` | Yes: hidden on the world map and the minimap, and put back when the feature is off |
-| 1. An arrow that points toward the current objective | `QuestArrow.lua` `Select`, `DrawArrow`, `Update` | Partial: works only for objectives in the zone you are standing in; for a quest elsewhere it says "Not in this zone" (see `docs/DECISIONS.md`) |
+| 1. Icons on the world map and minimap for kill, loot, interact and turn-in objectives | `QuestIcons.lua` `RefreshWorldMap`, `UpdateMinimap`; `QuestData.lua` `KIND_LABEL` | Yes: kill, loot, interact and turn-in each get their own icon on both the map and the minimap; "Explore" objectives get a fifth kind |
+| 1. Hide Blizzard's blue "haze" areas | `QuestIcons.lua` `SetWorldMapHaze`, `ZeroMinimapBlobs` | Yes: hidden on the world map and the minimap; switching it off restores the map at once, but the minimap needs a reload |
+| 1. An arrow that points toward the current objective | `QuestArrow.lua` `Select`, `DrawArrow`, `Update` | Partial: points only at objectives in the zone you are standing in; for a quest elsewhere it says "Not in this zone" (see `docs/DECISIONS.md`) |
 | 2. One combined bag window instead of separate bags | `Bags.lua` `WantCombined`, `Setup` | Yes: uses Blizzard's own combined bag; with the Gamepad UI off, switching it on needs a reload |
 | 2. A way to sort it | `Bags.lua` `DoSort`, `CreateButtons` | Yes: a big Sort button, plus L3 while the bag is open |
-| 3. Automatically sell junk (grey items) at a vendor | `Vendor.lua` `ScanJunk`, `SellStep` | Yes: sells every grey item, no cap per visit |
+| 3. Automatically sell junk (grey items) at a vendor | `Vendor.lua` `ScanJunk`, `SellStep` | Yes: sells every grey item worth money, except in bags you marked to ignore; no cap per visit |
 | 3. Optional automatic repair | `Vendor.lua` `RepairOnShow` | Yes: its own on/off switch, pays from your own money |
 | 4. A large icon that sits permanently on screen | `Hub.lua` `Create` | Yes: the round "PE" button, always shown; it is the same button that opens settings when chat is off |
-| 4. Tapping it opens a panel of big buttons, one per channel you can talk in | `Chat.lua` `OpenPanel`, `GatherTargets`, `DoRefresh` | Yes: Say, Party (when grouped), Raid (when in a raid), Guild, General, Trade and so on. Instance and Officer chat are left out (see `docs/DECISIONS.md`) |
+| 4. Tapping it opens a panel of big buttons, one per channel you can talk in | `Chat.lua` `OpenPanel`, `GatherTargets`, `DoRefresh` | Yes, except Instance and Officer chat (left out on purpose, see `docs/DECISIONS.md`). Shows Say, Party (when grouped), Raid (when in a raid), Guild, General, Trade and so on |
 | 4. Private messages as a short list of big name buttons, most recent first | `Chat.lua` `Touch`, `GatherTargets`, `DoRefresh` | Yes: the last six whisperers, newest first. Battle.net whispers are not listed |
 | 4. Tapping a channel or name opens the chat box set to that target | `Chat.lua` `TargetClicked`, `OpenChatTo` | Yes |
 | 4. The icon shows when there is an unanswered whisper | `Chat.lua` `UpdateBadge`, `OnWhisper`; `Hub.lua` `SetBadge` | Yes: a badge on the round button, plus a "Clear marks" button |
