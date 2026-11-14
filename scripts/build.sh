@@ -23,6 +23,9 @@ esac
 
 cd "$(dirname "$0")/.."
 
+# --- Check the addon's Lua before packaging anything ---------------------------
+scripts/check.sh
+
 # --- Fetch QuestieDB (cached, checksum-verified; pin lives in fetch-questiedb.sh) ---
 qdb_zip="$(scripts/fetch-questiedb.sh)"
 
@@ -43,6 +46,14 @@ while IFS= read -r line; do
         exit 1
     fi
 done < addons/PocketEssentials/PocketEssentials.toc
+
+# The version names the CurseForge zip. Strip CRs and surrounding spaces.
+version="$(sed -n 's/^## Version: //p' addons/PocketEssentials/PocketEssentials.toc \
+    | tr -d '\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+if [ -z "$version" ]; then
+    echo "error: PocketEssentials.toc has no '## Version:' line" >&2
+    exit 1
+fi
 
 cp -R addons/PocketEssentials "$stage/"
 unzip -q "$qdb_zip" -d "$stage"
@@ -79,3 +90,11 @@ echo "Built dist/wow-forever-pocket-essentials.zip ($(du -h "$out" | cut -f1)) w
 for dir in "$stage"/*/; do
     echo "  $(basename "$dir")  $(du -sh "$dir" | cut -f1)"
 done
+
+# CurseForge takes PocketEssentials alone: QuestieDB is linked there as its own
+# project, so it must not be bundled into this zip.
+cf_out="$PWD/dist/PocketEssentials-$version.zip"
+rm -f "$cf_out"
+(cd "$stage" && zip -qr -X "$cf_out" PocketEssentials -x '*.DS_Store' '__MACOSX/*')
+
+echo "Built dist/PocketEssentials-$version.zip ($(du -h "$cf_out" | cut -f1)) for CurseForge"
