@@ -187,10 +187,12 @@ Rules 1 and 2 apply: one phase at a time, one item at a time.
 ## Parked ideas
 
 - Improved Forever's radial wheels.
-- A bundled handheld layout (needs one exported from the device first; see
-  `docs/TESTING.md` step 9).
+- UI arrangement: a bundled handheld layout (needs one exported from the
+  device first; see `docs/TESTING.md` step 9). Revisit in roadmap phase 2.
 - The quest arrow across zones (removed after review because it could show a
-  confidently wrong direction).
+  confidently wrong direction). Next step when picked up: study how open-source
+  addons route an arrow across zones (Questie, GPL-3.0 like us; TomTom) and
+  spec a lightweight version of our own, crediting any borrowed code.
 - Owner has more ideas; add them here as one line each, then spec before
   building.
 
