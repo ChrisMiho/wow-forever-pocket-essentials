@@ -14,8 +14,6 @@
 #     QUESTIEDB_TOC=Forever scripts/build.sh    (or Camelot)
 set -euo pipefail
 
-QUESTIEDB_VERSION="1.1.0"
-QUESTIEDB_SHA256="283779bc9b9b3e352be63cb665e86ccc1b29bd893186e03062bcff943f20995c"
 QUESTIEDB_TOC="${QUESTIEDB_TOC:-both}"
 
 case "$QUESTIEDB_TOC" in
@@ -25,19 +23,8 @@ esac
 
 cd "$(dirname "$0")/.."
 
-# --- Fetch QuestieDB (cached) ---------------------------------------------------
-qdb_zip="vendor/QuestieDB-$QUESTIEDB_VERSION-Forever.zip"
-if [ ! -f "$qdb_zip" ]; then
-    mkdir -p vendor
-    echo "Downloading QuestieDB $QUESTIEDB_VERSION..."
-    curl -fL --progress-bar -o "$qdb_zip.part" \
-        "https://github.com/Questie/QuestieDB/releases/download/v$QUESTIEDB_VERSION/QuestieDB-$QUESTIEDB_VERSION-Forever.zip"
-    mv "$qdb_zip.part" "$qdb_zip"
-fi
-if ! echo "$QUESTIEDB_SHA256  $qdb_zip" | shasum -a 256 -c - >/dev/null; then
-    echo "error: $qdb_zip does not match the expected checksum; delete it and retry" >&2
-    exit 1
-fi
+# --- Fetch QuestieDB (cached, checksum-verified; pin lives in fetch-questiedb.sh) ---
+qdb_zip="$(scripts/fetch-questiedb.sh)"
 
 # --- Stage everything -----------------------------------------------------------
 stage="$(mktemp -d)"
