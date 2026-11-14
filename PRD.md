@@ -24,7 +24,9 @@ These rules come from the owner (the maintainer) and override your defaults.
 6. **Keep this file current.** Update "Status" and the "Facts" in
    `docs/ARCHITECTURE.md` whenever something is tested, decided or disproved.
 7. **Spec-driven:** new features start as a spec in `docs/superpowers/specs/`,
-   approved by the owner, before any plan or code.
+   approved by the owner, before any plan or code. Then a plan in
+   `docs/superpowers/plans/`, a subagent-driven build reviewed against the
+   spec, and the owner's device test.
 
 ## Vision
 

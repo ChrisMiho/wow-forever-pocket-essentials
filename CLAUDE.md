@@ -7,7 +7,8 @@
 
 # Workflow
 - Read PRD.md first, including its working rules.
-- Spec-driven: spec, then plan, then implementation, as in the Global Constraints of the plan.
+- Spec-driven (PRD.md rule 7): brainstorm, then a spec at `docs/superpowers/specs/<date>-<feature>.md` that the owner approves,
+  then a plan in `docs/superpowers/plans/`, then a subagent-driven build reviewed against the spec, then the owner's device test.
 - One roadmap item at a time. Stop after each for the owner's device test.
 - Never upload to CurseForge and never push without the owner.
 - A Stop hook (`.claude/settings.json`) runs check and test and blocks the turn from ending if either fails.
