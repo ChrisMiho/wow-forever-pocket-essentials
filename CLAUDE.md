@@ -1,0 +1,28 @@
+# Commands
+- `scripts/check.sh`: LuaJIT syntax check of every file in the TOC, plus a wording check on comments. About 0.1 s.
+- `scripts/test.sh`: offline QuestieDB harness (Alliance and Horde), about 2 s.
+- `scripts/build.sh`: builds the release zip into `dist/`.
+- `python3 scripts/make_art.py`: regenerates the CurseForge art.
+- Both check and test exit 0 with a notice when luajit is missing (`brew install luajit`).
+
+# Workflow
+- Read PRD.md first, including its working rules.
+- Spec-driven: spec, then plan, then implementation, as in the Global Constraints of the plan.
+- One roadmap item at a time. Stop after each for the owner's device test.
+- Never upload to CurseForge and never push without the owner.
+- A Stop hook (`.claude/settings.json`) runs check and test and blocks the turn from ending if either fails.
+
+# Conventions
+- Interface 16001 and the modern API. Classic Era 1.x addons do not load.
+- No libraries in the addon.
+- Event handlers and callbacks go through `PE:Safe` or `PE:Wrap`.
+- Nothing ticks while its feature is off.
+- Features default off until device-tested.
+- Semantic versioning. Bump the TOC `## Version` and add a CHANGELOG entry together.
+- Verify every new API in `github.com/Gethe/wow-ui-source`, branch `forever`, and log unverified ones in `docs/ARCHITECTURE.md`.
+
+# Gotchas
+- The client's internal name is "Camelot".
+- The QuestieDB folder name must stay exactly `QuestieDB`.
+- There is no game client off the device, so tests prove logic, not behaviour.
+- The owner is a player, not an addon developer. Explain in plain language.

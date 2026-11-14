@@ -42,6 +42,47 @@ How the pieces protect each other:
   If an old `QuestDots` folder is still in AddOns on the device, the settings
   window says so and quest icons stay off until it is deleted.
 
+## Adding a feature
+
+1. Create `addons/PocketEssentials/MyFeature.lua`. It starts with
+   `local ADDON_NAME, PE = ...` and ends by calling `PE:RegisterModule(def)`.
+   `Vendor.lua` is a small example.
+2. List the file in `PocketEssentials.toc`, after `Core.lua`. `scripts/check.sh`
+   fails if a listed file is missing or does not compile.
+3. The `def` table supports these fields (all read in `Core.lua` and
+   `Settings.lua`):
+   - `key` (required, unique text), `label` and `desc` (shown in settings),
+     `order` (number that sorts the settings list; default 1000).
+   - `requiresQuestieDB = true` keeps the feature off, and the row says why,
+     when QuestieDB did not load.
+   - `defaults`: a table of saved options, merged into `mod.opts` (stored in
+     `PocketEssentialsDB.options[key]`). `options`: a list of rows for the
+     settings window, each either `{key, label, choices = {{value, label}}}`
+     or `{label, action = function}`, with an optional `OnChange`.
+   - Lifecycle: `OnLoad(mod)` once at login, before anything is enabled;
+     `OnEnable(mod)` when switched on, and at login if saved on;
+     `OnDisable(mod)` when switched off. An error in `OnEnable` marks the
+     feature failed, calls `OnDisable`, and shows the error on the Errors page.
+4. A feature is off until the player switches it on (only a saved `true`
+   enables it). Do not change that until the owner has tested it on the device.
+5. The feature's switch row appears in the settings window by itself; no UI
+   code is needed unless it has `options`.
+6. Inside a feature use the module methods: `mod:RegisterEvent(event, fn)`
+   (dropped automatically on switch-off), `mod:After(seconds, fn)` (cancelled
+   on switch-off), `mod:Safe(fn, ...)`, `mod:Wrap(fn)`, `mod:RequestReload`.
+   Use `PE:RunOutOfCombat(key, fn)` for anything the game blocks in combat,
+   `PE:OnLogin(fn)` for code that must run after all features are loaded, and
+   `PE:LogError(key, msg)` to record a problem on the Errors page. Any other
+   callback (hooks, frame scripts) goes through `PE:Wrap(key, fn)` or
+   `PE:Safe(key, fn, ...)`.
+7. Tick budget: nothing runs every frame or on a timer while the feature is
+   off. If it needs a tick (an `OnUpdate`), run it only while it has work, stop
+   it in `OnDisable`, and keep it to about 10 per second like the two existing
+   ticks.
+8. Run `scripts/check.sh` and `scripts/test.sh`, then stop for the owner's
+   device test. Log any game function you could not verify under "Unverified
+   API".
+
 ## Unverified API
 
 Everything the code calls was looked up in Blizzard's interface source for

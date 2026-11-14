@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" && scripts/check.sh 1>&2 && scripts/test.sh 1>&2 || exit 2"
+          }
+        ]
+      }
+    ]
+  }
+}
