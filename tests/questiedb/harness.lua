@@ -5,7 +5,8 @@
 -- Loads the real QuestieDB addon (its own reading code, from the release zip) and
 -- our Core.lua and QuestData.lua under WoW API stand-ins, then puts every quest
 -- QuestieDB knows through QuestData twice: once "in the log, not complete" and
--- once "complete". Any Lua error or PE:LogError call fails the run, and so does
+-- once "complete", for an Alliance and a Horde player. Any Lua error or
+-- PE:LogError call fails the run, and so does a known pin in the wrong place or
 -- a change in how many quests get pins (see baseline.txt).
 --
 -- The optional third argument loads a different QuestData.lua (used to check
@@ -69,49 +70,48 @@ do
 end
 
 ---------------------------------------------------------------------------
--- 2. With QuestieDB.
+-- 2. With QuestieDB, once per player persona. QuestieDB applies some of its
+--    corrections by faction and class while loading, so each persona gets a
+--    fresh load. Shaman has class-specific Horde corrections.
 ---------------------------------------------------------------------------
-S.install()
-local L, version = guarded("loading QuestieDB", S.loadQuestieDB, qdbDir)
-if L ~= _G.LibQuestieDB or type(L) ~= "table" then fail("QuestieDB loaded but LibQuestieDB is not set") end
-if L.RequireContract(4) ~= true then fail("LibQuestieDB.RequireContract(4) is not true") end
+local PERSONAS = {
+    { label = "Alliance", prefix = "", faction = "Alliance", class = "WARRIOR" },
+    { label = "Horde", prefix = "horde_", faction = "Horde", class = "SHAMAN" },
+}
 
-local PE = guarded("loading Core.lua", S.loadCore, root)
-local QD = guarded("loading QuestData.lua", S.loadAddonFile, questDataPath, PE).QuestData
-S.questLog.set(nil)
-local ok, reason = guarded("QD:Acquire", QD.Acquire, QD, "harness")
-if ok ~= true then fail("QD:Acquire() with QuestieDB returned false: " .. tostring(reason)) end
-guarded("first rebuild", S.runTimers)
-checkErrors(PE, "after QD:Acquire")
+-- Pins whose exact place is known. A wrong float decode or a change of
+-- coordinate scale moves them. Values were read from QuestieDB 1.1.1's decoded
+-- data (Npc spawns are in 0..100 per zone; pins are 0..1) and the zone ids map
+-- to uiMap ids in its support/Forever/Zones/areaIdToUiMapId.lua.
+local KNOWN_PINS = {
+    -- Quest 2 "Sharptalon's Claw", turn in: finishedBy {{12696}}; Npc 12696
+    -- "Senani Thunderheart" spawns {[331] = {{73.78, 61.46}}}; area 331 Ashenvale = uiMap 1440.
+    { quest = 2, complete = true, map = 1440, x = 0.7378, y = 0.6146, kind = "turnin", target = "Senani Thunderheart" },
+    -- Quest 55 "Morbent Fel", kill: objectives {{{1200, ...}}}; Npc 1200
+    -- "Morbent Fel" spawns {[10] = {{16.9, 33.4}}}; area 10 Duskwood = uiMap 1431.
+    { quest = 55, complete = false, map = 1431, x = 0.169, y = 0.334, kind = "slay", target = "Morbent Fel" },
+}
 
--- Quest-log objectives the game would show for this quest, built from QuestieDB.
-local function name(entity, id)
-    local f = type(id) == "number" and entity.name
-    local v = f and f(id)
-    return type(v) == "string" and v or nil
+local function describePins(byMap)
+    local out = {}
+    for mapID, list in pairs(byMap) do
+        for _, p in ipairs(list) do
+            out[#out + 1] = string.format("  map %s x=%s y=%s kind=%s target=%s",
+                tostring(mapID), tostring(p.x), tostring(p.y), tostring(p.kind), tostring(p.target))
+        end
+    end
+    return #out > 0 and table.concat(out, "\n") or "  (no pins)"
 end
 
-local function logObjectives(id, finished)
-    local out = {}
-    local function add(text, kind)
-        out[#out + 1] = { text = text, type = kind, finished = finished }
+local function checkKnownPin(want, byMap, where)
+    for _, p in ipairs(byMap[want.map] or {}) do
+        if type(p.x) == "number" and type(p.y) == "number" and math.abs(p.x - want.x) < 1e-4
+            and math.abs(p.y - want.y) < 1e-4 and p.kind == want.kind and p.target == want.target then
+            return
+        end
     end
-    local obj = L.Quest.objectives(id) or {}
-    for _, o in ipairs(obj[1] or {}) do
-        add((name(L.Npc, o[1]) or o[2] or "Creature") .. " slain: 0/1", "monster")
-    end
-    for _, o in ipairs(obj[2] or {}) do
-        add((o[2] or name(L.Object, o[1]) or "Object") .. ": 0/1", "object")
-    end
-    for _, o in ipairs(obj[3] or {}) do
-        add((name(L.Item, o[1]) or o[2] or "Item") .. ": 0/1", "item")
-    end
-    for _, o in ipairs(obj[5] or {}) do
-        add((o[3] or name(L.Npc, o[2]) or "Creature") .. ": 0/1", "monster")
-    end
-    local te = L.Quest.triggerEnd(id)
-    if type(te) == "table" and type(te[1]) == "string" then add(te[1], "event") end
-    return out
+    fail(string.format("%s: expected a %s pin for %s on map %d at %.4f, %.4f; got:\n%s",
+        where, want.kind, want.target, want.map, want.x, want.y, describePins(byMap)))
 end
 
 local function countPins(byMap)
@@ -120,47 +120,115 @@ local function countPins(byMap)
     return n
 end
 
-local ids = guarded("LibQuestieDB.Quest.GetAllIds", L.Quest.GetAllIds)
-local sorted = {}
-for i = 1, #ids do sorted[i] = ids[i] end
-table.sort(sorted)
-
-local counts = { quests = #sorted, with_pins = 0, inlog_with_pins = 0, complete_with_pins = 0,
-    inlog_pins = 0, complete_pins = 0 }
-
-for _, id in ipairs(sorted) do
-    local title = L.Quest.name(id)
-    local got = 0
-    for pass = 1, 2 do
-        local complete = pass == 2
-        local where = "quest " .. id .. (complete and " (complete)" or " (in log, not complete)")
-        local objectives = guarded(where .. ": building quest-log objectives", logObjectives, id, complete)
-        S.questLog.set({ id = id, title = title, complete = complete, objectives = objectives })
-        guarded(where, QD.RequestRebuild, QD)
-        guarded(where, S.runTimers)
-        checkErrors(PE, where)
-        local n = countPins(guarded(where, QD.GetPinsForQuest, QD, id))
-        if complete then
-            counts.complete_pins = counts.complete_pins + n
-            if n > 0 then counts.complete_with_pins = counts.complete_with_pins + 1 end
-        else
-            counts.inlog_pins = counts.inlog_pins + n
-            if n > 0 then counts.inlog_with_pins = counts.inlog_with_pins + 1 end
-        end
-        got = got + n
-    end
-    if got > 0 then counts.with_pins = counts.with_pins + 1 end
+local function name(entity, id)
+    local f = type(id) == "number" and entity.name
+    local v = f and f(id)
+    return type(v) == "string" and v or nil
 end
-S.questLog.set(nil)
-guarded("emptying the quest log", QD.RequestRebuild, QD)
-guarded("emptying the quest log", S.runTimers)
-checkErrors(PE, "emptying the quest log")
-QD:Release("harness")
+
+local version
+
+local function runPersona(persona)
+    local tag = persona.label .. " " .. persona.class
+    S.install(persona)
+    local L, v = guarded(tag .. ": loading QuestieDB", S.loadQuestieDB, qdbDir)
+    version = v
+    if L ~= _G.LibQuestieDB or type(L) ~= "table" then fail(tag .. ": QuestieDB loaded but LibQuestieDB is not set") end
+    if L.RequireContract(4) ~= true then fail(tag .. ": LibQuestieDB.RequireContract(4) is not true") end
+
+    local PE = guarded("loading Core.lua", S.loadCore, root)
+    local QD = guarded("loading QuestData.lua", S.loadAddonFile, questDataPath, PE).QuestData
+    S.questLog.set(nil)
+    local ok, reason = guarded(tag .. ": QD:Acquire", QD.Acquire, QD, "harness")
+    if ok ~= true then fail(tag .. ": QD:Acquire() with QuestieDB returned false: " .. tostring(reason)) end
+    guarded(tag .. ": first rebuild", S.runTimers)
+    checkErrors(PE, tag .. ": after QD:Acquire")
+
+    -- Quest-log objectives the game would show for this quest, built from QuestieDB.
+    local function logObjectives(id, finished)
+        local out = {}
+        local function add(text, kind)
+            out[#out + 1] = { text = text, type = kind, finished = finished }
+        end
+        local obj = L.Quest.objectives(id) or {}
+        for _, o in ipairs(obj[1] or {}) do
+            add((name(L.Npc, o[1]) or o[2] or "Creature") .. " slain: 0/1", "monster")
+        end
+        for _, o in ipairs(obj[2] or {}) do
+            add((o[2] or name(L.Object, o[1]) or "Object") .. ": 0/1", "object")
+        end
+        for _, o in ipairs(obj[3] or {}) do
+            add((name(L.Item, o[1]) or o[2] or "Item") .. ": 0/1", "item")
+        end
+        for _, o in ipairs(obj[5] or {}) do
+            add((o[3] or name(L.Npc, o[2]) or "Creature") .. ": 0/1", "monster")
+        end
+        local te = L.Quest.triggerEnd(id)
+        if type(te) == "table" and type(te[1]) == "string" then add(te[1], "event") end
+        return out
+    end
+
+    local ids = guarded(tag .. ": LibQuestieDB.Quest.GetAllIds", L.Quest.GetAllIds)
+    local sorted = {}
+    for i = 1, #ids do sorted[i] = ids[i] end
+    table.sort(sorted)
+
+    local known = {}
+    for _, k in ipairs(KNOWN_PINS) do known[k.quest .. (k.complete and "c" or "l")] = k end
+    local knownSeen = 0
+
+    local counts = { quests = #sorted, with_pins = 0, inlog_with_pins = 0, complete_with_pins = 0,
+        inlog_pins = 0, complete_pins = 0 }
+
+    for _, id in ipairs(sorted) do
+        local title = L.Quest.name(id)
+        local got = 0
+        for pass = 1, 2 do
+            local complete = pass == 2
+            local where = tag .. ": quest " .. id .. (complete and " (complete)" or " (in log, not complete)")
+            local objectives = guarded(where .. ": building quest-log objectives", logObjectives, id, complete)
+            S.questLog.set({ id = id, title = title, complete = complete, objectives = objectives })
+            guarded(where, QD.RequestRebuild, QD)
+            guarded(where, S.runTimers)
+            checkErrors(PE, where)
+            local byMap = guarded(where, QD.GetPinsForQuest, QD, id)
+            local want = known[id .. (complete and "c" or "l")]
+            if want then
+                checkKnownPin(want, byMap, where)
+                knownSeen = knownSeen + 1
+            end
+            local n = countPins(byMap)
+            if complete then
+                counts.complete_pins = counts.complete_pins + n
+                if n > 0 then counts.complete_with_pins = counts.complete_with_pins + 1 end
+            else
+                counts.inlog_pins = counts.inlog_pins + n
+                if n > 0 then counts.inlog_with_pins = counts.inlog_with_pins + 1 end
+            end
+            got = got + n
+        end
+        if got > 0 then counts.with_pins = counts.with_pins + 1 end
+    end
+    if knownSeen ~= #KNOWN_PINS then fail(tag .. ": a quest with a known pin is missing from QuestieDB") end
+    S.questLog.set(nil)
+    guarded(tag .. ": emptying the quest log", QD.RequestRebuild, QD)
+    guarded(tag .. ": emptying the quest log", S.runTimers)
+    checkErrors(PE, tag .. ": emptying the quest log")
+    QD:Release("harness")
+    return counts
+end
+
+local KEYS = { "quests", "with_pins", "inlog_with_pins", "complete_with_pins", "inlog_pins", "complete_pins" }
+local results, observed = {}, {}
+for _, persona in ipairs(PERSONAS) do
+    local counts = runPersona(persona)
+    results[#results + 1] = counts
+    for _, k in ipairs(KEYS) do observed[#observed + 1] = { persona.prefix .. k, counts[k] } end
+end
 
 ---------------------------------------------------------------------------
 -- 3. Compare with the baseline.
 ---------------------------------------------------------------------------
-local KEYS = { "quests", "with_pins", "inlog_with_pins", "complete_with_pins", "inlog_pins", "complete_pins" }
 local baselinePath = root .. "/tests/questiedb/baseline.txt"
 local baseline = {}
 local f = io.open(baselinePath, "r")
@@ -173,18 +241,23 @@ if f then
 end
 
 local mismatch = {}
-for _, k in ipairs(KEYS) do
-    if baseline[k] ~= counts[k] then
-        local diff = baseline[k] and string.format(" (%+d)", counts[k] - baseline[k]) or ""
-        mismatch[#mismatch + 1] = string.format("  %s: baseline %s, now %d%s", k, tostring(baseline[k]), counts[k], diff)
+for _, o in ipairs(observed) do
+    local k, n = o[1], o[2]
+    if baseline[k] ~= n then
+        local diff = baseline[k] and string.format(" (%+d)", n - baseline[k]) or ""
+        mismatch[#mismatch + 1] = string.format("  %s: baseline %s, now %d%s", k, tostring(baseline[k]), n, diff)
     end
 end
 if #mismatch > 0 then
     io.stdout:write("FAIL: counts differ from tests/questiedb/baseline.txt\n", table.concat(mismatch, "\n"), "\n")
     io.stdout:write("Observed:\n")
-    for _, k in ipairs(KEYS) do io.stdout:write(string.format("%s=%d\n", k, counts[k])) end
+    for _, o in ipairs(observed) do io.stdout:write(string.format("%s=%d\n", o[1], o[2])) end
     os.exit(1)
 end
 
-io.stdout:write(string.format("QuestieDB %s: %d quests, %d with pins, 0 errors\n", version, counts.quests, counts.with_pins))
+local parts = {}
+for i, persona in ipairs(PERSONAS) do
+    parts[i] = string.format("%d with pins (%s)", results[i].with_pins, persona.label)
+end
+io.stdout:write(string.format("QuestieDB %s: %d quests, %s, 0 errors\n", version, results[1].quests, table.concat(parts, ", ")))
 os.exit(0)

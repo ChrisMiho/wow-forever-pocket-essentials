@@ -8,9 +8,18 @@
 # complete_with_pins  quests with pins once complete (turn-in pins)
 # inlog_pins          all pins in the "in log, not complete" pass
 # complete_pins       all pins in the "complete" pass
+#
+# Unprefixed keys: Alliance Warrior. horde_ keys: Horde Shaman (QuestieDB applies
+# some corrections by faction and class while loading).
 quests=5914
 with_pins=5673
 inlog_with_pins=4917
 complete_with_pins=5644
 inlog_pins=122638
 complete_pins=6496
+horde_quests=5914
+horde_with_pins=5673
+horde_inlog_with_pins=4917
+horde_complete_with_pins=5644
+horde_inlog_pins=122655
+horde_complete_pins=6496

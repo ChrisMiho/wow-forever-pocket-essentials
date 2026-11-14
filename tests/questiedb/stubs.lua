@@ -2,8 +2,9 @@
 -- loading and while QuestData builds pins, plus helpers for the harness.
 --
 --   S.init(root)                 load the decoders and the TOC reader from tests/lib
---   S.install()                  (re)install the client globals below
---   S.loadQuestieDB(dir)         load QuestieDB from an unpacked release -> LibQuestieDB, version
+--   S.install(persona)           (re)install the client globals below; persona =
+--                                { faction = "Alliance"|"Horde", class = "WARRIOR"|... }
+--   S.loadQuestieDB(dir)         load a fresh QuestieDB from an unpacked release -> LibQuestieDB, version
 --   S.loadCore(root)             load Core.lua into a fresh namespace -> PE
 --   S.loadAddonFile(path, PE)    load one PocketEssentials file into PE -> PE
 --   S.runTimers()                run C_Timer.After callbacks until none are left
@@ -71,7 +72,12 @@ local C_QuestLog = {
     GetTitleForQuestID = function(id) local q = quest(id); return q and q.title or nil end,
 }
 
-function S.install()
+local CLASS_ID = { WARRIOR = 1, PALADIN = 2, HUNTER = 3, ROGUE = 4, PRIEST = 5, SHAMAN = 7,
+    MAGE = 8, WARLOCK = 9, DRUID = 11 }
+
+function S.install(persona)
+    persona = persona or {}
+    local faction, class = persona.faction or "Alliance", persona.class or "WARRIOR"
     timers = {}
     current = nil
     _G.CreateFrame = CreateFrame
@@ -82,8 +88,8 @@ function S.install()
     _G.debugstack = function(level) return debug.traceback("", (level or 1) + 1) end
     _G.DEFAULT_CHAT_FRAME = { AddMessage = noop }
     -- QuestieDB: the correction files ask for the player's faction and class.
-    _G.UnitFactionGroup = function() return "Alliance", "Alliance" end
-    _G.UnitClassBase = function() return "WARRIOR", 1 end
+    _G.UnitFactionGroup = function() return faction, faction end
+    _G.UnitClassBase = function() return class, CLASS_ID[class] end
     _G.GetLocale = function() return "enUS" end
     _G.C_EncodingUtil = {
         DecodeBase64 = encoding.DecodeBase64,
@@ -92,11 +98,23 @@ function S.install()
     }
 end
 
+-- The TOC is parsed once; each load runs QuestieDB's files again into a new namespace.
+local parsed = {}
+
 function S.loadQuestieDB(dir)
     local toc = dir .. "/QuestieDB_Forever.toc"
-    local _, header = metadata.load(toc, "QuestieDB")   -- installs C_AddOns.GetAddOnMetadata
+    local p = parsed[toc]
+    if not p then
+        local map, header = metadata.parse(toc)
+        p = { map = map, header = header }
+        parsed[toc] = p
+    end
+    -- What a previous load left in _G (the same list as upstream emulator/client.lua reset()).
+    _G.QuestDB, _G.NpcDB, _G.ItemDB, _G.ObjectDB = nil, nil, nil, nil
+    _G.LibQuestieDB, _G.QuestieLoader, _G.Questie, _G.QuestieDBSourceModeIndicator = nil, nil, nil, nil
+    metadata.install("QuestieDB", p.map)   -- C_AddOns.GetAddOnMetadata
     metadata.loadAddon(toc, "QuestieDB", dir, "forever")
-    return _G.LibQuestieDB, header.Version
+    return _G.LibQuestieDB, p.header.Version
 end
 
 function S.loadAddonFile(path, PE)
