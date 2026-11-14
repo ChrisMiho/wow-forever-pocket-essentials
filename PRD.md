@@ -417,7 +417,7 @@ and `QuestieDB` sit side by side.
 - Walk to the objective: distance should count down to "Here".
 - Tap a different quest's icon on the map: the arrow should switch to it.
   Pick a quest in another zone: it should say "Not in this zone".
-- Enter a dungeon or inn: the arrow should hide indoors in instances.
+- Enter a dungeon: the arrow should hide while you are inside.
 - Then switch Quest icons off and confirm the arrow still works alone.
 - Report: direction right/mirrored; distance sensible; position choices that
   collide with something on your screen; any stutter while moving.
