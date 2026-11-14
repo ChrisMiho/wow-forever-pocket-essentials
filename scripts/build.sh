@@ -2,8 +2,10 @@
 # Builds dist/wow-forever-pocket-essentials.zip with every addon folder at the zip root,
 # ready to extract straight into the game's Interface/AddOns folder.
 #
-# The bundle is the folders in addons/ plus QuestieDB, which is downloaded from
-# its official GitHub release (cached in vendor/, not committed).
+# The zip holds exactly two folders:
+#   PocketEssentials  (from addons/, our own addon)
+#   QuestieDB         (downloaded unmodified from its official GitHub release,
+#                      cached in vendor/, not committed)
 #
 # QuestieDB ships its 18 MB data file twice under two names, because the game
 # calls itself "Camelot" internally and it is not confirmed which name the
@@ -41,8 +43,29 @@ fi
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 
-cp -R addons/. "$stage/"
+if [ ! -f addons/PocketEssentials/PocketEssentials.toc ]; then
+    echo "error: addons/PocketEssentials/PocketEssentials.toc is missing" >&2
+    exit 1
+fi
+# Every file the TOC lists must exist, or the game reports an error at login.
+while IFS= read -r line; do
+    line="${line%$'\r'}"
+    case "$line" in ''|'#'*) continue ;; esac
+    if [ ! -f "addons/PocketEssentials/$line" ]; then
+        echo "error: PocketEssentials.toc lists $line, which does not exist" >&2
+        exit 1
+    fi
+done < addons/PocketEssentials/PocketEssentials.toc
+
+cp -R addons/PocketEssentials "$stage/"
 unzip -q "$qdb_zip" -d "$stage"
+
+# The old standalone QuestDots addon was folded into PocketEssentials. It must
+# never ship alongside it, or the two copies would both draw icons.
+if [ -e "$stage/QuestDots" ]; then
+    echo "error: a QuestDots folder ended up in the bundle" >&2
+    exit 1
+fi
 
 case "$QUESTIEDB_TOC" in
     Forever) rm "$stage/QuestieDB/QuestieDB_Camelot.toc" ;;

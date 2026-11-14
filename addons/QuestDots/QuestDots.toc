@@ -1,9 +1,0 @@
-## Interface: 16001
-## Title: QuestDots
-## Notes: Questie-style objective icons (mob, loot and object spawns) on the map and minimap, without the rest of Questie. Removes the blue quest-area haze.
-## Author: Chris
-## Version: 0.2.0
-## Dependencies: QuestieDB
-## SavedVariables: QuestDotsDB
-
-QuestDots.lua

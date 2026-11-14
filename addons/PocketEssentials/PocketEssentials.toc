@@ -1,0 +1,20 @@
+## Interface: 16001
+## Title: Pocket Essentials
+## Notes: Handheld helpers for WoW Forever: quest icons, a quest arrow, one big bag, selling junk, repairing and a large chat window. Every feature has its own on/off switch.
+## Version: 1.0.0
+## SavedVariables: PocketEssentialsDB
+## OptionalDeps: QuestieDB
+## IconTexture: Interface\Icons\INV_Misc_Bag_08
+## AddonCompartmentFunc: PocketEssentials_OnAddonCompartmentClick
+
+Core.lua
+UI.lua
+Hub.lua
+Settings.lua
+QuestData.lua
+QuestIcons.lua
+QuestArrow.lua
+Bags.lua
+Vendor.lua
+Chat.lua
+Layout.lua
