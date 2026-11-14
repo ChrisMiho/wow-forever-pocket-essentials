@@ -3,8 +3,8 @@ local ADDON_NAME, PE = ...
 -- Vendor helpers: two separate features, each with its own switch.
 --
 --   "sellJunk"  sells grey items when a vendor window opens: one item about
---               every 0.2 seconds, at most 12 per visit so all of it can
---               still be bought back.
+--               every 0.2 seconds, until none are left. (Only the last 12
+--               sold can be bought back; the owner chose no cap.)
 --   "repair"    repairs all gear at vendors that can, with the character's
 --               own money (never the guild's).
 --
@@ -68,7 +68,6 @@ end
 
 local SELL_START_DELAY = 0.3 -- after the window opens, before the first sale
 local SELL_STEP = 0.2        -- seconds between sales
-local SELL_MAX = 12          -- sales per visit: what the vendor's buyback page holds
 local SELL_REPORT_DELAY = 1  -- after the last sale, before the chat line
 
 local POOR = 0
@@ -149,18 +148,7 @@ local function SellReport(r)
     if not money then return end
     local gain = money - r.startMoney + (repairSpent - r.startRepair)
     if gain <= 0 then return end
-    local more = false
-    if r.capped then
-        for i = r.i, #r.list do
-            local e = r.list[i]
-            if JunkAt(e.bag, e.slot) == e.itemID then
-                more = true
-                break
-            end
-        end
-    end
     local text = "Sold " .. r.attempts .. (r.attempts == 1 and " junk item for " or " junk items for ") .. Money(gain) .. "."
-    if more then text = text .. " (more left - reopen the vendor)" end
     sellJunk:Print(text)
 end
 
@@ -186,11 +174,6 @@ local function SellStep(r)
     if PE:InCombat() then
         -- Not while fighting: carry on when the fight ends, if still here.
         PE:RunOutOfCombat("sellJunk:resume", function() SellStep(r) end)
-        return
-    end
-    if r.attempts >= SELL_MAX then
-        r.capped = true
-        SellStop(r)
         return
     end
     local list = r.list

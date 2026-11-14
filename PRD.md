@@ -134,7 +134,7 @@ until its step in the test plan passes.
 | Quest icons | Objective icons on map and minimap from QuestieDB data, blue haze hidden, tap an icon to pick that quest | Untested |
 | Quest arrow | On-screen arrow to the nearest objective in the current zone, with distance and quest name | Untested |
 | One big bag | Blizzard's own combined bag, a big Sort button, L3 sorts while the bag is open, three bag sizes | Untested |
-| Sell junk automatically | Sells grey items at vendors, at most 12 per visit | Untested |
+| Sell junk automatically | Sells every grey item at vendors | Untested |
 | Repair automatically | Repairs from your own money at vendors that can | Untested |
 | Big chat buttons | Picker with one big button per channel plus the last six whisperers; badge on the round button for unanswered whispers | Untested |
 | Layout helper (experimental) | One-tap switch to Blizzard's Gamepad layout and back; a dormant path to install a ready-made handheld layout. **No nudge arrows** (see below) | Untested |
@@ -320,7 +320,8 @@ safer option. Any of them can be reversed.
   feature respects that.
 
 **Vendor**
-- The 12-item cap is per visit and counts attempts.
+- No cap on how many greys sell per visit (owner's choice, 2026-11-14; the
+  first build stopped at 12). Only the last 12 sold can be bought back.
 - The chat line reports the money gained during the visit, e.g. "Sold 7 junk
   items for 1g 20s 5c." and "Repairing for 12s 40c."
 - An item must be grey according to both the bag slot and the item database,
@@ -440,9 +441,10 @@ and `QuestieDB` sit side by side.
 - Carry a few grey items (and one grey you would not mind losing as a test).
   Switch on **Sell junk automatically** and open a vendor.
 - Greys should sell one at a time over a second or two, then one chat line:
-  "Sold N junk items for …". Check the buyback tab holds them.
-- With more than 12 greys: exactly 12 sell and the line ends with "(more
-  left - reopen the vendor)".
+  "Sold N junk items for …". Check the buyback tab holds them (it only
+  holds the last 12).
+- With more than 12 greys: all of them sell in one visit, and the count in
+  the chat line matches.
 - Report: sold yes/no; anything non-grey sold (should be impossible; tell us
   immediately); any "blocked by an addon" popup; the chat line's numbers.
 

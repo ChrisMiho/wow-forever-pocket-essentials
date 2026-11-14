@@ -36,7 +36,7 @@ them.
 | Quest icons | Objective icons on the map and minimap, no blue haze. Tap an icon to pick that quest |
 | Quest arrow | An arrow to the nearest objective in your zone, with distance |
 | One big bag | Blizzard's combined bag with a big Sort button; L3 sorts while it is open; three sizes |
-| Sell junk automatically | Sells grey items at vendors, at most 12 per visit so all stay in buyback |
+| Sell junk automatically | Sells every grey item at vendors. Only the last 12 sold can be bought back |
 | Repair automatically | Repairs from your own money |
 | Big chat buttons | The round button opens a picker: one big button per channel and per recent whisperer. A badge shows unanswered whispers |
 | Layout helper (experimental) | One-tap switch to Blizzard's Gamepad layout and back |
