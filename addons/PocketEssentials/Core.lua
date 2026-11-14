@@ -515,15 +515,29 @@ end
 
 function Methods:RequestReload(reason)
     local st = S[self]
-    local label = PE:ModuleLabel(st and st.key)
+    local key = st and st.key or "core"
     reason = (type(reason) == "string" and reason ~= "") and reason or "A reload is needed to finish this change."
-    for _, r in ipairs(PE.reloadReasons) do
-        if r.label == label and r.reason == reason then
-            PE:RefreshSettings()
-            return
-        end
+    local list = PE.reloadReasons
+    local entry
+    for _, r in ipairs(list) do
+        if r.key == key then entry = r end
     end
-    tinsert(PE.reloadReasons, { label = label, reason = reason })
+    if not entry then
+        entry = { key = key }
+        tinsert(list, entry)
+    end
+    entry.label, entry.reason = PE:ModuleLabel(key), reason -- one pending reason per module
+    PE:RefreshSettings()
+end
+
+-- Withdraws this module's pending reload request, if any.
+function Methods:CancelReload()
+    local st = S[self]
+    local key = st and st.key or "core"
+    local list = PE.reloadReasons
+    for i = #list, 1, -1 do
+        if list[i].key == key then tremove(list, i) end
+    end
     PE:RefreshSettings()
 end
 

@@ -3,29 +3,21 @@
 -- Where things are comes from PE.QuestData (QuestData.lua); this file only
 -- draws. Ported from the old standalone QuestDots addon.
 --
--- How it behaves on a touch screen (there is no hover):
---   * Tap an icon: that quest becomes the tracked quest and a short text box
---     says what the icon is. The box goes away by itself after a few seconds,
---     when another icon is tapped, when the same icon is tapped again, or when
---     the map is closed. The box is our own frame in the addon's large font,
---     not GameTooltip: Blizzard's quest-area pin rewrites GameTooltip every
---     frame while the pointer rests inside a quest area, and a tap leaves the
---     pointer exactly there.
---   * Icons are drawn larger than the old addon drew them and the area that
---     accepts a tap is larger still. A tap always goes to the icon whose
---     centre is nearest the finger, so the larger tap areas cannot pick the
---     wrong neighbour.
+-- Touch (there is no hover): tap an icon and that quest becomes the tracked
+-- quest, and a short text box says what the icon is. The box goes away by
+-- itself after a few seconds, when another icon is tapped, when the same icon
+-- is tapped again, or when the map is closed. It is our own frame in the
+-- addon's large font, not GameTooltip: Blizzard's quest-area pin rewrites
+-- GameTooltip every frame while the pointer rests inside a quest area.
 --
--- Nothing here touches protected frames, so nothing needs to wait for combat
--- to end. Blizzard's own pins are only ever changed with SetAlpha and
--- EnableMouse (no fields are written on them), and every pin we changed is
--- remembered so that switching the feature off puts it back.
+-- Nothing here touches protected frames, so nothing waits for combat to end.
+-- The only Blizzard frame changed is the world map's quest-area pin, and only
+-- with SetAlpha; its old alpha is remembered and put back.
 local ADDON_NAME, PE = ...
 
 if type(PE) ~= "table" or type(PE.RegisterModule) ~= "function" then return end
 
 local type, pairs, tonumber, tostring, pcall, next = type, pairs, tonumber, tostring, pcall, next
-local setmetatable = setmetatable
 local max, min, sqrt, sin, cos = math.max, math.min, math.sqrt, math.sin, math.cos
 
 local KEY = "questIcons"
@@ -35,28 +27,25 @@ local KEY = "questIcons"
 ---------------------------------------------------------------------------
 
 local DEFAULTS = {
-    map = true,            -- icons on the world map
-    mini = true,           -- icons on the minimap
-    hideHaze = true,       -- hide Blizzard's blue quest areas (map and minimap)
-    hideBlizzPins = false, -- also hide Blizzard's own numbered quest pins on the world map
-    size = "medium",       -- "small" | "medium" | "large" (or a number typed with /qd size)
-    cluster = 2,           -- merge spawns closer than this many % of the map; 0 = off
+    map = true,       -- icons on the world map
+    mini = true,      -- icons on the minimap
+    hideHaze = true,  -- hide Blizzard's blue quest areas (map and minimap)
+    size = "medium",  -- "small" | "medium" | "large"
+    cluster = 2,      -- merge spawns closer than this many % of the map; 0 = off
 }
 
 -- Icon sizes in pixels on a 720p screen (a 6 inch 720p screen has about ten
 -- pixels to the millimetre, so "medium" is roughly 3 mm on the map).
 local MAP_PX = { small = 22, medium = 28, large = 36 }
 local MINI_PX = { small = 14, medium = 18, large = 22 }
--- The tap area of an icon is at least this big, whatever the icon size.
-local MAP_HIT_PX = 44
+-- On the minimap the tap area of an icon is at least this big. On the world
+-- map the tap area is exactly the icon, so the map can still be dragged and
+-- Blizzard's own pins underneath can still be tapped.
 local MINI_HIT_PX = 32
--- Icons of the tracked quest are drawn this much larger.
-local TRACKED_SCALE = 1.25
--- Most icons drawn at once. The world map keeps one frame per icon, and all
--- of them are moved whenever the map is zoomed; the minimap moves its icons
--- ten times a second while walking. Above these numbers the maps are too
--- crowded to read anyway. On the world map the tracked quest goes first.
-local MAP_MAX = 300
+local TRACKED_SCALE = 1.25 -- icons of the tracked quest are drawn this much larger
+-- Most icons drawn at once: every world map icon is moved on every frame of a
+-- zoom, and the minimap moves its icons ten times a second while walking.
+local MAP_MAX = 150
 local MINI_MAX = 40
 local MINI_INTERVAL = 0.1 -- seconds between minimap updates
 local LABEL_SECONDS = 5
@@ -76,17 +65,12 @@ local STYLE = {
     loot   = { tex = ICON_PATH .. "loot_mono",   color = { 1.00, 0.85, 0.30 } },
     object = { tex = ICON_PATH .. "object_mono", color = { 0.50, 0.80, 1.00 } },
     event  = { tex = ICON_PATH .. "object_mono", color = { 0.75, 0.55, 1.00 } },
-    turnin = { turnin = true },
+    turnin = { tex = "Interface\\GossipFrame\\ActiveQuestIcon", color = { 1, 1, 1 } }, -- the yellow "?"
 }
--- The yellow "?" for handing a quest in: an atlas if this client has it,
--- otherwise the gossip window's icon file.
-local TURNIN_ATLAS = "QuestTurnin"
-local TURNIN_FILE = "Interface\\GossipFrame\\ActiveQuestIcon"
 
 local KIND_LABEL = { slay = "Kill", loot = "Loot", object = "Use", event = "Explore", turnin = "Turn in" }
 
-local BLOB_TEMPLATE = "QuestBlobPinTemplate"   -- Blizzard_SharedMapDataProviders/QuestBlobDataProvider.xml
-local QUEST_PIN_TEMPLATE = "QuestPinTemplate"  -- Blizzard_SharedMapDataProviders/QuestDataProvider.xml
+local BLOB_TEMPLATE = "QuestBlobPinTemplate" -- Blizzard_SharedMapDataProviders/QuestBlobDataProvider.xml
 
 -- Minimap diameter in yards for each zoom level. These numbers are not in
 -- Blizzard's interface code; they are the ones the HereBeDragons library uses.
@@ -111,7 +95,6 @@ local QD                   -- PE.QuestData while enabled
 local active = false       -- true while the feature is on and allowed to draw
 local blocked              -- plain-language reason nothing is drawn, or nil
 local trackedID            -- quest whose icons are drawn larger
-local turninAtlas, turninChecked
 local clusterSet = false   -- we changed PE.QuestData.cluster
 local blobsZeroed = false  -- the minimap haze was hidden this session
 
@@ -119,23 +102,20 @@ local EMPTY = {}
 
 local mapPins, mapShown = {}, 0
 local mapState = {}        -- what the world map icons were last drawn from
-local drawList = {}        -- scratch: the pins chosen for the world map
-local mapHooked, providerHooked = false, false
+local mapHooked = false
 
 local miniPins, miniShown = {}, 0
 local miniList, miniMapID, miniW, miniH = EMPTY, nil, nil, nil
 local last = {}            -- last player position/facing/zoom, to skip work when nothing moved
 local ticker, tickerOn, tickBusy, acc = nil, false, false, 0
-local miniRetries = 0
 
 local label, labelTried, labelSerial = nil, false, 0
 
--- Blizzard pins we changed: [pin] = the alpha it had before.
+-- The world map's quest-area pin(s) we made invisible: [pin] = the alpha it had before.
 local hazeTouched = setmetatable({}, { __mode = "k" })
-local questTouched = setmetatable({}, { __mode = "k" })
 
 -- Script handlers and hooks, wrapped once the module is registered.
-local pinClick, pinHide, tickHandler, mapChangedHook, mapScaleHook, mapShowHook, providerHook, dataChanged
+local pinClick, tickHandler, mapChangedHook, mapScaleHook, mapShowHook, mapHideHook, dataChanged
 
 ---------------------------------------------------------------------------
 -- Small helpers
@@ -164,15 +144,8 @@ local function Px(n)
 end
 
 local function IconSize(view)
-    local choice = Opt("size")
-    local px
-    if IsNumber(choice) then
-        px = (view == "map") and choice or max(10, choice - 6)
-    else
-        local sizes = (view == "map") and MAP_PX or MINI_PX
-        px = sizes[choice] or sizes.medium
-    end
-    return Px(px)
+    local sizes = (view == "map") and MAP_PX or MINI_PX
+    return Px(sizes[Opt("size")] or sizes.medium)
 end
 
 local function ClusterValue()
@@ -184,15 +157,6 @@ end
 
 local function Escape(text)
     return (tostring(text):gsub("|", "||"))
-end
-
-local function FindTurninAtlas()
-    if turninChecked then return end
-    turninChecked = true
-    local getInfo = C_Texture and C_Texture.GetAtlasInfo
-    if type(getInfo) ~= "function" then return end
-    local ok, info = pcall(getInfo, TURNIN_ATLAS)
-    if ok and info ~= nil then turninAtlas = TURNIN_ATLAS end
 end
 
 ---------------------------------------------------------------------------
@@ -258,42 +222,27 @@ local function ShowLabel(owner, d, view)
     local f = EnsureLabel()
     if not f then return end
     local str, lineCount = LabelText(d)
-    local pad, border, gap = Px(10), max(Px(2), 1), Px(6)
-    local maxWidth, minWidth = Px(440), Px(120)
+    local pad, border, gap, width = Px(10), max(Px(2), 1), Px(6), Px(380)
 
     local text = f.text
     text:ClearAllPoints()
     text:SetPoint("TOPLEFT", f, "TOPLEFT", pad, -pad)
-    text:SetWidth(maxWidth)
-    text:SetText(str)
-    local width
-    if type(text.GetStringWidth) == "function" then
-        local ok, value = pcall(text.GetStringWidth, text)
-        if ok and IsNumber(value) and value > 1 then width = value + 2 end
-    end
-    width = min(maxWidth, max(minWidth, width or maxWidth))
     text:SetWidth(width)
-    local height
-    local lineHeight = Px(20) * 1.25
-    if type(text.GetStringHeight) == "function" then
-        local ok, value = pcall(text.GetStringHeight, text)
-        if ok and IsNumber(value) and value >= lineHeight * 0.5 then height = value end
-    end
-    height = height or lineCount * lineHeight
+    text:SetText(str)
+    local height = text:GetStringHeight()
+    if not IsNumber(height) or height < Px(10) then height = lineCount * Px(25) end
 
     f:SetSize(width + pad * 2, height + pad * 2)
     f.fill:ClearAllPoints()
     f.fill:SetPoint("TOPLEFT", f, "TOPLEFT", border, -border)
     f.fill:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -border, border)
     f:ClearAllPoints()
-    if view == "mini" and Minimap then
-        f:SetPoint("TOP", Minimap, "BOTTOM", 0, -gap)
-    elseif owner then
+    if owner then
         f:SetPoint("BOTTOM", owner, "TOP", 0, gap)
     else
-        f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+        f:SetPoint("TOP", Minimap, "BOTTOM", 0, -gap)
     end
-    f.owner, f.data, f.view = (view == "map") and owner or nil, d, view
+    f.owner, f.data, f.view = owner, d, view
     f:Show()
 
     labelSerial = labelSerial + 1
@@ -315,7 +264,8 @@ local function CreatePin(parent, view)
     f.tex = f:CreateTexture(nil, "OVERLAY")
     f.tex:SetAllPoints()
     f:SetScript("OnClick", pinClick)
-    f:SetScript("OnHide", pinHide)
+    -- Clicks only: there is no hover on a touch screen.
+    if type(f.SetMouseMotionEnabled) == "function" then pcall(f.SetMouseMotionEnabled, f, false) end
     return f
 end
 
@@ -330,10 +280,11 @@ local function HidePin(f)
     if f.shown then
         f.shown = false
         f:Hide()
+        if label and label.owner == f then HideLabel() end
     end
 end
 
--- size and hit are in the frame's own units.
+-- size and hit (the tap area) are in the frame's own units.
 local function StylePin(f, d, size, hit)
     if f.data ~= d then
         if label and label.owner == f then HideLabel() end
@@ -342,20 +293,9 @@ local function StylePin(f, d, size, hit)
     local kind = STYLE[d.kind] and d.kind or "event"
     if f.kind ~= kind then
         f.kind = kind
-        local style, tex = STYLE[kind], f.tex
-        if style.turnin then
-            tex:SetVertexColor(1, 1, 1)
-            if turninAtlas then
-                tex:SetAtlas(turninAtlas)
-            else
-                tex:SetTexture(TURNIN_FILE)
-                tex:SetTexCoord(0, 1, 0, 1)
-            end
-        else
-            tex:SetTexture(style.tex)
-            tex:SetTexCoord(0, 1, 0, 1) -- an atlas used earlier leaves its own coordinates behind
-            tex:SetVertexColor(style.color[1], style.color[2], style.color[3])
-        end
+        local style = STYLE[kind]
+        f.tex:SetTexture(style.tex)
+        f.tex:SetVertexColor(style.color[1], style.color[2], style.color[3])
     end
     if f.size ~= size or f.hit ~= hit then
         f.size, f.hit = size, hit
@@ -365,16 +305,17 @@ local function StylePin(f, d, size, hit)
     end
 end
 
--- The shown icon whose centre is nearest the pointer; `clicked` if that cannot be told.
-local function NearestPin(pins, count, clicked)
+-- Minimap only (its tap areas overlap): the shown icon whose centre is
+-- nearest the pointer, or `clicked` if that cannot be told.
+local function NearestMiniPin(clicked)
     if type(GetCursorPosition) ~= "function" then return clicked end
     local cx, cy = GetCursorPosition()
     local scale = clicked:GetEffectiveScale()
     if not (IsNumber(cx) and IsNumber(cy) and IsNumber(scale) and scale > 0) then return clicked end
     cx, cy = cx / scale, cy / scale
     local best, bestDist = clicked, nil
-    for i = 1, count do
-        local p = pins[i]
+    for i = 1, miniShown do
+        local p = miniPins[i]
         if p and p.shown and p.data then
             local x, y = p:GetCenter()
             if IsNumber(x) and IsNumber(y) then
@@ -389,10 +330,8 @@ end
 
 local function OnPinClick(self)
     if not active or not QD then return end
-    local view = self.view
-    local pins, count = mapPins, mapShown
-    if view == "mini" then pins, count = miniPins, miniShown end
-    local target = NearestPin(pins, count, self)
+    local onMap = (self.view == "map")
+    local target = onMap and self or NearestMiniPin(self)
     local d = target and target.data
     if type(d) ~= "table" then return end
 
@@ -401,113 +340,51 @@ local function OnPinClick(self)
         return
     end
     HideLabel()
-    -- This redraws the icons straight away (the "tracked" callback), so the
-    -- tapped icon may now live in a different frame.
-    QD:SetTrackedQuest(d.questID)
+    QD:SetTrackedQuest(d.questID) -- redraws the icons straight away (the "tracked" callback)
     if not active then return end
-    local owner
-    if view == "map" then
-        for i = 1, mapShown do
-            if mapPins[i].data == d then
-                owner = mapPins[i]
-                break
-            end
-        end
-        if not owner then return end
+    if onMap then
+        if self.data == d and self.shown then ShowLabel(self, d, "map") end
+    elseif Minimap then
+        ShowLabel(nil, d, "mini")
     end
-    ShowLabel(owner, d, view)
-end
-
-local function OnPinHide(self)
-    if label and label.owner == self then HideLabel() end
 end
 
 ---------------------------------------------------------------------------
--- Blizzard's own quest areas and quest pins on the world map
+-- Blizzard's blue quest areas ("haze")
 ---------------------------------------------------------------------------
 
-local function ForPins(map, template, fn)
-    if type(map.EnumeratePinsByTemplate) ~= "function" then return end
-    local ok, iter, state, ctrl = pcall(map.EnumeratePinsByTemplate, map, template)
-    if not ok or type(iter) ~= "function" then return end
-    for pin in iter, state, ctrl do
-        if type(pin) == "table" then fn(pin) end
-    end
-end
-
-local function Remember(touched, pin)
-    if touched[pin] == nil then
-        local alpha = 1
-        if type(pin.GetAlpha) == "function" then
-            local ok, value = pcall(pin.GetAlpha, pin)
-            if ok and IsNumber(value) then alpha = value end
-        end
-        touched[pin] = alpha
-    end
-end
-
-local function HideHazePin(pin)
-    if type(pin.SetAlpha) ~= "function" then return end
-    Remember(hazeTouched, pin)
-    pin:SetAlpha(0)
-end
-
-local function HideQuestPin(pin)
-    if type(pin.SetAlpha) ~= "function" then return end
-    Remember(questTouched, pin)
-    pin:SetAlpha(0)
-    if type(pin.EnableMouse) == "function" then pin:EnableMouse(false) end
-end
-
--- Puts back every pin in `touched`, including ones Blizzard has put away in
--- its pool for later (those would otherwise come back invisible).
-local function Restore(touched, mouse)
-    for pin, alpha in pairs(touched) do
-        touched[pin] = nil
-        if type(pin) == "table" then
-            if type(pin.SetAlpha) == "function" then pcall(pin.SetAlpha, pin, alpha) end
-            if mouse and type(pin.EnableMouse) == "function" then pcall(pin.EnableMouse, pin, true) end
-        end
-    end
-end
-
--- Blizzard takes its quest pins down and puts them up again on every quest
--- log update. Hooking that one refresh lets us hide them again in the same
--- frame, so they never flash.
-local function HookQuestProvider(map)
-    if providerHooked then return end
-    local providers = map.dataProviders
-    if type(providers) ~= "table" or type(hooksecurefunc) ~= "function" then return end
-    for provider in pairs(providers) do
-        if type(provider) == "table" and type(provider.GetPinTemplate) == "function"
-           and type(provider.RefreshAllData) == "function" then
-            local ok, template = pcall(provider.GetPinTemplate, provider)
-            if ok and template == QUEST_PIN_TEMPLATE then
-                providerHooked = true
-                pcall(hooksecurefunc, provider, "RefreshAllData", providerHook)
-                return
+-- World map: the haze is one permanent pin. It is made invisible with
+-- SetAlpha(0) and its old alpha is put back when the option or the feature is
+-- switched off.
+--
+-- ALTERNATIVE FOR THE DEVICE TEST (not used): if SetAlpha(0) turns out not to
+-- hide it, the blob pin has its own setters, pin:SetFillAlpha(0) and
+-- pin:SetBorderAlpha(0); Blizzard's normal values to restore are 128 and 192
+-- (QuestBlobDataProvider.lua:68-69).
+local function SetWorldMapHaze(map, hide)
+    if hide then
+        if type(map.EnumeratePinsByTemplate) ~= "function" then return end
+        local ok, iter, state, ctrl = pcall(map.EnumeratePinsByTemplate, map, BLOB_TEMPLATE)
+        if not ok or type(iter) ~= "function" then return end
+        for pin in iter, state, ctrl do
+            if type(pin) == "table" and type(pin.SetAlpha) == "function" then
+                if hazeTouched[pin] == nil then
+                    local alpha = type(pin.GetAlpha) == "function" and pin:GetAlpha()
+                    hazeTouched[pin] = IsNumber(alpha) and alpha or 1
+                end
+                pin:SetAlpha(0)
             end
         end
-    end
-end
-
-local function SuppressBlizzard(map)
-    if active and Opt("hideHaze") then
-        ForPins(map, BLOB_TEMPLATE, HideHazePin)
     elseif next(hazeTouched) ~= nil then
-        Restore(hazeTouched, false)
-    end
-    if active and Opt("hideBlizzPins") then
-        HookQuestProvider(map)
-        ForPins(map, QUEST_PIN_TEMPLATE, HideQuestPin)
-    elseif next(questTouched) ~= nil then
-        Restore(questTouched, true)
+        for pin, alpha in pairs(hazeTouched) do
+            hazeTouched[pin] = nil
+            pcall(pin.SetAlpha, pin, alpha)
+        end
     end
 end
 
-local function RestoreBlizzard()
-    Restore(hazeTouched, false)
-    Restore(questTouched, true)
+local function RestoreWorldMapHaze()
+    SetWorldMapHaze(nil, false)
 end
 
 local function ZeroMinimapBlobs()
@@ -519,45 +396,45 @@ local function ZeroMinimapBlobs()
     end
 end
 
+-- The "Reload now" prompt is only shown while the minimap haze is hidden but
+-- should be visible (option switched off, or the whole feature switched off).
+local function UpdateReloadPrompt()
+    if not blobsZeroed then return end
+    if active and Opt("hideHaze") then
+        if type(mod.CancelReload) == "function" then mod:CancelReload() end
+    else
+        mod:RequestReload(RELOAD_REASON)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- World map
 ---------------------------------------------------------------------------
 
 -- The scale that makes an icon the same size on screen whatever the map zoom.
-local function MapScale(map, canvas)
+local function MapScale(canvas)
     local canvasScale = canvas:GetEffectiveScale()
     local uiScale = UIParent and UIParent:GetEffectiveScale()
-    local scale
     if IsNumber(canvasScale) and canvasScale > 0.0001 and IsNumber(uiScale) and uiScale > 0 then
-        scale = uiScale / canvasScale
-    elseif type(map.GetCanvasScale) == "function" then
-        local zoom = map:GetCanvasScale()
-        if IsNumber(zoom) and zoom > 0.0001 then scale = 1 / zoom end
+        return uiScale / canvasScale
     end
-    if not scale or scale <= 0 then scale = 1 end
-    return scale
+    return 1
 end
 
--- Just under Blizzard's own quest pins, the player arrow and party members;
--- above everything else on the map.
-local function MapLevel(map, canvas)
-    if type(map.GetPinFrameLevelsManager) == "function" then
-        local ok, manager = pcall(map.GetPinFrameLevelsManager, map)
-        if ok and type(manager) == "table" and type(manager.GetValidFrameLevel) == "function" then
-            local okPing, ping = pcall(manager.GetValidFrameLevel, manager, "PIN_FRAME_LEVEL_QUEST_PING")
-            local okBase, base = pcall(manager.GetValidFrameLevel, manager, "PIN_FRAME_LEVEL_DEFAULT")
-            if okPing and okBase and IsNumber(ping) and IsNumber(base) and ping > base then return ping end
-            local okTop, top = pcall(manager.GetValidFrameLevel, manager, "PIN_FRAME_LEVEL_TOPMOST")
-            if okTop and IsNumber(top) and top > 0 then return top end
-        end
-    end
-    local level = canvas:GetFrameLevel()
-    return (IsNumber(level) and level or 0) + 3000
+-- Just under Blizzard's own quest pins, the player arrow and party members.
+-- nil (leave the level alone) if the map cannot say.
+local function MapLevel(map)
+    if type(map.GetPinFrameLevelsManager) ~= "function" then return nil end
+    local ok, manager = pcall(map.GetPinFrameLevelsManager, map)
+    if not ok or type(manager) ~= "table" or type(manager.GetValidFrameLevel) ~= "function" then return nil end
+    local okLevel, level = pcall(manager.GetValidFrameLevel, manager, "PIN_FRAME_LEVEL_QUEST_PING")
+    if okLevel and IsNumber(level) and level > 0 then return level end
+    return nil
 end
 
+-- Only "CENTER" is ever set, so SetPoint replaces it; no ClearAllPoints needed.
 local function PlaceMapPin(p, d, canvas, scale, width, height)
     p:SetScale(scale)
-    p:ClearAllPoints()
     p:SetPoint("CENTER", canvas, "TOPLEFT", d.x * width / scale, -d.y * height / scale)
 end
 
@@ -565,40 +442,11 @@ local function ValidPin(d)
     return type(d) == "table" and IsNumber(d.x) and IsNumber(d.y)
 end
 
--- Fills drawList with at most `cap` pins. When there are too many, the tracked quest goes first.
-local function BuildDrawList(list, cap)
-    local n, total = 0, #list
-    local first = (total > cap) and trackedID or nil
-    if first then
-        for i = 1, total do
-            local d = list[i]
-            if ValidPin(d) and d.questID == first then
-                n = n + 1
-                drawList[n] = d
-                if n >= cap then break end
-            end
-        end
-    end
-    if n < cap then
-        for i = 1, total do
-            local d = list[i]
-            if ValidPin(d) and (first == nil or d.questID ~= first) then
-                n = n + 1
-                drawList[n] = d
-                if n >= cap then break end
-            end
-        end
-    end
-    for i = #drawList, n + 1, -1 do drawList[i] = nil end
-    return n
-end
-
 local function HideMapPins(from)
     for i = from, mapShown do
         local p = mapPins[i]
         if p then HidePin(p) end
     end
-    if from <= mapShown then mapShown = from - 1 end
 end
 
 -- Zooming only: same icons, new scale.
@@ -621,7 +469,7 @@ local function RefreshWorldMap(force)
     if force then mapState.list = nil end
     local map = WorldMapFrame
     if type(map) ~= "table" or type(map.IsShown) ~= "function" or not map:IsShown() then return end
-    mod:Safe(SuppressBlizzard, map)
+    mod:Safe(SetWorldMapHaze, map, Opt("hideHaze"))
     if type(map.GetCanvas) ~= "function" then return end
     local canvas = map:GetCanvas()
     if type(canvas) ~= "table" then return end
@@ -635,10 +483,11 @@ local function RefreshWorldMap(force)
     local width, height = canvas:GetWidth(), canvas:GetHeight()
     if not (IsNumber(width) and IsNumber(height) and width > 0 and height > 0) then
         HideMapPins(1)
+        mapShown = 0
         mapState.list = nil
         return
     end
-    local scale = MapScale(map, canvas)
+    local scale = MapScale(canvas)
     if mapState.list == list and mapState.mapID == mapID then
         RescaleMapPins(canvas, scale, width, height)
         return
@@ -646,24 +495,26 @@ local function RefreshWorldMap(force)
     mapState.list, mapState.mapID = list, mapID
     mapState.scale, mapState.width, mapState.height = scale, width, height
 
-    local n = BuildDrawList(list, MAP_MAX)
-    if n > 0 then
-        local size = IconSize("map")
-        local big = size * TRACKED_SCALE
-        local hit = max(big, Px(MAP_HIT_PX))
-        local level = MapLevel(map, canvas)
-        for i = 1, n do
-            local d = drawList[i]
-            local p = mapPins[i]
+    local size = IconSize("map")
+    local big = size * TRACKED_SCALE
+    local level = MapLevel(map)
+    local n = 0
+    for i = 1, #list do
+        local d = list[i]
+        if ValidPin(d) then
+            n = n + 1
+            local p = mapPins[n]
             if not p then
                 p = CreatePin(canvas, "map")
-                mapPins[i] = p
+                mapPins[n] = p
             end
             local isTracked = trackedID ~= nil and d.questID == trackedID
-            StylePin(p, d, isTracked and big or size, hit)
-            p:SetFrameLevel((isTracked or d.kind == "turnin") and level + 1 or level)
+            local drawn = isTracked and big or size
+            StylePin(p, d, drawn, drawn) -- tap area = the icon itself
+            if level then p:SetFrameLevel((isTracked or d.kind == "turnin") and level + 1 or level) end
             PlaceMapPin(p, d, canvas, scale, width, height)
             ShowPin(p)
+            if n >= MAP_MAX then break end
         end
     end
     HideMapPins(n + 1)
@@ -671,10 +522,6 @@ local function RefreshWorldMap(force)
 end
 
 local function OnMapChanged()
-    if active then RefreshWorldMap(false) end
-end
-
-local function OnMapShow()
     if active then RefreshWorldMap(false) end
 end
 
@@ -687,13 +534,11 @@ local function OnMapScale()
     if type(canvas) ~= "table" then return end
     local width, height = canvas:GetWidth(), canvas:GetHeight()
     if not (IsNumber(width) and IsNumber(height) and width > 0 and height > 0) then return end
-    RescaleMapPins(canvas, MapScale(map, canvas), width, height)
+    RescaleMapPins(canvas, MapScale(canvas), width, height)
 end
 
-local function OnProviderRefresh()
-    if not active or not Opt("hideBlizzPins") then return end
-    local map = WorldMapFrame
-    if type(map) == "table" then ForPins(map, QUEST_PIN_TEMPLATE, HideQuestPin) end
+local function OnMapHide()
+    if label and label.view == "map" then HideLabel() end
 end
 
 -- Hooks cannot be removed again, so they are installed once and do nothing while the feature is off.
@@ -712,6 +557,7 @@ local function HookWorldMap()
     end
     if type(map.HookScript) == "function" then
         pcall(map.HookScript, map, "OnShow", mapShowHook)
+        pcall(map.HookScript, map, "OnHide", mapHideHook)
     end
     return true
 end
@@ -758,15 +604,10 @@ local function ClearMinimap()
     last.x = nil
 end
 
-local RefreshMinimapData
-
-local function RetryMinimap()
-    if active and miniMapID == nil then RefreshMinimapData() end
-end
-
 -- Chooses the pin list for the map the player is on and starts or stops the
--- update. The update only runs while there is something to draw.
-RefreshMinimapData = function()
+-- update. The update only runs while there is something to draw; the next
+-- zone or quest change looks again.
+local function RefreshMinimapData()
     if not active or not QD then return end
     last.x = nil -- forces the next update to redraw
     local mm = Minimap
@@ -776,16 +617,9 @@ RefreshMinimapData = function()
     end
     local mapID = QD:GetPlayerPosition()
     if not mapID then
-        -- Not readable right now (loading screen, inside a dungeon). Look
-        -- again a few times, then wait for the next zone or quest change.
-        ClearMinimap()
-        if miniRetries < 5 then
-            miniRetries = miniRetries + 1
-            mod:After(2, RetryMinimap)
-        end
+        ClearMinimap() -- not readable (loading screen, inside a dungeon)
         return
     end
-    miniRetries = 0
     local list = QD:GetPins(mapID)
     local width, height = QD:GetMapWorldSize(mapID)
     if type(list) ~= "table" or #list == 0 or not (IsNumber(width) and IsNumber(height)) then
@@ -875,8 +709,7 @@ local function UpdateMinimap()
                     p.alpha = alpha
                     p:SetAlpha(alpha)
                 end
-                p:ClearAllPoints()
-                p:SetPoint("CENTER", mm, "CENTER", dx, dy)
+                p:SetPoint("CENTER", mm, "CENTER", dx, dy) -- replaces the one point it has
                 ShowPin(p)
                 if n >= MINI_MAX then break end
             end
@@ -918,7 +751,6 @@ local function OnDataChanged(reason)
         acc = MINI_INTERVAL
         RefreshWorldMap(true)
     else
-        miniRetries = 0
         RefreshMinimapData()
         RefreshWorldMap(false)
     end
@@ -926,39 +758,26 @@ end
 
 local function RefreshAll()
     if not active then return end
-    miniRetries = 0
     RefreshMinimapData()
     RefreshWorldMap(true)
-end
-
-local function ApplyHaze()
-    if not active then return end
-    if Opt("hideHaze") then
-        ZeroMinimapBlobs()
-    elseif blobsZeroed then
-        mod:RequestReload(RELOAD_REASON)
-    end
-    RefreshWorldMap(true) -- hides or restores the haze on the world map
-end
-
-local function ApplyCluster()
-    if not active or not QD then return end
-    QD.cluster = ClusterValue()
-    clusterSet = true
-    QD:RequestRebuild()
 end
 
 -- Called after a setting changed, from the panel or from /qd.
 local function ApplyOption(key)
     if not active then return end
     if key == "hideHaze" then
-        ApplyHaze()
+        if Opt("hideHaze") then ZeroMinimapBlobs() end
+        UpdateReloadPrompt()
+        RefreshWorldMap(true) -- hides or restores the haze on the world map
     elseif key == "cluster" then
-        ApplyCluster()
+        if QD then
+            QD.cluster = ClusterValue()
+            clusterSet = true
+            QD:RequestRebuild()
+        end
     elseif key == "mini" then
-        miniRetries = 0
         RefreshMinimapData()
-    elseif key == "map" or key == "hideBlizzPins" then
+    elseif key == "map" then
         RefreshWorldMap(true)
     else
         RefreshAll()
@@ -977,8 +796,7 @@ local function OnAddonLoaded(_, _, name)
 end
 
 local function OnEnable()
-    active, blocked = false, nil
-    miniRetries, tickBusy = 0, false
+    active, blocked, tickBusy = false, nil, false
     mapState.list, mapState.mapID = nil, nil
     if PE.oldQuestDotsLoaded then
         blocked = OLD_ADDON_MESSAGE -- two copies would draw every icon twice
@@ -1002,11 +820,11 @@ local function OnEnable()
     active = true
     QD:OnChanged(KEY, dataChanged)
     trackedID = QD:GetTrackedQuest()
-    FindTurninAtlas()
     if not HookWorldMap() then
         mod:RegisterEvent("ADDON_LOADED", OnAddonLoaded)
     end
     if Opt("hideHaze") then ZeroMinimapBlobs() end
+    UpdateReloadPrompt()
     RefreshMinimapData()
     RefreshWorldMap(true)
 end
@@ -1023,7 +841,6 @@ local function HideEverything()
         miniPins[i].data = nil
     end
     miniShown = 0
-    for i = #drawList, 1, -1 do drawList[i] = nil end
     miniList, miniMapID, miniW, miniH = EMPTY, nil, nil, nil
     last.x = nil
     mapState.list, mapState.mapID = nil, nil
@@ -1048,9 +865,9 @@ local function OnDisable()
     active, blocked, trackedID = false, nil, nil
     mod:Safe(StopTicker)
     mod:Safe(HideEverything)
-    mod:Safe(RestoreBlizzard)
+    mod:Safe(RestoreWorldMapHaze)
     mod:Safe(ReleaseData)
-    if blobsZeroed then mod:RequestReload(RELOAD_REASON) end
+    mod:Safe(UpdateReloadPrompt)
 end
 
 local function Status()
@@ -1079,7 +896,6 @@ mod = PE:RegisterModule({
         { key = "map", label = "Map icons", choices = ON_OFF, OnChange = OptionChanged("map") },
         { key = "mini", label = "Minimap icons", choices = ON_OFF, OnChange = OptionChanged("mini") },
         { key = "hideHaze", label = "Hide blue haze", choices = ON_OFF, OnChange = OptionChanged("hideHaze") },
-        { key = "hideBlizzPins", label = "Hide Blizzard's quest pins", choices = ON_OFF, OnChange = OptionChanged("hideBlizzPins") },
         { key = "size", label = "Icon size",
           choices = { { value = "small", label = "Small" }, { value = "medium", label = "Medium" }, { value = "large", label = "Large" } },
           OnChange = OptionChanged("size") },
@@ -1095,12 +911,11 @@ mod = PE:RegisterModule({
 if type(mod) ~= "table" or type(mod.Wrap) ~= "function" then return end
 
 pinClick = mod:Wrap(OnPinClick)
-pinHide = mod:Wrap(OnPinHide)
 tickHandler = mod:Wrap(OnTick)
 mapChangedHook = mod:Wrap(OnMapChanged)
 mapScaleHook = mod:Wrap(OnMapScale)
-mapShowHook = mod:Wrap(OnMapShow)
-providerHook = mod:Wrap(OnProviderRefresh)
+mapShowHook = mod:Wrap(OnMapChanged)
+mapHideHook = mod:Wrap(OnMapHide)
 dataChanged = mod:Wrap(OnDataChanged)
 
 -- The icon sizes are fixed screen sizes: redraw when the game's UI scale changes.
@@ -1116,10 +931,9 @@ local TOGGLES = {
     map = { key = "map", name = "Map icons" },
     mini = { key = "mini", name = "Minimap icons" },
     haze = { key = "hideHaze", name = "Hide blue haze" },
-    blizz = { key = "hideBlizzPins", name = "Hide Blizzard's quest pins" },
 }
 local CLUSTER_WORDS = { off = 0, normal = 2, more = 5 }
-local USAGE = "/qd map, /qd mini, /qd haze, /qd blizz, /qd size small (or medium, large, or a number), /qd cluster 2 (0 is off)"
+local USAGE = "/qd map, /qd mini, /qd haze, /qd size small (or medium, large), /qd cluster 2 (0 is off)"
 
 local function SlashCommand(msg)
     local opts = mod.opts
@@ -1139,24 +953,16 @@ local function SlashCommand(msg)
         opts[toggle.key] = not Opt(toggle.key)
         changed = toggle.key
         PE:Print(toggle.name .. ": " .. (opts[toggle.key] and "on" or "off") .. ".")
-    elseif cmd == "size" and value ~= "" then
-        local number = tonumber(value)
-        if MAP_PX[value] then
-            opts.size = value
-        elseif number and number == number then
-            opts.size = max(12, min(64, number))
-        else
-            PE:Print(USAGE)
-            return
-        end
+    elseif cmd == "blizz" then
+        PE:Print("Hiding Blizzard's quest pins was removed.")
+        return
+    elseif cmd == "size" and MAP_PX[value] then
+        opts.size = value
         changed = "size"
-        PE:Print("Icon size: " .. tostring(opts.size) .. ".")
-    elseif cmd == "cluster" and value ~= "" then
+        PE:Print("Icon size: " .. value .. ".")
+    elseif cmd == "cluster" and (CLUSTER_WORDS[value] or tonumber(value)) then
         local number = CLUSTER_WORDS[value] or tonumber(value)
-        if not number or number ~= number then
-            PE:Print(USAGE)
-            return
-        end
+        if number ~= number then number = DEFAULT_CLUSTER end
         opts.cluster = max(0, min(20, number))
         changed = "cluster"
         PE:Print("Merge nearby icons: " .. (opts.cluster == 0 and "off" or tostring(opts.cluster)) .. ".")

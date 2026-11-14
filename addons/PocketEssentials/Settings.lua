@@ -574,6 +574,14 @@ function PE:OpenSettings(which)
         page = newPage
         area.offset = 0
     end
+    -- Never stack on another Pocket Essentials window: every panel made by
+    -- PE.UI:CreatePanel with a name is listed in UISpecialFrames.
+    if type(UISpecialFrames) == "table" then
+        for _, name in ipairs(UISpecialFrames) do
+            local other = type(name) == "string" and name:find("^PocketEssentials") and _G[name]
+            if other and other ~= panel and other.IsShown and other:IsShown() then pcall(other.Hide, other) end
+        end
+    end
     if not panel:IsShown() then panel:Show() end
     panel:Raise()
     Draw() -- opening and changing page draw at once; everything else waits a frame

@@ -25,9 +25,6 @@ local CVAR = "combinedBags"
 local SORT_KEY = "PADLSTICK" -- left stick click (Blizzard_SharedXML/Shared/GamepadConstants.lua)
 local KEY_BUTTON_NAME = "PocketEssentialsBagSortKey"
 local SIZE_FACTOR = { normal = 1, large = 1.25, xlarge = 1.5 }
-local MIN_SCALE = 0.6
--- Windows Blizzard opens on the left; the bag is not grown over them.
-local LEFT_WINDOWS = { "CharacterFrame", "MerchantFrame", "BankFrame", "MailFrame" }
 local RELOAD_REASON = "Reload to finish changing the bags."
 
 local mod            -- set by RegisterModule below
@@ -43,6 +40,7 @@ local logoutWatching = false
 local lastSort = 0
 local base           -- { scale, x, y }: what Blizzard's layout pass last set
 local applied        -- { scale, x, y }: what we set on top of it, or nil
+local baseStale = false -- Blizzard's layout pass ran since we last read its values
 local clamped = false
 
 ---------------------------------------------------------------------------
@@ -85,7 +83,8 @@ local function FindFrame()
 end
 
 local function BagShown()
-    return bagFrame ~= nil and bagFrame:IsShown() and true or false
+    -- IsVisible: with the whole UI hidden (a cinematic) the bag does not count as open.
+    return bagFrame ~= nil and bagFrame:IsVisible() and true or false
 end
 
 -- Blizzard always uses the combined bag in its gamepad style, whatever the
@@ -149,8 +148,14 @@ local function UpdateLogoutWatch()
     end
 end
 
+-- Withdraws our "Reload now" request once nothing is waiting for a reload.
+local function CancelReload()
+    if mod and mod.CancelReload then mod:CancelReload() end
+end
+
 local function ForgetCVar(opts)
     opts.cvarPrev, opts.cvarWant, opts.cvarTried = nil, nil, nil
+    CancelReload()
 end
 
 -- At login: did the change we left for the last logout take?
@@ -185,16 +190,28 @@ local function WantCombined()
             opts.cvarWant, opts.cvarTried = nil, nil
         end
         UpdateLogoutWatch()
+        CancelReload() -- nothing visible waits for a reload in this style
         return
     end
     local current = ReadCVar()
     if current == nil then return end
     if current == "1" then
-        opts.cvarWant, opts.cvarTried, opts.cvarFailed = nil, nil, nil
+        opts.cvarWant, opts.cvarTried, opts.cvarFailed, opts.userSeparate = nil, nil, nil, nil
+        opts.sawCombined = true
         UpdateLogoutWatch()
+        CancelReload()
         return
     end
     if opts.cvarFailed then return end
+    if opts.cvarWant ~= "1" and (opts.sawCombined or opts.userSeparate) then
+        -- It was one big bag while this feature was on and now it is not, and
+        -- not by our doing: the owner changed it in Blizzard's bag menu.
+        -- Respect that; do not queue the setting again.
+        opts.sawCombined, opts.userSeparate = nil, true
+        ForgetCVar(opts)
+        UpdateLogoutWatch()
+        return
+    end
     if opts.cvarPrev == nil then opts.cvarPrev = current end
     opts.cvarWant, opts.cvarTried = "1", nil
     UpdateLogoutWatch()
@@ -205,6 +222,7 @@ end
 local function RestoreCVar()
     local opts = Opts()
     if not opts then return end
+    opts.sawCombined, opts.userSeparate = nil, nil
     local prev = opts.cvarPrev
     local current = ReadCVar()
     if prev == nil or current == nil or current == prev or current ~= "1" then
@@ -215,7 +233,7 @@ local function RestoreCVar()
     end
     opts.cvarWant, opts.cvarTried = prev, nil
     UpdateLogoutWatch()
-    if not IsGamepadStyle() then mod:RequestReload(RELOAD_REASON) end
+    if IsGamepadStyle() then CancelReload() else mod:RequestReload(RELOAD_REASON) end
 end
 
 ---------------------------------------------------------------------------
@@ -257,10 +275,12 @@ local function LayoutButton()
     local m = PE.UI:Metrics()
     sortButton:SetSize(max(m.button * 2.4, PE.UI:Px(110)), m.button)
     sortButton:ClearAllPoints()
-    -- Hangs above the top right corner, outside the window: clear of the item
-    -- slots, money, search box and close button, and of the controller hints
-    -- Blizzard hangs below the window.
-    sortButton:SetPoint("BOTTOMRIGHT", bagFrame, "TOPRIGHT", 0, m.gap * 0.6)
+    -- Sits to the left of the top left corner, outside the window: clear of the
+    -- item slots, money, search box and close button, of the controller hints
+    -- Blizzard hangs below the window and of the extra bags it stacks from the
+    -- bottom left. The gap keeps it off the round picture, which sticks out a
+    -- little. Being beside the window, it costs the bag no height.
+    sortButton:SetPoint("TOPRIGHT", bagFrame, "TOPLEFT", -m.gap * 1.5, 0)
 end
 
 local function SyncButton()
@@ -274,6 +294,7 @@ local function SyncButton()
 end
 
 -- Only ever run through PE:RunOutOfCombat (bindings cannot change in combat).
+-- The key is never held during a fight: OnCombatStart gives it back.
 local function ApplyBinding()
     if not keyButton then return end
     if not (SetOverrideBindingClick and ClearOverrideBindings) then return end
@@ -288,6 +309,18 @@ local function SyncBinding()
     PE:RunOutOfCombat("bags:bind", ApplyBinding)
 end
 
+-- PLAYER_REGEN_DISABLED: lockdown starts only after this event's handlers, so
+-- the left stick click can still be handed back to the game (auto-run) here.
+local function OnCombatStart()
+    if not keyButton or not ClearOverrideBindings then return end
+    if InCombatLockdown and InCombatLockdown() then return end
+    pcall(ClearOverrideBindings, keyButton)
+end
+
+local function OnCombatEnd()
+    SyncBinding()
+end
+
 local function CreateButtons()
     if not keyButton then
         keyButton = CreateFrame("Button", KEY_BUTTON_NAME, UIParent)
@@ -298,7 +331,8 @@ local function CreateButtons()
     if not sortButton and PE.UI and PE.UI.CreateButton then
         local btn = PE.UI:CreateButton(UIParent, "Sort")
         btn:Hide()
-        btn:SetFrameStrata("HIGH")
+        btn:SetFrameStrata("MEDIUM")
+        btn:SetFrameLevel(50)
         btn:SetScript("OnClick", mod:Wrap(OnSortTapped))
         sortButton = btn
     end
@@ -315,31 +349,9 @@ local function SetAnchor(frame, rel, scale, x, y)
     frame:SetPoint("BOTTOMRIGHT", rel, "BOTTOMRIGHT", x, y)
 end
 
--- Right edge (in the bag parent's units) of the windows open on the left.
-local function LeftLimit(parentScale)
-    local limit = 0
-    for i = 1, #LEFT_WINDOWS do
-        local f = _G[LEFT_WINDOWS[i]]
-        if type(f) == "table" and type(f.IsShown) == "function" and type(f.GetRight) == "function"
-            and type(f.GetEffectiveScale) == "function" then
-            local ok, shown = pcall(f.IsShown, f)
-            if ok and shown == true then
-                local ok2, right = pcall(f.GetRight, f)
-                local ok3, scale = pcall(f.GetEffectiveScale, f)
-                right, scale = ok2 and Plain(right) or nil, ok3 and Plain(scale) or nil
-                if right and scale then
-                    local edge = right * scale / parentScale
-                    if edge > limit then limit = edge end
-                end
-            end
-        end
-    end
-    return limit
-end
-
 local function ApplyScaleNow(frame)
-    clamped = false
     if not frame:IsShown() then return end -- Blizzard lays it out again when it opens
+    clamped = false
 
     local current = Plain(frame:GetScale())
     local parent = frame:GetParent()
@@ -350,8 +362,12 @@ local function ApplyScaleNow(frame)
     local known = frame:GetNumPoints() == 1 and point == "BOTTOMRIGHT" and relPoint == "BOTTOMRIGHT"
         and type(rel) == "table" and x ~= nil and y ~= nil
 
-    local ours = known and applied ~= nil and base ~= nil
+    -- After Blizzard's layout pass its values are always read afresh. Only for
+    -- our own calls (size option, button size) do we check whether what is on
+    -- the frame is still what we put there.
+    local ours = not baseStale and known and applied ~= nil and base ~= nil
         and Near(current, applied.scale) and Near(x, applied.x) and Near(y, applied.y)
+    baseStale = false
     if not ours then
         applied = nil
         if not known then
@@ -372,20 +388,24 @@ local function ApplyScaleNow(frame)
     if not (pw and ph and fw and fh and parentScale and uiScale) then return end
     if fw < 1 or fh < 1 or pw < 100 or ph < 100 or parentScale <= 0 or uiScale <= 0 then return end
 
-    local m = PE.UI:Metrics()
-    local toParent = uiScale / parentScale -- our sizes are in UIParent units
-    local reserve = (m.button + m.gap * 0.6 + PE.UI:Px(4)) * toParent -- room for the Sort button
-    local offX = -base.x * base.scale -- Blizzard's gap to the right edge, in parent units
-    local offY = base.y * base.scale  -- and to the bottom edge
-
+    -- Never smaller than Blizzard's own size; at Normal its layout is left alone.
     local want = base.scale * factor
     local target = want
-    local fitW = (pw - offX - LeftLimit(parentScale) - m.gap * toParent) / fw
-    if fitW < target then target = max(fitW, base.scale) end
-    local fitH = (ph - offY - reserve) / fh
-    if fitH < target then target = fitH end
-    if target < MIN_SCALE then target = MIN_SCALE end
-    clamped = factor > 1 and target < want - 0.005
+    if factor > 1 then
+        local m = PE.UI:Metrics()
+        local toParent = uiScale / parentScale -- our sizes are in UIParent units
+        local offX = -base.x * base.scale -- Blizzard's gap to the right edge, in parent units
+        local offY = base.y * base.scale  -- and to the bottom edge
+        local buttonRoom = (max(m.button * 2.4, PE.UI:Px(110)) + m.gap * 2.5) * toParent
+        local fitW = (pw - offX - buttonRoom) / fw
+        local fitH = (ph - offY - PE.UI:Px(4) * toParent) / fh
+        if fitW < target then target = fitW end
+        if fitH < target then target = fitH end
+        if target < base.scale then target = base.scale end
+        clamped = target < want - 0.005
+    else
+        target = base.scale
+    end
 
     if Near(target, base.scale) then
         if ours then SetAnchor(frame, rel, base.scale, base.x, base.y) end
@@ -430,6 +450,7 @@ end
 
 local function OnLayoutPass()
     if not active then return end
+    baseStale = true
     SyncScale()
 end
 
@@ -493,6 +514,7 @@ local function OnStyleChanged(self)
         if not active or not bagFrame then return end
         WantCombined()
         SyncButton()
+        SyncBinding()
         SyncScale()
         self:RefreshPanel()
     end)
@@ -517,6 +539,9 @@ local function Status(self)
         if current == nil then return "This client has no combined bag." end
         if current ~= "1" then
             if opts and opts.cvarWant == "1" then return "Reload to switch to one big bag." end
+            if not (opts and opts.cvarFailed) then
+                return "You switched back to separate bags in the game's bag menu."
+            end
             local item = type(BAG_COMMAND_CONVERT_TO_COMBINED) == "string" and BAG_COMMAND_CONVERT_TO_COMBINED
                 or "Convert to Combined Bag"
             return "Could not switch the bags for you. Open a bag, tap its picture and choose \"" .. item .. "\"."
@@ -564,6 +589,8 @@ mod = PE:RegisterModule({
             self:RegisterEvent("ADDON_LOADED", OnAddonLoaded)
         end
         self:RegisterEvent("INPUT_DEVICE_INTERFACE_TRANSITION", OnStyleChanged)
+        self:RegisterEvent("PLAYER_REGEN_DISABLED", OnCombatStart)
+        self:RegisterEvent("PLAYER_REGEN_ENABLED", OnCombatEnd)
     end,
 
     -- Also runs as the rollback of a half-finished OnEnable.
