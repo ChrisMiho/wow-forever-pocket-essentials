@@ -29,7 +29,8 @@ local navList = {} -- tappable buttons in reading order, rebuilt on every redraw
 local page = "main"
 local drawnPage = "main"
 local built, buildFailed = false, false
-local refreshing, refreshAgain = false, false
+local drawing, drawQueued = false, false
+local lowest = 0   -- how far down the list the current redraw has placed things
 
 ---------------------------------------------------------------------------
 -- Pools: widgets are reused on every redraw, never thrown away
@@ -96,7 +97,9 @@ local function PlaceText(kind, text, x, y, width, color)
     local fontString = Acquire(pools[kind])
     fontString:ClearAllPoints()
     fontString:SetPoint("TOPLEFT", area.child, "TOPLEFT", x, -y)
-    return SetText(fontString, kind, text, width, color)
+    local height = SetText(fontString, kind, text, width, color)
+    if y + height > lowest then lowest = y + height end
+    return height
 end
 
 local function PlaceLine(y, width)
@@ -125,6 +128,7 @@ local function PlaceButton(text, x, y, width, height, style, onClick)
     btn:SetScript("OnClick", onClick)
     btn.peScrollTop, btn.peScrollBottom = y, y + height
     navList[#navList + 1] = btn
+    if y + height > lowest then lowest = y + height end
     return btn
 end
 
@@ -149,6 +153,7 @@ local function FlowButtons(items, x0, y, maxWidth, minWidth)
         btn:SetScript("OnClick", item.onClick)
         btn.peScrollTop, btn.peScrollBottom = y, y + height
         navList[#navList + 1] = btn
+        if y + height > lowest then lowest = y + height end
         x = x + width + M.gap
     end
     return y + height
@@ -248,7 +253,7 @@ local function BuildModuleRow(mod, y, width, separator)
     elseif state == "on" then
         label, style = "ON", "on"
     elseif state == "failed" then
-        label, style = "ON, problem", "warn"
+        label, style = "PROBLEM", "warn"
     else
         label, style = "OFF", "off"
     end
@@ -323,7 +328,14 @@ local function BuildMain(width)
     local y = 0
     local mods = PE.moduleList
     for i = 1, #mods do
-        y = BuildModuleRow(mods[i], y, width, i > 1)
+        -- Each row on its own: a row that fails is logged against its
+        -- feature and the rest of the page is still drawn below it.
+        local ok, nextY = PE:Safe(mods[i].key, BuildModuleRow, mods[i], y, width, i > 1)
+        if ok and type(nextY) == "number" then
+            y = nextY
+        else
+            y = max(y, lowest) + M.gap
+        end
     end
     if #mods == 0 then
         y = y + M.gap
@@ -442,12 +454,9 @@ local function DoRefresh()
     area:Layout(contentWidth, max(contentHeight - headerHeight, M.button * 2 + M.gap))
 
     local width = area.viewWidth
-    local total
-    if page == "errors" then
-        total = BuildErrors(width)
-    else
-        total = BuildMain(width)
-    end
+    lowest = 0
+    local ok, total = PE:Safe("core", page == "errors" and BuildErrors or BuildMain, width)
+    if not ok or type(total) ~= "number" then total = lowest + M.pad end
     EndPools()
     area:SetContentHeight(total)
 
@@ -466,20 +475,28 @@ local function DoRefresh()
     panel:NavRefresh()
 end
 
-local function Refresh()
-    if not built or not panel:IsShown() then return end
-    if refreshing then
-        refreshAgain = true
-        return
+-- Redraw now.
+local function Draw()
+    if drawing or not built or not panel:IsShown() then return end
+    drawing = true
+    PE:Safe("core", DoRefresh)
+    drawing = false
+end
+
+local function QueuedDraw()
+    drawQueued = false
+    Draw()
+end
+
+-- Redraw once on the next frame, however many times this is asked for.
+local function QueueDraw()
+    if drawQueued or not built or not panel:IsShown() then return end
+    if C_Timer and C_Timer.After then
+        drawQueued = true
+        C_Timer.After(0, QueuedDraw)
+    else
+        Draw()
     end
-    refreshing = true
-    local passes = 0
-    repeat
-        refreshAgain = false
-        PE:Safe("core", DoRefresh)
-        passes = passes + 1
-    until not refreshAgain or passes >= 3
-    refreshing = false
 end
 
 ---------------------------------------------------------------------------
@@ -530,7 +547,7 @@ local function Build()
         if not built then return end
         local newWidth, newHeight = PanelSize()
         panel:SetPanelSize(newWidth, newHeight)
-        Refresh()
+        QueueDraw()
     end)
 end
 
@@ -559,7 +576,7 @@ function PE:OpenSettings(which)
     end
     if not panel:IsShown() then panel:Show() end
     panel:Raise()
-    Refresh()
+    Draw() -- opening and changing page draw at once; everything else waits a frame
 end
 
 function PE:CloseSettings()
@@ -574,7 +591,7 @@ function PE:ToggleSettings()
     end
 end
 
--- Does nothing unless the window is open.
+-- Does nothing unless the window is open. Several calls in one frame cost one redraw.
 function PE:RefreshSettings()
-    Refresh()
+    QueueDraw()
 end

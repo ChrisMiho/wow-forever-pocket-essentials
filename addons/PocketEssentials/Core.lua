@@ -42,7 +42,7 @@ end
 ---------------------------------------------------------------------------
 
 PE.errors = {}
-local announced = {} -- [module .. "\n" .. msg] = true, once per session
+local announced = {} -- [moduleKey] = true: one chat line per feature per session
 local inLogError = false
 
 local function ShortPath(text)
@@ -95,13 +95,13 @@ local function LogErrorBody(moduleKey, msg, stack)
         for i = #list, ERROR_CAP + 1, -1 do list[i] = nil end
     end
 
-    local id = moduleKey .. "\n" .. msg
-    if not announced[id] then
-        announced[id] = true
+    if not announced[moduleKey] then
+        announced[moduleKey] = true
         PE:Print(PE:ModuleLabel(moduleKey) .. " hit a problem. See Settings > Errors.")
     end
-    -- Only a new entry redraws the panel: a handler failing many times a
-    -- second must not make the panel rebuild itself that often.
+    -- Only a new entry asks for a redraw (a handler failing many times a
+    -- second must not), and RefreshSettings itself only marks the panel as
+    -- needing one redraw on the next frame.
     if isNew and PE.RefreshSettings then PE:RefreshSettings() end
 end
 
@@ -198,6 +198,7 @@ local function KeyOwner(key)
 end
 
 function PE:RunOutOfCombat(key, fn)
+    if fn == nil and type(key) == "function" then fn = key end -- PE:RunOutOfCombat(fn)
     if type(fn) ~= "function" then return end
     if key == nil then key = fn end
     if not self:InCombat() then
@@ -715,6 +716,9 @@ coreOwn.PLAYER_REGEN_ENABLED = true
 local function OnEvent(_, event, ...)
     if event == "ADDON_LOADED" then
         if (...) == ADDON_NAME then
+            -- If something needed settings before the saved ones were loaded,
+            -- PE.db is a stand-in: drop it and start from the real table.
+            if PE.db ~= _G.PocketEssentialsDB then PE.db = nil end
             xpcall(InitDB, coreHandler)
             coreOwn.ADDON_LOADED = nil
             FrameUnregisterIfUnused("ADDON_LOADED")

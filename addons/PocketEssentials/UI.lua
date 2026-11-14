@@ -467,8 +467,7 @@ function UI:CreatePanel(globalName, title, width, height)
     local m = self:Metrics()
     local panel = CreateFrame("Frame", globalName, UIParent)
     panel:Hide()
-    panel:SetFrameStrata("DIALOG")
-    panel:SetToplevel(true)
+    panel:SetFrameStrata("DIALOG") -- not toplevel: a tap on it must not bury a game popup
     panel:SetClampedToScreen(true)
     panel:EnableMouse(true) -- taps must not fall through to the game world
     panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
@@ -501,6 +500,10 @@ function UI:CreatePanel(globalName, title, width, height)
         self:SetSize(newWidth, newHeight)
         PanelLayout(self)
     end
+
+    -- Placeholders so these always exist; AttachNav replaces them.
+    function panel:NavRefresh() end
+    function panel:NavSetFocus() end
 
     panel.peLayout = PanelLayout
     panel:SetTitle(title)
@@ -632,11 +635,11 @@ end
 
 local NAV_NAME = "PocketEssentialsNavButton"
 local NAV_KEYS = { PADDUP = "UP", PADDDOWN = "DOWN", PADDLEFT = "LEFT", PADDRIGHT = "RIGHT", PAD1 = "A", PAD2 = "B" }
-local NAV_MAX_HEALS = 20
 
 local navShown = {}  -- nav panels that are shown, most recently shown last
 local navOwner       -- the panel whose bindings are armed (at most one)
-local navButton, navHealPending, navEventsReady
+local navDown = {}   -- [key] = true while we have seen that key go down
+local navButton, navEventsReady
 
 local function NavList(panel)
     local ok, list = xpcall(panel.peNavGet, Handler())
@@ -663,13 +666,13 @@ local function SameRow(a, b)
     return ya ~= nil and yb ~= nil and abs(ya - yb) < UI:Metrics().button * 0.4
 end
 
-local function NavFocus(panel, btn, index, quiet)
+local function NavFocus(panel, btn, index)
     local old = panel.peNavFocus
     if old and old ~= btn and old.SetNavFocus then old:SetNavFocus(false) end
     panel.peNavFocus, panel.peNavIndex = btn, index
     if btn then
         if btn.SetNavFocus then btn:SetNavFocus(true) end
-        if not quiet and type(panel.navOnFocus) == "function" then xpcall(panel.navOnFocus, Handler(), btn) end
+        if type(panel.navOnFocus) == "function" then xpcall(panel.navOnFocus, Handler(), btn) end
     end
 end
 
@@ -710,33 +713,41 @@ end
 local function NavPress(_, key, down)
     local panel = navOwner
     if not panel or not panel:IsShown() then return end
-    if key == "A" or key == "B" then
-        -- Act on release, so the game never receives half of a press.
-        if down ~= false then return end
-        if key == "A" then NavActivate(panel) else panel:Hide() end
-    elseif down ~= false then
+    if down ~= false then
+        navDown[key] = true
         if key == "UP" then NavMove(panel, -1, true)
         elseif key == "DOWN" then NavMove(panel, 1, true)
         elseif key == "LEFT" then NavMove(panel, -1, false)
         elseif key == "RIGHT" then NavMove(panel, 1, false)
         end
+        return
+    end
+    -- A and B act on release, and only if we also saw the press: a release
+    -- whose press went to the game (or to a Blizzard window) is not ours.
+    local sawPress = navDown[key]
+    navDown[key] = nil
+    if not sawPress then return end
+    if key == "A" then
+        NavActivate(panel)
+    elseif key == "B" then
+        panel:Hide()
     end
 end
 
-local NavBindingsChanged -- defined below
-
 -- Only call out of combat, or from PLAYER_REGEN_DISABLED (lockdown starts after it).
 local function NavDisarm(panel)
+    for key in pairs(navDown) do navDown[key] = nil end
     if panel.peNavArmed then
         if ClearOverrideBindings then pcall(ClearOverrideBindings, panel) end
         panel.peNavArmed = false
     end
-    if navOwner == panel then
-        navOwner = nil
-        PE:UnregisterCoreEvent("UPDATE_BINDINGS", "nav")
-    end
+    if navOwner == panel then navOwner = nil end
 end
 
+-- Sets the six keys once. If a Blizzard window takes them back afterwards
+-- (its own navigation binds the same keys, and the latest one wins), we leave
+-- it alone: touch keeps working and the keys are ours again the next time
+-- this panel is shown.
 local function NavArm(panel)
     if not (SetOverrideBindingClick and ClearOverrideBindings) then return false end
     if PE:InCombat() or not panel:IsShown() then return false end
@@ -749,40 +760,14 @@ local function NavArm(panel)
             xpcall(NavPress, Handler(), self, key, down)
         end)
     end
+    for key in pairs(navDown) do navDown[key] = nil end
     pcall(ClearOverrideBindings, panel)
     for key, name in pairs(NAV_KEYS) do
         pcall(SetOverrideBindingClick, panel, true, key, NAV_NAME, name)
     end
     panel.peNavArmed = true
     navOwner = panel
-    PE:RegisterCoreEvent("UPDATE_BINDINGS", "nav", NavBindingsChanged)
     return true
-end
-
--- Blizzard's gamepad UI sets its own priority override bindings (owned by
--- UIParent) as its windows come and go, and the most recent one wins. If one
--- of our keys stopped pointing at our button while our panel is still the
--- top one, set ours again (a limited number of times per showing).
-local function NavHeal()
-    navHealPending = false
-    local panel = navOwner
-    if not panel or not panel.peNavArmed or not panel:IsShown() or PE:InCombat() then return end
-    if not GetBindingAction then return end
-    for key in pairs(NAV_KEYS) do
-        local ok, action = pcall(GetBindingAction, key, true)
-        if ok and not (type(action) == "string" and action:find(NAV_NAME, 1, true)) then
-            panel.peNavHeals = (panel.peNavHeals or 0) + 1
-            if panel.peNavHeals <= NAV_MAX_HEALS then NavArm(panel) end
-            return
-        end
-    end
-end
-
-NavBindingsChanged = function()
-    if navHealPending or not navOwner then return end
-    if not (C_Timer and C_Timer.After) then return end
-    navHealPending = true
-    C_Timer.After(0, function() xpcall(NavHeal, Handler()) end)
 end
 
 local function NavRemoveShown(panel)
@@ -794,14 +779,13 @@ end
 local function NavOnShow(panel)
     NavRemoveShown(panel)
     navShown[#navShown + 1] = panel
-    panel.peNavHeals = 0
     NavList(panel) -- lets the caller build its list; nothing is highlighted until the d-pad is used
     NavArm(panel) -- does nothing in combat; touch still works
 end
 
 local function NavOnHide(panel)
     NavRemoveShown(panel)
-    NavFocus(panel, nil)
+    -- Release the keys first, whatever else goes wrong afterwards.
     if panel.peNavArmed then
         if PE:InCombat() then
             -- Cannot happen normally (combat start already cleared them).
@@ -812,6 +796,7 @@ local function NavOnHide(panel)
             NavDisarm(panel)
         end
     end
+    pcall(NavFocus, panel, nil)
     local top = navShown[#navShown]
     if top and not navOwner then NavArm(top) end
 end
@@ -821,7 +806,7 @@ local function NavCombatEvent(event)
         local panel = navOwner
         if panel then
             NavDisarm(panel)
-            NavFocus(panel, nil)
+            pcall(NavFocus, panel, nil) -- no highlight while the controller cannot drive it
         end
     else -- PLAYER_REGEN_ENABLED
         local top = navShown[#navShown]
@@ -841,7 +826,6 @@ function UI:AttachNav(panel, getButtons)
             local index = min(self.peNavIndex or 1, #list)
             NavFocus(self, list[index], index)
         end
-        if self:IsShown() and not self.peNavArmed and navShown[#navShown] == self then NavArm(self) end
     end
 
     -- Move the highlight to one of the buttons getButtons() returns (nil clears it).
