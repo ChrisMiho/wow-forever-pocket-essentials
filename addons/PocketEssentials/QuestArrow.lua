@@ -4,11 +4,12 @@ local ADDON_NAME, PE = ...
 -- nearest objective of the quest you picked, with the distance and the quest
 -- name under it.
 --
--- Which objective:
---   1. the nearest reachable pin of the tracked quest (QuestData:GetTrackedQuest),
---   2. otherwise the nearest reachable pin of any quest in the log.
---   "Reachable" = on the map you are on, or on another map of the same
---   continent whose position the game can convert (see "Other maps" below).
+-- Which objective (only pins on the map you are on are ever pointed at):
+--   * A quest was picked (QuestData:GetTrackedQuest) and has known places:
+--     its nearest pin on this map; if it has none on this map the arrow is
+--     hidden and the text reads "Not in this zone" over the quest's name.
+--   * No quest picked, or the picked one has no known place anywhere:
+--     the nearest pin of any quest on this map.
 --
 -- Which way (the part most likely to be wrong, so it is spelled out):
 --   * Map fractions: x grows to the EAST, y grows to the SOUTH.
@@ -29,19 +30,20 @@ local ADDON_NAME, PE = ...
 -- points are computed here, so there is no art file that could be missing and
 -- no texture rotation direction to get wrong.
 --
--- Cost: one OnUpdate on a private driver frame, 15 times a second while an
--- arrow is showing and once a second while there is nothing to show. The
--- driver is stopped completely inside instances and while the feature is off.
+-- Cost: one OnUpdate on a private driver frame, 10 times a second while an
+-- arrow is showing and once a second while your position cannot be read. The
+-- driver is stopped completely inside instances, while there is nothing to
+-- point at (QuestData's callbacks start it again) and while the feature is off.
 
 local type, pairs, pcall = type, pairs, pcall
-local floor, sqrt, sin, cos, abs, max, huge = math.floor, math.sqrt, math.sin, math.cos, math.abs, math.max, math.huge
+local floor, sqrt, sin, cos, max, huge = math.floor, math.sqrt, math.sin, math.cos, math.max, math.huge
 local atan2 = math.atan2
 local strbyte, strsub = string.byte, string.sub
 
 local KEY = "questArrow"
 
-local ACTIVE_INTERVAL = 1 / 15      -- seconds between updates while the arrow is showing
-local IDLE_INTERVAL = 1             -- ... while there is nothing to show
+local ACTIVE_INTERVAL = 1 / 10      -- seconds between updates while the arrow is showing
+local IDLE_INTERVAL = 1             -- ... while the position cannot be read
 local SELECT_INTERVAL = 1           -- the nearest objective is re-chosen at most this often
 local HERE_ENTER, HERE_LEAVE = 10, 14   -- yards: "Here" switches on below the first, off above the second
 local MIN_AIM_YARDS = 3             -- closer than this the direction is noise; the arrow keeps its last angle
@@ -86,6 +88,7 @@ local S = {
     acquired = false,
     running = false,                    -- the driver's OnUpdate is live
     shown = false,                      -- the arrow block is on screen
+    boxShown = true,                    -- the arrow itself (not just the text) is visible
     acc = 0, interval = ACTIVE_INTERVAL,
     sinceSelect = 0, selectDue = true,
     failures = 0,
@@ -93,9 +96,6 @@ local S = {
 }
 local lines = {}
 local gx1, gy1, gx2, gy2 = {}, {}, {}, {}   -- line end points before turning, in UI units
-local transforms = {}                       -- [uiMapID] = false | { inst=, u0=, ku=, v0=, kv= }
-local cornerVec, middleVec                  -- constant arguments for C_Map.GetWorldPosFromMapPos
-local bestPin, bestD2, bestVX, bestVY       -- scratch for the nearest-pin search
 
 local function IsSecret(v)
     if type(issecretvalue) ~= "function" then return false end
@@ -112,131 +112,28 @@ local function Opt(key)
 end
 
 ---------------------------------------------------------------------------
--- Other maps
----------------------------------------------------------------------------
--- C_Map.GetWorldPosFromMapPos(uiMapID, mapPos) -> continentID, worldPos turns a
--- map fraction into continent ("world") yards. Two samples per map, (0,0) and
--- (0.5,0.5), give that map's straight-line conversion; it is worked out once
--- per map and kept. With the conversion for the player's map and for a pin's
--- map, the pin gets coordinates on the PLAYER's map (they may lie outside
--- 0..1), and from there the maths is the same as for a pin on this map. That
--- way no assumption about the sign of the world axes is needed.
---
--- Which world component runs north-south is checked rather than assumed: the
--- north-south span must match the map's height and the east-west span its
--- width (C_Map.GetMapWorldSize; maps are 3:2 so the two cannot be confused).
--- The expected layout is worldPos.x = north-south, worldPos.y = east-west.
--- A map that fits neither way is left out.
-
-local function ReadXY(pos)
-    if IsSecret(pos) or type(pos) ~= "table" then return nil end
-    local x, y
-    if type(pos.GetXY) == "function" then
-        x, y = pos:GetXY()
-    else
-        x, y = pos.x, pos.y
-    end
-    if IsSecret(x) or IsSecret(y) or type(x) ~= "number" or type(y) ~= "number" then return nil end
-    return x, y
-end
-
-local function Near(a, b)
-    return abs(a - b) <= 0.05 * b
-end
-
-local function BuildTransform(mapID)
-    local Map = C_Map
-    if not (Map and Map.GetWorldPosFromMapPos) then return false end
-    if not cornerVec then
-        if type(CreateVector2D) == "function" then
-            cornerVec, middleVec = CreateVector2D(0, 0), CreateVector2D(0.5, 0.5)
-        else
-            cornerVec, middleVec = { x = 0, y = 0 }, { x = 0.5, y = 0.5 }
-        end
-    end
-    local instA, posA = Map.GetWorldPosFromMapPos(mapID, cornerVec)
-    local instB, posB = Map.GetWorldPosFromMapPos(mapID, middleVec)
-    if IsSecret(instA) or IsSecret(instB) or type(instA) ~= "number" or instA ~= instB then return false end
-    local uA, vA = ReadXY(posA)
-    local uB, vB = ReadXY(posB)
-    if not uA or not uB then return false end
-    -- u: the component that changes with map y (north-south); v: with map x.
-    local ku, kv = (uB - uA) * 2, (vB - vA) * 2
-    local width, height = QD:GetMapWorldSize(mapID)
-    if width then
-        if Near(abs(ku), height) and Near(abs(kv), width) then
-            -- as expected
-        elseif Near(abs(ku), width) and Near(abs(kv), height) then
-            uA, vA, ku, kv = vA, uA, kv, ku     -- the two components are the other way round
-        else
-            return false
-        end
-    end
-    if ku == 0 or kv == 0 or ku ~= ku or kv ~= kv then return false end
-    return { inst = instA, u0 = uA, ku = ku, v0 = vA, kv = kv }
-end
-
-local function Transform(mapID)
-    local t = transforms[mapID]
-    if t == nil then
-        local ok, result = pcall(BuildTransform, mapID)
-        t = (ok and type(result) == "table") and result or false
-        transforms[mapID] = t
-    end
-    return t
-end
-
--- A failed conversion is tried again after the next zone change.
-local function ForgetFailedTransforms()
-    for mapID, t in pairs(transforms) do
-        if t == false then transforms[mapID] = nil end
-    end
-end
-
-local function PlayerMapSize(mapID)
-    local width, height = QD:GetMapWorldSize(mapID)
-    if width then return width, height end
-    local t = Transform(mapID)
-    if t then return abs(t.kv), abs(t.ku) end
-    return nil
-end
-
----------------------------------------------------------------------------
 -- Choosing the objective
 ---------------------------------------------------------------------------
 
--- Pins of one map. A pin at (x, y) on its own map is at (ax + bx*x, ay + by*y)
--- on the player's map.
-local function ConsiderPins(pins, ax, bx, ay, by, px, py, width, height)
+local function Nearest(pins, px, py, width, height)
+    local best, bestD2 = nil, huge
     for i = 1, #pins do
         local pin = pins[i]
         local x, y = pin.x, pin.y
         if type(x) == "number" and type(y) == "number" then
-            local vx, vy = ax + bx * x, ay + by * y
-            local dx, dy = (vx - px) * width, (vy - py) * height
+            local dx, dy = (x - px) * width, (y - py) * height
             local d2 = dx * dx + dy * dy
-            if d2 < bestD2 then
-                bestD2, bestPin, bestVX, bestVY = d2, pin, vx, vy
-            end
+            if d2 < bestD2 then best, bestD2 = pin, d2 end
         end
     end
+    return best
 end
 
-local function ConsiderMap(mapID, pins, playerMap, px, py, width, height)
-    if type(pins) ~= "table" then return end
-    if mapID == playerMap then
-        ConsiderPins(pins, 0, 1, 0, 1, px, py, width, height)
-        return
+local function HasPlaces(byMap)
+    for _, pins in pairs(byMap) do
+        if type(pins) == "table" and pins[1] ~= nil then return true end
     end
-    if pins[1] == nil then return end
-    local mine = Transform(playerMap)
-    if not mine then return end
-    local theirs = Transform(mapID)
-    if not theirs or theirs.inst ~= mine.inst then return end   -- another continent: cannot be pointed at
-    ConsiderPins(pins,
-        (theirs.v0 - mine.v0) / mine.kv, theirs.kv / mine.kv,
-        (theirs.u0 - mine.u0) / mine.ku, theirs.ku / mine.ku,
-        px, py, width, height)
+    return false
 end
 
 local function Shorten(text)
@@ -261,6 +158,13 @@ local function TitleFor(pin)
     return title
 end
 
+local function SetTitle(title)
+    if title ~= S.title then
+        S.title = title
+        S.titleText:SetText(title)
+    end
+end
+
 local function Select(playerMap, px, py)
     S.selectDue = false
     S.sinceSelect = 0
@@ -268,36 +172,36 @@ local function Select(playerMap, px, py)
     S.map = playerMap
 
     local old = S.pin
-    local width, height = PlayerMapSize(playerMap)
-    bestPin, bestD2 = nil, huge
-    if width then
-        local tracked = S.tracked
-        if tracked then
-            for mapID, pins in pairs(QD:GetPinsForQuest(tracked)) do
-                ConsiderMap(mapID, pins, playerMap, px, py, width, height)
-            end
+    local pin, elsewhere = nil, false
+    local width, height = QD:GetMapWorldSize(playerMap)
+    local tracked = S.tracked
+    local byMap = tracked and QD:GetPinsForQuest(tracked) or nil
+    if type(byMap) == "table" and HasPlaces(byMap) then
+        -- The picked quest: this map only, never silently another quest.
+        local pins = byMap[playerMap]
+        if type(pins) == "table" and pins[1] ~= nil then
+            if width then pin = Nearest(pins, px, py, width, height) end
+        else
+            elsewhere = true
         end
-        if not bestPin then
-            for mapID, pins in pairs(QD:GetAllPins()) do
-                ConsiderMap(mapID, pins, playerMap, px, py, width, height)
-            end
-        end
+    elseif width then
+        local pins = QD:GetPins(playerMap)
+        if type(pins) == "table" then pin = Nearest(pins, px, py, width, height) end
     end
 
-    local pin = bestPin
-    bestPin = nil
-    S.pin = pin
-    if not pin then return end
-    S.vx, S.vy, S.width, S.height = bestVX, bestVY, width, height
-    S.force = true
-    if pin ~= old then
-        S.here = false
-        S.distCode = nil
-        local title = TitleFor(pin)
-        if title ~= S.title then
-            S.title = title
-            S.titleText:SetText(title)
+    S.pin, S.elsewhere = pin, elsewhere
+    if pin then
+        S.tx, S.ty, S.width, S.height = pin.x, pin.y, width, height
+        S.force = true
+        if pin ~= old then
+            S.here = false
+            S.distCode = nil
+            SetTitle(TitleFor(pin))
         end
+    elseif elsewhere then
+        local title = QD:GetQuestTitle(tracked)
+        if type(title) ~= "string" or title == "" then title = "Quest" end
+        SetTitle(Shorten(title))
     end
 end
 
@@ -476,6 +380,21 @@ local function Idle(why)
     return true
 end
 
+-- Stops the OnUpdate. keepDisplay leaves the text block on screen.
+local function StopDriver(why, keepDisplay)
+    S.running = false
+    if S.driver then S.driver:Hide() end
+    if not keepDisplay then HideDisplay() end
+    SetWhy(why)
+end
+
+local function SetBoxShown(show)
+    if S.boxShown ~= show then
+        S.boxShown = show
+        S.box:SetShown(show)
+    end
+end
+
 -- Returns true when it ran to the end (the driver counts failures).
 local function Update()
     local playerMap, px, py = QD:GetPlayerPosition()
@@ -487,23 +406,42 @@ local function Update()
        or (S.sinceSelect >= SELECT_INTERVAL and (px ~= S.selX or py ~= S.selY)) then
         Select(playerMap, px, py)
     end
-    if not S.pin then return Idle("notarget") end
+
+    if not S.pin then
+        -- Nothing to point at for now. Stop completely; QuestData's
+        -- "quests" / "zone" / "tracked" callbacks start the driver again.
+        if S.elsewhere then
+            SetBoxShown(false)
+            S.distCode = nil
+            S.distText:SetText("Not in this zone")
+            if not S.shown then
+                S.shown = true
+                S.display:Show()
+            end
+            StopDriver(nil, true)
+        else
+            StopDriver("notarget")
+        end
+        return true
+    end
 
     S.interval = ACTIVE_INTERVAL
+    SetBoxShown(true)
     if not S.shown then
         S.shown = true
         S.force = true
         S.display:Show()
-        SetWhy(nil)
     end
+    SetWhy(nil)
     if not S.force and px == S.px and py == S.py and facing == S.facing then return true end
     S.force = false
     S.px, S.py, S.facing = px, py, facing
 
-    local east = (S.vx - px) * S.width
-    local north = (py - S.vy) * S.height
+    local east = (S.tx - px) * S.width
+    local north = (py - S.ty) * S.height
     local dist = sqrt(east * east + north * north)
     if dist >= MIN_AIM_YARDS then
+        -- DEVICE CHECK: if the arrow swings the wrong way when you turn, flip the sign of `facing` here.
         DrawArrow(atan2(-east, north) - facing)
     end
     ShowDistance(dist)
@@ -511,13 +449,6 @@ local function Update()
 end
 
 local SafeUpdate    -- Update inside the module's error catcher; set below
-
-local function StopDriver(why)
-    S.running = false
-    if S.driver then S.driver:Hide() end
-    HideDisplay()
-    SetWhy(why)
-end
 
 local function OnUpdate(_, elapsed)
     S.sinceSelect = S.sinceSelect + elapsed
@@ -530,7 +461,7 @@ local function OnUpdate(_, elapsed)
     if SafeUpdate() == true then
         S.failures = 0
     else
-        -- Something is wrong on this client. Do not keep failing 15 times a second.
+        -- Something is wrong on this client. Do not keep failing 10 times a second.
         S.failures = S.failures + 1
         S.interval = IDLE_INTERVAL
         if S.failures >= MAX_FAILURES then
@@ -570,21 +501,14 @@ local function Evaluate()
     end
 end
 
-local function OnData(reason)
+local function OnData()
     if not S.ready then return end
     S.tracked = QD:GetTrackedQuest()
-    S.selectDue = true
-    if reason == "zone" then
-        ForgetFailedTransforms()
-        Evaluate()
-    end
-    S.acc = S.interval          -- look again on the next frame
+    Evaluate()                  -- restarts a stopped driver, or asks a running one to choose again
 end
 
 local function OnWorldEvent()
-    if not S.ready then return end
-    ForgetFailedTransforms()
-    Evaluate()
+    if S.ready then Evaluate() end
 end
 
 local function Relayout()
@@ -598,7 +522,7 @@ end
 local STATUS = {
     instance = "Hidden while you are inside a dungeon.",
     nopos = "Hidden: the game cannot tell where you are here.",
-    notarget = "Hidden: none of your quests has a known place nearby.",
+    notarget = "Hidden: none of your quests has a known place in this zone.",
 }
 
 local SafeOnData, SafeOnUpdate
@@ -606,7 +530,7 @@ local SafeOnData, SafeOnUpdate
 mod = PE:RegisterModule({
     key = KEY,
     label = "Quest arrow",
-    desc = "An arrow that points to your nearest quest objective.",
+    desc = "Points to the nearest quest objective. Tap a quest icon to pick one.",
     order = 20,
     requiresQuestieDB = true,
     defaults = { position = DEFAULTS.position, size = DEFAULTS.size },
@@ -665,7 +589,7 @@ mod = PE:RegisterModule({
         self:RegisterEvent("PLAYER_ENTERING_WORLD", OnWorldEvent)
         self:RegisterEvent("ZONE_CHANGED_NEW_AREA", OnWorldEvent)
         S.tracked = QD:GetTrackedQuest()
-        S.pin, S.map, S.title = nil, nil, nil
+        S.pin, S.map, S.title, S.elsewhere = nil, nil, nil, false
         S.titleText:SetText("")
         S.distText:SetText("")
         S.distCode, S.here = nil, false
@@ -686,10 +610,8 @@ mod = PE:RegisterModule({
             if data.Release then data:Release(KEY) end      -- harmless if it was never acquired
         end
         S.acquired = false
-        S.pin, S.map, S.tracked = nil, nil, nil
-        bestPin = nil
+        S.pin, S.map, S.tracked, S.elsewhere = nil, nil, nil, false
         S.why, S.failReason = nil, nil
-        for mapID in pairs(transforms) do transforms[mapID] = nil end
     end,
 })
 

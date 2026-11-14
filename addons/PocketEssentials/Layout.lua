@@ -93,14 +93,6 @@ local function Say(text)
     if mod then mod:Print(text) end
 end
 
-local function Now()
-    if type(GetTime) == "function" then
-        local ok, t = pcall(GetTime)
-        if ok and type(t) == "number" then return t end
-    end
-    return 0
-end
-
 local function Api()
     local api = C_EditMode
     if type(api) == "table" and type(api.GetLayouts) == "function" and type(api.SetActiveLayout) == "function" then
@@ -133,14 +125,6 @@ local function CurrentStyle()
     return nil
 end
 
--- Does this client have the "Enable Gamepad UI" setting at all?
--- (InputUtil.IsGamepadUISupported: the CVar exists.)
-local function GamepadUISupported()
-    if type(C_CVar) ~= "table" or type(C_CVar.GetCVar) ~= "function" then return false end
-    local ok, value = pcall(C_CVar.GetCVar, "InputDeviceInterfaceStyle")
-    return ok and value ~= nil
-end
-
 -- A layout without a style counts as mouse and keyboard, as in Blizzard's
 -- own layout list (EditModeManager.lua:886-891, 1386-1387).
 local function StyleFits(layoutStyle)
@@ -164,14 +148,13 @@ end
 -- Plain-language reason a layout of that style cannot be used right now.
 local function StyleReason(layoutStyle)
     if not Styles() or CurrentStyle() == nil then
-        return "The game could not say which control style is in use, so the layout was not changed."
+        return "The game did not answer, so the layout was not changed."
     end
     local label, section = GamepadSettingName()
     if IsGamepadStyle(layoutStyle) then
-        if not GamepadUISupported() then return "This game version has no Gamepad UI, so that layout cannot be used." end
         return "Turn on \"" .. label .. "\" in the game's options (" .. section .. ") first, then tap this again."
     end
-    return "That layout is for mouse and keyboard. Turn off \"" .. label .. "\" in the game's options (" .. section .. ") first."
+    return "That layout is for mouse and keyboard, so it cannot be used while \"" .. label .. "\" is on."
 end
 
 local function EditModeOpen()
@@ -308,12 +291,15 @@ local function Activate(state, index)
 end
 
 local function Finish(text)
-    Say(text .. " Tap \"Reload now\" in Pocket Essentials to finish.")
+    Say(text)
     mod:RequestReload(RELOAD_REASON)
 end
 
 local function RememberPrevious(current)
     if type(mod.opts) ~= "table" or not current then return end
+    -- Never offer a way back that could only refuse (a layout of the other
+    -- control style cannot be used until the owner changes that setting).
+    if not StyleFits(current.style) then return end
     mod.opts.prev = {
         name = current.name,
         layoutType = current.layoutType,
@@ -410,20 +396,15 @@ local function DoInstall(state)
         Say("The built-in handheld layout could not be read by the game. Nothing was changed.")
         return
     end
-    if type(api.IsValidLayoutName) == "function" then
-        local okName, valid = pcall(api.IsValidLayoutName, HANDHELD_NAME)
-        if okName and valid == false then
-            Say("The game does not allow a layout called " .. HANDHELD_NAME .. ". Nothing was changed.")
-            return
-        end
-    end
-
     local styles = Styles()
     if layout.interfaceStyle == nil and styles then
         if BUNDLED_LAYOUT_STYLE == "gamepad" then
             layout.interfaceStyle = styles.Gamepad
         elseif BUNDLED_LAYOUT_STYLE == "mouse" then
             layout.interfaceStyle = styles.Mkb
+        else
+            -- The string does not say: treat it as made for the style in use.
+            layout.interfaceStyle = CurrentStyle()
         end
     end
     if not StyleFits(layout.interfaceStyle) then
@@ -455,7 +436,7 @@ local function DoInstall(state)
     local existingIndex, existing = FindSaved(state, HANDHELD_NAME)
     if existingIndex then
         -- Replacing throws away the owner's own changes: ask for a second tap.
-        local now = Now()
+        local now = GetTime()
         if confirmUntil <= 0 or now > confirmUntil then
             confirmUntil = now + CONFIRM_SECONDS
             Say("You already have a layout called " .. HANDHELD_NAME .. ". Tap again within "
@@ -471,7 +452,7 @@ local function DoInstall(state)
         local maxLayouts = type(consts) == "table" and consts.EditModeMaxLayoutsPerType
         if type(maxLayouts) ~= "number" then maxLayouts = 5 end
         if accountCount >= maxLayouts then
-            Say("You already have " .. maxLayouts .. " saved layouts. Delete one in Edit Mode first, then tap this again.")
+            Say("You already have " .. maxLayouts .. " account-wide layouts. Delete one in Edit Mode first, then tap this again.")
             return
         end
         layout.layoutType = types.Account
@@ -485,14 +466,20 @@ local function DoInstall(state)
     local switching = not (existingIndex and state.active == existingIndex)
     local info = state.info
     info.layouts = all
-    info.activeLayout = newIndex
+    -- A new layout: activeLayout is left alone, as in Blizzard's MakeNewLayout.
+    if existingIndex then info.activeLayout = newIndex end
     local savedOk, err = pcall(api.SaveLayouts, info)
     if not savedOk then
         PE:LogError("layout", "C_EditMode.SaveLayouts failed: " .. tostring(err))
         Say("The game refused to save the handheld layout.")
         return
     end
-    pcall(api.SetActiveLayout, newIndex)
+    if not existingIndex and type(api.OnLayoutAdded) == "function" then
+        -- (index, activate it, it was imported): EditModeManager.lua:1587
+        pcall(api.OnLayoutAdded, newIndex, true, true)
+    else
+        pcall(api.SetActiveLayout, newIndex)
+    end
 
     local after = ReadState()
     local savedIndex = after and FindSaved(after, HANDHELD_NAME)
@@ -510,7 +497,6 @@ local ACTIONS = { gamepad = DoGamepad, back = DoBack, install = DoInstall }
 
 local function Do(kind)
     if not mod or not mod:IsEnabled() then return end
-    if PE:InCombat() then return end -- cannot happen: PE:RunOutOfCombat only calls us out of combat
     if EditModeOpen() then
         Say("Close Edit Mode first, then tap this again.")
     else
@@ -535,59 +521,36 @@ end
 -- Panel: buttons and status text
 ---------------------------------------------------------------------------
 
-local options = {}
-local OPTION_GAMEPAD = { label = "Use Blizzard's Gamepad layout", action = function() Request("gamepad") end }
-local OPTION_BACK = { label = "Go back to my previous layout", action = function() Request("back") end }
-local OPTION_INSTALL = { label = "Install the handheld layout", action = function() Request("install") end }
-
--- The panel reads mod.options on every redraw, right after it asked for the
--- status text, so the list is rebuilt there. gamepadInUse: Blizzard's
--- Gamepad layout is already the one in use, so its button is left out.
-local function RebuildOptions(gamepadInUse)
-    for i = #options, 1, -1 do options[i] = nil end
-    if not gamepadInUse then
-        options[#options + 1] = OPTION_GAMEPAD
-    end
-    if mod and type(mod.opts) == "table" and type(mod.opts.prev) == "table" then
-        options[#options + 1] = OPTION_BACK
-    end
-    if HasBundled() then
-        options[#options + 1] = OPTION_INSTALL
-    end
+-- A fixed list: the panel reuses its buttons, so a button must never change
+-- meaning between redraws. Each handler says so when there is nothing to do.
+local options = {
+    { label = "Use Blizzard's Gamepad layout", action = function() Request("gamepad") end },
+    { label = "Go back to my previous layout", action = function() Request("back") end },
+}
+if HasBundled() then
+    options[#options + 1] = { label = "Install the handheld layout", action = function() Request("install") end }
 end
 
+-- No side effects: only reads.
 local function Status(self)
     local handheld = (not HasBundled()) and NO_HANDHELD or nil
-    if not self:IsEnabled() then
-        RebuildOptions()
-        return handheld
-    end
+    if not self:IsEnabled() then return handheld end
 
     local lines = {}
     local state = ReadState()
     if not state then
-        RebuildOptions()
-        lines[#lines + 1] = "The game's layout list is not available right now."
+        lines[1] = "The game's layout list is not available right now."
     else
-        lines[#lines + 1] = "Layout in use: " .. LayoutLabel(state.current)
-        local index, preset = FindGamepadPreset(state.presets)
-        RebuildOptions(index ~= nil and state.active == index)
-        if not index then
-            lines[#lines + 1] = "This game version has no Blizzard Gamepad layout."
-        elseif state.active ~= index and not StyleFits(preset.style) then
-            local label, section = GamepadSettingName()
-            if GamepadUISupported() then
-                lines[#lines + 1] = "For Blizzard's Gamepad layout, turn on \"" .. label .. "\" in the game's options (" .. section .. ") first."
-            else
-                lines[#lines + 1] = "This game version has no Gamepad UI, so Blizzard's Gamepad layout cannot be used."
+        lines[1] = "Layout in use: " .. LayoutLabel(state.current)
+        if not note then
+            local index, preset = FindGamepadPreset(state.presets)
+            if index and state.active ~= index and not StyleFits(preset.style) and CurrentStyle() ~= nil then
+                local label, section = GamepadSettingName()
+                lines[2] = "For Blizzard's Gamepad layout, turn on \"" .. label .. "\" in the game's options (" .. section .. ")."
             end
-        end
-        if HasBundled() and FindSaved(state, HANDHELD_NAME) then
-            lines[#lines + 1] = "The handheld layout is saved as \"" .. HANDHELD_NAME .. "\"."
         end
     end
     if note then lines[#lines + 1] = note end
-    lines[#lines + 1] = "Tip: in Edit Mode, the Grid and Snap tick boxes make dragging by touch easier."
     if handheld then lines[#lines + 1] = handheld end
     if #lines == 1 then return lines[1] end
     return lines
@@ -607,24 +570,15 @@ mod = PE:RegisterModule({
     options = options,
     status = Status,
 
-    OnLoad = function(self)
-        RebuildOptions()
-    end,
-
     OnEnable = function(self)
         note = nil
         confirmUntil = 0
-        RebuildOptions()
     end,
 
     -- Nothing of ours is on screen and nothing is hooked, so there is nothing
     -- to remove. The owner's layout is theirs: switching this off keeps it.
     OnDisable = function(self)
-        local changed = type(self.opts) == "table" and type(self.opts.prev) == "table"
         note = nil
         confirmUntil = 0
-        if changed then
-            self:Print("Layout helper is off. Your screen layout stays as it is.")
-        end
     end,
 })

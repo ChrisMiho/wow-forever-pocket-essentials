@@ -616,6 +616,9 @@ end
 -- Does nothing unless the world map is open.
 local function RefreshWorldMap(force)
     if not active or not QD then return end
+    -- Forgetting what was drawn makes the next refresh a full one, even if
+    -- the map is closed right now and only opened later.
+    if force then mapState.list = nil end
     local map = WorldMapFrame
     if type(map) ~= "table" or type(map.IsShown) ~= "function" or not map:IsShown() then return end
     mod:Safe(SuppressBlizzard, map)
@@ -636,7 +639,7 @@ local function RefreshWorldMap(force)
         return
     end
     local scale = MapScale(map, canvas)
-    if not force and mapState.list == list and mapState.mapID == mapID then
+    if mapState.list == list and mapState.mapID == mapID then
         RescaleMapPins(canvas, scale, width, height)
         return
     end

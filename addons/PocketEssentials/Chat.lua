@@ -6,7 +6,8 @@
 -- then brings up the keyboard (three-finger tap) and types.
 --
 -- Nothing here hooks, filters or replaces the chat frames. The only game
--- events used are the four whisper events, and only while the feature is on.
+-- events used are the two character-whisper events, and only while the
+-- feature is on. (Battle.net whispers are not tracked in this version.)
 local ADDON_NAME, PE = ...
 
 local type, tostring, pcall, select, pairs = type, tostring, pcall, select, pairs
@@ -17,8 +18,7 @@ local issecretvalue = issecretvalue -- nil on clients without secret values
 local PANEL_NAME = "PocketEssentialsChatPanel"
 local PANEL_TITLE = "Chat"
 local HINT = "Three-finger tap for the keyboard"
-local MAX_SAVED = 12 -- whisperers remembered between sessions
-local MAX_SHOWN = 6  -- name buttons in the window
+local MAX_WHISPERS = 6 -- whisperers remembered, and name buttons in the window
 
 local mod -- set at the bottom of the file
 
@@ -46,20 +46,17 @@ local function InLockdown()
     return (ok and locked) and true or false
 end
 
-local function Field(tbl, key)
-    return tbl[key]
-end
-
 local function Escape(text)
     return (tostring(text):gsub("|", "||"))
 end
 
 ---------------------------------------------------------------------------
--- The saved whisper list: mod.opts.whispers, newest first.
---   { name = "Thrall", unanswered = true, time = 1731500000 }
---   { name = "Jaina", bn = "Jaina#1234", unanswered = false, time = ... }
--- `bn` (a BattleTag) marks a Battle.net friend; it is the only Battle.net
--- detail that still means something in a later session.
+-- The saved whisper list: mod.opts.whispers, newest first, at most
+-- MAX_WHISPERS long, so every counted mark has a button in the window.
+--   { name = "Thrall", target = "Thrall-Realm", unanswered = true, time = ... }
+-- `name` is the short form: the button label, and what an incoming and an
+-- outgoing whisper are matched by. `target` is the sender exactly as the game
+-- delivered it, and is what the chat box gets addressed to.
 ---------------------------------------------------------------------------
 
 local function List()
@@ -74,15 +71,17 @@ local function List()
 end
 
 -- Drop anything that is not a well-formed entry (hand-edited or damaged
--- saved data) and keep at most MAX_SAVED.
+-- saved data, or Battle.net entries from an earlier version) and keep at
+-- most MAX_WHISPERS.
 local function CleanList()
     local list = List()
     if not list then return end
     local good = {}
     for i = 1, #list do
         local e = list[i]
-        if #good < MAX_SAVED and type(e) == "table" and type(e.name) == "string" and e.name ~= ""
-            and (e.bn == nil or (type(e.bn) == "string" and e.bn ~= "")) then
+        if #good < MAX_WHISPERS and type(e) == "table" and e.bn == nil
+            and type(e.name) == "string" and e.name ~= "" then
+            if type(e.target) ~= "string" or e.target == "" then e.target = e.name end
             e.unanswered = e.unanswered and true or false
             if type(e.time) ~= "number" then e.time = 0 end
             good[#good + 1] = e
@@ -103,43 +102,14 @@ local function CountUnanswered(list)
     return count
 end
 
-local function FindEntry(list, name, bn)
+local function FindEntry(list, name)
     local key = name:lower()
     for i = 1, #list do
         local e = list[i]
-        if type(e) == "table" then
-            if bn then
-                if e.bn == bn then return i end
-            elseif e.bn == nil and type(e.name) == "string" and e.name:lower() == key then
-                return i
-            end
-        end
+        if type(e) == "table" and type(e.name) == "string" and e.name:lower() == key then return i end
     end
     return nil
 end
-
--- The (at most MAX_SHOWN) entries for the window, newest first. People still
--- waiting for an answer are never pushed out of sight by answered ones.
-local function VisibleWhispers(list)
-    local out = {}
-    if not list then return out end
-    local answeredRoom = max(MAX_SHOWN - CountUnanswered(list), 0)
-    for i = 1, #list do
-        if #out >= MAX_SHOWN then break end
-        local e = list[i]
-        if type(e) == "table" and type(e.name) == "string" then
-            if e.unanswered then
-                out[#out + 1] = e
-            elseif answeredRoom > 0 then
-                out[#out + 1] = e
-                answeredRoom = answeredRoom - 1
-            end
-        end
-    end
-    return out
-end
-
-local Refresh -- defined with the window, below
 
 local function UpdateBadge()
     local hub = PE.Hub
@@ -148,71 +118,50 @@ local function UpdateBadge()
     hub:SetBadge(count > 0 and tostring(count) or nil)
 end
 
-local function WhispersChanged()
-    UpdateBadge()
-    Refresh()
-end
-
 -- incoming: they whispered us (marked as waiting for an answer).
 -- not incoming: we whispered them (that answers them).
 -- Either way that person moves to the top of the list.
-local function Touch(name, bn, incoming)
+-- Only the badge changes here. If the window is open its buttons stay exactly
+-- where they are (a button must never change who it whispers under the
+-- owner's finger); the new order is drawn the next time the window opens.
+local function Touch(name, target, incoming)
     local list = List()
     if not list then return end
-    local index = FindEntry(list, name, bn)
+    local index = FindEntry(list, name)
     local entry = index and tremove(list, index)
     if type(entry) ~= "table" then entry = {} end
     entry.name = name
-    entry.bn = bn
+    entry.target = target
     entry.unanswered = incoming and true or false
     entry.time = time()
     tinsert(list, 1, entry)
-    for i = #list, MAX_SAVED + 1, -1 do list[i] = nil end
-    WhispersChanged()
+    for i = #list, MAX_WHISPERS + 1, -1 do list[i] = nil end
+    UpdateBadge()
 end
 
 ---------------------------------------------------------------------------
 -- Whisper events
 ---------------------------------------------------------------------------
 
--- "Name-Realm" as the events deliver it -> the shortest form that can still
--- be whispered ("Name" on our own realm), so the incoming and the outgoing
--- event for one person always give the same text.
+-- "Name-Realm" as the events deliver it -> the short form ("Name" on our own
+-- realm), so the incoming and the outgoing event for one person match.
+-- Returns the short form and the untouched original, or nil.
 local function CleanName(name)
     if IsSecret(name) or type(name) ~= "string" or name == "" then return nil end
+    local short = name
     if type(Ambiguate) == "function" then
-        local ok, short = pcall(Ambiguate, name, "none")
-        if ok and not IsSecret(short) and type(short) == "string" and short ~= "" then name = short end
+        local ok, result = pcall(Ambiguate, name, "none")
+        if ok and not IsSecret(result) and type(result) == "string" and result ~= "" then short = result end
     end
-    return name
-end
-
--- The Battle.net id in the events only lasts for this session; the BattleTag
--- behind it is what gets saved.
-local function BattleTagFor(id)
-    if IsSecret(id) or type(id) ~= "number" or id <= 0 then return nil end
-    local api = C_BattleNet
-    local lookup = api and api.GetAccountInfoByID
-    if type(lookup) ~= "function" then return nil end
-    local ok, info = pcall(lookup, id)
-    if not ok or IsSecret(info) or type(info) ~= "table" then return nil end
-    local ok2, tag = pcall(Field, info, "battleTag")
-    if not ok2 or IsSecret(tag) or type(tag) ~= "string" or tag == "" then return nil end
-    return tag
+    return short, name
 end
 
 -- Payload (Blizzard_APIDocumentationGenerated/ChatInfoDocumentation.lua):
--- 1 text, 2 playerName, ... 12 guid, 13 bnSenderID.
+-- 1 text, 2 playerName, ...
 local function OnWhisper(_, event, ...)
     if InLockdown() then return end
-    local incoming = (event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_BN_WHISPER")
-    if event == "CHAT_MSG_BN_WHISPER" or event == "CHAT_MSG_BN_WHISPER_INFORM" then
-        local tag = BattleTagFor((select(13, ...)))
-        if tag then Touch(tag:match("^([^#]+)") or tag, tag, incoming) end
-    else
-        local name = CleanName((select(2, ...)))
-        if name then Touch(name, nil, incoming) end
-    end
+    local short, raw = CleanName((select(2, ...)))
+    if short then Touch(short, raw, event == "CHAT_MSG_WHISPER") end
 end
 
 ---------------------------------------------------------------------------
@@ -247,25 +196,30 @@ local function OpenChatTo(chatType, target, slash)
     if type(choose) == "function" and type(active) == "function" then
         local box = choose()
         if CanAddress(box, chatType) then
-            if box ~= active() then
+            local ready = (box == active())
+            if not ready and box.chatFrame ~= nil then
                 -- Naming the chat frame keeps this out of any other window's
                 -- chat line (the guild window has one).
                 local opened = open(nil, box.chatFrame)
-                if opened ~= box and CanAddress(opened, chatType) then box = opened end
+                if CanAddress(opened, chatType) and type(opened.IsShown) == "function" and opened:IsShown() then
+                    box, ready = opened, true
+                end
             end
-            if chatType == "CHANNEL" then
-                box:SetChannelTarget(target)
-            elseif chatType == "WHISPER" then
-                box:SetTellTarget(target)
+            if ready then
+                if chatType == "CHANNEL" then
+                    box:SetChannelTarget(target)
+                elseif chatType == "WHISPER" then
+                    box:SetTellTarget(target)
+                end
+                box:SetChatType(chatType)
+                box:UpdateHeader()
+                return true
             end
-            box:SetChatType(chatType)
-            box:UpdateHeader()
-            return true
         end
     end
 
-    -- The edit box does not look the way this file expects: fall back to
-    -- letting the game read a typed command.
+    -- The edit box does not look the way this file expects, or it did not
+    -- open: fall back to letting the game read a typed command.
     if chatType == "WHISPER" then
         if type(util.SendTell) ~= "function" then return false end
         util.SendTell(target)
@@ -274,27 +228,6 @@ local function OpenChatTo(chatType, target, slash)
     if type(slash) ~= "string" then return false end
     open(slash .. " ")
     return true
-end
-
--- The name the game wants for a Battle.net whisper to this BattleTag, or nil
--- if that friend cannot be found right now.
-local function FriendToken(battleTag)
-    local api = C_BattleNet
-    local getFriend = api and api.GetFriendAccountInfo
-    if type(getFriend) ~= "function" or type(BNGetNumFriends) ~= "function" then return nil end
-    local total = BNGetNumFriends()
-    if IsSecret(total) or type(total) ~= "number" then return nil end
-    for i = 1, min(total, 500) do
-        local info = getFriend(i)
-        if not IsSecret(info) and type(info) == "table" then
-            local tag, token = info.battleTag, info.accountName
-            if not IsSecret(tag) and not IsSecret(token) and tag == battleTag
-                and type(token) == "string" and token ~= "" then
-                return token
-            end
-        end
-    end
-    return nil
 end
 
 ---------------------------------------------------------------------------
@@ -352,12 +285,12 @@ end
 local UI, M
 local panel, area
 local settingsButton, clearButton
-local hintText, sectionText, noteText, emptyText
+local hintText, sectionText, emptyText
 local targetButtons = {} -- reused on every redraw
 local navList = {}       -- tappable buttons in reading order
 local built, buildFailed = false, false
-local note               -- one short line under "Whispers", e.g. a friend who cannot be reached
 local onTargetClick, hubClick
+local settingsHooked = false
 
 local function PanelSize()
     local screenWidth, screenHeight = UIParent:GetWidth(), UIParent:GetHeight()
@@ -375,7 +308,6 @@ end
 local COLOR_HINT = { 0.84, 0.84, 0.84 }
 local COLOR_SECTION = { 1, 0.82, 0 }
 local COLOR_PLAIN = { 1, 1, 1 }
-local COLOR_NOTE = { 1, 0.60, 0.20 }
 
 local function PlaceText(fontString, text, y, width, color)
     fontString:ClearAllPoints()
@@ -415,20 +347,24 @@ local function DoRefresh()
 
     local targets = GatherTargets()
     local list = List()
-    local shown = VisibleWhispers(list)
+    local shown = {}
+    if list then
+        for i = 1, #list do
+            local e = list[i]
+            if #shown < MAX_WHISPERS and type(e) == "table" and type(e.name) == "string" then shown[#shown + 1] = e end
+        end
+    end
     local marked = CountUnanswered(list)
 
     local gap = M.gap
     local width, height = panel.contentWidth, panel.contentHeight
-    local hintHeight, sectionHeight = LineHeight("small"), LineHeight("title")
-    local noteHeight, emptyHeight = LineHeight("small"), LineHeight("font")
+    local hintHeight, sectionHeight, emptyHeight = LineHeight("small"), LineHeight("title"), LineHeight("font")
 
     local function Columns(forWidth)
         return max(1, min(4, floor((forWidth + gap) / (M.button * 4.4 + gap))))
     end
     local function TotalHeight(cols, buttonHeight)
         local total = hintHeight + gap + ceil(#targets / cols) * (buttonHeight + gap) + sectionHeight + gap * 0.5
-        if note then total = total + noteHeight + gap * 0.5 end
         if #shown == 0 then
             total = total + emptyHeight + gap
         else
@@ -477,12 +413,6 @@ local function DoRefresh()
 
     PlaceText(sectionText, "Whispers", y, viewWidth, COLOR_SECTION)
     y = y + sectionHeight + gap * 0.5
-    if note then
-        PlaceText(noteText, note, y, viewWidth, COLOR_NOTE)
-        y = y + noteHeight + gap * 0.5
-    else
-        noteText:Hide()
-    end
 
     if #shown == 0 then
         PlaceText(emptyText, "No whispers yet.", y, viewWidth, COLOR_PLAIN)
@@ -529,39 +459,23 @@ local function DoRefresh()
 end
 
 -- Does nothing unless the window is open.
-Refresh = function()
+local function Refresh()
     if built and panel:IsShown() then mod:Safe(DoRefresh) end
-end
-
-local function WhisperTo(entry)
-    if entry.bn then
-        local send = ChatFrameUtil and ChatFrameUtil.SendBNetTell
-        local ok, token = pcall(FriendToken, entry.bn)
-        if not ok or not token or type(send) ~= "function" then
-            note = "Can't reach " .. Escape(entry.name) .. " right now."
-            Refresh()
-            return
-        end
-        panel:Hide()
-        send(token) -- Blizzard's own "whisper this Battle.net friend"
-        return
-    end
-    panel:Hide()
-    if not OpenChatTo("WHISPER", entry.name) then
-        mod:Print("The chat box could not be opened.")
-    end
 end
 
 local function TargetClicked(btn)
     local entry, target = btn.peChatEntry, btn.peChatTarget
+    local opened
     if entry then
-        WhisperTo(entry)
+        panel:Hide()
+        opened = OpenChatTo("WHISPER", entry.target or entry.name)
     elseif target then
         panel:Hide()
-        if not OpenChatTo(target.chatType, target.target, target.slash) then
-            mod:Print("The chat box could not be opened.")
-        end
+        opened = OpenChatTo(target.chatType, target.target, target.slash)
+    else
+        return
     end
+    if not opened then mod:Print("The chat box could not be opened.") end
 end
 
 local function ClearMarks()
@@ -571,7 +485,22 @@ local function ClearMarks()
             if type(list[i]) == "table" then list[i].unanswered = false end
         end
     end
-    WhispersChanged()
+    UpdateBadge()
+    Refresh()
+end
+
+-- Only one of our two windows at a time: when the settings window shows
+-- (holding the round button opens it), this one closes. The settings window
+-- is our own frame and only exists after its first opening, so this is tried
+-- again until it can be hooked.
+local function HookSettings()
+    if settingsHooked then return end
+    local settings = _G["PocketEssentialsSettingsPanel"]
+    if type(settings) ~= "table" or type(settings.HookScript) ~= "function" then return end
+    settingsHooked = true
+    settings:HookScript("OnShow", mod:Wrap(function()
+        if built and panel:IsShown() then panel:Hide() end
+    end))
 end
 
 local function Build()
@@ -585,11 +514,9 @@ local function Build()
 
     hintText = UI:CreateText(area.child, "small")
     sectionText = UI:CreateText(area.child, "title")
-    noteText = UI:CreateText(area.child, "small")
     emptyText = UI:CreateText(area.child, "font")
     hintText:SetWordWrap(false)
     sectionText:SetWordWrap(false)
-    noteText:SetWordWrap(false)
     emptyText:SetWordWrap(false)
 
     clearButton = UI:CreateButton(area.child, "Clear marks")
@@ -599,6 +526,7 @@ local function Build()
     settingsButton:SetScript("OnClick", mod:Wrap(function()
         panel:Hide()
         PE:OpenSettings()
+        HookSettings()
     end))
 
     UI:AttachNav(panel, function() return navList end)
@@ -629,7 +557,7 @@ local function OpenPanel()
         return
     end
     PE:CloseSettings()
-    note = nil
+    HookSettings()
     area.offset = 0
     if not panel:IsShown() then panel:Show() end
     panel:Raise()
@@ -660,12 +588,11 @@ mod = PE:RegisterModule({
         CleanList()
         self:RegisterEvent("CHAT_MSG_WHISPER", OnWhisper)
         self:RegisterEvent("CHAT_MSG_WHISPER_INFORM", OnWhisper)
-        self:RegisterEvent("CHAT_MSG_BN_WHISPER", OnWhisper)
-        self:RegisterEvent("CHAT_MSG_BN_WHISPER_INFORM", OnWhisper)
         hubClick = hubClick or self:Wrap(TogglePanel)
         local hub = PE.Hub
         if hub and hub.SetClickHandler then hub:SetClickHandler(hubClick) end
         UpdateBadge()
+        HookSettings()
     end,
 
     -- Also runs after a half-finished OnEnable.
