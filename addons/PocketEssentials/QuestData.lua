@@ -67,7 +67,7 @@ local clusterCell = 0             -- cluster value in use by the running rebuild
 local dirty = true                -- pinsByMap is out of date
 
 local rebuildPending, zonePending, forceNotify, questRemoved = false, false, false, false
-local tracked                     -- quest the owner last tapped
+local tracked                     -- quest the player last tapped
 local trackedLoaded = false
 local lastTracked                 -- last value handed out through a "tracked" callback
 
@@ -717,7 +717,7 @@ function QD:GetQuestTitle(questID)
     return ok and Str(title) or nil
 end
 
--- The quest the owner last tapped, for as long as it is in the quest log.
+-- The quest the player last tapped, for as long as it is in the quest log.
 function QD:SetTrackedQuest(questID)
     if type(questID) ~= "number" or questID <= 0 then questID = nil end
     LoadTracked()

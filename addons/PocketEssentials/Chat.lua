@@ -2,7 +2,7 @@
 -- While this is on, a tap on the round button opens a window of large
 -- buttons: one for every place the character can talk right now, and one for
 -- each person who whispered recently. A tap on a button closes the window and
--- opens the game's own chat box already pointed at that target. The owner
+-- opens the game's own chat box already pointed at that target. The player
 -- then brings up the keyboard (three-finger tap) and types.
 --
 -- Nothing here hooks, filters or replaces the chat frames. The only game
@@ -123,7 +123,7 @@ end
 -- Either way that person moves to the top of the list.
 -- Only the badge changes here. If the window is open its buttons stay exactly
 -- where they are (a button must never change who it whispers under the
--- owner's finger); the new order is drawn the next time the window opens.
+-- player's finger); the new order is drawn the next time the window opens.
 local function Touch(name, target, incoming)
     local list = List()
     if not list then return end

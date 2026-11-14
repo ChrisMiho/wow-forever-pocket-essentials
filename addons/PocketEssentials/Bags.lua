@@ -205,7 +205,7 @@ local function WantCombined()
     if opts.cvarFailed then return end
     if opts.cvarWant ~= "1" and (opts.sawCombined or opts.userSeparate) then
         -- It was one big bag while this feature was on and now it is not, and
-        -- not by our doing: the owner changed it in Blizzard's bag menu.
+        -- not by our doing: the player changed it in Blizzard's bag menu.
         -- Respect that; do not queue the setting again.
         opts.sawCombined, opts.userSeparate = nil, true
         ForgetCVar(opts)

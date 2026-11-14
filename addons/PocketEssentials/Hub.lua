@@ -110,7 +110,7 @@ local function OnClick()
         local before = PE.errorSerial
         local ok = xpcall(clickHandler, PE.ErrorHandlerFor("hub"))
         if ok and PE.errorSerial == before then return end
-        -- The handler failed: fall through to the settings so the owner is never stuck.
+        -- The handler failed: fall through to the settings so the player is never stuck.
     end
     if clickHandler then PE:OpenSettings() else PE:ToggleSettings() end
 end

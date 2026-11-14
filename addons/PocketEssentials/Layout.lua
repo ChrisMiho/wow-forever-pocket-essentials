@@ -48,7 +48,7 @@ local tinsert = table.insert
 -- The bundled handheld layout
 ---------------------------------------------------------------------------
 
--- No layout is bundled yet. To add one, the owner first arranges the screen
+-- No layout is bundled yet. To add one, the player first arranges the screen
 -- on the device in Edit Mode, saves it as a layout, then uses Edit Mode's own
 -- Layout box > Share > Copy To Clipboard (EditModeManager.lua:1461-1465) and
 -- sends that text to whoever maintains this addon. Paste the whole string
@@ -298,7 +298,7 @@ end
 local function RememberPrevious(current)
     if type(mod.opts) ~= "table" or not current then return end
     -- Never offer a way back that could only refuse (a layout of the other
-    -- control style cannot be used until the owner changes that setting).
+    -- control style cannot be used until the player changes that setting).
     if not StyleFits(current.style) then return end
     mod.opts.prev = {
         name = current.name,
@@ -435,7 +435,7 @@ local function DoInstall(state)
     local newIndex
     local existingIndex, existing = FindSaved(state, HANDHELD_NAME)
     if existingIndex then
-        -- Replacing throws away the owner's own changes: ask for a second tap.
+        -- Replacing throws away the player's own changes: ask for a second tap.
         local now = GetTime()
         if confirmUntil <= 0 or now > confirmUntil then
             confirmUntil = now + CONFIRM_SECONDS
@@ -576,7 +576,7 @@ mod = PE:RegisterModule({
     end,
 
     -- Nothing of ours is on screen and nothing is hooked, so there is nothing
-    -- to remove. The owner's layout is theirs: switching this off keeps it.
+    -- to remove. The player's layout is theirs: switching this off keeps it.
     OnDisable = function(self)
         note = nil
         confirmUntil = 0
