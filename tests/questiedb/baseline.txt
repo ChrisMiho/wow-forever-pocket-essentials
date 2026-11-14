@@ -1,0 +1,16 @@
+# Expected counts from scripts/test.sh for QuestieDB 1.1.1 (Forever).
+# Update these only on purpose: after a QuestieDB update or a QuestData.lua
+# change whose effect on the counts is understood.
+#
+# quests              quests QuestieDB lists (LibQuestieDB.Quest.GetAllIds)
+# with_pins           quests with at least one pin in either pass
+# inlog_with_pins     quests with pins while in the log and not complete
+# complete_with_pins  quests with pins once complete (turn-in pins)
+# inlog_pins          all pins in the "in log, not complete" pass
+# complete_pins       all pins in the "complete" pass
+quests=5914
+with_pins=5673
+inlog_with_pins=4917
+complete_with_pins=5644
+inlog_pins=122638
+complete_pins=6496
