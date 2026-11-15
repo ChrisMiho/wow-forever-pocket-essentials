@@ -1,6 +1,6 @@
 # CurseForge project form: values to enter
 
-Upload only after device testing (PRD roadmap phase 3 (after device testing and polish)). Nothing here has been uploaded yet.
+Upload only after device testing (PRD roadmap phase 3, after device testing and polish). Nothing here has been uploaded yet.
 
 ## Create the project
 
