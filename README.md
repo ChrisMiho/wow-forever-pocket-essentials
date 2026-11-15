@@ -73,7 +73,7 @@ load."). Everything else keeps working.
 
 ```bash
 scripts/check.sh   # syntax and lint checks
-scripts/test.sh    # offline QuestieDB tests (Alliance and Horde data)
+scripts/test.sh    # offline QuestieDB tests (data for both factions)
 scripts/build.sh   # dist/wow-forever-pocket-essentials.zip (GitHub bundle)
                    # dist/PocketEssentials-<version>.zip (CurseForge, addon only)
 ```
