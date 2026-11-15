@@ -1,0 +1,1 @@
+Big, touch- and controller-friendly helpers for playing WoW Forever on a handheld.

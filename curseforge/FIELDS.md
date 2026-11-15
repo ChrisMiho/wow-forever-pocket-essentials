@@ -1,0 +1,41 @@
+# CurseForge project form: values to enter
+
+Upload only after device testing (PRD roadmap phase c). Nothing here has been uploaded yet.
+
+## Create the project
+
+1. Name: `Pocket Essentials`
+2. Summary: paste the single line from `curseforge/summary.txt`.
+3. Avatar: upload `curseforge/avatar.png` (400x400 PNG).
+4. Main category: `Map & Minimap`. Additional categories (up to 4): `Quests & Leveling`, `Bags & Inventory`, `Chat & Communication`, plus the closest fourth match you can find. Confirm the exact names in the form.
+5. License: `GPL-3.0`.
+6. Source URL: https://github.com/ChrisMiho/wow-forever-pocket-essentials
+7. Issues URL: https://github.com/ChrisMiho/wow-forever-pocket-essentials/issues
+8. Description: switch the editor to Markdown mode and paste all of `curseforge/description.md`.
+
+## Banner in the description
+
+9. Open the project's Images tab and upload `curseforge/banner.png`.
+10. Copy that image's URL and replace `BANNER_URL` on the first line of the description with it. (Linking the raw file on GitHub also works, but the Images tab is recommended.)
+
+## Upload the file
+
+11. File: `dist/PocketEssentials-0.0.1.zip` (build it with `scripts/build.sh`; addon only).
+12. Game flavor: `Forever`. Game version: `1.60.1`.
+13. Release type: `Release` (the 0.0.x version number shows it is early).
+14. Changelog: paste the `## [0.0.1]` section of `CHANGELOG.md`.
+15. Relations: add QuestieDB (project ID `1696795`, slug `questiedb`) as **Required**.
+
+## After the project exists
+
+16. Note the numeric project ID and add this line to the top block of `PocketEssentials/PocketEssentials.toc`: `## X-Curse-Project-ID: <id>`. Then rebuild the zip.
+
+## Screenshots to take on the device
+
+Upload these in the Images tab.
+
+- Settings window: the feature list with switches visible.
+- World map with quest icons: several objective icons, no blue haze.
+- Quest arrow: the arrow on screen with its distance text.
+- Combined bag with the Sort button: the big Sort button clearly visible.
+- Chat picker: the big channel and whisper buttons.
