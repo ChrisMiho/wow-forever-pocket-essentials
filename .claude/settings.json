@@ -10,5 +10,16 @@
         ]
       }
     ]
+  },
+  "extraKnownMarketplaces": {
+    "chrismiho-wow-addons": {
+      "source": {
+        "source": "github",
+        "repo": "ChrisMiho/wow-addon-skills"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "wow-addon-skills@chrismiho-wow-addons": true
   }
 }

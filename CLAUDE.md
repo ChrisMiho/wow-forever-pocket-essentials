@@ -22,6 +22,9 @@
 - Semantic versioning. Bump the TOC `## Version` and add a CHANGELOG entry together.
 - Verify every new API in `github.com/Gethe/wow-ui-source`, branch `forever`, and log unverified ones in `docs/ARCHITECTURE.md`.
 
+# Skills
+- Reusable procedures (API checks, offline harness, device-test handoff, CurseForge release) come from the `wow-addon-skills` plugin: https://github.com/ChrisMiho/wow-addon-skills
+
 # Gotchas
 - The client's internal name is "Camelot".
 - The QuestieDB folder name must stay exactly `QuestieDB`.
