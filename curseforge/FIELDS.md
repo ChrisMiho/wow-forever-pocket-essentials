@@ -28,7 +28,7 @@ Upload only after device testing (PRD roadmap phase c). Nothing here has been up
 
 ## After the project exists
 
-16. Note the numeric project ID and add this line to the top block of `PocketEssentials/PocketEssentials.toc`: `## X-Curse-Project-ID: <id>`. Then rebuild the zip.
+16. Note the numeric project ID and add this line to the top block of `addons/PocketEssentials/PocketEssentials.toc`: `## X-Curse-Project-ID: <id>`. Then rebuild the zip.
 
 ## Screenshots to take on the device
 
