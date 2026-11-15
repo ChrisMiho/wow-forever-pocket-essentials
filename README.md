@@ -1,35 +1,23 @@
+![Pocket Essentials](curseforge/banner.png)
+
 # WoW Forever Pocket Essentials
 
-A small, lightweight addon bundle for playing WoW Forever on a handheld
-(built around a Retroid Pocket 6 running the game through Droid Deck).
-Addon interface version: `16001`.
+A small, lightweight addon suite that makes WoW Forever comfortable to play on
+a handheld, with touch and a controller together: big buttons, no tiny
+targets, no typed commands.
 
-**Nothing here has run in the game yet.** See the device test plan in
-[PRD.md](PRD.md).
+> **Status: In progress: version 0.0.1 is written but has not run on a device yet.**
+> Treat every feature as unproven until it has been tested in the game.
 
-## Install
+## Who it's for
 
-1. Run `scripts/build.sh`. It writes `dist/wow-forever-pocket-essentials.zip`.
-2. Copy the zip to the device.
-3. In the game's `Interface/AddOns` folder, **delete any old `QuestDots`
-   folder** from an earlier version of this bundle.
-4. Extract the zip into `Interface/AddOns`. You should end up with two
-   folders side by side: `PocketEssentials` and `QuestieDB`. Do not rename
-   either.
-5. Log in. A round "PE" button appears at the left edge of the screen. Tap it
-   to open the settings. **Every feature starts switched off**; turn them on
-   one at a time.
+Anyone playing WoW Forever on a handheld, on any device that runs the client.
+The developer's test device is a Retroid Pocket 6 running the game through
+Droid Deck.
 
-Other ways to open the settings: the addon list button on the minimap, or
-type `/pe`. Holding the round button for half a second also always opens
-them.
+## Features
 
-## What's in it
-
-| Folder | Job |
-|--------|-----|
-| `PocketEssentials` | Everything below, each with its own on/off switch |
-| `QuestieDB` | Quest location data for the two quest features. Downloaded unmodified from the [official release](https://github.com/Questie/QuestieDB/releases) at build time. Everything else works without it |
+Every feature has its own on/off switch and starts switched off.
 
 | Feature | What it does |
 |---------|--------------|
@@ -41,18 +29,86 @@ them.
 | Big chat buttons | The round button opens a picker: one big button per channel and per recent whisperer. A badge shows unanswered whispers |
 | Layout helper (experimental) | One-tap switch to Blizzard's Gamepad layout and back |
 
-If something goes wrong, the settings window has an **Errors** page that
-shows what failed, in large text.
+## Install
 
-QuestieDB carries its data file under two names (`_Forever` and `_Camelot`)
-because it isn't confirmed which one the client loads. The build keeps both
-until testing settles it; `QUESTIEDB_TOC=Forever scripts/build.sh` (or
-`Camelot`) keeps just one and halves the size.
+Pocket Essentials is one addon, `PocketEssentials`. The two quest features also
+need the `QuestieDB` addon; everything else works without it.
 
-## Layout
+### From CurseForge (coming later)
 
-- `addons/PocketEssentials/` — the addon, exactly as it should land in `AddOns`
-- `scripts/build.sh` — builds the zip
-- `vendor/` — downloaded third-party releases (not committed)
-- `dist/` — build output (not committed)
-- `PRD.md` — requirements, decisions, known unknowns and the device test plan
+Install Pocket Essentials from CurseForge. QuestieDB installs with it as a
+dependency.
+
+### From GitHub
+
+There are no GitHub releases yet, so you build the zip yourself.
+
+1. On a Mac or Linux computer, run `scripts/build.sh`. It writes
+   `dist/wow-forever-pocket-essentials.zip`.
+2. Copy that zip to your device.
+3. In the game's `Interface/AddOns` folder, **delete any old `QuestDots`
+   folder** from an earlier version of this bundle.
+4. Extract the zip into `Interface/AddOns`. You should end up with two folders
+   side by side: `PocketEssentials` and `QuestieDB`. Do not rename either.
+5. Log in. A round "PE" button appears at the left edge of the screen. Tap it
+   to open the settings, then turn features on one at a time.
+
+### Without QuestieDB, or with a version this addon doesn't understand
+
+The quest icons and quest arrow stay off and the settings window says why
+(for example "Needs the QuestieDB addon, which is not installed or did not
+load."). Everything else keeps working.
+
+## Using it
+
+- **Tap the round "PE" button** to open the settings. If Big chat buttons is
+  on, it opens the chat picker instead.
+- **Hold the round button for half a second** to always open the settings.
+- **Type `/pe`**, or use the addon-list button on the minimap, as other ways
+  to open them.
+- **Errors page:** if something goes wrong, the settings window has an Errors
+  page that shows what failed, in large text.
+
+## For developers
+
+```bash
+scripts/check.sh   # syntax and lint checks
+scripts/test.sh    # offline QuestieDB tests (Alliance and Horde data)
+scripts/build.sh   # dist/wow-forever-pocket-essentials.zip (GitHub bundle)
+                   # dist/PocketEssentials-<version>.zip (CurseForge, addon only)
+```
+
+A Stop hook in `.claude/settings.json` runs the checks and tests and blocks a
+Claude Code turn from ending if either fails. New features follow the
+spec-driven workflow (rule 7 in [PRD.md](PRD.md)): a spec first, then a plan,
+then a reviewed build, then a device test. See [CLAUDE.md](CLAUDE.md) for how
+to work in this repo.
+
+## Project docs
+
+| File | What's in it |
+|------|--------------|
+| [PRD.md](PRD.md) | Vision, goals, status, roadmap, parked ideas |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the addon is built, and what is known about the client |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | Why things are the way they are |
+| [docs/TESTING.md](docs/TESTING.md) | Offline tests and the device test plan |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each version |
+| [CLAUDE.md](CLAUDE.md) | Working rules for AI-assisted development |
+
+## Feedback
+
+Found a bug or have an idea? Open an issue:
+[github.com/ChrisMiho/wow-forever-pocket-essentials/issues](https://github.com/ChrisMiho/wow-forever-pocket-essentials/issues).
+
+## Credits and thanks
+
+- Thank you to the [Questie team](https://github.com/Questie/QuestieDB) for
+  making the quest database available for other addons to build on.
+  QuestieDB (GPL-3.0) is also on
+  [CurseForge](https://www.curseforge.com/wow/addons/questiedb).
+- Three icons come from [pfQuest](https://github.com/shagu/pfQuest) by Shagu
+  (MIT).
+
+## Licence
+
+GPL-3.0. See [LICENSE](LICENSE).
