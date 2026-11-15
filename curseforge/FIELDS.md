@@ -16,19 +16,19 @@ Upload only after device testing (PRD roadmap phase c). Nothing here has been up
 ## Banner in the description
 
 9. Open the project's Images tab and upload `curseforge/banner.png`.
-10. Copy that image's URL and replace `BANNER_URL` on the first line of the description with it. (Linking the raw file on GitHub also works, but the Images tab is recommended.)
+10. Copy that image's URL and replace `BANNER_URL` on the first line of the description with it. (Linking the raw file on GitHub also works, but the Images tab is recommended.) Don't publish the description until `BANNER_URL` is replaced.
 
 ## Upload the file
 
-11. File: `dist/PocketEssentials-0.0.1.zip` (build it with `scripts/build.sh`; addon only).
+11. File: `dist/PocketEssentials-0.0.1.zip` (addon only). It may already be in `dist/`; if anything has changed since, rebuild it with `scripts/build.sh` from a Mac or Linux terminal (or ask Claude).
 12. Game flavor: `Forever`. Game version: `1.60.1`.
 13. Release type: `Release` (the 0.0.x version number shows it is early).
 14. Changelog: paste the `## [0.0.1]` section of `CHANGELOG.md`.
-15. Relations: add QuestieDB (project ID `1696795`, slug `questiedb`) as **Required**.
+15. Relations: add QuestieDB (project ID `1696795`, slug `questiedb`) as **Required**. (The TOC says OptionalDeps because the addon runs without QuestieDB, but the quest features, the main reason to install, need it, so CurseForge should install it automatically.)
 
-## After the project exists
+## Optional, for later
 
-16. Note the numeric project ID and add this line to the top block of `addons/PocketEssentials/PocketEssentials.toc`: `## X-Curse-Project-ID: <id>`. Then rebuild the zip.
+16. Optional, for later: CurseForge shows your project ID on the project page. Ask Claude (or add it yourself) to put `## X-Curse-Project-ID: <id>` on a new line directly under `## Version: …` in `addons/PocketEssentials/PocketEssentials.toc`. It takes effect with the next version you upload; you don't need to re-upload 0.0.1.
 
 ## Screenshots to take on the device
 
