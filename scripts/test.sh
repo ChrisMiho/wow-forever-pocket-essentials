@@ -4,7 +4,8 @@
 #
 # Exits 0 and prints one summary line on pass; exits 1 with the first failing
 # quest and its error otherwise. Needs luajit (brew install luajit); without it
-# the test is skipped (exit 0) so nobody is locked out.
+# the test is skipped (exit 0) so nobody is locked out. The same goes for a failed
+# QuestieDB download (for example, when offline).
 #
 #     scripts/test.sh                       # test addons/PocketEssentials/QuestData.lua
 #     scripts/test.sh path/to/QuestData.lua # test another copy of it
@@ -16,7 +17,14 @@ if ! command -v luajit >/dev/null 2>&1; then
     exit 0
 fi
 
-qdb_zip="$(scripts/fetch-questiedb.sh)"
+# Capture the status explicitly: under set -e a failed $(...) assignment would
+# abort before the notice below prints.
+fetch_status=0
+qdb_zip="$(scripts/fetch-questiedb.sh)" || fetch_status=$?
+if [ "$fetch_status" -ne 0 ]; then
+    echo "could not download QuestieDB; offline tests skipped" >&2
+    exit 0
+fi
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/pe-questiedb.XXXXXX")"
 trap 'rm -rf "$work"' EXIT

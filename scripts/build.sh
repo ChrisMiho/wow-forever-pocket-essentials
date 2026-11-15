@@ -1,6 +1,7 @@
 #!/bin/bash
 # Builds dist/wow-forever-pocket-essentials.zip with every addon folder at the zip root,
-# ready to extract straight into the game's Interface/AddOns folder.
+# ready to extract straight into the game's Interface/AddOns folder. It also builds
+# dist/PocketEssentials-<version>.zip (the addon alone) for CurseForge.
 #
 # The zip holds exactly two folders:
 #   PocketEssentials  (from addons/, our own addon)
@@ -52,6 +53,12 @@ version="$(sed -n 's/^## Version: //p' addons/PocketEssentials/PocketEssentials.
     | tr -d '\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
 if [ -z "$version" ]; then
     echo "error: PocketEssentials.toc has no '## Version:' line" >&2
+    exit 1
+fi
+
+# CHANGELOG.md must have a heading for this version, or the two have drifted apart.
+if ! grep -q -F "## [$version]" CHANGELOG.md; then
+    echo "error: CHANGELOG.md has no '## [$version]' heading (the TOC version); add one" >&2
     exit 1
 fi
 

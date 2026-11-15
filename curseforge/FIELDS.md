@@ -1,6 +1,6 @@
 # CurseForge project form: values to enter
 
-Upload only after device testing (PRD roadmap phase c). Nothing here has been uploaded yet.
+Upload only after device testing (PRD roadmap phase 3 (after device testing and polish)). Nothing here has been uploaded yet.
 
 ## Create the project
 
@@ -23,7 +23,7 @@ Upload only after device testing (PRD roadmap phase c). Nothing here has been up
 11. File: `dist/PocketEssentials-0.0.1.zip` (addon only). It may already be in `dist/`; if anything has changed since, rebuild it with `scripts/build.sh` from a Mac or Linux terminal (or ask Claude).
 12. Game flavor: `Forever`. Game version: `1.60.1`.
 13. Release type: `Release` (the 0.0.x version number shows it is early).
-14. Changelog: paste the `## [0.0.1]` section of `CHANGELOG.md`.
+14. Changelog: paste the `## [0.0.1]` section of `CHANGELOG.md`, replacing 'Unreleased' with the release date before pasting.
 15. Relations: add QuestieDB (project ID `1696795`, slug `questiedb`) as **Required**. (The TOC says OptionalDeps because the addon runs without QuestieDB, but the quest features, the main reason to install, need it, so CurseForge should install it automatically.)
 
 ## Optional, for later

@@ -123,7 +123,7 @@ Chatting is hard on a handheld because targets are too small to tap.
 
 In progress: version 0.0.1 is written but has not run on a device yet.
 
-**Nothing in this repo has run in the game.** Version 1 was written on a Mac
+**Nothing in this repo has run in the game.** Version 0.0.1 was written on a Mac
 with no game client. Every line was checked against Blizzard's published
 interface code for this exact build, syntax-checked, exercised against a
 home-made stand-in for the game, and read by a second independent reviewer.
@@ -143,7 +143,7 @@ until its step in the test plan passes.
 | Big chat buttons | Picker with one big button per channel plus the last six whisperers; badge on the round button for unanswered whispers | Untested |
 | Layout helper (experimental) | One-tap switch to Blizzard's Gamepad layout and back; a dormant path to install a ready-made handheld layout. **No nudge arrows** (see `docs/DECISIONS.md`) | Untested |
 | QuestieDB | Official Questie data addon, Forever build 1.1.1, shipped unmodified. Only the two quest features need it | Untested |
-| `scripts/build.sh` | Downloads QuestieDB (pinned checksum), checks the addon's file list, writes `dist/wow-forever-pocket-essentials.zip` | Runs on the Mac |
+| `scripts/build.sh` | Downloads QuestieDB (pinned checksum), checks the addon's file list, writes `dist/wow-forever-pocket-essentials.zip` (GitHub bundle) and `dist/PocketEssentials-<version>.zip` (CurseForge, addon only) | Runs on the Mac |
 
 ### Goal coverage
 
@@ -201,21 +201,21 @@ Rules 1 and 2 apply: one phase at a time, one item at a time.
 ## Repo layout
 
 - `PRD.md` — this file: rules, goals, status, roadmap
-- `README.md` — short install notes
+- `README.md` — player and developer overview
 - `CLAUDE.md`, `AGENTS.md` — instructions for AI coding agents
 - `.claude/settings.json` — shared agent settings
 - `CHANGELOG.md` — release history
 - `LICENSE` — GPL-3.0
 - `addons/PocketEssentials/` — the addon, exactly as it should land in AddOns
 - `scripts/build.sh` — builds the zip
-- `scripts/check.sh` — syntax and consistency checks
+- `scripts/check.sh` — LuaJIT syntax check plus a comment-wording check
 - `scripts/test.sh` — runs the tests in `tests/`
 - `scripts/fetch-questiedb.sh` — downloads the pinned QuestieDB release
 - `scripts/make_art.py` — generates the artwork
 - `tests/` — off-device tests
 - `curseforge/` — CurseForge upload text and fields (`FIELDS.md`)
 - `docs/ARCHITECTURE.md` — structure, safety net, unverified API, facts
-- `docs/DECISIONS.md` — decisions made without the owner, and what was left out
+- `docs/DECISIONS.md` — decisions made without the maintainer, and what was left out
 - `docs/TESTING.md` — device test plan
 - `docs/superpowers/specs/` — approved feature specs, `<date>-<feature>.md`
 - `docs/superpowers/plans/` — build plans made from the specs

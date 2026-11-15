@@ -72,11 +72,16 @@ load."). Everything else keeps working.
 ## For developers
 
 ```bash
-scripts/check.sh   # syntax and lint checks
+scripts/check.sh   # LuaJIT syntax check plus a comment-wording check
 scripts/test.sh    # offline QuestieDB tests (data for both factions)
 scripts/build.sh   # dist/wow-forever-pocket-essentials.zip (GitHub bundle)
                    # dist/PocketEssentials-<version>.zip (CurseForge, addon only)
 ```
+
+The first test run downloads QuestieDB into `vendor/` (cached afterwards). The
+project enables the `wow-addon-skills` Claude Code plugin
+(<https://github.com/ChrisMiho/wow-addon-skills>) via `.claude/settings.json`,
+so Claude Code may offer to install it.
 
 A Stop hook in `.claude/settings.json` runs the checks and tests and blocks a
 Claude Code turn from ending if either fails. New features follow the

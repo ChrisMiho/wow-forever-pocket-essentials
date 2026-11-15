@@ -1,6 +1,31 @@
 # Testing
 
-This file holds the device test plan, steps 0 to 9. Goals live in PRD.md.
+This file holds the offline tests and the device test plan, steps 0 to 9. Goals live in PRD.md.
+
+## Offline tests
+
+`scripts/test.sh` needs `luajit` (`brew install luajit`) and, on the first run,
+downloads the pinned QuestieDB release into `vendor/` (cached afterwards). It
+loads the real QuestieDB reading code and our `Core.lua` and `QuestData.lua`
+under stand-ins for the game's functions, then checks:
+
+- Every quest in QuestieDB goes through `QuestData.lua` without an error, as
+  "in the log" and as "complete", for an Alliance and a Horde player.
+- A handful of known quests get pins at the expected coordinates.
+- The case where QuestieDB is not installed is handled quietly.
+
+On a pass it prints one summary line and exits 0. On a failure it prints
+`FAIL:` with the first failing quest and its error, and exits 1. If luajit is
+missing, or QuestieDB cannot be downloaded (for example, you are offline), the
+test prints a notice and is skipped, so nobody is locked out.
+
+`tests/questiedb/baseline.txt` records how many quests get pins. Update it only
+on purpose: when pin-building behaviour intentionally changes, or when the
+QuestieDB pin in `scripts/fetch-questiedb.sh` is bumped. Never update it just
+to make a failing run pass.
+
+These tests prove the logic, not the behaviour in the game. Only the device
+test below does that.
 
 ## Device test plan
 

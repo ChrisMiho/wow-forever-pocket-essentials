@@ -4,7 +4,7 @@ local ADDON_NAME, PE = ...
 --
 --   "sellJunk"  sells grey items when a vendor window opens: one item about
 --               every 0.2 seconds, until none are left. (Only the last 12
---               sold can be bought back; the player chose no cap.)
+--               sold can be bought back; no cap, by design.)
 --   "repair"    repairs all gear at vendors that can, with the character's
 --               own money (never the guild's).
 --

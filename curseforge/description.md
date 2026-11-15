@@ -6,7 +6,7 @@ A small, lightweight addon suite that makes WoW Forever comfortable to play on a
 
 ## Early version (0.0.x)
 
-Version 0.0.1 is written but has not been tested on a device yet. Treat every feature as unproven until it has run in the game. Testers are very welcome, and bug reports help a lot.
+In progress: version 0.0.1 is written but has not run on a device yet. Treat every feature as unproven until it has run in the game. Testers are very welcome, and bug reports help a lot.
 
 ## Who it's for
 

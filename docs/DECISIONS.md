@@ -1,9 +1,9 @@
 # Decisions
 
-This file holds the decisions made without the owner and what was left out of
-version 1, and why. Goals live in PRD.md.
+This file holds the decisions made without the maintainer and what was left out of
+version 0.0.1, and why. Goals live in PRD.md.
 
-## Decisions made without the owner
+## Decisions made without the maintainer
 
 Made during the unattended build of 2026-11-13/14. Each took the lighter or
 safer option. Any of them can be reversed.
@@ -17,7 +17,7 @@ safer option. Any of them can be reversed.
 - Settings rows live in a list paged with two big Up/Down buttons (there is
   no mouse wheel on the device); the d-pad also scrolls it.
 - Holding the round button for half a second always opens settings, so a
-  problem in the chat picker can never lock the owner out.
+  problem in the chat picker can never lock the player out.
 - Controller navigation arms once when a window opens and never fights
   Blizzard's gamepad UI. If a Blizzard popup takes the d-pad while our window
   is open, close and reopen ours to get it back.
@@ -62,16 +62,16 @@ safer option. Any of them can be reversed.
 - L3 sorts only while the bag is open and never during combat.
 - Bag size never goes below the game's own size; "Extra large" may equal
   "Large" when the bag is already as tall as the screen.
-- If the owner switches back to separate bags in the game's own menu, the
+- If the player switches back to separate bags in the game's own menu, the
   feature respects that.
 
 **Vendor**
-- No cap on how many greys sell per visit (owner's choice, 2026-11-14; the
+- No cap on how many greys sell per visit (the maintainer's choice, 2026-11-14; the
   first build stopped at 12). Only the last 12 sold can be bought back.
 - The chat line reports the money gained during the visit, e.g. "Sold 7 junk
   items for 1g 20s 5c." and "Repairing for 12s 40c."
 - An item must be grey according to both the bag slot and the item database,
-  have a price, and not be locked. Bags the owner marked "ignore for junk" in
+  have a price, and not be locked. Bags the player marked "ignore for junk" in
   Blizzard's bag menu are skipped.
 - Selling pauses in combat and stops if a trade window or spell-target
   cursor is up. Nothing is ever auto-confirmed.
@@ -119,7 +119,7 @@ safer option. Any of them can be reversed.
   the d-pad can be mapped to arrow keys outside the game), the game's own
   nudge works: tap an item, then arrows move it 1 step and Shift+arrows 10.
 - **A ready-made handheld layout.** The code to install one exists, but no
-  layout is bundled: the owner has to arrange the screen on the device and
+  layout is bundled: the player has to arrange the screen on the device and
   export it first (steps in `docs/TESTING.md`, step 9). Until then the panel says
   "No handheld layout saved yet".
 - **Arrow across zones.** The arrow only points at objectives in the zone you
@@ -132,7 +132,7 @@ safer option. Any of them can be reversed.
   Removed: the game's controller map cursor would still react to the hidden
   pins.
 - **Improved Forever** (another addon bundle). Considered and dropped: too
-  heavy and not verifiable for this build. **Revisit later**: the owner liked
+  heavy and not verifiable for this build. **Revisit later**: the maintainer liked
   its radial wheels and its L3 bag sort (the L3 sort idea is in our bags
   feature already).
 - Full Questie, TomTom, Bagnon, BetterBags and ForeverLazy were also

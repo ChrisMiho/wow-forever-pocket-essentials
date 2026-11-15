@@ -64,7 +64,7 @@ How the pieces protect each other:
      `OnDisable(mod)` when switched off. An error in `OnEnable` marks the
      feature failed, calls `OnDisable`, and shows the error on the Errors page.
 4. A feature is off until the player switches it on (only a saved `true`
-   enables it). Do not change that until the owner has tested it on the device.
+   enables it). Do not change that until the maintainer has tested it on the device.
 5. The feature's switch row appears in the settings window by itself; no UI
    code is needed unless it has `options`.
 6. Inside a feature use the module methods: `mod:RegisterEvent(event, fn)`
@@ -79,7 +79,7 @@ How the pieces protect each other:
    off. If it needs a tick (an `OnUpdate`), run it only while it has work, stop
    it in `OnDisable`, and keep it to about 10 per second like the two existing
    ticks.
-8. Run `scripts/check.sh` and `scripts/test.sh`, then stop for the owner's
+8. Run `scripts/check.sh` and `scripts/test.sh`, then stop for the maintainer's
    device test. Log any game function you could not verify under "Unverified
    API".
 
@@ -109,10 +109,8 @@ so that being wrong cannot raise an error; the worst case is listed.
 | `Enum.EditModePresetLayoutsMeta.NumValues`; English text of the "Enable Gamepad UI" setting | Layout | A status line reads slightly differently |
 | `debugstack` argument form; whether `C_UI.Reload` needs a real press (it is only ever called from one) | Core | Shorter error details |
 
-Syntax check: all eleven Lua files parse as Lua 5.1 (checked with the
-`luaparse` JavaScript parser, because no `luac` or `luacheck` is installed on
-the build Mac). Each file was also run against a home-made imitation of the
-game's API to catch plain coding mistakes. That imitation only knows what its
+Syntax check: all eleven Lua files parse as Lua 5.1 (checked by `scripts/check.sh`, which uses LuaJIT). Each file was also
+run against a home-made imitation of the game's API to catch plain coding mistakes. That imitation only knows what its
 authors believed about the game.
 
 ## Facts
@@ -148,7 +146,7 @@ authors believed about the game.
   <https://github.com/Questie/QuestieDB/releases>. Version 1.1.1 is the
   version we ship (Forever zip SHA-256
   `2527118d861e497fa40bdb6d061883bf09649d5f96e09de6885f578aefbb5e59`), pinned
-  in `scripts/build.sh` with a checksum. It is data only (no icons), includes
+  in `scripts/fetch-questiedb.sh` with a checksum. It is data only (no icons), includes
   nine translations chosen by client language, and stores its data inside
   its `.toc` files, so its folder must be named exactly `QuestieDB`.
 - QuestieDB 1.1.1 is 37 MB unpacked. Most of that is one large data file
@@ -157,9 +155,9 @@ authors believed about the game.
   one, so we keep both. 1.1.1 is a data-only update: its `src/*.lua` files
   are byte-identical to 1.1.0.
 - QuestieDB 1.1.1 provides interface ("contract") version 4; our code asks
-  for 4. It holds 5,914 quests. All 5,893 quests of the earlier 1.1.0 data
-  were run through our quest-data code off the device without an error; about
-  980 of those had no location data and show no icons.
+  for 4. It holds 5,914 quests. The offline harness (`scripts/test.sh`, not the
+  device) runs all of them through our quest-data code without an error;
+  5,673 get at least one pin and 241 get none (no location data).
 - QuestieDB's licence: the Questie team permits copying under GPL-3.0 terms
   but cannot speak for all past contributors. This repo ships their release
   unmodified with licence files intact. Re-read `LICENSE.md` inside the
@@ -169,7 +167,7 @@ authors believed about the game.
 
 ### Unverified (do not rely on these without testing)
 - Everything under "Unverified API" above.
-- Whether any of version 1 works on the device.
+- Whether any of version 0.0.1 works on the device.
 - Which of the two QuestieDB data files the client loads.
 - Whether quests under a collapsed header in the quest log are still seen
   (if not, their icons vanish while collapsed).

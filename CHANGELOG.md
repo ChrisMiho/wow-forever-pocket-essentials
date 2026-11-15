@@ -25,4 +25,4 @@ Nothing in this version has run on a device yet.
 
 ### Dependencies
 
-- QuestieDB 1.1.1 (quest data for the two quest features).
+- QuestieDB (the GitHub bundle pins 1.1.1; CurseForge installs the latest), for the two quest features.

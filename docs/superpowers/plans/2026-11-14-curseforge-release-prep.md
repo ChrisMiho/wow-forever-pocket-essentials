@@ -80,7 +80,7 @@
 **Git**
 - No history rewrite needed: all commits use a noreply address, and a scan found no personal details.
 - Branch `release-prep` from `build-v1`.
-- The plugin lives in a new sibling repo `/Users/chrismiho/Coding/wow-addon-skills`. 🛑 before `gh repo create` or any push.
+- The plugin lives in a new sibling repo `../wow-addon-skills`. 🛑 before `gh repo create` or any push.
 
 **Credits:** **QuestieDB and the Questie team** (GPL-3.0, <https://github.com/Questie/QuestieDB>, <https://www.curseforge.com/wow/addons/questiedb>); **pfQuest by Shagu** (icons, MIT); LibDeflate credited in `tests/lib/` only.
 
@@ -369,7 +369,7 @@ Expected: `PASS`.
 
 ### Task 11: `wow-addon-skills` plugin repo 🛑
 
-**Files** (new repo `/Users/chrismiho/Coding/wow-addon-skills`):
+**Files** (new repo `../wow-addon-skills`):
 - `.claude-plugin/marketplace.json` (name `chrismiho-wow-addons`, owner `ChrisMiho`, one entry `wow-addon-skills` with source `./plugins/wow-addon-skills`)
 - `plugins/wow-addon-skills/.claude-plugin/plugin.json` (name `wow-addon-skills`, version `0.1.0`, licence GPL-3.0)
 - `plugins/wow-addon-skills/skills/<name>/SKILL.md` for the four skills below
@@ -389,7 +389,7 @@ Expected: `PASS`.
 - [ ] **Step 2: Write the four skills.** Descriptions put the use case first and include phrases a user would say (e.g. "is this API available on Forever", "test against QuestieDB offline", "ready to test on my device", "release to CurseForge").
 - [ ] **Step 3: Validate.** Run `claude plugin validate .` and `claude plugin validate ./plugins/wow-addon-skills`. Expected: `✔ Validation passed` for both.
 - [ ] **Step 4: Install locally and smoke-test.**
-  - Run `claude plugin marketplace add /Users/chrismiho/Coding/wow-addon-skills`, then `claude plugin install wow-addon-skills@chrismiho-wow-addons`, then `claude plugin details wow-addon-skills`. Expected: `Skills (4)`.
+  - Run `claude plugin marketplace add ../wow-addon-skills`, then `claude plugin install wow-addon-skills@chrismiho-wow-addons`, then `claude plugin details wow-addon-skills`. Expected: `Skills (4)`.
   - In this repo, run `claude -p "Is C_QuestLog.GetInfo available on WoW Forever? Use the relevant skill."`. Expected: the answer cites the `forever` branch of wow-ui-source.
 - [ ] **Step 5: Commit** in the plugin repo. Message: `wow-addon-skills 0.1.0: four addon-development skills`.
 - [ ] **Step 6: 🛑 Owner checkpoint.** Ask before `gh repo create ChrisMiho/wow-addon-skills --public` and the push. Only after both, add the `.claude/settings.json` marketplace entries and the CLAUDE.md pointer here, then commit `Enable wow-addon-skills plugin for this project`.
