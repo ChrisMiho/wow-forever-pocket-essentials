@@ -12,7 +12,7 @@ OUT = os.path.join(ROOT, "curseforge")
 SS = 4  # supersampling factor
 
 PALETTES = {
-    # Current (owner has not picked yet): navy->teal, black disc, gold ring.
+    # Previous default: navy->teal, black disc, gold ring.
     "current": dict(
         bg_top=(11, 34, 78), bg_bottom=(14, 112, 120),
         line=(150, 205, 225, 48), disc=(18, 18, 25), ring=(255, 209, 0),
@@ -34,7 +34,7 @@ PALETTES = {
         letters=(255, 244, 222), title=(255, 244, 222),
         tagline=(214, 198, 245), accent=(255, 160, 90)),
 }
-DEFAULT = "current"
+DEFAULT = "B"
 
 FONT_PATH = "/System/Library/Fonts/Supplemental/Arial Bold.ttf"
 
