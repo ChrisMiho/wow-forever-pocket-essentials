@@ -21,7 +21,8 @@ addons/PocketEssentials/
   Vendor.lua      features: sell junk, repair (two switches)
   Chat.lua        feature: big chat buttons
   Layout.lua      feature: layout helper (experimental)
-  Icons/          three icon images from pfQuest/Shagu with their MIT notice
+  Icons/          three icon images from pfQuest/Shagu with their MIT notice,
+                  plus our own arrow, circle and blank (scripts/make_art.py --icons)
 ```
 
 How the pieces protect each other:
@@ -98,6 +99,8 @@ so that being wrong cannot raise an error; the worst case is listed.
 | Minimap yards-per-zoom table (taken from the HereBeDragons library's values) and six zoom levels | Minimap icons | Icons drift toward or away from the centre as you walk |
 | `IsIndoors()` as the indoor/outdoor minimap switch | Minimap icons | Same drift, indoors only |
 | Default values of the minimap's quest-area ("haze") transparency (set inside the game engine) | Quest icons | Bringing the minimap haze back needs a reload; the panel asks for one |
+| Whether the engine resets the minimap haze values when the world loads, and whether setting them again (alphas 0, ring scalars 0, blank textures) on login, loading screens and zone changes hides it (0.0.1 did not hide it on the device) | Quest icons | The blue haze still shows on the minimap; no error |
+| Whether our own TGA art (`Icons/arrow`, `circle`, `blank`) loads and faces the right way on this client | Round button, whisper badge, quest arrow, haze hiding | A green square instead of the round button or arrow; text still works |
 | Hiding the world-map haze by making its frame transparent | Quest icons | Haze stays visible on the world map. An alternative is noted in the file |
 | `C_EncodingUtil` decode functions behave as QuestieDB expects; which of QuestieDB's two identical data files the client loads | QuestieDB itself | QuestieDB fails to load; quest features stay off and say why |
 | `CanMerchantRepair`, `GetRepairAllCost`, `RepairAllItems`, `InRepairMode`, `SpellIsTargeting` (used by Blizzard's own vendor code but absent from the generated documentation, so their restrictions are unknown) | Repair, sell junk | Repair row shows "PROBLEM", or the game shows its own "blocked" message once |
@@ -116,6 +119,14 @@ authors believed about the game.
 ## Facts
 
 ### Verified (from source files or official releases, not in game)
+- "Focus" in the quest log is Blizzard's super-tracked quest:
+  `C_SuperTrack.GetSuperTrackedQuestID` / `SetSuperTrackedQuestID`, event
+  `SUPER_TRACKING_CHANGED` (`QuestMapFrame.lua` quest menu). The quest
+  tracker list is `C_QuestLog.GetNumQuestWatches` /
+  `GetQuestIDForQuestWatchIndex`, event `QUEST_WATCH_LIST_CHANGED`.
+- `Texture:SetRotation(radians)` turns counter-clockwise for positive values:
+  Blizzard turns its map vehicle arrows with `SetRotation(facing)`
+  (`VehicleDataProvider.lua`), and facing grows counter-clockwise.
 - Addon interface number is `16001`. TOC suffixes `_Forever` / `_Camelot`
   exist.
 - The client has its own gamepad interface (`Blizzard_Gamepad`,
@@ -163,11 +174,14 @@ authors believed about the game.
   unmodified with licence files intact. Re-read `LICENSE.md` inside the
   release before distributing a modified (trimmed) copy.
 - The three objective icon images come from pfQuest (Shagu), MIT licence;
-  the notice is in `addons/PocketEssentials/Icons/MIT.txt`.
+  the notice is in `addons/PocketEssentials/Icons/MIT.txt`. That notice
+  covers only `loot_mono`, `object_mono` and `slay_mono`; `arrow`, `circle`
+  and `blank` are original art drawn by `scripts/make_art.py --icons`.
 
 ### Unverified (do not rely on these without testing)
 - Everything under "Unverified API" above.
-- Whether any of version 0.0.1 works on the device.
+- Whether any of version 0.0.2 works on the device (0.0.1's first quest test:
+  see PRD.md "Status").
 - Which of the two QuestieDB data files the client loads.
 - Whether quests under a collapsed header in the quest log are still seen
   (if not, their icons vanish while collapsed).

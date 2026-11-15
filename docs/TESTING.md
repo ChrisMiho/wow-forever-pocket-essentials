@@ -68,34 +68,43 @@ and `QuestieDB` sit side by side.
 
 ### 2. Quest icons
 - Switch on **Quest icons** only. Have a few quests in the log.
-- Open the world map in a zone with quest objectives: coloured icons (red
-  kill, yellow loot, blue use, purple explore, "?" turn in) should sit where
-  the objectives are, and the blue haze should be gone. Zoom the map in and
-  out: icons should stay on their spots and stay the same size.
-- Look at the minimap while walking toward an objective: the icon should
-  move toward the centre steadily as you approach.
-- Tap an icon on the map: a text box names the quest and objective.
-- Finish an objective: its icons should disappear within a second or two.
-- Try the choices under the row (icon size, minimap on/off, haze on/off).
-- Report: do icons appear at all; are they in believable places; does the
-  haze vanish on map and minimap; do minimap icons drift oddly; can you
-  still drag the map by touch; any "action blocked" message; frame rate with
-  the map open.
+- **Round button:** it should now look smooth, not stepped.
+- Open the quest log and **Focus** one quest (its menu → Focus). Open the
+  world map in that quest's zone: only that quest's icons should show
+  (red kill, yellow loot, blue use, purple explore, "?" turn in), and the
+  blue haze should be gone. Focus a different quest: the icons switch.
+- Remove the focus: the icons of the quests in Blizzard's quest tracker
+  show instead.
+- Under the row, try **Show icons for**: "Tracked quests" (tracker quests
+  plus the focused one) and "All quests" (every quest, like 0.0.1).
+- Zoom the map in and out: icons stay on their spots and the same size.
+- Minimap: **no blue haze** right after login, after a loading screen, and
+  after walking into another zone. Icons move toward the centre as you
+  approach.
+- Tap an icon on the map: a text box names the quest and objective. The tap
+  does not change the focus.
+- Finish an objective: its icons disappear within a second or two.
+- Report: is the map readable now; does the minimap haze stay gone in all
+  three cases; do icons follow the focus; any "action blocked" message;
+  frame rate with the map open.
 
 ### 3. Quest arrow
 - Leave Quest icons on and switch on **Quest arrow**.
-- Stand in a zone with an objective. An arrow with a distance and quest name
-  should appear at the top of the screen.
-- **Direction check:** face north (use the minimap) with an objective to
+- Focus a quest with an objective in your zone. An arrow (gold, with a
+  clear point) with a distance and quest name appears at the top.
+- **Direction check:** face north (use the minimap) with the objective to
   your north: the arrow should point up. Turn right: the arrow should swing
   left. If it swings the same way you turn, tell us; it is a one-line fix.
-- Walk to the objective: distance should count down to "Here".
-- Tap a different quest's icon on the map: the arrow should switch to it.
-  Pick a quest in another zone: it should say "Not in this zone".
-- Enter a dungeon: the arrow should hide while you are inside.
+- Walk to the objective: the distance counts down and the arrow turns green
+  with "Here".
+- Focus a different quest: the arrow switches to it. Focus a quest in
+  another zone: the arrow hides and the text says "In <that zone>".
+- Remove the focus: it points at the nearest objective of your tracked
+  quests.
+- Enter a dungeon: the arrow hides while you are inside.
 - Then switch Quest icons off and confirm the arrow still works alone.
-- Report: direction right/mirrored; distance sensible; position choices that
-  collide with something on your screen; any stutter while moving.
+- Report: direction right/mirrored; does it follow the focus; distance
+  sensible; any stutter while moving.
 
 ### 4. Bags
 - Switch on **One big bag**. If a "Reload now" bar appears, tap it.

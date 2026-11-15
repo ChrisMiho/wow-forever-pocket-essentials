@@ -24,29 +24,39 @@ safer option. Any of them can be reversed.
 - Errors are logged quietly with one chat line per feature per session,
   instead of the game's error popup.
 - `/pe reset` puts the round button and button size back to default.
-- No round artwork could be verified, so the round button is drawn from
-  plain coloured strips with the letters "PE". It may look slightly stepped.
+- 0.0.1 drew the round button from plain coloured strips, and it looked
+  pixelated on the device. From 0.0.2 it uses our own smooth circle image.
 
 **Quest icons / data**
 - Icon sizes: Small / Medium / Large = 22 / 28 / 36 px on the map, 14 / 18 /
   22 on the minimap. They are deliberately below the 48 px touch rule,
   because 48 px icons would bury the map; on the world map the tap area is
   exactly the icon.
-- Tapping an icon picks that quest and shows a short text box (hover tooltips
-  do not exist on a touch screen). It hides after 5 seconds.
+- Tapping an icon shows a short text box (hover tooltips do not exist on a
+  touch screen). It hides after 5 seconds. Since 0.0.2 a tap no longer picks
+  the quest: picking by tap was awkward on the device.
 - At most 150 icons on the world map and 40 on the minimap at once; at most
   300 places per objective (thinned evenly). Items that drop from more than
   60 kinds of creature (cloth, potions) show no icons.
 - Dungeon objectives show an icon on the dungeon entrance.
 - "Talk to" objectives are labelled "Explore" (there is no separate label).
-- "The quest you picked" means only a quest tapped on one of our icons. It
-  does not follow Blizzard's own quest tracker.
+- Since 0.0.2 the quest that matters is the one you **focus** in the quest
+  log (Blizzard's own focus). "Show icons for" (default Focused quest) cuts
+  the icons to that quest; with nothing focused it shows the quests in
+  Blizzard's tracker. "Tracked quests" and "All quests" are the other
+  choices. Added because the map was unreadable with every quest shown.
+- The minimap haze is hidden again after every loading screen and zone
+  change, and two seconds after each loading screen, because hiding it once
+  at login did not work on the device.
 - "Hide Blizzard's quest pins" was removed (see "left out").
-- `/qd` still works for map, mini, haze, size and cluster.
+- `/qd` still works for map, mini, haze, size, cluster and show.
 
 **Quest arrow**
-- Current zone only; "Not in this zone" for a picked quest elsewhere.
-- Drawn from thick lines rather than a picture, so no artwork can be missing.
+- Points at the focused quest. With none focused: the tracker's quests, then
+  any quest. Current zone only; for a focused quest elsewhere it says
+  "In <zone>".
+- Since 0.0.2 drawn from our own arrow picture (the line drawing had no
+  real point). The old line drawing remains as a fallback.
 - Five preset positions (Top, Upper middle, Lower middle, Left, Right), two
   sizes. It sits behind all windows and never takes taps.
 - The arrow is relative to the way the character faces, not the camera.
@@ -123,7 +133,7 @@ safer option. Any of them can be reversed.
   export it first (steps in `docs/TESTING.md`, step 9). Until then the panel says
   "No handheld layout saved yet".
 - **Arrow across zones.** The arrow only points at objectives in the zone you
-  are in. If the quest you picked is elsewhere it says "Not in this zone"
+  are in. If the focused quest is elsewhere it says "In <zone>"
   rather than guessing a direction. Pointing across zone borders was written,
   then removed after review because it could show a confidently wrong arrow.
 - **Battle.net whispers** in the chat picker. Only ordinary character

@@ -3,12 +3,16 @@
 -- Where things are comes from PE.QuestData (QuestData.lua); this file only
 -- draws. Ported from the old standalone QuestDots addon.
 --
--- Touch (there is no hover): tap an icon and that quest becomes the tracked
--- quest, and a short text box says what the icon is. The box goes away by
--- itself after a few seconds, when another icon is tapped, when the same icon
--- is tapped again, or when the map is closed. It is our own frame in the
--- addon's large font, not GameTooltip: Blizzard's quest-area pin rewrites
--- GameTooltip every frame while the pointer rests inside a quest area.
+-- Which quests get icons is the "Show icons for" option: the quest focused in
+-- the quest log (Blizzard's "Focus"), the quests in Blizzard's quest tracker,
+-- or every quest in the log. Tapping an icon does not change the focus.
+--
+-- Touch (there is no hover): tap an icon and a short text box says what the
+-- icon is. The box goes away by itself after a few seconds, when another icon
+-- is tapped, when the same icon is tapped again, or when the map is closed.
+-- It is our own frame in the addon's large font, not GameTooltip: Blizzard's
+-- quest-area pin rewrites GameTooltip every frame while the pointer rests
+-- inside a quest area.
 --
 -- Nothing here touches protected frames, so nothing waits for combat to end.
 -- The only Blizzard frame changed is the world map's quest-area pin, and only
@@ -27,6 +31,7 @@ local KEY = "questIcons"
 ---------------------------------------------------------------------------
 
 local DEFAULTS = {
+    show = "focus",   -- "focus" | "tracked" | "all": which quests get icons
     map = true,       -- icons on the world map
     mini = true,      -- icons on the minimap
     hideHaze = true,  -- hide Blizzard's blue quest areas (map and minimap)
@@ -42,7 +47,7 @@ local MINI_PX = { small = 14, medium = 18, large = 22 }
 -- map the tap area is exactly the icon, so the map can still be dragged and
 -- Blizzard's own pins underneath can still be tapped.
 local MINI_HIT_PX = 32
-local TRACKED_SCALE = 1.25 -- icons of the tracked quest are drawn this much larger
+local TRACKED_SCALE = 1.25 -- with "All quests", icons of the focused quest are drawn this much larger
 -- Most icons drawn at once: every world map icon is moved on every frame of a
 -- zoom, and the minimap moves its icons ten times a second while walking.
 local MAP_MAX = 150
@@ -79,12 +84,24 @@ local MINIMAP_YARDS = {
     outdoor = { [0] = 466 + 2 / 3, 400, 333 + 1 / 3, 266 + 2 / 3, 200, 133 + 1 / 3 },
 }
 
--- Minimap blob settings we set to zero to hide the haze. The game has no way
--- to read their normal values back, so only a reload restores them.
-local BLOB_SETTERS = {
-    "SetQuestBlobInsideAlpha", "SetQuestBlobOutsideAlpha", "SetQuestBlobRingAlpha",
-    "SetTaskBlobInsideAlpha", "SetTaskBlobOutsideAlpha", "SetTaskBlobRingAlpha",
+-- Minimap blob settings that hide the haze: every part transparent, drawn
+-- with a fully transparent texture, and the ring shrunk to nothing. Blizzard's
+-- interface code never sets these, so the game engine owns the normal values;
+-- it may also put them back when the world loads, which is why they are set
+-- again after loading screens, zone changes and quest changes. The game has
+-- no way to read the normal values back, so only a reload restores them.
+-- (Minimap setters: MinimapFrameAPIDocumentation.lua, forever 1.60.1.)
+local BLANK_TEXTURE = ICON_PATH .. "blank" -- 8x8, fully transparent
+local BLOB_SETTINGS = {
+    { "SetQuestBlobInsideAlpha", 0 }, { "SetQuestBlobOutsideAlpha", 0 }, { "SetQuestBlobRingAlpha", 0 },
+    { "SetTaskBlobInsideAlpha", 0 }, { "SetTaskBlobOutsideAlpha", 0 }, { "SetTaskBlobRingAlpha", 0 },
+    { "SetQuestBlobRingScalar", 0 }, { "SetTaskBlobRingScalar", 0 },
+    { "SetQuestBlobInsideTexture", BLANK_TEXTURE }, { "SetQuestBlobOutsideTexture", BLANK_TEXTURE },
+    { "SetQuestBlobRingTexture", BLANK_TEXTURE },
+    { "SetTaskBlobInsideTexture", BLANK_TEXTURE }, { "SetTaskBlobOutsideTexture", BLANK_TEXTURE },
+    { "SetTaskBlobRingTexture", BLANK_TEXTURE },
 }
+local HAZE_AGAIN_SECONDS = 2 -- after a loading screen, set the haze again this much later too
 
 ---------------------------------------------------------------------------
 -- State
@@ -94,11 +111,17 @@ local mod                  -- set by RegisterModule near the end of the file
 local QD                   -- PE.QuestData while enabled
 local active = false       -- true while the feature is on and allowed to draw
 local blocked              -- plain-language reason nothing is drawn, or nil
-local trackedID            -- quest whose icons are drawn larger
+local trackedID            -- the focused quest, or nil
 local clusterSet = false   -- we changed PE.QuestData.cluster
 local blobsZeroed = false  -- the minimap haze was hidden this session
 
 local EMPTY = {}
+
+-- Which quests get icons. Rebuilt only when the focus, the quest tracker or
+-- the option changes; the draw loops only look questIDs up in it. Two tables
+-- take turns so a rebuild allocates nothing.
+local showAll = true                -- "All quests": no filter
+local showSet, spareSet = {}, {}    -- [questID] = true
 
 local mapPins, mapShown = {}, 0
 local mapState = {}        -- what the world map icons were last drawn from
@@ -155,8 +178,68 @@ local function ClusterValue()
     return value
 end
 
+local function ValidPin(d)
+    return type(d) == "table" and IsNumber(d.x) and IsNumber(d.y)
+end
+
 local function Escape(text)
     return (tostring(text):gsub("|", "||"))
+end
+
+---------------------------------------------------------------------------
+-- Which quests get icons ("Show icons for")
+---------------------------------------------------------------------------
+
+local function AddWatched(set)
+    if type(QD.GetWatchedQuests) ~= "function" then return end
+    local list = QD:GetWatchedQuests()
+    if type(list) ~= "table" then return end
+    for i = 1, #list do
+        local id = list[i]
+        if id ~= nil then set[id] = true end
+    end
+end
+
+-- "focus": the focused quest; with none focused, the quests in Blizzard's
+-- tracker. "tracked": the tracker's quests plus the focused one. "all": no
+-- filter. Uses trackedID, so set that first. Returns true if the set changed.
+local function RebuildFilter()
+    local mode = Opt("show")
+    local all = (mode == "all") or not QD
+    local set = spareSet
+    for id in pairs(set) do set[id] = nil end
+    if not all then
+        if mode == "tracked" then
+            AddWatched(set)
+            if trackedID ~= nil then set[trackedID] = true end
+        elseif trackedID ~= nil then
+            set[trackedID] = true -- "focus" (and any unknown saved value)
+        else
+            AddWatched(set)
+        end
+    end
+    local changed = (all ~= showAll)
+    if not changed then
+        for id in pairs(set) do
+            if not showSet[id] then changed = true break end
+        end
+    end
+    if not changed then
+        for id in pairs(showSet) do
+            if not set[id] then changed = true break end
+        end
+    end
+    spareSet, showSet, showAll = showSet, set, all
+    return changed
+end
+
+-- Is there anything in this pin list that the filter lets through?
+local function AnyShown(list)
+    for i = 1, #list do
+        local d = list[i]
+        if ValidPin(d) and (showAll or showSet[d.questID]) then return true end
+    end
+    return false
 end
 
 ---------------------------------------------------------------------------
@@ -212,8 +295,6 @@ local function LabelText(d)
         n = n + 1
         lines[n] = "|cff80ccffInside " .. Escape(d.inside) .. "|r"
     end
-    n = n + 1
-    lines[n] = "|cff9e9e9eTracking this quest|r"
     return table.concat(lines, "\n"), n
 end
 
@@ -340,10 +421,8 @@ local function OnPinClick(self)
         return
     end
     HideLabel()
-    QD:SetTrackedQuest(d.questID) -- redraws the icons straight away (the "tracked" callback)
-    if not active then return end
     if onMap then
-        if self.data == d and self.shown then ShowLabel(self, d, "map") end
+        ShowLabel(self, d, "map")
     elseif Minimap then
         ShowLabel(nil, d, "mini")
     end
@@ -390,10 +469,16 @@ end
 local function ZeroMinimapBlobs()
     local mm = Minimap
     if type(mm) ~= "table" then return end
-    for i = 1, #BLOB_SETTERS do
-        local setter = mm[BLOB_SETTERS[i]]
-        if type(setter) == "function" and pcall(setter, mm, 0) then blobsZeroed = true end
+    for i = 1, #BLOB_SETTINGS do
+        local entry = BLOB_SETTINGS[i]
+        local setter = mm[entry[1]]
+        if type(setter) == "function" and pcall(setter, mm, entry[2]) then blobsZeroed = true end
     end
+end
+
+-- Sets the minimap haze settings again, only while they should be hidden.
+local function ReapplyMinimapHaze()
+    if active and Opt("hideHaze") then ZeroMinimapBlobs() end
 end
 
 -- The "Reload now" prompt is only shown while the minimap haze is hidden but
@@ -436,10 +521,6 @@ end
 local function PlaceMapPin(p, d, canvas, scale, width, height)
     p:SetScale(scale)
     p:SetPoint("CENTER", canvas, "TOPLEFT", d.x * width / scale, -d.y * height / scale)
-end
-
-local function ValidPin(d)
-    return type(d) == "table" and IsNumber(d.x) and IsNumber(d.y)
 end
 
 local function HideMapPins(from)
@@ -498,17 +579,19 @@ local function RefreshWorldMap(force)
     local size = IconSize("map")
     local big = size * TRACKED_SCALE
     local level = MapLevel(map)
+    local all, set = showAll, showSet
     local n = 0
     for i = 1, #list do
         local d = list[i]
-        if ValidPin(d) then
+        if ValidPin(d) and (all or set[d.questID]) then
             n = n + 1
             local p = mapPins[n]
             if not p then
                 p = CreatePin(canvas, "map")
                 mapPins[n] = p
             end
-            local isTracked = trackedID ~= nil and d.questID == trackedID
+            -- larger only among all quests; a filtered map draws every icon alike
+            local isTracked = all and trackedID ~= nil and d.questID == trackedID
             local drawn = isTracked and big or size
             StylePin(p, d, drawn, drawn) -- tap area = the icon itself
             if level then p:SetFrameLevel((isTracked or d.kind == "turnin") and level + 1 or level) end
@@ -605,8 +688,8 @@ local function ClearMinimap()
 end
 
 -- Chooses the pin list for the map the player is on and starts or stops the
--- update. The update only runs while there is something to draw; the next
--- zone or quest change looks again.
+-- update. The update only runs while this map has icons the "Show icons for"
+-- filter lets through; the next zone, quest or focus change looks again.
 local function RefreshMinimapData()
     if not active or not QD then return end
     last.x = nil -- forces the next update to redraw
@@ -622,7 +705,7 @@ local function RefreshMinimapData()
     end
     local list = QD:GetPins(mapID)
     local width, height = QD:GetMapWorldSize(mapID)
-    if type(list) ~= "table" or #list == 0 or not (IsNumber(width) and IsNumber(height)) then
+    if type(list) ~= "table" or not AnyShown(list) or not (IsNumber(width) and IsNumber(height)) then
         ClearMinimap()
         miniMapID = mapID
         return
@@ -675,11 +758,12 @@ local function UpdateMinimap()
     local baseLevel = mm:GetFrameLevel()
     baseLevel = (IsNumber(baseLevel) and baseLevel or 0) + 5
     local list, worldW, worldH = miniList, miniW, miniH
+    local all, set = showAll, showSet
     local n = 0
 
     for i = 1, #list do
         local d = list[i]
-        if ValidPin(d) then
+        if ValidPin(d) and (all or set[d.questID]) then
             local dx = (d.x - px) * worldW * yardsToUnits -- east is +x
             local dy = (py - d.y) * worldH * yardsToUnits -- north is +y
             if rotate then dx, dy = dx * c + dy * s, dy * c - dx * s end
@@ -698,7 +782,7 @@ local function UpdateMinimap()
                     p = CreatePin(mm, "mini")
                     miniPins[n] = p
                 end
-                local isTracked = trackedID ~= nil and d.questID == trackedID
+                local isTracked = all and trackedID ~= nil and d.questID == trackedID
                 StylePin(p, d, isTracked and big or size, hit)
                 local level = (isTracked or d.kind == "turnin") and baseLevel + 1 or baseLevel
                 if p.level ~= level then
@@ -746,14 +830,33 @@ end
 local function OnDataChanged(reason)
     if not active or not QD then return end
     trackedID = QD:GetTrackedQuest()
-    if reason == "tracked" then
+    if reason ~= "tracked" and reason ~= "quests" then
+        RefreshMinimapData() -- "zone": the filter cannot have changed
+        RefreshWorldMap(false)
+        return
+    end
+    -- The focus or Blizzard's tracker may have changed (the tracker only
+    -- sends "quests"): the filter is rebuilt, and the engine may have put
+    -- the minimap haze back.
+    local filterChanged = RebuildFilter()
+    ReapplyMinimapHaze()
+    if reason == "tracked" and showAll and not filterChanged then
+        -- All quests: only the larger icons move to another quest
         last.x = nil
         acc = MINI_INTERVAL
         RefreshWorldMap(true)
     else
-        RefreshMinimapData()
-        RefreshWorldMap(false)
+        RefreshMinimapData() -- also starts or stops the minimap update
+        RefreshWorldMap(filterChanged or reason == "tracked")
     end
+end
+
+-- Loading screens and new zones: the engine may have reset the minimap haze.
+-- After a loading screen it is set once more a little later, in case the
+-- engine resets it after the event.
+local function OnWorldEvent(_, event)
+    ReapplyMinimapHaze()
+    if event == "PLAYER_ENTERING_WORLD" then mod:After(HAZE_AGAIN_SECONDS, ReapplyMinimapHaze) end
 end
 
 local function RefreshAll()
@@ -775,6 +878,9 @@ local function ApplyOption(key)
             clusterSet = true
             QD:RequestRebuild()
         end
+    elseif key == "show" then
+        RebuildFilter()
+        RefreshAll() -- forgets what the minimap and the world map last drew
     elseif key == "mini" then
         RefreshMinimapData()
     elseif key == "map" then
@@ -820,9 +926,12 @@ local function OnEnable()
     active = true
     QD:OnChanged(KEY, dataChanged)
     trackedID = QD:GetTrackedQuest()
+    RebuildFilter()
     if not HookWorldMap() then
         mod:RegisterEvent("ADDON_LOADED", OnAddonLoaded)
     end
+    mod:RegisterEvent("PLAYER_ENTERING_WORLD", OnWorldEvent)
+    mod:RegisterEvent("ZONE_CHANGED_NEW_AREA", OnWorldEvent)
     if Opt("hideHaze") then ZeroMinimapBlobs() end
     UpdateReloadPrompt()
     RefreshMinimapData()
@@ -893,6 +1002,10 @@ mod = PE:RegisterModule({
     requiresQuestieDB = true,
     defaults = DEFAULTS,
     options = {
+        { key = "show", label = "Show icons for",
+          choices = { { value = "focus", label = "Focused quest" }, { value = "tracked", label = "Tracked quests" },
+                      { value = "all", label = "All quests" } },
+          OnChange = OptionChanged("show") },
         { key = "map", label = "Map icons", choices = ON_OFF, OnChange = OptionChanged("map") },
         { key = "mini", label = "Minimap icons", choices = ON_OFF, OnChange = OptionChanged("mini") },
         { key = "hideHaze", label = "Hide blue haze", choices = ON_OFF, OnChange = OptionChanged("hideHaze") },
@@ -933,7 +1046,8 @@ local TOGGLES = {
     haze = { key = "hideHaze", name = "Hide blue haze" },
 }
 local CLUSTER_WORDS = { off = 0, normal = 2, more = 5 }
-local USAGE = "/qd map, /qd mini, /qd haze, /qd size small (or medium, large), /qd cluster 2 (0 is off)"
+local SHOW_WORDS = { focus = "Focused quest", tracked = "Tracked quests", all = "All quests" }
+local USAGE = "/qd show focus (or tracked, all), /qd map, /qd mini, /qd haze, /qd size small (or medium, large), /qd cluster 2 (0 is off)"
 
 local function SlashCommand(msg)
     local opts = mod.opts
@@ -956,6 +1070,10 @@ local function SlashCommand(msg)
     elseif cmd == "blizz" then
         PE:Print("Hiding Blizzard's quest pins was removed.")
         return
+    elseif cmd == "show" and SHOW_WORDS[value] then
+        opts.show = value
+        changed = "show"
+        PE:Print("Show icons for: " .. SHOW_WORDS[value] .. ".")
     elseif cmd == "size" and MAP_PX[value] then
         opts.size = value
         changed = "size"

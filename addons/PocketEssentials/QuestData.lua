@@ -17,8 +17,15 @@ local ADDON_NAME, PE = ...
 --   QD:GetPlayerFacing() -> radians | nil
 --   QD:GetMapWorldSize(uiMapID) -> width, height | nil
 --   QD:SetTrackedQuest(questID|nil)       QD:GetTrackedQuest() -> questID | nil
+--   QD:GetWatchedQuests() -> array of questIDs (never nil; may be empty)
 --   QD:IsQuestInLog(questID) -> bool      QD:GetQuestTitle(questID) -> string | nil
 --   QD.KIND_LABEL
+--
+-- The "tracked" quest is exactly the quest the player focused in the game's
+-- quest log ("Focus", Blizzard's super-tracked quest), while it is in the log.
+-- "tracked" fires when it changes. The watched quests are the ones in
+-- Blizzard's quest tracker; a change to that list fires "quests" without
+-- rebuilding any pins (only what users choose to show changes).
 --
 -- A pin is { x=, y= (0..1), kind=, questID=, title=, objText=, target=, inside= }.
 -- `inside` is only set for a target that lives in a dungeon: the pin then sits
@@ -36,6 +43,7 @@ QD.KIND_LABEL = { slay = "Kill", loot = "Loot", object = "Use", event = "Explore
 QD.cluster = 2
 
 local REBUILD_DELAY = 0.3      -- quest log events are coalesced into one rebuild per this many seconds
+local WATCH_DELAY = 0.1        -- quest tracker changes are coalesced into one "quests" callback per this many seconds
 local STEP_DELAY = 0.05        -- a big rebuild is spread over several short steps this far apart
 local QUESTS_PER_STEP = 4      -- quests rebuilt in one step
 local ZONE_DELAY = 0.1
@@ -66,10 +74,9 @@ local builtCluster                -- the cluster value the cache was built with
 local clusterCell = 0             -- cluster value in use by the running rebuild
 local dirty = true                -- pinsByMap is out of date
 
-local rebuildPending, zonePending, forceNotify, questRemoved = false, false, false, false
-local tracked                     -- quest the player last tapped
-local trackedLoaded = false
+local rebuildPending, zonePending, watchPending, forceNotify = false, false, false, false
 local lastTracked                 -- last value handed out through a "tracked" callback
+local watched = {}                -- reused by QD:GetWatchedQuests()
 
 local EMPTY = {}                  -- shared empty table; only ever read
 
@@ -97,6 +104,20 @@ end
 local function List(v)
     if type(v) == "table" then return v end
     return EMPTY
+end
+
+-- "Secret" values cannot be compared or used in maths by addons. If the test
+-- itself fails we assume the value is secret.
+local function IsSecret(v)
+    if type(issecretvalue) ~= "function" then return false end
+    local ok, secret = pcall(issecretvalue, v)
+    return not ok or (secret and true or false)
+end
+
+-- A usable quest id: a plain positive number.
+local function QuestID(v)
+    if IsSecret(v) or type(v) ~= "number" or v <= 0 then return nil end
+    return v
 end
 
 -- QuestieDB ------------------------------------------------------------------
@@ -534,22 +555,6 @@ local function Rebuild()
     return true, false
 end
 
--- Tracked quest ----------------------------------------------------------------
-local function SaveTracked()
-    local db = PE.db
-    if type(db) ~= "table" then return end
-    if type(db.questData) ~= "table" then db.questData = {} end
-    db.questData.tracked = tracked
-end
-
-local function LoadTracked()
-    local db = PE.db
-    if trackedLoaded or type(db) ~= "table" then return end
-    trackedLoaded = true
-    local saved = type(db.questData) == "table" and db.questData.tracked
-    if tracked == nil and type(saved) == "number" then tracked = saved end
-end
-
 -- Callbacks and timers -------------------------------------------------------
 local function Fire(reason)
     local keys, n = {}, 0
@@ -582,18 +587,10 @@ local function RebuildStep()
     if userCount <= 0 then return false end
     local changed, more = Rebuild()
     if more then return true end
-    if questRemoved then
-        questRemoved = false
-        -- The tapped quest was handed in or abandoned: forget it for good.
-        if tracked and not QD:IsQuestInLog(tracked) then
-            tracked = nil
-            SaveTracked()
-        end
-    end
     local force = forceNotify
     forceNotify = false
     if changed or force then Fire("quests") end
-    NotifyTracked()
+    NotifyTracked()     -- the focused quest may have been handed in or abandoned
     return false
 end
 
@@ -614,19 +611,31 @@ local function OnZoneTimer()
     if userCount > 0 then Fire("zone") end
 end
 
+local function OnWatchTimer()
+    watchPending = false
+    if userCount > 0 then Fire("quests") end
+end
+
 local EVENTS = {
     QUEST_LOG_UPDATE = "quests", QUEST_ACCEPTED = "quests", QUEST_REMOVED = "quests",
     ZONE_CHANGED = "zone", ZONE_CHANGED_INDOORS = "zone", ZONE_CHANGED_NEW_AREA = "zone",
     PLAYER_ENTERING_WORLD = "zone",
+    SUPER_TRACKING_CHANGED = "tracked",     -- the player focused another quest (or none)
+    QUEST_WATCH_LIST_CHANGED = "watch",     -- a quest was added to or removed from Blizzard's tracker
 }
 
 local function OnEvent(event)
     if userCount <= 0 then return end
-    if EVENTS[event] == "quests" then
-        if event == "QUEST_REMOVED" then questRemoved = true end
+    local kind = EVENTS[event]
+    if kind == "quests" then
         ScheduleRebuild()
-    elseif EVENTS[event] == "zone" and not zonePending then
+    elseif kind == "zone" and not zonePending then
         zonePending = After(ZONE_DELAY, OnZoneTimer)
+    elseif kind == "tracked" then
+        NotifyTracked()
+    elseif kind == "watch" and not watchPending then
+        -- The pins stay the same; users only need to look at the list again.
+        watchPending = After(WATCH_DELAY, OnWatchTimer)
     end
 end
 
@@ -673,8 +682,9 @@ function QD:Release(userKey)
     wipe(spawnCache)
     wipe(nameCache)
     dirty = true
-    forceNotify, questRemoved = false, false
+    forceNotify = false
     lastTracked = nil
+    wipe(watched)
 end
 
 function QD:OnChanged(userKey, fn)
@@ -717,34 +727,51 @@ function QD:GetQuestTitle(questID)
     return ok and Str(title) or nil
 end
 
--- The quest the player last tapped, for as long as it is in the quest log.
+-- Focuses a quest, as "Focus" in the quest log does. nil clears the focus.
+-- (Nothing in the addon calls this any more; the player focuses in the game.)
 function QD:SetTrackedQuest(questID)
     if type(questID) ~= "number" or questID <= 0 then questID = nil end
-    LoadTracked()
-    tracked = questID
-    SaveTracked()
     local ST = C_SuperTrack
     if ST and ST.SetSuperTrackedQuestID then
-        pcall(ST.SetSuperTrackedQuestID, questID or 0)   -- Blizzard's own tracker follows; 0 clears it
+        pcall(ST.SetSuperTrackedQuestID, questID or 0)   -- 0 clears it
     end
     Safe(NotifyTracked)
 end
 
+-- The quest focused in the game's quest log, for as long as it is in the log.
+-- (An older version saved its own pick in db.questData.tracked; that is no longer read.)
 function QD:GetTrackedQuest()
-    LoadTracked()
-    if tracked and self:IsQuestInLog(tracked) then return tracked end
+    local ST = C_SuperTrack
+    if not (ST and ST.GetSuperTrackedQuestID) then return nil end
+    local ok, id = pcall(ST.GetSuperTrackedQuestID)
+    id = ok and QuestID(id) or nil
+    if id and self:IsQuestInLog(id) then return id end
     return nil
 end
 
--- Public: where the player is --------------------------------------------------
--- "Secret" values cannot be compared or used in maths by addons. If the test
--- itself fails we assume the value is secret.
-local function IsSecret(v)
-    if type(issecretvalue) ~= "function" then return false end
-    local ok, secret = pcall(issecretvalue, v)
-    return not ok or (secret and true or false)
+-- The quests in Blizzard's quest tracker, in tracker order. Read only: the
+-- same table is reused and refilled by the next call.
+function QD:GetWatchedQuests()
+    wipe(watched)
+    local QL = C_QuestLog
+    if not (QL and QL.GetNumQuestWatches and QL.GetQuestIDForQuestWatchIndex) then return watched end
+    local ok, count = pcall(QL.GetNumQuestWatches)
+    if not ok or IsSecret(count) or type(count) ~= "number" then return watched end
+    for i = 1, count do
+        local okID, id = pcall(QL.GetQuestIDForQuestWatchIndex, i)
+        id = okID and QuestID(id) or nil
+        if id then
+            local dup = false
+            for j = 1, #watched do
+                if watched[j] == id then dup = true break end
+            end
+            if not dup then watched[#watched + 1] = id end
+        end
+    end
+    return watched
 end
 
+-- Public: where the player is --------------------------------------------------
 local function ReadPosition()
     local mapID = C_Map.GetBestMapForUnit("player")
     if IsSecret(mapID) or type(mapID) ~= "number" then return nil end

@@ -20,15 +20,15 @@ Upload only after device testing (PRD roadmap phase 3, after device testing and 
 
 ## Upload the file
 
-11. File: `dist/PocketEssentials-0.0.1.zip` (addon only). It may already be in `dist/`; if anything has changed since, rebuild it with `scripts/build.sh` from a Mac or Linux terminal (or ask Claude).
+11. File: `dist/PocketEssentials-<version>.zip` (the version in `CHANGELOG.md`'s top section) (addon only). It may already be in `dist/`; if anything has changed since, rebuild it with `scripts/build.sh` from a Mac or Linux terminal (or ask Claude).
 12. Game flavor: `Forever`. Game version: `1.60.1`.
 13. Release type: `Release` (the 0.0.x version number shows it is early).
-14. Changelog: paste the `## [0.0.1]` section of `CHANGELOG.md`, replacing 'Unreleased' with the release date before pasting.
+14. Changelog: paste the top section of `CHANGELOG.md` (replace 'Unreleased' with the release date if it says that).
 15. Relations: add QuestieDB (project ID `1696795`, slug `questiedb`) as **Required**. (The TOC says OptionalDeps because the addon runs without QuestieDB, but the quest features, the main reason to install, need it, so CurseForge should install it automatically.)
 
 ## Optional, for later
 
-16. Optional, for later: CurseForge shows your project ID on the project page. Ask Claude (or add it yourself) to put `## X-Curse-Project-ID: <id>` on a new line directly under `## Version: …` in `addons/PocketEssentials/PocketEssentials.toc`. It takes effect with the next version you upload; you don't need to re-upload 0.0.1.
+16. Optional, for later: CurseForge shows your project ID on the project page. Ask Claude (or add it yourself) to put `## X-Curse-Project-ID: <id>` on a new line directly under `## Version: …` in `addons/PocketEssentials/PocketEssentials.toc`. It takes effect with the next version you upload; you don't need to re-upload the current version.
 
 ## Screenshots to take on the device
 

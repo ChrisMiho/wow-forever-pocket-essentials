@@ -128,6 +128,58 @@ end
 
 local version
 
+-- The focused quest and Blizzard's tracker list reach QuestData's users.
+-- Needs QD acquired as "harness" and its event frame among S.frames.
+local function checkFocus(PE, QD, tag)
+    local where = tag .. ": focus and tracker"
+    local frame
+    for _, f in ipairs(S.frames) do
+        if f.events.SUPER_TRACKING_CHANGED then frame = f end
+    end
+    if not frame then fail(where .. ": SUPER_TRACKING_CHANGED is not registered while acquired") end
+    if not frame.events.QUEST_WATCH_LIST_CHANGED then
+        fail(where .. ": QUEST_WATCH_LIST_CHANGED is not registered while acquired")
+    end
+    local got = {}
+    QD:OnChanged("harness", function(reason) got[#got + 1] = reason end)
+    local function count(reason)
+        local n = 0
+        for _, r in ipairs(got) do if r == reason then n = n + 1 end end
+        return n
+    end
+    local function event(name) guarded(where .. ": " .. name, frame.scripts.OnEvent, frame, name) end
+
+    S.questLog.set({ id = 2, title = "Sharptalon's Claw", complete = false, objectives = {} })
+    S.questLog.focus(2)
+    event("SUPER_TRACKING_CHANGED")
+    if QD:GetTrackedQuest() ~= 2 then fail(where .. ": GetTrackedQuest() is not the focused quest 2") end
+    if count("tracked") ~= 1 then fail(where .. ": focusing a quest gave " .. count("tracked") .. " \"tracked\" callbacks, expected 1") end
+    event("SUPER_TRACKING_CHANGED")
+    if count("tracked") ~= 1 then fail(where .. ": an unchanged focus fired \"tracked\" again") end
+    S.questLog.focus(55)    -- not in the log
+    if QD:GetTrackedQuest() ~= nil then fail(where .. ": GetTrackedQuest() returned a quest that is not in the log") end
+    S.questLog.focus(nil)
+
+    S.questLog.watch({ 2, 55, 2 })
+    local w = QD:GetWatchedQuests()
+    if type(w) ~= "table" or #w ~= 2 or w[1] ~= 2 or w[2] ~= 55 then
+        fail(where .. ": GetWatchedQuests() is not { 2, 55 }")
+    end
+    S.questLog.watch({})
+    if #QD:GetWatchedQuests() ~= 0 then fail(where .. ": GetWatchedQuests() is not empty for an empty tracker") end
+
+    wipe(got)
+    event("QUEST_WATCH_LIST_CHANGED")
+    event("QUEST_WATCH_LIST_CHANGED")
+    guarded(where, S.runTimers)
+    if count("quests") ~= 1 then
+        fail(where .. ": two tracker changes gave " .. count("quests") .. " \"quests\" callbacks, expected 1")
+    end
+    QD:OnChanged("harness", nil)
+    S.questLog.set(nil)
+    checkErrors(PE, where)
+end
+
 local function runPersona(persona)
     local tag = persona.label .. " " .. persona.class
     S.install(persona)
@@ -210,6 +262,7 @@ local function runPersona(persona)
         if got > 0 then counts.with_pins = counts.with_pins + 1 end
     end
     if knownSeen ~= #KNOWN_PINS then fail(tag .. ": a quest with a known pin is missing from QuestieDB") end
+    checkFocus(PE, QD, tag)
     S.questLog.set(nil)
     guarded(tag .. ": emptying the quest log", QD.RequestRebuild, QD)
     guarded(tag .. ": emptying the quest log", S.runTimers)

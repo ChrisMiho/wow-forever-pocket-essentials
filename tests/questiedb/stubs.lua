@@ -9,6 +9,9 @@
 --   S.loadAddonFile(path, PE)    load one PocketEssentials file into PE -> PE
 --   S.runTimers()                run C_Timer.After callbacks until none are left
 --   S.questLog.set(q | nil)      the quest log holds exactly q = { id, title, complete, objectives }
+--   S.questLog.focus(id | nil)   the quest focused in the quest log (C_SuperTrack)
+--   S.questLog.watch(ids)        the quests in Blizzard's quest tracker, e.g. { 2, 55 }
+--   S.frames                     every frame made since S.install(), in order
 --
 -- PE.harnessErrors lists every PE:LogError call ({ module, msg, stack }).
 
@@ -34,8 +37,12 @@ function Frame:SetScript(name, fn) self.scripts[name] = fn end
 function Frame:Hide() self.shown = false end
 function Frame:Show() self.shown = true end
 
+S.frames = {}
+
 local function CreateFrame()
-    return setmetatable({ events = {}, scripts = {}, shown = true }, Frame)
+    local f = setmetatable({ events = {}, scripts = {}, shown = true }, Frame)
+    S.frames[#S.frames + 1] = f
+    return f
 end
 
 -- C_Timer.After only queues; S.runTimers() runs the queue.
@@ -52,9 +59,11 @@ function S.runTimers()
 end
 
 -- The quest log: empty, or exactly one quest.
-local current
+local current, focused, watches
 S.questLog = {}
 function S.questLog.set(q) current = q end
+function S.questLog.focus(id) focused = id end
+function S.questLog.watch(ids) watches = ids or {} end
 
 local function quest(id)
     return current and current.id == id and current or nil
@@ -70,6 +79,13 @@ local C_QuestLog = {
     GetQuestObjectives = function(id) local q = quest(id); return q and q.objectives or {} end,
     IsOnQuest = function(id) return quest(id) ~= nil end,
     GetTitleForQuestID = function(id) local q = quest(id); return q and q.title or nil end,
+    GetNumQuestWatches = function() return #watches end,
+    GetQuestIDForQuestWatchIndex = function(i) return watches[i] end,
+}
+
+local C_SuperTrack = {
+    GetSuperTrackedQuestID = function() return focused end,
+    SetSuperTrackedQuestID = function(id) focused = id ~= 0 and id or nil end,
 }
 
 local CLASS_ID = { WARRIOR = 1, PALADIN = 2, HUNTER = 3, ROGUE = 4, PRIEST = 5, SHAMAN = 7,
@@ -79,8 +95,10 @@ function S.install(persona)
     persona = persona or {}
     local faction, class = persona.faction or "Alliance", persona.class or "WARRIOR"
     timers = {}
-    current = nil
+    current, focused, watches = nil, nil, {}
+    S.frames = {}
     _G.CreateFrame = CreateFrame
+    _G.C_SuperTrack = C_SuperTrack
     _G.C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end }
     _G.C_QuestLog = C_QuestLog
     _G.wipe = function(t) for k in pairs(t) do t[k] = nil end return t end

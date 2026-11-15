@@ -6,7 +6,7 @@ A small, lightweight addon suite that makes WoW Forever comfortable to play on
 a handheld, with touch and a controller together: big buttons, no tiny
 targets, no typed commands.
 
-> **Status: In progress: version 0.0.1 is written but has not run on a device yet.**
+> **Status: In progress: version 0.0.2 is a test build. The quest features ran once on a device (0.0.1); everything else has not run in the game yet.**
 > Treat every feature as unproven until it has been tested in the game.
 
 ## Who it's for
@@ -21,8 +21,8 @@ Every feature has its own on/off switch and starts switched off.
 
 | Feature | What it does |
 |---------|--------------|
-| Quest icons | Objective icons on the map and minimap, no blue haze. Tap an icon to pick that quest |
-| Quest arrow | An arrow to the nearest objective in your zone, with distance |
+| Quest icons | Objective icons on the map and minimap for your focused quest (or your tracked quests, or all), no blue haze |
+| Quest arrow | An arrow to your focused quest's nearest objective in your zone, with distance. Focus a quest from the quest log |
 | One big bag | Blizzard's combined bag with a big Sort button; L3 sorts while it is open; three sizes |
 | Sell junk automatically | Sells every grey item at vendors. Only the last 12 sold can be bought back |
 | Repair automatically | Repairs from your own money |

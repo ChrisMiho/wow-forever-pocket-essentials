@@ -2,13 +2,18 @@
 """Generate the CurseForge avatar and banner (original art, Pillow only).
 
 Run from anywhere: python3 scripts/make_art.py  -> writes curseforge/*.png
+
+With --icons it instead writes the addon's own textures (original art):
+    addons/PocketEssentials/Icons/arrow.tga, circle.tga, blank.tga
 """
 import os
+import struct
 import argparse
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "curseforge")
+ICONS = os.path.join(ROOT, "addons", "PocketEssentials", "Icons")
 SS = 4  # supersampling factor
 
 PALETTES = {
@@ -137,13 +142,91 @@ def contact_sheet(path):
     sheet.save(path)
 
 
+# --- Addon textures -----------------------------------------------------------
+
+ICON_SS = 8  # supersampling for the textures (edges must stay smooth when scaled)
+
+
+def write_tga(img, path):
+    """32-bit uncompressed TGA (type 2, BGRA, no RLE), bottom-left origin.
+
+    The game reads the header's origin flag; bottom-left (descriptor 0x08:
+    8 alpha bits, origin bit clear) is the classic layout every reader accepts.
+    """
+    img = img.convert("RGBA")
+    w, h = img.size
+    header = struct.pack("<BBBHHBHHHHBB", 0, 0, 2, 0, 0, 0, 0, 0, w, h, 32, 0x08)
+    rows = img.transpose(Image.FLIP_TOP_BOTTOM).tobytes("raw", "BGRA")
+    with open(path, "wb") as f:
+        f.write(header)
+        f.write(rows)
+
+
+def downscale(img, size, clear_rgb):
+    """Supersampled RGBA -> final size, filtered with premultiplied alpha.
+
+    Fully transparent pixels get clear_rgb (the colour of the nearby edge), so
+    the game's bilinear filtering does not bleed a dark or light fringe.
+    """
+    out = img.convert("RGBa").resize((size, size), Image.LANCZOS).convert("RGBA")
+    clear = Image.new("RGBA", out.size, tuple(clear_rgb) + (0,))
+    return Image.composite(out, clear, out.split()[3].point(lambda a: 255 if a else 0))
+
+
+def circle_icon(size=128):
+    """White filled circle on transparent; tinted in game with SetVertexColor."""
+    n = size * ICON_SS
+    m = 1.5 * ICON_SS  # small margin so the anti-aliased edge is never clipped
+    img = Image.new("RGBA", (n, n), (255, 255, 255, 0))
+    ImageDraw.Draw(img).ellipse((m, m, n - 1 - m, n - 1 - m), fill=(255, 255, 255, 255))
+    return downscale(img, size, (255, 255, 255))
+
+
+ARROW_OUTLINE = (12, 12, 14)
+
+
+def arrow_icon(size=128):
+    """Navigation arrow pointing straight up, white fill, dark outline baked in.
+
+    The game rotates it about the texture centre (Texture:SetRotation), so
+    the whole shape, outline included, stays inside the inscribed circle.
+    Transparent pixels carry the outline colour so filtering leaves no halo.
+    """
+    s = size * ICON_SS / 128.0  # design in 128-unit space
+    pts = [(64, 13), (99, 105), (64, 85), (29, 105)]  # tip, right wing, notch, left wing
+    pts = [(x * s, y * s) for x, y in pts]
+    outline = 7 * s
+    n = size * ICON_SS
+    img = Image.new("RGBA", (n, n), ARROW_OUTLINE + (0,))
+    d = ImageDraw.Draw(img)
+    dark = ARROW_OUTLINE + (240,)
+    d.polygon(pts, fill=dark)
+    d.line(pts + [pts[0]], fill=dark, width=round(outline * 2), joint="curve")
+    for x, y in pts:  # round the line ends at the closing vertex too
+        d.ellipse((x - outline, y - outline, x + outline, y + outline), fill=dark)
+    d.polygon(pts, fill=(255, 255, 255, 255))
+    return downscale(img, size, ARROW_OUTLINE)
+
+
+def make_icons(out):
+    os.makedirs(out, exist_ok=True)
+    write_tga(arrow_icon(), os.path.join(out, "arrow.tga"))
+    write_tga(circle_icon(), os.path.join(out, "circle.tga"))
+    write_tga(Image.new("RGBA", (8, 8), (0, 0, 0, 0)), os.path.join(out, "blank.tga"))
+    print("wrote", out)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--palette", default=DEFAULT, choices=list(PALETTES))
     ap.add_argument("--out", default=OUT)
     ap.add_argument("--contact-sheet", metavar="PNG")
+    ap.add_argument("--icons", action="store_true",
+                    help="write the addon textures into addons/PocketEssentials/Icons")
     args = ap.parse_args()
-    if args.contact_sheet:
+    if args.icons:
+        make_icons(ICONS)
+    elif args.contact_sheet:
         contact_sheet(args.contact_sheet)
     else:
         os.makedirs(args.out, exist_ok=True)

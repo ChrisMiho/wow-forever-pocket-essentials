@@ -1,14 +1,14 @@
 -- Pocket Essentials: UI kit (PE.UI).
 -- Sizes, big touch buttons, panels, a scroll area with big paging buttons and
--- controller (d-pad) navigation. Everything is drawn with solid colours, so it
--- does not depend on any game art.
+-- controller (d-pad) navigation. Everything is drawn with solid colours or the
+-- addon's own Icons, so it does not depend on any game art.
 local ADDON_NAME, PE = ...
 
 local UI = {}
 PE.UI = UI
 
 local type, pairs, ipairs, pcall, xpcall, tostring = type, pairs, ipairs, pcall, xpcall, tostring
-local max, min, abs, sqrt = math.max, math.min, math.abs, math.sqrt
+local max, min, abs = math.max, math.min, math.abs
 
 local function Handler()
     return PE.ErrorHandlerFor and PE.ErrorHandlerFor("core") or function(err) return err end
@@ -392,35 +392,34 @@ function UI:CreateButton(parent, text, width, height)
 end
 
 ---------------------------------------------------------------------------
--- A disc drawn from thin solid strips (round look without any art file)
+-- A disc: one texture of a smooth white circle, tinted with the vertex colour
 ---------------------------------------------------------------------------
 
+local DISC_TEXTURE = "Interface\\AddOns\\PocketEssentials\\Icons\\circle"
+-- The circle art leaves a 1.5-pixel clear margin in its 128-pixel square, so
+-- the texture is drawn that much larger to make the visible disc `diameter`.
+local DISC_ART_SCALE = 128 / 125
+
+-- stripCount is accepted for older callers and ignored.
 function UI:CreateDisc(parent, layer, sublevel, stripCount)
-    local disc = { strips = {}, count = stripCount or 20 }
-    for i = 1, disc.count do
-        disc.strips[i] = parent:CreateTexture(nil, layer or "BACKGROUND", nil, sublevel or 0)
-    end
+    local disc = { texture = parent:CreateTexture(nil, layer or "BACKGROUND", nil, sublevel or 0) }
+    disc.texture:SetTexture(DISC_TEXTURE)
 
     function disc:SetColor(r, g, b, a)
-        for i = 1, self.count do self.strips[i]:SetColorTexture(r, g, b, a or 1) end
+        self.texture:SetVertexColor(r, g, b)
+        self.texture:SetAlpha(a or 1)
     end
 
     -- Centre the disc on `anchor` with the given diameter.
     function disc:Layout(anchor, diameter)
-        local n, radius = self.count, diameter / 2
-        local stripHeight = diameter / n
-        for i = 1, n do
-            local y = radius - (i - 0.5) * stripHeight
-            local half = sqrt(max(radius * radius - y * y, 0))
-            local strip = self.strips[i]
-            strip:ClearAllPoints()
-            strip:SetSize(max(half * 2, 0.01), stripHeight * 1.12)
-            strip:SetPoint("CENTER", anchor, "CENTER", 0, y)
-        end
+        local size = max(diameter * DISC_ART_SCALE, 0.01)
+        self.texture:ClearAllPoints()
+        self.texture:SetSize(size, size)
+        self.texture:SetPoint("CENTER", anchor, "CENTER", 0, 0)
     end
 
     function disc:SetShown(shown)
-        for i = 1, self.count do self.strips[i]:SetShown(shown and true or false) end
+        self.texture:SetShown(shown and true or false)
     end
 
     return disc

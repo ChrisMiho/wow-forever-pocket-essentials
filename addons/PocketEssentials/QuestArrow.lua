@@ -1,15 +1,18 @@
 local ADDON_NAME, PE = ...
 
 -- QuestArrow: an arrow on the screen that points, in a straight line, to the
--- nearest objective of the quest you picked, with the distance and the quest
--- name under it.
+-- nearest objective of the quest you focused in the game's quest log, with
+-- the distance and the quest name under it.
 --
 -- Which objective (only pins on the map you are on are ever pointed at):
---   * A quest was picked (QuestData:GetTrackedQuest) and has known places:
+--   * A quest is focused (QuestData:GetTrackedQuest) and has known places:
 --     its nearest pin on this map; if it has none on this map the arrow is
---     hidden and the text reads "Not in this zone" over the quest's name.
---   * No quest picked, or the picked one has no known place anywhere:
---     the nearest pin of any quest on this map.
+--     hidden and the text reads "In <zone>" (the zone with most of its
+--     places; "Not in this zone" if the name cannot be read) over the
+--     quest's name.
+--   * No quest focused, or the focused one has no known place anywhere:
+--     the nearest pin of the quests in Blizzard's quest tracker on this map.
+--   * None of those on this map either: the nearest pin of any quest here.
 --
 -- Which way (the part most likely to be wrong, so it is spelled out):
 --   * Map fractions: x grows to the EAST, y grows to the SOUTH.
@@ -26,9 +29,12 @@ local ADDON_NAME, PE = ...
 --       facing north, pin east : rel = -pi/2  -> right
 --       facing east,  pin north: rel = +pi/2  -> left
 --
--- The arrow is three thick solid-colour lines (plus a dark outline) whose end
--- points are computed here, so there is no art file that could be missing and
--- no texture rotation direction to get wrong.
+-- The arrow is one picture (Icons/arrow, pointing up) turned with
+-- Texture:SetRotation, which turns counter-clockwise for positive radians, so
+-- it gets `rel` as it is. It is tinted gold, or green for "Here". If this
+-- client's textures cannot be turned, the arrow is drawn instead as three
+-- thick solid-colour lines (plus a dark outline) whose end points are
+-- computed here.
 --
 -- Cost: one OnUpdate on a private driver frame, 10 times a second while an
 -- arrow is showing and once a second while your position cannot be read. The
@@ -69,8 +75,9 @@ local DEFAULTS = { position = "top", size = "normal" }
 
 local COLOR_ARROW = { 1, 0.82, 0 }
 local COLOR_HERE = { 0.35, 1, 0.45 }
+local ARROW_TEXTURE = "Interface\\AddOns\\PocketEssentials\\Icons\\arrow"
 
--- The arrow pointing up, as fractions of half its length: x1, y1, x2, y2.
+-- Fallback drawing: the arrow pointing up, as fractions of half its length: x1, y1, x2, y2.
 local SHAPE = {
     { 0, -1, 0, 0.85 },         -- shaft
     { 0, 1, -0.62, 0.30 },      -- left barb
@@ -93,6 +100,7 @@ local S = {
     sinceSelect = 0, selectDue = true,
     failures = 0,
     here = false,
+    arrow = nil,                        -- the arrow picture, when it can be turned (else `lines` are used)
 }
 local lines = {}
 local gx1, gy1, gx2, gy2 = {}, {}, {}, {}   -- line end points before turning, in UI units
@@ -115,8 +123,9 @@ end
 -- Choosing the objective
 ---------------------------------------------------------------------------
 
-local function Nearest(pins, px, py, width, height)
-    local best, bestD2 = nil, huge
+-- Nearest pin of `pins`, or `best` if that is nearer. Returns pin, d2.
+local function Nearest(pins, px, py, width, height, best, bestD2)
+    bestD2 = bestD2 or huge
     for i = 1, #pins do
         local pin = pins[i]
         local x, y = pin.x, pin.y
@@ -126,7 +135,7 @@ local function Nearest(pins, px, py, width, height)
             if d2 < bestD2 then best, bestD2 = pin, d2 end
         end
     end
-    return best
+    return best, bestD2
 end
 
 local function HasPlaces(byMap)
@@ -134,6 +143,31 @@ local function HasPlaces(byMap)
         if type(pins) == "table" and pins[1] ~= nil then return true end
     end
     return false
+end
+
+-- The map with most of the quest's places (lowest map id on a tie).
+local function BusiestMap(byMap)
+    local best, bestN = nil, 0
+    for mapID, pins in pairs(byMap) do
+        local n = type(pins) == "table" and #pins or 0
+        if type(mapID) == "number" and (n > bestN or (n == bestN and n > 0 and mapID < best)) then
+            best, bestN = mapID, n
+        end
+    end
+    return best
+end
+
+-- "In <zone name>" for a map, or the plain fallback.
+local function ElsewhereText(mapID)
+    local name
+    if mapID and C_Map and C_Map.GetMapInfo then
+        local ok, info = pcall(C_Map.GetMapInfo, mapID)
+        if ok and not IsSecret(info) and type(info) == "table" then
+            name = info.name
+            if IsSecret(name) or type(name) ~= "string" or name == "" then name = nil end
+        end
+    end
+    return name and ("In " .. name) or "Not in this zone"
 end
 
 local function Shorten(text)
@@ -177,16 +211,27 @@ local function Select(playerMap, px, py)
     local tracked = S.tracked
     local byMap = tracked and QD:GetPinsForQuest(tracked) or nil
     if type(byMap) == "table" and HasPlaces(byMap) then
-        -- The picked quest: this map only, never silently another quest.
+        -- The focused quest: this map only, never silently another quest.
         local pins = byMap[playerMap]
         if type(pins) == "table" and pins[1] ~= nil then
             if width then pin = Nearest(pins, px, py, width, height) end
         else
             elsewhere = true
+            S.elsewhereText = ElsewhereText(BusiestMap(byMap))
         end
     elseif width then
-        local pins = QD:GetPins(playerMap)
-        if type(pins) == "table" then pin = Nearest(pins, px, py, width, height) end
+        -- The quests in Blizzard's tracker, then any quest.
+        local watchedList = QD.GetWatchedQuests and QD:GetWatchedQuests()
+        local d2
+        for i = 1, type(watchedList) == "table" and #watchedList or 0 do
+            local pins = QD:GetPinsForQuest(watchedList[i])
+            pins = type(pins) == "table" and pins[playerMap]
+            if type(pins) == "table" then pin, d2 = Nearest(pins, px, py, width, height, pin, d2) end
+        end
+        if not pin then
+            local pins = QD:GetPins(playerMap)
+            if type(pins) == "table" then pin = Nearest(pins, px, py, width, height) end
+        end
     end
 
     S.pin, S.elsewhere = pin, elsewhere
@@ -212,6 +257,10 @@ end
 local function Paint(here)
     S.painted = here
     local c = here and COLOR_HERE or COLOR_ARROW
+    if S.arrow then
+        S.arrow:SetVertexColor(c[1], c[2], c[3], 1)
+        return
+    end
     for i = SHAPE_COUNT + 1, LINE_COUNT do
         lines[i]:SetColorTexture(c[1], c[2], c[3], 1)
     end
@@ -224,6 +273,10 @@ local function DrawArrow(rel)
     if step == S.step then return end
     S.step = step
     local angle = step * STEP
+    if S.arrow then
+        S.arrow:SetRotation(angle)      -- counter-clockwise for positive radians, like `rel`
+        return
+    end
     local c, s = cos(angle), sin(angle)
     local box = S.box
     for i = 1, LINE_COUNT do
@@ -256,7 +309,8 @@ local function ShowDistance(dist)
     S.distText:SetText(here and "Here" or (code .. " yd"))
 end
 
--- Creates the frames once. Returns false if this client cannot draw lines.
+-- Creates the frames once. Returns false if this client can neither turn a
+-- texture nor draw lines.
 local function Build()
     if S.built then return true end
     local UI = PE.UI
@@ -276,8 +330,19 @@ local function Build()
         box:SetPoint("TOP", S.display, "TOP", 0, 0)
         S.box = box
     end
-    if type(S.box.CreateLine) ~= "function" then return false end
-    for i = 1, LINE_COUNT do
+    if not S.arrow and not lines[1] and type(S.box.CreateTexture) == "function" then
+        local tex = S.box:CreateTexture(nil, "ARTWORK")
+        if tex and type(tex.SetRotation) == "function" then
+            tex:SetTexture(ARROW_TEXTURE)
+            tex:SetAllPoints(S.box)
+            tex:SetVertexColor(COLOR_ARROW[1], COLOR_ARROW[2], COLOR_ARROW[3], 1)
+            S.arrow = tex
+        elseif tex then
+            tex:Hide()
+        end
+    end
+    if not S.arrow and type(S.box.CreateLine) ~= "function" then return false end
+    for i = 1, S.arrow and 0 or LINE_COUNT do
         if not lines[i] then
             local outline = i <= SHAPE_COUNT
             local line = S.box:CreateLine(nil, "ARTWORK", nil, outline and 0 or 1)
@@ -334,12 +399,12 @@ local function Layout()
     S.display:ClearAllPoints()
     S.display:SetPoint(pos[1], UIParent, pos[2], UI:Px(pos[3]), UI:Px(pos[4]))
 
-    -- Line end points for the arrow pointing up. The outline copies are
-    -- longer and thicker by `edge` all round.
+    -- Fallback only: line end points for the arrow pointing up. The outline
+    -- copies are longer and thicker by `edge` all round.
     local half = box * 0.46
     local thick = max(box * 0.15, 2)
     local edge = max(UI:Px(2.5), 1)
-    for i = 1, SHAPE_COUNT do
+    for i = 1, S.arrow and 0 or SHAPE_COUNT do
         local seg = SHAPE[i]
         local x1, y1, x2, y2 = seg[1] * half, seg[2] * half, seg[3] * half, seg[4] * half
         local dx, dy = x2 - x1, y2 - y1
@@ -413,7 +478,7 @@ local function Update()
         if S.elsewhere then
             SetBoxShown(false)
             S.distCode = nil
-            S.distText:SetText("Not in this zone")
+            S.distText:SetText(S.elsewhereText or "Not in this zone")
             if not S.shown then
                 S.shown = true
                 S.display:Show()
@@ -530,7 +595,7 @@ local SafeOnData, SafeOnUpdate
 mod = PE:RegisterModule({
     key = KEY,
     label = "Quest arrow",
-    desc = "Points to the nearest quest objective. Tap a quest icon to pick one.",
+    desc = "Points to your focused quest. Focus a quest from the quest log.",
     order = 20,
     requiresQuestieDB = true,
     defaults = { position = DEFAULTS.position, size = DEFAULTS.size },

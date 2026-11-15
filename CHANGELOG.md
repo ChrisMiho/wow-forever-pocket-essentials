@@ -4,7 +4,29 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [0.0.1] - Unreleased
+## [0.0.2] - 2026-11-15
+
+Second test build, with fixes from the first device test of the quest
+features. Not yet tested on a device.
+
+### Changed
+
+- Quest arrow follows the quest you **focus** in the quest log, instead of a
+  quest picked by tapping an icon. With no quest focused, it points at your
+  tracked quests. For a focused quest in another zone it names that zone.
+- Quest icons: new "Show icons for" choice. Focused quest (default; with none
+  focused, your tracked quests), Tracked quests, or All quests. The map is
+  readable again.
+- Tapping a quest icon only shows its text; it no longer changes the quest.
+- Quest arrow is now a proper pointed arrow.
+- The round "PE" button and the whisper badge are smooth instead of stepped.
+
+### Fixed
+
+- The blue haze stayed on the minimap. It is now hidden again after every
+  loading screen and zone change (untested on device).
+
+## [0.0.1] - 2026-11-15
 
 Nothing in this version has run on a device yet.
 
