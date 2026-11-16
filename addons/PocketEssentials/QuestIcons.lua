@@ -77,14 +77,14 @@ local STYLE = {
 
 local KIND_LABEL = { slay = "Kill", loot = "Loot", object = "Use", event = "Explore", turnin = "Turn in" }
 
--- The icon list for the settings page (read from PE.QuestIconKey; tex and
+-- The icon list, exported as PE.QuestIconKey for the settings page (tex and
 -- color come from STYLE, label from KIND_LABEL).
 local KIND_DESC = {
     slay = "A creature to kill.",
     loot = "Where a quest item comes from: a creature that drops it or a thing that holds it.",
     object = "An object in the world to click or use.",
     event = "A place to go to, or someone to talk to.",
-    turnin = "Where to hand the quest in. Shown only once the quest is complete.",
+    turnin = "Where to hand the quest in, once you have done everything it asks.",
 }
 local KIND_ORDER = { "slay", "loot", "object", "event", "turnin" }
 local iconKey = {}
