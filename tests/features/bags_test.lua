@@ -4,14 +4,12 @@
 -- Fresh client and addon per test.
 --
 -- Differences from the task brief (the documents win): DECISIONS says only that
--- "L3 sorts only while the bag is open and never during combat"; the brief says the
--- Sort button too. The button-in-combat test below cites the brief for that part.
+-- "L3 sorts only while the bag is open and never during combat"; the brief said the
+-- Sort button too, which the documents do not say (see the Sort-in-combat test).
 local T = ...
 local test, eq, check = T.test, T.eq, T.check
 
 local KNOWN_FAILURES = {
-    ["bags: tapping Sort during combat does not call SortBags"] =
-        "FINDING: Bags.lua DoSort has no combat check; the button stays visible in combat and a tap calls SortBags",
 }
 
 local function newBags(opts)
@@ -135,14 +133,16 @@ test("bags: the bag opened during combat gets no left stick binding until the fi
     c:assertClean("combat open")
 end)
 
--- The brief: "the Sort button and L3 call C_Container.SortBags only while the bag is open and out
--- of combat". DECISIONS names L3 only; the button part is from the brief.
-test("bags: tapping Sort during combat does not call SortBags", function()
+-- Bags.lua DoSort comment "same as Blizzard's own Clean Up button: a sound, then SortBags"; DECISIONS
+-- "Bags" limits only L3 in combat. Blizzard's Clean Up button calls C_Container.SortBags() with no combat
+-- check (ContainerFrame.lua:740, ContainerFrame.xml:373 in wow-ui-source `forever`), so a tap on the Sort
+-- button with the bag open sorts, in or out of combat.
+test("bags: tapping Sort with the bag open sorts in combat too, like Blizzard's Clean Up button", function()
     local c = newBags()
     c:openBag()
     c:enterCombat()
     c:click(sortButton(c))
-    eq(sorts(c), 0)
+    eq(sorts(c), 1)
 end)
 
 ---------------------------------------------------------------------------

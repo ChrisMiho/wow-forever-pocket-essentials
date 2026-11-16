@@ -358,6 +358,26 @@ test("quest icons: the minimap tick stops when no shown icon is on the player's 
     check(tickerRunning(c), "the ticker did not start again on the map with icons")
 end)
 
+-- QuestIcons.lua RefreshMinimapData/AnyShown: the update runs only while this map has icons the "Show icons
+-- for" filter lets through. Quest 6 has a spot on the player's map but is not focused; "Focused quest" is
+-- on and the focus is on quest 55 (Duskwood only).
+test("quest icons: the minimap tick is stopped while the filter leaves nothing on the player's map, and starts when it shows something", function()
+    local c, PE = newIcons(basicSpec({ quests = { { id = QW.ONE }, { id = QW.ELSEWHERE } }, focus = QW.ELSEWHERE,
+        watched = { QW.ONE }, pos = { x = 0.5752 - 0.01, y = 0.4825 - 0.01 } }))
+    setOpt(PE, "show", "focus")
+    c:advance(1)
+    check(#PE.QuestData:GetPins(QW.HOME) > 0, "test data: no spot on the player's map")
+    eq(#iconsOn(c, c.minimap), 0)
+    check(not tickerRunning(c), "the ticker runs although the filter shows nothing here")
+    local ticks = c.stats.addonOnUpdate
+    c:advance(2)
+    eq(c.stats.addonOnUpdate, ticks, "an OnUpdate of ours ran")
+    setOpt(PE, "show", "tracked")                         -- the tracker's quest 6 is next to the player
+    c:advance(1)
+    check(tickerRunning(c), "the ticker did not start when the filter let a spot through")
+    eq(#iconsOn(c, c.minimap), 1)
+end)
+
 -- CLAUDE.md "Nothing ticks while its feature is off"; QuestIcons.lua OnDisable -> StopTicker.
 test("quest icons: the minimap tick is stopped, and no icon left, after the feature is switched off", function()
     local c, PE = newIcons()
@@ -438,6 +458,30 @@ test("quest icons: the text box hides by itself after 5 seconds", function()
     check(box:IsShown(), "hidden too early")
     c:advance(1)
     check(not box:IsShown(), "still shown after 5 seconds")
+end)
+
+-- DECISIONS "Quest icons / data": "Dungeon objectives show an icon on the dungeon entrance"; QuestData.lua
+-- pin.inside is the dungeon's name and LabelText adds "Inside <dungeon>". Quest 90's loot is in Shadowfang Keep.
+test("quest icons: a dungeon objective has an icon on the entrance and its text box says Inside <dungeon>", function()
+    local c, PE = newIcons({ quests = { { id = 90 } }, focus = 90, watched = {} })
+    local pins = PE.QuestData:GetPinsForQuest(90)
+    local map, inside
+    for m, list in pairs(pins) do
+        for _, p in ipairs(list) do if p.inside then map, inside = m, p end end
+    end
+    check(inside, "test data: quest 90 has no spot inside a dungeon")
+    c:openWorldMap(map)
+    c:advance(0.3)
+    local tapped
+    for _, icon in ipairs(iconsOn(c, c.worldMapCanvas)) do
+        local fx, fy = mapFraction(c, icon)
+        local _, p = questAt(PE, { 90 }, map, fx, fy)
+        if p and p.inside then tapped = icon break end
+    end
+    check(tapped, "no icon on the dungeon entrance")
+    c:click(tapped)
+    check(labelBox(c):IsShown())
+    check(labelBox(c).text:GetText():find("Inside " .. inside.inside, 1, true), "the text box does not say Inside: " .. tostring(labelBox(c).text:GetText()))
 end)
 
 -- QuestIcons.lua header: "...when another icon is tapped" the box moves to that icon.

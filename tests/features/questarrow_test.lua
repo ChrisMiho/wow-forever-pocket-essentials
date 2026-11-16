@@ -22,6 +22,7 @@ local function newArrow(spec, on)
     if spec.focus == nil and not spec.nofocus then spec.focus = QW.MANY end
     local c, PE = T.new({ quest = true, on = on or { "questArrow" }, setup = function(c) QW.setup(c, spec) end })
     c:advance(1.2)
+    QW.check(c, PE)
     return c, PE
 end
 
@@ -163,6 +164,48 @@ test("quest arrow: within 10 yards it says Here", function()
     local pin = onePin(c, PE)
     placeAt(c, pin.x, pin.y + 0.002, 0)        -- 4.6 yards
     eq(parts(c).distText(), "Here")
+end)
+
+-- QuestArrow.lua HERE_ENTER = 10, HERE_LEAVE = 14: "Here" switches on below 10 yards and off only above 14.
+test("quest arrow: Here switches on below 10 yards and stays on until 14", function()
+    local c, PE = newArrow(focusOne())
+    local pin = onePin(c, PE)
+    local function at(yards) placeAt(c, pin.x, pin.y + yards / QW.HEIGHT, 0) return parts(c).distText() end
+    eq(at(30), "30 yd")
+    eq(at(12), "10 yd", "between 10 and 14 yards coming in: not Here yet")
+    eq(at(5), "Here")
+    eq(at(12), "Here", "12 yards going out: still Here")
+    eq(at(13.5), "Here", "13.5 yards going out: still Here")
+    eq(at(16), "15 yd", "above 14 yards: Here is off")
+    eq(at(12), "10 yd", "12 yards coming in again: not Here")
+end)
+
+-- DECISIONS "Quest arrow": "Five preset positions (Top, Upper middle, Lower middle, Left, Right), two sizes";
+-- QuestArrow.lua POSITIONS and BOX_PX (pixels on a 720p screen; PE.UI:Px converts).
+test("quest arrow: the five positions and two sizes put the block where QuestArrow.lua says", function()
+    local c, PE = newArrow(focusOne())
+    local mod = PE:GetModule("questArrow")
+    local function choose(key, value)
+        mod.opts[key] = value
+        for _, opt in ipairs(mod.options) do
+            if opt.key == key then PE:Safe(mod.key, opt.OnChange, mod, value) end
+        end
+    end
+    local Px = function(n) return PE.UI:Px(n) end
+    local expected = {
+        top = { "TOP", 0, -40 }, upper = { "CENTER", 0, 150 }, lower = { "CENTER", 0, -140 },
+        left = { "CENTER", -230, 60 }, right = { "CENTER", 230, 60 },
+    }
+    for name, e in pairs(expected) do
+        choose("position", name)
+        local point, rel, relPoint, x, y = parts(c).display.frame:GetPoint(1)
+        eq({ point, rel, relPoint }, { e[1], c.UIParent, e[1] }, name)
+        check(math.abs(x - Px(e[2])) < 0.01 and math.abs(y - Px(e[3])) < 0.01, name .. ": offset " .. x .. "," .. y)
+    end
+    choose("size", "normal")
+    check(math.abs(parts(c).box.frame:GetWidth() - Px(76)) < 0.01, "normal size " .. parts(c).box.frame:GetWidth())
+    choose("size", "large")
+    check(math.abs(parts(c).box.frame:GetWidth() - Px(112)) < 0.01, "large size " .. parts(c).box.frame:GetWidth())
 end)
 
 -- DECISIONS "Quest arrow": 'With none focused it says "No quest focused / Focus one in your quest log"'.

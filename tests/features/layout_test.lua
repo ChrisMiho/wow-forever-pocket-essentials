@@ -121,7 +121,10 @@ test("layout: back returns to the layout that was active before the switch", fun
     local c, PE = newLayout({ gamepadUI = true, layouts = { layouts = { saved("My handheld", 1, 1) }, activeLayout = PRESETS + 1 } })
     action(PE, GAMEPAD)()
     eq(c.world.layouts.activeLayout, GAMEPAD_INDEX)
+    PE:GetModule("layout"):CancelReload()          -- clear the first switch's request, so the next one proves the second
+    eq(reloadKeys(PE), {})
     action(PE, BACK)()
+    eq(reloadKeys(PE), { "layout" }, "going back asked for no reload")
     local calls = sets(c)
     eq(#calls, 2)
     eq(calls[2].args[1], PRESETS + 1)
@@ -238,7 +241,7 @@ test("layout: a second tap 21 seconds after the first writes nothing and asks ag
         eq(#saves(c), 0)
         eq(#lines(c), 2)
         eq(lines(c)[2]:sub(1, 36), "You already have a layout called Han")
-        eq(c.world.layouts.layouts[1].systems, { {} }, "the player's own layout was replaced")
+        eq(c.world.layouts.layouts[1].systems, { {} }, "the player's own layout must be untouched")
     end)
 end)
 
