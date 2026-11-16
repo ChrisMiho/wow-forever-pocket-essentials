@@ -155,8 +155,9 @@ in the quest log works; untracking quests thins the world map. Found:
    line under the arrow is a single line of fixed width (`QuestArrow.lua`
    `Layout`, 13 times the font size), and the text is longer than that.
    Fixed in 0.0.4 (the line now wraps to two lines), awaiting device test.
-Follow-up: with "Hide blue haze" switched off, the minimap stayed normal for
-one focused quest but turned green again on focusing a different one.
+Follow-up: with "Hide blue haze" switched off and a reload, focusing a quest
+left the minimap normal; switched back on, focusing a different quest turned
+it green again (so the green was ours, finding 3).
 Requests: an icon key (parked below); opening the settings from Forever's
 radial wheel so the round button is not needed.
 
