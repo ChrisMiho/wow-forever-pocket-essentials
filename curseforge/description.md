@@ -16,7 +16,7 @@ Anyone playing WoW Forever on a handheld, on any device that runs the client.
 
 Every feature has its own on/off switch and starts switched off.
 
-- **Quest icons:** objective icons on the map and minimap for your focused quest (or your tracked quests, or all of them), no blue haze.
+- **Quest icons:** objective icons on the map and minimap for your tracked quests (or only the focused one, or all of them), no blue haze.
 - **Quest arrow:** an arrow to your focused quest's nearest objective in your zone, with distance. Focus a quest from the quest log.
 - **One big bag:** Blizzard's combined bag with a big Sort button; L3 sorts while it is open; three sizes.
 - **Sell junk automatically:** sells every grey item at vendors. Only the last 12 sold can be bought back.

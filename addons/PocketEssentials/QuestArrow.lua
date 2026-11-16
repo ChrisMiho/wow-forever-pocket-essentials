@@ -5,14 +5,16 @@ local ADDON_NAME, PE = ...
 -- the distance and the quest name under it.
 --
 -- Which objective (only pins on the map you are on are ever pointed at):
---   * A quest is focused (QuestData:GetTrackedQuest) and has known places:
---     its nearest pin on this map; if it has none on this map the arrow is
---     hidden and the text reads "In <zone>" (the zone with most of its
---     places; "Not in this zone" if the name cannot be read) over the
---     quest's name.
---   * No quest focused, or the focused one has no known place anywhere:
---     the nearest pin of the quests in Blizzard's quest tracker on this map.
---   * None of those on this map either: the nearest pin of any quest here.
+--   * A quest is focused (QuestData:GetTrackedQuest) and has known places on
+--     this map: its nearest pin.
+--   * Its places are all on other maps: no arrow; the text reads "Outside
+--     this zone" over "Head to <zone>" (the zone with most of its places;
+--     the quest's name if the zone name cannot be read).
+--   * It has no known place at all: no arrow; "No known location".
+--   * No quest focused: no arrow; the text asks you to focus one.
+--
+-- When the objective is behind you (more than TURN_ENTER from straight
+-- ahead) the arrow is swapped for the words "Turn around".
 --
 -- Which way (the part most likely to be wrong, so it is spelled out):
 --   * Map fractions: x grows to the EAST, y grows to the SOUTH.
@@ -57,6 +59,9 @@ local ANGLE_STEPS = 180             -- the arrow turns in 2-degree steps
 local STEP = 2 * math.pi / ANGLE_STEPS
 local TITLE_MAX = 26                -- longer quest names are cut
 local MAX_FAILURES = 5              -- the driver stops itself after this many errors in a row
+local TURN_ENTER = math.rad(150)    -- "Turn around" shows when the objective is further round than this...
+local TURN_LEAVE = math.rad(135)    -- ... and goes again below this
+local PI, TWO_PI = math.pi, 2 * math.pi
 
 -- Presets, in pixels on a 720p screen: point on the arrow block, point on the
 -- screen, x, y. Chosen to stay clear of the default layout: unit frames
@@ -100,6 +105,7 @@ local S = {
     sinceSelect = 0, selectDue = true,
     failures = 0,
     here = false,
+    turn = false,                       -- "Turn around" is showing instead of the arrow
     arrow = nil,                        -- the arrow picture, when it can be turned (else `lines` are used)
 }
 local lines = {}
@@ -157,8 +163,8 @@ local function BusiestMap(byMap)
     return best
 end
 
--- "In <zone name>" for a map, or the plain fallback.
-local function ElsewhereText(mapID)
+-- The zone name of a map, or nil.
+local function ZoneName(mapID)
     local name
     if mapID and C_Map and C_Map.GetMapInfo then
         local ok, info = pcall(C_Map.GetMapInfo, mapID)
@@ -167,7 +173,7 @@ local function ElsewhereText(mapID)
             if IsSecret(name) or type(name) ~= "string" or name == "" then name = nil end
         end
     end
-    return name and ("In " .. name) or "Not in this zone"
+    return name
 end
 
 local function Shorten(text)
@@ -199,6 +205,12 @@ local function SetTitle(title)
     end
 end
 
+-- Text-only states: the big line and the small line under it.
+local function SetMessage(big, small)
+    S.msgBig = big
+    SetTitle(small or "")
+end
+
 local function Select(playerMap, px, py)
     S.selectDue = false
     S.sinceSelect = 0
@@ -206,47 +218,42 @@ local function Select(playerMap, px, py)
     S.map = playerMap
 
     local old = S.pin
-    local pin, elsewhere = nil, false
-    local width, height = QD:GetMapWorldSize(playerMap)
+    local pin = nil
     local tracked = S.tracked
-    local byMap = tracked and QD:GetPinsForQuest(tracked) or nil
-    if type(byMap) == "table" and HasPlaces(byMap) then
-        -- The focused quest: this map only, never silently another quest.
-        local pins = byMap[playerMap]
+    if not tracked then
+        SetMessage("No quest focused", "Focus one in your quest log")
+    else
+        local byMap = QD:GetPinsForQuest(tracked)
+        local pins = type(byMap) == "table" and byMap[playerMap]
         if type(pins) == "table" and pins[1] ~= nil then
-            if width then pin = Nearest(pins, px, py, width, height) end
+            -- Here; if the map's size cannot be read there is no arrow and no message.
+            S.msgBig = nil
+            local width, height = QD:GetMapWorldSize(playerMap)
+            if width then
+                pin = Nearest(pins, px, py, width, height)
+                S.width, S.height = width, height
+            end
         else
-            elsewhere = true
-            S.elsewhereText = ElsewhereText(BusiestMap(byMap))
-        end
-    elseif width then
-        -- The quests in Blizzard's tracker, then any quest.
-        local watchedList = QD.GetWatchedQuests and QD:GetWatchedQuests()
-        local d2
-        for i = 1, type(watchedList) == "table" and #watchedList or 0 do
-            local pins = QD:GetPinsForQuest(watchedList[i])
-            pins = type(pins) == "table" and pins[playerMap]
-            if type(pins) == "table" then pin, d2 = Nearest(pins, px, py, width, height, pin, d2) end
-        end
-        if not pin then
-            local pins = QD:GetPins(playerMap)
-            if type(pins) == "table" then pin = Nearest(pins, px, py, width, height) end
+            local title = QD:GetQuestTitle(tracked)
+            if type(title) ~= "string" or title == "" then title = "Quest" end
+            if type(byMap) == "table" and HasPlaces(byMap) then
+                local zone = ZoneName(BusiestMap(byMap))
+                SetMessage("Outside this zone", zone and Shorten("Head to " .. zone) or Shorten(title))
+            else
+                SetMessage("No known location", Shorten(title))
+            end
         end
     end
 
-    S.pin, S.elsewhere = pin, elsewhere
+    S.pin = pin
     if pin then
-        S.tx, S.ty, S.width, S.height = pin.x, pin.y, width, height
+        S.tx, S.ty = pin.x, pin.y
         S.force = true
         if pin ~= old then
             S.here = false
             S.distCode = nil
             SetTitle(TitleFor(pin))
         end
-    elseif elsewhere then
-        local title = QD:GetQuestTitle(tracked)
-        if type(title) ~= "string" or title == "" then title = "Quest" end
-        SetTitle(Shorten(title))
     end
 end
 
@@ -263,6 +270,18 @@ local function Paint(here)
     end
     for i = SHAPE_COUNT + 1, LINE_COUNT do
         lines[i]:SetColorTexture(c[1], c[2], c[3], 1)
+    end
+end
+
+-- Swaps the arrow for the words "Turn around", and back.
+local function SetTurn(turn)
+    if S.turn == turn then return end
+    S.turn = turn
+    S.turnText:SetShown(turn)
+    if S.arrow then
+        S.arrow:SetShown(not turn)
+    else
+        for i = 1, LINE_COUNT do lines[i]:SetShown(not turn) end
     end
 end
 
@@ -361,6 +380,15 @@ local function Build()
         text:SetWordWrap(false)
         S.distText = text
     end
+    if not S.turnText then
+        local text = UI:CreateText(S.box, "title")
+        text:SetJustifyH("CENTER")
+        text:SetWordWrap(false)
+        text:SetText("Turn around")
+        text:SetTextColor(COLOR_ARROW[1], COLOR_ARROW[2], COLOR_ARROW[3], 1)
+        text:Hide()
+        S.turnText = text
+    end
     if not S.titleText then
         local text = UI:CreateText(S.display, "font")
         text:SetJustifyH("CENTER")
@@ -393,6 +421,9 @@ local function Layout()
     S.titleText:ClearAllPoints()
     S.titleText:SetPoint("TOP", S.distText, "BOTTOM", 0, -UI:Px(2))
     S.titleText:SetWidth(textWidth)
+    S.turnText:ClearAllPoints()
+    S.turnText:SetPoint("CENTER", S.box, "CENTER", 0, 0)
+    S.turnText:SetWidth(textWidth)
 
     local pos = POSITIONS[Opt("position")] or POSITIONS.top
     S.display:SetSize(textWidth, box + gap + fontSize * 2.6)
@@ -475,10 +506,10 @@ local function Update()
     if not S.pin then
         -- Nothing to point at for now. Stop completely; QuestData's
         -- "quests" / "zone" / "tracked" callbacks start the driver again.
-        if S.elsewhere then
+        if S.msgBig then
             SetBoxShown(false)
             S.distCode = nil
-            S.distText:SetText(S.elsewhereText or "Not in this zone")
+            S.distText:SetText(S.msgBig)
             if not S.shown then
                 S.shown = true
                 S.display:Show()
@@ -505,11 +536,20 @@ local function Update()
     local east = (S.tx - px) * S.width
     local north = (py - S.ty) * S.height
     local dist = sqrt(east * east + north * north)
-    if dist >= MIN_AIM_YARDS then
-        -- DEVICE CHECK: if the arrow swings the wrong way when you turn, flip the sign of `facing` here.
-        DrawArrow(atan2(-east, north) - facing)
-    end
     ShowDistance(dist)
+    if S.here then
+        SetTurn(false)
+    elseif dist >= MIN_AIM_YARDS then
+        -- DEVICE CHECK: if the arrow swings the wrong way when you turn, flip the sign of `facing` here.
+        local rel = (atan2(-east, north) - facing + PI) % TWO_PI - PI     -- -pi .. pi
+        local behind = rel < 0 and -rel or rel
+        if S.turn then
+            SetTurn(behind > TURN_LEAVE)
+        else
+            SetTurn(behind > TURN_ENTER)
+        end
+        DrawArrow(rel)
+    end
     return true
 end
 
@@ -587,7 +627,7 @@ end
 local STATUS = {
     instance = "Hidden while you are inside a dungeon.",
     nopos = "Hidden: the game cannot tell where you are here.",
-    notarget = "Hidden: none of your quests has a known place in this zone.",
+    notarget = "Hidden: the game cannot tell this zone's size.",
 }
 
 local SafeOnData, SafeOnUpdate
@@ -654,7 +694,7 @@ mod = PE:RegisterModule({
         self:RegisterEvent("PLAYER_ENTERING_WORLD", OnWorldEvent)
         self:RegisterEvent("ZONE_CHANGED_NEW_AREA", OnWorldEvent)
         S.tracked = QD:GetTrackedQuest()
-        S.pin, S.map, S.title, S.elsewhere = nil, nil, nil, false
+        S.pin, S.map, S.title, S.msgBig = nil, nil, nil, nil
         S.titleText:SetText("")
         S.distText:SetText("")
         S.distCode, S.here = nil, false
@@ -675,7 +715,7 @@ mod = PE:RegisterModule({
             if data.Release then data:Release(KEY) end      -- harmless if it was never acquired
         end
         S.acquired = false
-        S.pin, S.map, S.tracked, S.elsewhere = nil, nil, nil, false
+        S.pin, S.map, S.tracked, S.msgBig = nil, nil, nil, nil
         S.why, S.failReason = nil, nil
     end,
 })

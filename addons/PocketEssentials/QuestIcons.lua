@@ -3,9 +3,9 @@
 -- Where things are comes from PE.QuestData (QuestData.lua); this file only
 -- draws. Ported from the old standalone QuestDots addon.
 --
--- Which quests get icons is the "Show icons for" option: the quest focused in
--- the quest log (Blizzard's "Focus"), the quests in Blizzard's quest tracker,
--- or every quest in the log. Tapping an icon does not change the focus.
+-- Which quests get icons is the "Show icons for" option: the quests in
+-- Blizzard's quest tracker plus the focused one (the default), only the quest
+-- focused in the quest log (Blizzard's "Focus"), or every quest in the log. Tapping an icon does not change the focus.
 --
 -- Touch (there is no hover): tap an icon and a short text box says what the
 -- icon is. The box goes away by itself after a few seconds, when another icon
@@ -31,7 +31,7 @@ local KEY = "questIcons"
 ---------------------------------------------------------------------------
 
 local DEFAULTS = {
-    show = "focus",   -- "focus" | "tracked" | "all": which quests get icons
+    show = "tracked", -- "tracked" | "focus" | "all": which quests get icons
     map = true,       -- icons on the world map
     mini = true,      -- icons on the minimap
     hideHaze = true,  -- hide Blizzard's blue quest areas (map and minimap)
@@ -200,22 +200,22 @@ local function AddWatched(set)
     end
 end
 
+-- "tracked" (the default): the tracker's quests plus the focused one.
 -- "focus": the focused quest; with none focused, the quests in Blizzard's
--- tracker. "tracked": the tracker's quests plus the focused one. "all": no
--- filter. Uses trackedID, so set that first. Returns true if the set changed.
+-- tracker. "all": no filter. Uses trackedID, so set that first. Returns true if the set changed.
 local function RebuildFilter()
     local mode = Opt("show")
     local all = (mode == "all") or not QD
     local set = spareSet
     for id in pairs(set) do set[id] = nil end
     if not all then
-        if mode == "tracked" then
+        if mode == "focus" and trackedID ~= nil then
+            set[trackedID] = true
+        elseif mode == "focus" then
             AddWatched(set)
-            if trackedID ~= nil then set[trackedID] = true end
-        elseif trackedID ~= nil then
-            set[trackedID] = true -- "focus" (and any unknown saved value)
         else
-            AddWatched(set)
+            AddWatched(set) -- "tracked" (and any unknown saved value)
+            if trackedID ~= nil then set[trackedID] = true end
         end
     end
     local changed = (all ~= showAll)
@@ -924,6 +924,13 @@ local function OnEnable()
         return
     end
     active = true
+    -- 0.0.2 saved "focus" as the default; move those players to the new
+    -- default once. "All quests", and any choice made after this, is kept.
+    local opts = mod.opts
+    if type(opts) == "table" and opts.showDefault ~= 2 then
+        if opts.show == "focus" then opts.show = "tracked" end
+        opts.showDefault = 2
+    end
     QD:OnChanged(KEY, dataChanged)
     trackedID = QD:GetTrackedQuest()
     RebuildFilter()
@@ -1003,7 +1010,7 @@ mod = PE:RegisterModule({
     defaults = DEFAULTS,
     options = {
         { key = "show", label = "Show icons for",
-          choices = { { value = "focus", label = "Focused quest" }, { value = "tracked", label = "Tracked quests" },
+          choices = { { value = "tracked", label = "Tracked quests" }, { value = "focus", label = "Focused quest" },
                       { value = "all", label = "All quests" } },
           OnChange = OptionChanged("show") },
         { key = "map", label = "Map icons", choices = ON_OFF, OnChange = OptionChanged("map") },
@@ -1047,7 +1054,7 @@ local TOGGLES = {
 }
 local CLUSTER_WORDS = { off = 0, normal = 2, more = 5 }
 local SHOW_WORDS = { focus = "Focused quest", tracked = "Tracked quests", all = "All quests" }
-local USAGE = "/qd show focus (or tracked, all), /qd map, /qd mini, /qd haze, /qd size small (or medium, large), /qd cluster 2 (0 is off)"
+local USAGE = "/qd show tracked (or focus, all), /qd map, /qd mini, /qd haze, /qd size small (or medium, large), /qd cluster 2 (0 is off)"
 
 local function SlashCommand(msg)
     local opts = mod.opts

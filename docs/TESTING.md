@@ -69,14 +69,13 @@ and `QuestieDB` sit side by side.
 ### 2. Quest icons
 - Switch on **Quest icons** only. Have a few quests in the log.
 - **Round button:** it should now look smooth, not stepped.
-- Open the quest log and **Focus** one quest (its menu → Focus). Open the
-  world map in that quest's zone: only that quest's icons should show
-  (red kill, yellow loot, blue use, purple explore, "?" turn in), and the
-  blue haze should be gone. Focus a different quest: the icons switch.
-- Remove the focus: the icons of the quests in Blizzard's quest tracker
-  show instead.
-- Under the row, try **Show icons for**: "Tracked quests" (tracker quests
-  plus the focused one) and "All quests" (every quest, like 0.0.1).
+- Open the world map: icons (red kill, yellow loot, blue use, purple
+  explore, "?" turn in) sit where objectives are, and the blue haze is gone.
+- By default ("Show icons for: Tracked quests") the map shows the quests in
+  Blizzard's quest tracker plus the focused one. Track or untrack a quest:
+  its icons appear or go.
+- Under the row, try **Focused quest** (only the focused quest; with none
+  focused, the tracker's quests) and **All quests** (every quest, like 0.0.1).
 - Zoom the map in and out: icons stay on their spots and the same size.
 - Minimap: **no blue haze** right after login, after a loading screen, and
   after walking into another zone. Icons move toward the centre as you
@@ -97,10 +96,12 @@ and `QuestieDB` sit side by side.
   left. If it swings the same way you turn, tell us; it is a one-line fix.
 - Walk to the objective: the distance counts down and the arrow turns green
   with "Here".
+- Turn your back to the objective: the arrow is replaced by "Turn around";
+  turn back and the arrow returns.
 - Focus a different quest: the arrow switches to it. Focus a quest in
-  another zone: the arrow hides and the text says "In <that zone>".
-- Remove the focus: it points at the nearest objective of your tracked
-  quests.
+  another zone: the text says "Outside this zone" and "Head to <zone>".
+- Remove the focus: the text says "No quest focused" and "Focus one in your
+  quest log".
 - Enter a dungeon: the arrow hides while you are inside.
 - Then switch Quest icons off and confirm the arrow still works alone.
 - Report: direction right/mirrored; does it follow the focus; distance

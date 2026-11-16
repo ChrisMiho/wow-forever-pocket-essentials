@@ -4,6 +4,21 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.0.3] - 2026-11-15
+
+Third test build. Not yet tested on a device.
+
+### Changed
+
+- Quest arrow with no focused quest: instead of pointing somewhere, it says
+  "No quest focused" and "Focus one in your quest log".
+- Focused quest in another zone: the arrow says "Outside this zone" and
+  "Head to <zone>".
+- When the objective is behind you, the arrow is replaced by "Turn around".
+- Quest icons: "Show icons for" now defaults to Tracked quests (your tracked
+  quests plus the focused one). If 0.0.2 had you on Focused quest, you are
+  moved to Tracked quests once; All quests is kept.
+
 ## [0.0.2] - 2026-11-15
 
 Second test build, with fixes from the first device test of the quest

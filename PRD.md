@@ -121,8 +121,9 @@ Chatting is hard on a handheld because targets are too small to tap.
 
 ## Status
 
-In progress: device testing. Version 0.0.2 (test build) carries the fixes from
-the first device test of 0.0.1.
+In progress: device testing. Version 0.0.3 (test build) carries the fixes from
+the first device test of 0.0.1 (in 0.0.2) and the maintainer's follow-up on
+the arrow and icon defaults (spec `docs/superpowers/specs/2026-11-15-arrow-messages.md`).
 
 **First device test, 2026-11-15 (0.0.1, Retroid Pocket 6), quest icons and
 arrow:** no errors, the settings menu is easy to use. Found: the round button
@@ -145,8 +146,8 @@ until its step in the test plan passes.
 | Pocket Essentials addon (`addons/PocketEssentials`) | One addon holding everything below. Every feature is **off** on first install | Untested in game |
 | Settings window | Own window with one row per feature and a big on/off switch each; big buttons for each feature's choices; an Errors page; works by touch and (if the game allows it) by d-pad / A / B. Opens from the round button, the game's addon list button on the minimap, or `/pe` | Untested |
 | Round "PE" button | Always on screen, left edge by default, position chosen from six preset spots. Opens settings; opens the chat picker instead when the chat feature is on. Holding it for half a second always opens settings. Smooth round art since 0.0.2 | Works (0.0.1); new art untested |
-| Quest icons | Objective icons on map and minimap from QuestieDB data, blue haze hidden. "Show icons for": Focused quest (default; with none focused, the quest tracker's quests), Tracked quests, All quests. Tapping an icon shows its text only | 0.0.1 ran without errors; too many icons and minimap haze fixed in 0.0.2, untested |
-| Quest arrow | On-screen arrow to the focused quest's nearest objective in the current zone ("In <zone>" when elsewhere; with no focus, the tracker's quests), with distance and quest name. Pointed arrow art since 0.0.2 | 0.0.1 ran without errors; focus and new art untested |
+| Quest icons | Objective icons on map and minimap from QuestieDB data, blue haze hidden. "Show icons for": Tracked quests (default; the quest tracker's quests plus the focused one), Focused quest, All quests. Tapping an icon shows its text only | 0.0.1 ran without errors; too many icons and minimap haze fixed in 0.0.2, untested |
+| Quest arrow | On-screen arrow to the focused quest's nearest objective in the current zone, with distance and quest name. "Outside this zone / Head to <zone>" when elsewhere, "No quest focused" with none, "Turn around" when the objective is behind you. Pointed arrow art since 0.0.2 | 0.0.1 ran without errors; focus and new art untested |
 | One big bag | Blizzard's own combined bag, a big Sort button, L3 sorts while the bag is open, three bag sizes | Untested |
 | Sell junk automatically | Sells every grey item at vendors | Untested |
 | Repair automatically | Repairs from your own money at vendors that can | Untested |
@@ -163,9 +164,9 @@ that say "Not needed" are skipped.
 
 | Goal bullet | Where | Built |
 |---|---|---|
-| 1. Icons on the world map and minimap for kill, loot, interact and turn-in objectives | `QuestIcons.lua` `RefreshWorldMap`, `UpdateMinimap`, `RebuildFilter`; `QuestData.lua` `KIND_LABEL` | Yes: kill, loot, interact and turn-in each get their own icon on both the map and the minimap; "Explore" objectives get a fifth kind. Shown for the focused quest by default |
+| 1. Icons on the world map and minimap for kill, loot, interact and turn-in objectives | `QuestIcons.lua` `RefreshWorldMap`, `UpdateMinimap`, `RebuildFilter`; `QuestData.lua` `KIND_LABEL` | Yes: kill, loot, interact and turn-in each get their own icon on both the map and the minimap; "Explore" objectives get a fifth kind. Shown for the tracked quests by default |
 | 1. Hide Blizzard's blue "haze" areas | `QuestIcons.lua` `SetWorldMapHaze`, `ZeroMinimapBlobs`, `ReapplyMinimapHaze` | Yes: hidden on the world map and the minimap (minimap re-hidden after loading screens and zone changes since 0.0.2); switching it off restores the map at once, but the minimap needs a reload |
-| 1. An arrow that points toward the current objective | `QuestArrow.lua` `Select`, `DrawArrow`, `Update`; `QuestData.lua` `GetTrackedQuest` | Partial: follows the quest you focus in the quest log; points only at objectives in the zone you are standing in; for a quest elsewhere it says "In <zone>" (see `docs/DECISIONS.md`) |
+| 1. An arrow that points toward the current objective | `QuestArrow.lua` `Select`, `DrawArrow`, `Update`; `QuestData.lua` `GetTrackedQuest` | Partial: follows the quest you focus in the quest log; points only at objectives in the zone you are standing in; for a quest elsewhere it says "Outside this zone" and names the zone (see `docs/DECISIONS.md`) |
 | 2. One combined bag window instead of separate bags | `Bags.lua` `WantCombined`, `Setup` | Yes: uses Blizzard's own combined bag; with the Gamepad UI off, switching it on needs a reload |
 | 2. A way to sort it | `Bags.lua` `DoSort`, `CreateButtons` | Yes: a big Sort button, plus L3 while the bag is open |
 | 3. Automatically sell junk (grey items) at a vendor | `Vendor.lua` `ScanJunk`, `SellStep` | Yes: sells every grey item worth money, except in bags you marked to ignore; no cap per visit |
@@ -191,7 +192,7 @@ Rules 1 and 2 apply: one phase at a time, one item at a time.
 
 1. **Device testing.** Work through `docs/TESTING.md` one step at a time on
    the reference device. Steps 2 and 3 (quest icons, arrow) ran once on
-   0.0.1; re-test them on 0.0.2, then continue with step 4.
+   0.0.1; re-test them on 0.0.3, then continue with step 4.
 2. **Performance and user-experience polish.** Fix what the test results
    show, and flip defaults to on for features that pass.
 3. **First CurseForge upload.** Use `curseforge/FIELDS.md`.
@@ -203,7 +204,8 @@ Rules 1 and 2 apply: one phase at a time, one item at a time.
 - UI arrangement: a bundled handheld layout (needs one exported from the
   device first; see `docs/TESTING.md` step 9). Revisit in roadmap phase 2.
 - The quest arrow across zones (removed after review because it could show a
-  confidently wrong direction). Next step when picked up: study how open-source
+  confidently wrong direction). **Wanted by the maintainer (2026-11-15)**; until
+  then the arrow says "Outside this zone" and names the zone. Next step when picked up: study how open-source
   addons route an arrow across zones (Questie, GPL-3.0 like us; TomTom) and
   spec a lightweight version of our own, crediting any borrowed code.
 - Owner has more ideas; add them here as one line each, then spec before
