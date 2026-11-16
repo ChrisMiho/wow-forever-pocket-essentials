@@ -1,0 +1,63 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Pocket Essentials: Vendor</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+.scene { position: relative; width: 620px; height: 540px; font-family: "Helvetica Neue", Arial, sans-serif; }
+.row { display: flex; align-items: center; gap: 18px; position: absolute; left: 20px; top: 10px; }
+.slot { width: 64px; height: 64px; border-radius: 8px; background: #0b0c10; border: 3px solid #6f6f6f; position: relative; }
+.slot::after { content: ""; position: absolute; inset: 7px; border-radius: 5px; background: #8a8a8a; box-shadow: inset 0 -8px 12px rgba(0,0,0,.4); }
+.slot.gone { opacity: .35; }
+.arrow { font-size: 44px; color: #a0d7ff; font-weight: 700; }
+.coins { display: flex; gap: 6px; }
+.coin { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 18px; box-shadow: 0 6px 14px rgba(0,0,0,.45), inset 0 -4px 6px rgba(0,0,0,.25); }
+.g { background: #f2c230; color: #7a5300; } .s { background: #c9ccd6; color: #50535c; } .c { background: #c06a33; color: #5a2a0c; }
+.ic { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin: 0 3px 0 1px; vertical-align: -1px; }
+.chatlog { position: absolute; left: 20px; top: 120px; width: 580px; padding: 16px 18px; background: rgba(0,0,0,.55); border-radius: 6px; font-size: 18px; line-height: 1.7; color: #fff; text-shadow: 0 1px 2px #000; }
+.chatlog .tag { color: #ffd100; }
+.chatlog .say { color: #fff; opacity: .55; }
+.pe-win { position: absolute; left: 20px; top: 300px; width: 580px; }
+.mrow { display: flex; align-items: center; padding: 10px 6px; }
+.mrow + .mrow { border-top: 1px solid #23232b; }
+.mrow .t { flex: 1; }
+.mrow .t b { display: block; font-size: 20px; color: #fff; }
+.mrow .t span { font-size: 15px; color: var(--pe-small); }
+.mrow .btn { width: 120px; }
+</style></head>
+<body>
+<div class="stage">
+	<div class="frame"></div>
+	<div class="copy">
+		<div class="kicker"><b>03</b><i></i>Vendors</div>
+		<h1>Vendor chores, <em>done for you</em></h1>
+		<p>Open any vendor and your grey junk is sold before you have tapped a thing. Your gear gets repaired too.</p>
+		<ul>
+			<li>Sells every <b>grey item</b> worth money</li>
+			<li>Repairs from <b>your own gold</b> at vendors that can</li>
+			<li>One short line in chat says what happened</li>
+			<li>Two separate switches: use one, both or neither</li>
+		</ul>
+	</div>
+	<div class="shot">
+		<div class="scene">
+			<div class="row">
+				<div class="slot"></div><div class="slot"></div><div class="slot gone"></div><div class="slot gone"></div>
+				<div class="arrow">&#10140;</div>
+				<div class="coins"><div class="coin g">g</div><div class="coin s">s</div><div class="coin c">c</div></div>
+			</div>
+			<div class="chatlog">
+				<div class="say">[Trade] Selling copper ore, whisper me</div>
+				<div><span class="tag">Pocket Essentials:</span> Sold 7 junk items for 1<span class="ic g"></span>24<span class="ic s"></span>60<span class="ic c"></span>.</div>
+				<div><span class="tag">Pocket Essentials:</span> Repairing for 2<span class="ic g"></span>10<span class="ic s"></span>.</div>
+			</div>
+			<div class="pe-win">
+				<div class="pe-body">
+					<div class="mrow"><div class="t"><b>Sell junk automatically</b><span>Sells grey items when you open a vendor.</span></div><div class="btn on">ON</div></div>
+					<div class="mrow"><div class="t"><b>Repair automatically</b><span>Repairs your gear at vendors that can, using your own money.</span></div><div class="btn on">ON</div></div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="foot">Pocket Essentials <b>&#9670;</b> All-in-one quality of life</div>
+	<div class="note">Illustration, not a screenshot</div>
+</div>
+</body></html>

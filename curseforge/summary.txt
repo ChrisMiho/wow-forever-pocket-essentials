@@ -1,1 +1,1 @@
-Big, touch- and controller-friendly helpers for playing WoW Forever on a handheld.
+All-in-one, touch and controller friendly QoL: quest map icons and arrow, one big bag, auto sell and repair, big chat buttons.

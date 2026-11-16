@@ -2,6 +2,7 @@
 """Generate the CurseForge avatar and banner (original art, Pillow only).
 
 Run from anywhere: python3 scripts/make_art.py  -> writes curseforge/*.png
+(the description images are made by curseforge/source/render.sh)
 
 With --icons it instead writes the addon's own textures (original art):
     addons/PocketEssentials/Icons/arrow.tga, circle.tga
@@ -121,25 +122,11 @@ def banner(pal):
     d.text((x, h * 0.45), "Pocket Essentials", font=font(round(h * 0.10)),
            fill=pal["title"], anchor="ls")
     d.rectangle((x, h * 0.50, x + w * 0.06, h * 0.50 + 5 * SS), fill=pal["accent"])
-    d.text((x, h * 0.62), "Handheld helpers for WoW Forever", font=font(round(h * 0.056)),
+    d.text((x, h * 0.62), "All-in-one quality of life", font=font(round(h * 0.056)),
+           fill=pal["tagline"], anchor="ls")
+    d.text((x, h * 0.71), "Touch and controller friendly", font=font(round(h * 0.056)),
            fill=pal["tagline"], anchor="ls")
     return img.resize((1280, 640), Image.LANCZOS).convert("RGB")
-
-
-def contact_sheet(path):
-    """Every palette's avatar (400) + banner (640x320), labelled, in one PNG."""
-    names = list(PALETTES)
-    rowh, pad = 400, 24
-    sheet = Image.new("RGB", (130 + 400 + pad + 800 + pad, len(names) * (rowh + pad) + pad), (235, 235, 235))
-    d = ImageDraw.Draw(sheet)
-    for i, name in enumerate(names):
-        y = pad + i * (rowh + pad)
-        pal = PALETTES[name]
-        d.text((pad, y + 40), name, font=font(30), fill=(30, 30, 30), anchor="lm")
-        sheet.paste(avatar(pal), (130, y))
-        sheet.paste(banner(pal).resize((800, 400), Image.LANCZOS), (130 + 400 + pad, y))
-        sheet.paste(avatar(pal).resize((64, 64), Image.LANCZOS), (pad, y + 80))
-    sheet.save(path)
 
 
 # --- Addon textures -----------------------------------------------------------

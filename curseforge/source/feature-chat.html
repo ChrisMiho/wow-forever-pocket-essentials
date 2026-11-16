@@ -1,0 +1,52 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Pocket Essentials: Chat</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+.scene { position: relative; width: 640px; height: 560px; font-family: "Helvetica Neue", Arial, sans-serif; }
+.hub { position: absolute; left: 0; top: 230px; }
+.tap { position: absolute; left: 30px; top: 340px; font: 600 15px "Helvetica Neue", Arial, sans-serif; color: #c8dcff; }
+.pe-win { position: absolute; left: 130px; top: 0; width: 500px; }
+.hint { font-size: 15px; color: var(--pe-small); margin-bottom: 12px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.grid .btn { min-height: 54px; font-size: 19px; }
+.sec { color: var(--pe-gold); font-size: 18px; font-weight: 700; margin: 16px 0 10px; }
+</style></head>
+<body>
+<div class="stage">
+	<div class="frame"></div>
+	<div class="copy">
+		<div class="kicker"><b>04</b><i></i>Chat</div>
+		<h1>Chat without <em>tiny targets</em></h1>
+		<p>Tap the round button and pick who to talk to from big buttons. The chat box opens already set to that channel or player.</p>
+		<ul>
+			<li>One big button for each channel you can talk in</li>
+			<li>Your <b>last six whisperers</b>, newest first</li>
+			<li>A badge on the round button for unanswered whispers</li>
+		</ul>
+	</div>
+	<div class="shot">
+		<div class="scene">
+			<div class="hub">PE<div class="badge">1</div></div>
+			<div class="tap">Tap</div>
+			<div class="pe-win">
+				<div class="pe-title">Chat<span class="sp"></span><span class="x">&#10005;</span></div>
+				<div class="pe-body">
+					<div class="hint">Three-finger tap for the keyboard</div>
+					<div class="grid">
+						<div class="btn">Say</div><div class="btn">Yell</div>
+						<div class="btn">Party</div><div class="btn">Guild</div>
+						<div class="btn">1. General</div><div class="btn">2. Trade</div>
+					</div>
+					<div class="sec">Whispers</div>
+					<div class="grid">
+						<div class="btn warn">Brightleaf<span class="new">NEW</span></div><div class="btn">Kordan</div>
+						<div class="btn">Mistwalker</div><div class="btn">Clear marks</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="foot">Pocket Essentials <b>&#9670;</b> All-in-one quality of life</div>
+	<div class="note">Illustration, not a screenshot</div>
+</div>
+</body></html>
