@@ -4,7 +4,7 @@
 Run from anywhere: python3 scripts/make_art.py  -> writes curseforge/*.png
 
 With --icons it instead writes the addon's own textures (original art):
-    addons/PocketEssentials/Icons/arrow.tga, circle.tga, blank.tga
+    addons/PocketEssentials/Icons/arrow.tga, circle.tga
 """
 import os
 import struct
@@ -212,7 +212,6 @@ def make_icons(out):
     os.makedirs(out, exist_ok=True)
     write_tga(arrow_icon(), os.path.join(out, "arrow.tga"))
     write_tga(circle_icon(), os.path.join(out, "circle.tga"))
-    write_tga(Image.new("RGBA", (8, 8), (0, 0, 0, 0)), os.path.join(out, "blank.tga"))
     print("wrote", out)
 
 

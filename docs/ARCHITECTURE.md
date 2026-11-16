@@ -22,7 +22,7 @@ addons/PocketEssentials/
   Chat.lua        feature: big chat buttons
   Layout.lua      feature: layout helper (experimental)
   Icons/          three icon images from pfQuest/Shagu with their MIT notice,
-                  plus our own arrow, circle and blank (scripts/make_art.py --icons)
+                  plus our own arrow and circle (scripts/make_art.py --icons)
 ```
 
 How the pieces protect each other:
@@ -99,8 +99,8 @@ so that being wrong cannot raise an error; the worst case is listed.
 | Minimap yards-per-zoom table (taken from the HereBeDragons library's values) and six zoom levels | Minimap icons | Icons drift toward or away from the centre as you walk |
 | `IsIndoors()` as the indoor/outdoor minimap switch | Minimap icons | Same drift, indoors only |
 | Default values of the minimap's quest-area ("haze") transparency (set inside the game engine) | Quest icons | Bringing the minimap haze back needs a reload; the panel asks for one |
-| Whether the engine resets the minimap haze values when the world loads, and whether setting them again (alphas 0, ring scalars 0, blank textures) on login, loading screens and zone changes hides it (0.0.1 did not hide it on the device) | Quest icons | The blue haze still shows on the minimap; no error |
-| Whether our own TGA art (`Icons/arrow`, `circle`, `blank`) loads and faces the right way on this client | Round button, whisper badge, quest arrow, haze hiding | A green square instead of the round button or arrow; text still works |
+| Whether the engine resets the minimap haze values when the world loads, and whether setting them again (alphas 0, ring scalars 0) on login, loading screens and zone changes hides it (0.0.1 did not hide it on the device) | Quest icons | The blue haze still shows on the minimap; no error |
+| Whether our own TGA art (`Icons/arrow`, `circle`) loads and faces the right way on this client | Round button, whisper badge, quest arrow, haze hiding | A green square instead of the round button or arrow; text still works |
 | Hiding the world-map haze by making its frame transparent | Quest icons | Haze stays visible on the world map. An alternative is noted in the file |
 | `C_EncodingUtil` decode functions behave as QuestieDB expects; which of QuestieDB's two identical data files the client loads | QuestieDB itself | QuestieDB fails to load; quest features stay off and say why |
 | `CanMerchantRepair`, `GetRepairAllCost`, `RepairAllItems`, `InRepairMode`, `SpellIsTargeting` (used by Blizzard's own vendor code but absent from the generated documentation, so their restrictions are unknown) | Repair, sell junk | Repair row shows "PROBLEM", or the game shows its own "blocked" message once |
@@ -175,8 +175,12 @@ authors believed about the game.
   release before distributing a modified (trimmed) copy.
 - The three objective icon images come from pfQuest (Shagu), MIT licence;
   the notice is in `addons/PocketEssentials/Icons/MIT.txt`. That notice
-  covers only `loot_mono`, `object_mono` and `slay_mono`; `arrow`, `circle`
-  and `blank` are original art drawn by `scripts/make_art.py --icons`.
+  covers only `loot_mono`, `object_mono` and `slay_mono`; `arrow` and
+  `circle` are original art drawn by `scripts/make_art.py --icons`.
+
+- 0.0.3 on the device: swapping the minimap's quest blob textures for our
+  `Icons/blank.tga` turned the minimap solid green when a focused quest had a
+  quest area. Removed in 0.0.4.
 
 ### Unverified (do not rely on these without testing)
 - Everything under "Unverified API" above.

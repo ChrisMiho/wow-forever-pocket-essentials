@@ -84,22 +84,19 @@ local MINIMAP_YARDS = {
     outdoor = { [0] = 466 + 2 / 3, 400, 333 + 1 / 3, 266 + 2 / 3, 200, 133 + 1 / 3 },
 }
 
--- Minimap blob settings that hide the haze: every part transparent, drawn
--- with a fully transparent texture, and the ring shrunk to nothing. Blizzard's
--- interface code never sets these, so the game engine owns the normal values;
--- it may also put them back when the world loads, which is why they are set
--- again after loading screens, zone changes and quest changes. The game has
--- no way to read the normal values back, so only a reload restores them.
+-- Minimap blob settings that hide the haze: every part transparent, and the
+-- ring shrunk to nothing. Textures are left alone: our own blank texture
+-- turned the minimap solid green on the device (0.0.3), because the minimap
+-- cannot draw it. Blizzard's interface code never sets these, so the game
+-- engine owns the normal values; it may also put them back when the world
+-- loads, which is why they are set again after loading screens, zone changes
+-- and quest changes. The game has no way to read the normal values back, so
+-- only a reload restores them.
 -- (Minimap setters: MinimapFrameAPIDocumentation.lua, forever 1.60.1.)
-local BLANK_TEXTURE = ICON_PATH .. "blank" -- 8x8, fully transparent
 local BLOB_SETTINGS = {
     { "SetQuestBlobInsideAlpha", 0 }, { "SetQuestBlobOutsideAlpha", 0 }, { "SetQuestBlobRingAlpha", 0 },
     { "SetTaskBlobInsideAlpha", 0 }, { "SetTaskBlobOutsideAlpha", 0 }, { "SetTaskBlobRingAlpha", 0 },
     { "SetQuestBlobRingScalar", 0 }, { "SetTaskBlobRingScalar", 0 },
-    { "SetQuestBlobInsideTexture", BLANK_TEXTURE }, { "SetQuestBlobOutsideTexture", BLANK_TEXTURE },
-    { "SetQuestBlobRingTexture", BLANK_TEXTURE },
-    { "SetTaskBlobInsideTexture", BLANK_TEXTURE }, { "SetTaskBlobOutsideTexture", BLANK_TEXTURE },
-    { "SetTaskBlobRingTexture", BLANK_TEXTURE },
 }
 local HAZE_AGAIN_SECONDS = 2 -- after a loading screen, set the haze again this much later too
 
