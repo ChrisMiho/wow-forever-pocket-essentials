@@ -11,8 +11,10 @@ local ADDON_NAME, PE = ...
 --   ok, reason = QD:Acquire(userKey)      QD:Release(userKey)
 --   QD:GetPins(uiMapID) -> array          QD:GetAllPins() -> { [uiMapID] = array }
 --   QD:GetPinsForQuest(questID) -> { [uiMapID] = array }
---   QD:OnChanged(userKey, fn)             fn("quests" | "zone" | "tracked")
+--   QD:OnChanged(userKey, fn)             fn("quests" | "zone" | "tracked" | "arrow")
 --   QD:RequestRebuild()                   QD.cluster (number, % of the map)
+--   QD.spotLimit (number, 0 = no limit)   most spots drawn per objective per map
+--   QD:SetArrowPin(pin | nil)             QD:GetArrowPin() -> pin | nil
 --   QD:GetPlayerPosition() -> uiMapID, x, y | nil
 --   QD:GetPlayerFacing() -> radians | nil
 --   QD:GetMapWorldSize(uiMapID) -> width, height | nil
@@ -27,9 +29,14 @@ local ADDON_NAME, PE = ...
 -- Blizzard's quest tracker; a change to that list fires "quests" without
 -- rebuilding any pins (only what users choose to show changes).
 --
--- A pin is { x=, y= (0..1), kind=, questID=, title=, objText=, target=, inside= }.
+-- A pin is { x=, y= (0..1), kind=, questID=, title=, objText=, target=, inside=, extra= }.
 -- `inside` is only set for a target that lives in a dungeon: the pin then sits
 -- on the dungeon's entrance and `inside` is the dungeon's name.
+--
+-- `extra` is only ever `true`: with a spot limit set, an objective's pins beyond
+-- the limit (on one map) are marked so. Users that draw skip `extra` pins; the
+-- arrow does not. The arrow pin is the pin the arrow currently points at, kept
+-- here so other users (the map icons) can show it.
 --
 -- Everything returned is read only. Never change a pin or a pin list.
 
@@ -41,6 +48,9 @@ QD.KIND_LABEL = { slay = "Kill", loot = "Loot", object = "Use", event = "Explore
 -- Spawns closer together than this many percent of the map become one pin.
 -- 0 switches merging off. Change it, then call QD:RequestRebuild().
 QD.cluster = 2
+
+-- Spots per objective: 0 means no limit. Change it, then call QD:RequestRebuild().
+QD.spotLimit = 0
 
 local REBUILD_DELAY = 0.3      -- quest log events are coalesced into one rebuild per this many seconds
 local WATCH_DELAY = 0.1        -- quest tracker changes are coalesced into one "quests" callback per this many seconds
@@ -72,6 +82,9 @@ local present = {}                -- scratch: quest ids seen in the running rebu
 local spawnCache, nameCache = {}, {}
 local builtCluster                -- the cluster value the cache was built with
 local clusterCell = 0             -- cluster value in use by the running rebuild
+local builtLimit                  -- the spot limit the cache was built with
+local limitCell = 0               -- spot limit in use by the running rebuild
+local arrowPin                    -- the pin the arrow points at, or nil
 local dirty = true                -- pinsByMap is out of date
 
 local rebuildPending, zonePending, watchPending, forceNotify = false, false, false, false
@@ -236,6 +249,48 @@ local function AddPin(mapID, x, y, kind, quest, objText, target, inside)
     }
 end
 
+-- Marks all but `limit` of `pins` (one map's pins, #pins > limit >= 1) with
+-- extra = true, keeping the ones that spread out best: first the pin nearest the
+-- average position, then again and again the pin farthest from every kept pin.
+-- Ties go to the lowest index. Horizontal distance counts 1.5 times (maps are wider than tall).
+local dist, kept = {}, {}   -- scratch, reused
+local function Spread(pins, limit)
+    local n = #pins
+    local sx, sy = 0, 0
+    for i = 1, n do
+        sx, sy = sx + pins[i].x, sy + pins[i].y
+    end
+    sx, sy = sx / n, sy / n
+    local pick, best = 1, nil
+    for i = 1, n do
+        local dx, dy = (pins[i].x - sx) * 1.5, pins[i].y - sy
+        local d = dx * dx + dy * dy
+        if not best or d < best then pick, best = i, d end
+        kept[i] = false
+    end
+    for round = 1, limit do
+        kept[pick] = true
+        local px, py = pins[pick].x, pins[pick].y
+        local far, farD = nil, -1
+        for i = 1, n do
+            if not kept[i] then
+                local dx, dy = (pins[i].x - px) * 1.5, pins[i].y - py
+                local d = dx * dx + dy * dy
+                if round == 1 or d < dist[i] then dist[i] = d end
+                if dist[i] > farD then far, farD = i, dist[i] end
+            end
+        end
+        pick = far
+    end
+    for i = 1, n do
+        if not kept[i] then pins[i].extra = true end
+    end
+end
+QD._Spread = Spread   -- test seam
+
+-- This objective's surviving pins grouped by map (scratch, reused).
+local groups = {}
+
 -- End of one objective: hand its pins over (thinned evenly if there are too many).
 local function Flush(out)
     local n = #buf
@@ -248,6 +303,26 @@ local function Flush(out)
             out[bufMap[j]] = list
         end
         list[#list + 1] = buf[j]
+    end
+    local limit = limitCell
+    if limit > 0 then
+        for i = 1, take do
+            local j = floor((i - 1) * n / take) + 1
+            local g = groups[bufMap[j]]
+            if not g then
+                g = {}
+                groups[bufMap[j]] = g
+            end
+            g[#g + 1] = buf[j]
+        end
+    end
+    local hook = QD._groupHook   -- test seam
+    for mapID, g in pairs(groups) do
+        if #g > 0 then
+            if #g > limit then Spread(g, limit) end
+            if hook then hook(g[1].questID, mapID) end
+            wipe(g)
+        end
     end
     wipe(buf)
     wipe(bufMap)
@@ -494,6 +569,15 @@ local function Rebuild()
     end
     clusterCell = cell
 
+    local limit = floor(tonumber(QD.spotLimit) or 0)
+    if limit < 1 then limit = 0 end
+    if limit ~= builtLimit then
+        builtLimit = limit
+        wipe(questCache)
+        dirty = true
+    end
+    limitCell = limit
+
     wipe(present)
     local n, budget = 0, QUESTS_PER_STEP
     for i = 1, QL.GetNumQuestLogEntries() or 0 do
@@ -685,6 +769,7 @@ function QD:Release(userKey)
     forceNotify = false
     lastTracked = nil
     wipe(watched)
+    arrowPin = nil
 end
 
 function QD:OnChanged(userKey, fn)
@@ -696,6 +781,17 @@ function QD:RequestRebuild()
     if userCount <= 0 then return end
     forceNotify = true
     ScheduleRebuild()
+end
+
+-- The pin the arrow points at (nil for none). Users that show it listen for "arrow".
+function QD:SetArrowPin(pin)
+    if pin == arrowPin then return end
+    arrowPin = pin
+    Fire("arrow")
+end
+
+function QD:GetArrowPin()
+    return arrowPin
 end
 
 -- Public: pins -----------------------------------------------------------------

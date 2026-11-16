@@ -180,6 +180,39 @@ local function checkFocus(PE, QD, tag)
     checkErrors(PE, where)
 end
 
+---------------------------------------------------------------------------
+-- 2b. The spot limit's picker (QD._Spread) on small made-up cases.
+---------------------------------------------------------------------------
+local function spreadUnit(QD)
+    local function unmarked(pins)
+        local keep = {}
+        for _, p in ipairs(pins) do if not p.extra then keep[#keep + 1] = p end end
+        return keep
+    end
+    if type(QD._Spread) ~= "function" then fail("spread: QD._Spread is missing") end
+
+    local line = {}
+    for i = 1, 10 do line[i] = { x = i / 10, y = 0.5 } end
+    guarded("spread: line", QD._Spread, line, 3)
+    local keep = unmarked(line)
+    if #keep ~= 3 then fail("spread: 10 pins on a line, limit 3 kept " .. #keep .. ", expected 3") end
+    local has = {}
+    for _, p in ipairs(keep) do has[math.floor(p.x * 10 + 0.5)] = true end
+    if not (has[1] and has[10] and (has[5] or has[6])) then
+        fail("spread: the line case should keep both ends and one middle pin")
+    end
+
+    local same = {}
+    for i = 1, 8 do same[i] = { x = 0.3, y = 0.3 } end
+    guarded("spread: identical", QD._Spread, same, 5)
+    if #unmarked(same) ~= 5 then fail("spread: 8 identical pins, limit 5 kept " .. #unmarked(same) .. ", expected 5") end
+
+    local sq = { { x = 0.1, y = 0.1 }, { x = 0.9, y = 0.1 }, { x = 0.1, y = 0.9 }, { x = 0.9, y = 0.9 }, { x = 0.5, y = 0.5 } }
+    guarded("spread: limit 1", QD._Spread, sq, 1)
+    keep = unmarked(sq)
+    if #keep ~= 1 or keep[1] ~= sq[5] then fail("spread: limit 1 should keep the centre pin") end
+end
+
 local function runPersona(persona)
     local tag = persona.label .. " " .. persona.class
     S.install(persona)
@@ -262,12 +295,77 @@ local function runPersona(persona)
         if got > 0 then counts.with_pins = counts.with_pins + 1 end
     end
     if knownSeen ~= #KNOWN_PINS then fail(tag .. ": a quest with a known pin is missing from QuestieDB") end
+    -- Spot limit: every quest again with QD.spotLimit = 5. Same pins, some marked extra.
+    do
+        local LIMIT = 5
+        local groups = {}   -- ["quest:map"] = number of objective groups seen
+        QD._groupHook = function(questID, mapID)
+            local key = questID .. ":" .. mapID
+            groups[key] = (groups[key] or 0) + 1
+        end
+        local sawExtra = false
+        for _, id in ipairs(sorted) do
+            for pass = 1, 2 do
+                local complete = pass == 2
+                local where = tag .. ": quest " .. id .. " with spot limit" .. (complete and " (complete)" or "")
+                S.questLog.set({ id = id, title = L.Quest.name(id), complete = complete,
+                    objectives = logObjectives(id, complete) })
+                QD.spotLimit = 0
+                guarded(where, QD.RequestRebuild, QD)
+                guarded(where, S.runTimers)
+                local plain = countPins(guarded(where, QD.GetPinsForQuest, QD, id))
+                QD.spotLimit = LIMIT
+                wipe(groups)
+                guarded(where, QD.RequestRebuild, QD)
+                guarded(where, S.runTimers)
+                checkErrors(PE, where)
+                local byMap = guarded(where, QD.GetPinsForQuest, QD, id)
+                if countPins(byMap) ~= plain then
+                    fail(where .. ": " .. countPins(byMap) .. " pins with the limit, " .. plain .. " without")
+                end
+                for mapID, list in pairs(byMap) do
+                    local kept = 0
+                    for _, p in ipairs(list) do
+                        if p.extra then sawExtra = true else kept = kept + 1 end
+                    end
+                    -- At most LIMIT unmarked pins per objective (each objective is one group).
+                    local g = groups[id .. ":" .. mapID] or 0
+                    if kept > LIMIT * g then
+                        fail(where .. ": map " .. mapID .. " has " .. kept .. " unmarked pins from " .. g .. " objectives")
+                    end
+                end
+            end
+        end
+        if not sawExtra then fail(tag .. ": the spot limit of " .. LIMIT .. " never marked a pin extra") end
+        QD._groupHook = nil
+        QD.spotLimit = 0
+        S.questLog.set({ id = 55, title = L.Quest.name(55), complete = false, objectives = logObjectives(55, false) })
+        guarded(tag, QD.RequestRebuild, QD)
+        guarded(tag, S.runTimers)
+        for _, id in ipairs(sorted) do
+            for _, list in pairs(QD:GetPinsForQuest(id)) do
+                for _, p in ipairs(list) do if p.extra then fail(tag .. ": limit 0 left a pin marked extra") end end
+            end
+        end
+        -- The arrow pin
+        local pin = { x = 0.5, y = 0.5 }
+        local fired = {}
+        QD:OnChanged("harness", function(reason) fired[#fired + 1] = reason end)
+        QD:SetArrowPin(pin)
+        QD:SetArrowPin(pin)
+        if QD:GetArrowPin() ~= pin or #fired ~= 1 or fired[1] ~= "arrow" then
+            fail(tag .. ": SetArrowPin should store the pin and fire \"arrow\" once")
+        end
+        QD:OnChanged("harness", nil)
+    end
     checkFocus(PE, QD, tag)
     S.questLog.set(nil)
     guarded(tag .. ": emptying the quest log", QD.RequestRebuild, QD)
     guarded(tag .. ": emptying the quest log", S.runTimers)
     checkErrors(PE, tag .. ": emptying the quest log")
     QD:Release("harness")
+    if QD:GetArrowPin() ~= nil then fail(tag .. ": Release left the arrow pin set") end
+    spreadUnit(QD)
     return counts
 end
 
