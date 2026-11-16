@@ -134,7 +134,28 @@ minimap. All five are addressed in 0.0.2 (spec:
 `docs/superpowers/specs/2026-11-15-quest-focus-and-polish.md`), not yet
 tested in game.
 
-**Apart from that first quest test, nothing in this repo has run in the game.**
+**Second device test, 2026-11-15 (0.0.3), quest icons and arrow:** the new
+arrow, the round button art and the settings menu all good; focusing a quest
+in the quest log works; untracking quests thins the world map. Found:
+1. Blue icons on the minimap only (not the world map); hovering shows text
+   about mobs and quests. Probably Blizzard's, not ours (our icons have no
+   hover text). Unconfirmed.
+2. One quest with many pick-up spots floods the world map, even with the
+   clutter settings turned up.
+3. The minimap turns green when a quest is focused. Suspect: our haze hiding
+   (blank textures on the minimap's quest areas). Unconfirmed.
+4. Inside the quest log, sub-menus look hidden or wrongly coloured. Not yet
+   known whether this is ours or Blizzard's.
+5. Untracking quests was found by guessing.
+6. The arrow's "Focus one in your quest log" line is cut off with "...": the
+   line under the arrow is a single line of fixed width (`QuestArrow.lua`
+   `Layout`, 13 times the font size), and the text is longer than that.
+Follow-up: with "Hide blue haze" switched off, the minimap stayed normal for
+one focused quest but turned green again on focusing a different one.
+Requests: an icon key (parked below); opening the settings from Forever's
+radial wheel so the round button is not needed.
+
+**Apart from the quest tests, nothing in this repo has run in the game.**
 Version 0.0.1 was written on a Mac with no game client. Every line was checked against Blizzard's published
 interface code for this exact build, syntax-checked, exercised against a
 home-made stand-in for the game, and read by a second independent reviewer.
@@ -200,7 +221,9 @@ Rules 1 and 2 apply: one phase at a time, one item at a time.
 
 ## Parked ideas
 
-- Improved Forever's radial wheels.
+- Improved Forever's radial wheels. Specifically wanted (2026-11-15): a radial
+  wheel entry that opens the Pocket Essentials settings. First find out
+  whether an addon can add to the wheel at all.
 - UI arrangement: a bundled handheld layout (needs one exported from the
   device first; see `docs/TESTING.md` step 9). Revisit in roadmap phase 2.
 - The quest arrow across zones (removed after review because it could show a
@@ -208,6 +231,16 @@ Rules 1 and 2 apply: one phase at a time, one item at a time.
   then the arrow says "Outside this zone" and names the zone. Next step when picked up: study how open-source
   addons route an arrow across zones (Questie, GPL-3.0 like us; TomTom) and
   spec a lightweight version of our own, crediting any borrowed code.
+- Quest icon key (2026-11-15): a page in the settings menu explaining what
+  each quest icon means (Kill, Loot, Use, Explore, Turn in). Wanted by the
+  maintainer; small polish item for roadmap phase 2.
+- Quests not yet picked up, like Questie's "!" (2026-11-15): maybe later, only
+  for the current zone, with filters such as hiding low-level quests. Parked to
+  keep the addon focused on accepted quests; the hard part is correctness
+  (quest chains, reputation and profession quests), not speed.
+- A "Reload UI" button in the settings menu (2026-11-15), so a reload never
+  needs a typed command or waiting for a feature to offer one. Small polish
+  item for roadmap phase 2.
 - Owner has more ideas; add them here as one line each, then spec before
   building.
 
