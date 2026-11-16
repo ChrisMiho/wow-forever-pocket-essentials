@@ -9,6 +9,7 @@ local max, min, ceil, floor = math.max, math.min, math.ceil, math.floor
 local PANEL_NAME = "PocketEssentialsSettingsPanel"
 local TITLE_MAIN = "Pocket Essentials"
 local TITLE_ERRORS = "Pocket Essentials - Errors"
+local TITLE_KEY = "Pocket Essentials - Icon key"
 
 local COLOR = {
     font = { 1, 1, 1 },
@@ -315,12 +316,23 @@ local function BuildCoreSection(y, width)
     end
 
     local count = #PE.errors
-    items = { {
-        label = "Errors (" .. count .. ")",
-        style = count > 0 and "warn" or nil,
-        onClick = PE:Wrap("core", function() PE:OpenSettings("errors") end),
-    } }
-    y = FlowButtons(items, x, y, innerWidth, M.button * 4)
+    items = {
+        {
+            label = "Icon key",
+            onClick = PE:Wrap("core", function() PE:OpenSettings("key") end),
+        },
+        {
+            label = "Reload UI",
+            -- Called straight from the tap: reloading needs a real button press.
+            onClick = function() PE:ReloadNow() end,
+        },
+        {
+            label = "Errors (" .. count .. ")",
+            style = count > 0 and "warn" or nil,
+            onClick = PE:Wrap("core", function() PE:OpenSettings("errors") end),
+        },
+    }
+    y = FlowButtons(items, x, y, innerWidth, M.button * 3)
     return y + M.pad
 end
 
@@ -379,6 +391,46 @@ local function BuildErrors(width)
 end
 
 ---------------------------------------------------------------------------
+-- Icon key page
+---------------------------------------------------------------------------
+
+local function BuildKey(width)
+    local x = M.gap
+    local y = M.gap * 0.5
+    local key = PE.QuestIconKey -- made when QuestIcons.lua loads, so read it here
+    if type(key) ~= "table" or #key == 0 then
+        return y + PlaceText("font", "The quest icons part of this addon did not load. See Errors.", x, y, width - x * 2) + M.gap
+    end
+    local side = M.button
+    local textX = x + side + M.gap
+    local textWidth = width - textX - M.pad
+    for i = 1, #key do
+        local entry = key[i]
+        if type(entry) == "table" then
+            if i > 1 then y = y + PlaceLine(y, width) + M.gap end
+            -- A reused texture gets its picture, colour and size set again every time.
+            local icon = Acquire(pools.icon)
+            icon:ClearAllPoints()
+            icon:SetPoint("TOPLEFT", area.child, "TOPLEFT", x, -y)
+            icon:SetSize(side, side)
+            icon:SetTexture(entry.tex)
+            local c = type(entry.color) == "table" and entry.color or COLOR.font
+            icon:SetVertexColor(c[1] or 1, c[2] or 1, c[3] or 1)
+            local ty = y
+            ty = ty + PlaceText("font", Escape(entry.label or ""), textX, ty, textWidth) + M.gap * 0.3
+            ty = ty + PlaceText("small", Escape(entry.desc or ""), textX, ty, textWidth)
+            local rowHeight = max(M.row, side, ty - y)
+            if y + rowHeight > lowest then lowest = y + rowHeight end
+            y = y + rowHeight + M.gap * 0.5
+        end
+    end
+    y = y + M.gap * 0.5
+    y = y + PlaceText("small", "Tap an icon on the map to see what it is for.", x, y, width - x * 2, COLOR.dim) + M.gap * 0.5
+    y = y + PlaceText("small", "\"Spots per objective\" in Quest icons sets how many spots each objective shows.", x, y, width - x * 2, COLOR.dim) + M.gap
+    return y
+end
+
+---------------------------------------------------------------------------
 -- Fixed header above the list
 ---------------------------------------------------------------------------
 
@@ -417,19 +469,23 @@ local function LayoutHeader(width)
         header.reloadText:Hide()
     end
 
-    if page == "errors" then
+    if page ~= "main" then
         local buttonWidth = M.button * 3.5
         header.back:ClearAllPoints()
         header.back:SetSize(buttonWidth, M.button)
         header.back:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
         header.back:Show()
-        header.clear:ClearAllPoints()
-        header.clear:SetSize(buttonWidth, M.button)
-        header.clear:SetPoint("TOPLEFT", content, "TOPLEFT", buttonWidth + M.gap, -y)
-        header.clear:Show()
-        y = y + M.button + M.gap
         navList[#navList + 1] = header.back
-        navList[#navList + 1] = header.clear
+        if page == "errors" then
+            header.clear:ClearAllPoints()
+            header.clear:SetSize(buttonWidth, M.button)
+            header.clear:SetPoint("TOPLEFT", content, "TOPLEFT", buttonWidth + M.gap, -y)
+            header.clear:Show()
+            navList[#navList + 1] = header.clear
+        else
+            header.clear:Hide()
+        end
+        y = y + M.button + M.gap
     else
         header.back:Hide()
         header.clear:Hide()
@@ -446,7 +502,7 @@ local function DoRefresh()
     for i = #navList, 1, -1 do navList[i] = nil end
     BeginPools()
 
-    panel:SetTitle(page == "errors" and TITLE_ERRORS or TITLE_MAIN)
+    panel:SetTitle(page == "errors" and TITLE_ERRORS or page == "key" and TITLE_KEY or TITLE_MAIN)
     local contentWidth, contentHeight = panel.contentWidth, panel.contentHeight
     local headerHeight = LayoutHeader(contentWidth)
     area:ClearAllPoints()
@@ -455,13 +511,13 @@ local function DoRefresh()
 
     local width = area.viewWidth
     lowest = 0
-    local ok, total = PE:Safe("core", page == "errors" and BuildErrors or BuildMain, width)
+    local ok, total = PE:Safe("core", page == "errors" and BuildErrors or page == "key" and BuildKey or BuildMain, width)
     if not ok or type(total) ~= "number" then total = lowest + M.pad end
     EndPools()
     area:SetContentHeight(total)
 
-    if page == "errors" then
-        -- Nothing in the error list can take the controller highlight, so
+    if page ~= "main" then
+        -- Nothing on these pages can take the controller highlight, so
         -- the paging buttons do.
         navList[#navList + 1] = area.upButton
         navList[#navList + 1] = area.downButton
@@ -526,6 +582,7 @@ local function Build()
         line:SetColorTexture(0.30, 0.30, 0.34, 1)
         return line
     end)
+    pools.icon = NewPool(function() return area.child:CreateTexture(nil, "ARTWORK") end)
 
     header.warn = UI:CreateText(panel.content, "small")
     header.reloadText = UI:CreateText(panel.content, "small")
@@ -569,7 +626,7 @@ function PE:OpenSettings(which)
         self:PrintErrors()
         return
     end
-    local newPage = (which == "errors") and "errors" or "main"
+    local newPage = (which == "errors" or which == "key") and which or "main"
     if newPage ~= page then
         page = newPage
         area.offset = 0
