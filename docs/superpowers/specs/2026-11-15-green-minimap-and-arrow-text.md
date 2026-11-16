@@ -1,6 +1,6 @@
 # 0.0.4: green minimap fix and arrow text that fits
 
-Status: awaiting the owner's approval.
+Status: approved by the owner 2026-11-15; built as 0.0.4.
 
 ## Why
 
