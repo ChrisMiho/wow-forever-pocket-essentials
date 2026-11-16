@@ -495,6 +495,7 @@ end
 local function Idle(why)
     S.interval = IDLE_INTERVAL
     PublishPin(nil)     -- not pointing while the position is unknown
+    S.selectDue = true  -- choose (and publish) again when the position is back
     HideDisplay()
     SetWhy(why)
     return true
