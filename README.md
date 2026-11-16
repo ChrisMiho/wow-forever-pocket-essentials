@@ -75,12 +75,15 @@ load."). Everything else keeps working.
 
 ```bash
 scripts/check.sh   # LuaJIT syntax check plus a comment-wording check
-scripts/test.sh    # offline QuestieDB tests (data for both factions)
+scripts/test.sh    # offline tests: API check, QuestieDB, feature rules, smoke test
+scripts/audit-api.sh  # full check of game names against Blizzard's source (~45 s)
 scripts/build.sh   # dist/wow-forever-pocket-essentials.zip (GitHub bundle)
                    # dist/PocketEssentials-<version>.zip (CurseForge, addon only)
 ```
 
 The first test run downloads QuestieDB into `vendor/` (cached afterwards). The
+tests also run on GitHub for every push. Nothing in `tests/` or `scripts/` goes into
+the addon zips; see [docs/TESTING.md](docs/TESTING.md). The
 project enables the `wow-addon-skills` Claude Code plugin
 (<https://github.com/ChrisMiho/wow-addon-skills>) via `.claude/settings.json`,
 so Claude Code may offer to install it.

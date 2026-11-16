@@ -116,9 +116,17 @@ so that being wrong cannot raise an error; the worst case is listed.
 | `Enum.EditModePresetLayoutsMeta.NumValues`; English text of the "Enable Gamepad UI" setting | Layout | A status line reads slightly differently |
 | `debugstack` argument form; whether `C_UI.Reload` needs a real press (it is only ever called from one; see "Verified" for what the source shows) | Core | Shorter error details |
 
-Syntax check: all eleven Lua files parse as Lua 5.1 (checked by `scripts/check.sh`, which uses LuaJIT). Each file was also
-run against a home-made imitation of the game's API to catch plain coding mistakes. That imitation only knows what its
-authors believed about the game.
+Checks that run offline (see `docs/TESTING.md`): `scripts/check.sh` compiles
+every Lua file in the TOC under LuaJIT, which parses Lua 5.1 like the game.
+`scripts/audit-api.sh` looks up every game name the addon uses in Blizzard's
+interface source for this build and saves the result in `tests/api/`; the fast
+check in `scripts/test.sh` fails on any name not in those files. The audit
+checks methods by name, not per kind of frame, and does not check template
+names, font names or script-type strings. The addon also runs against our own
+stand-in game client (`tests/lib/fakeclient.lua`) in the rule tests and the
+smoke test; the stand-in only knows what its authors believed about the game,
+so a pass there is no proof of behaviour in the game. Nothing in this section
+removes a row from the table above: those are still unconfirmed.
 
 ## Facts
 

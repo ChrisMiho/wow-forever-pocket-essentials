@@ -125,6 +125,8 @@ Chatting is hard on a handheld because targets are too small to tap.
 
 ## Status
 
+Offline test suite (2026-11-15): the API audit found every one of the 230 game names the addon uses in Blizzard's source for this build, and the rule tests and smoke test pass offline; no addon bug has been found by them so far. None of this proves behaviour in the game; see `docs/TESTING.md`.
+
 In progress: device testing. Version 0.0.3 (test build) carries the fixes from
 the first device test of 0.0.1 (in 0.0.2) and the maintainer's follow-up on
 the arrow and icon defaults (spec `docs/superpowers/specs/2026-11-15-arrow-messages.md`).
@@ -290,10 +292,17 @@ quests not yet picked up.
 - `addons/PocketEssentials/` — the addon, exactly as it should land in AddOns
 - `scripts/build.sh` — builds the zip
 - `scripts/check.sh` — LuaJIT syntax check plus a comment-wording check
-- `scripts/test.sh` — runs the tests in `tests/`
+- `scripts/test.sh` — runs the offline tests in `tests/`
+- `scripts/audit-api.sh` — full check of the game names the addon uses against Blizzard's source; rewrites `tests/api/*.txt`
 - `scripts/fetch-questiedb.sh` — downloads the pinned QuestieDB release
 - `scripts/make_art.py` — generates the artwork
-- `tests/` — off-device tests
+- `tests/` — off-device tests; none of it is packaged into the addon zips
+  - `tests/api/` — game-name audit and its saved results
+  - `tests/questiedb/` — QuestieDB harness
+  - `tests/features/` — rule tests, one file per feature
+  - `tests/smoke/` — whole-addon smoke test
+  - `tests/lib/` — stand-in game client and helpers
+- `.github/workflows/test.yml` — runs check, tests and audit on GitHub for every push
 - `curseforge/` — CurseForge upload text and fields (`FIELDS.md`)
 - `docs/ARCHITECTURE.md` — structure, safety net, unverified API, facts
 - `docs/DECISIONS.md` — decisions made without the maintainer, and what was left out

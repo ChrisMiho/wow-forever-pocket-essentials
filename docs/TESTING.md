@@ -4,28 +4,100 @@ This file holds the offline tests and the device test plan, steps 0 to 9. Goals 
 
 ## Offline tests
 
-`scripts/test.sh` needs `luajit` (`brew install luajit`) and, on the first run,
-downloads the pinned QuestieDB release into `vendor/` (cached afterwards). It
-loads the real QuestieDB reading code and our `Core.lua` and `QuestData.lua`
-under stand-ins for the game's functions, then checks:
+These run on a computer, with no game. Their job is to catch plain mistakes
+(a typo, a game function that does not exist, a rule that stopped holding)
+before you spend time carrying a build to the handheld. They cannot tell you
+how anything looks or feels, and they do not replace the device test below.
 
-- Every quest in QuestieDB goes through `QuestData.lua` without an error, as
-  "in the log" and as "complete", for an Alliance and a Horde player.
-- A handful of known quests get pins at the expected coordinates.
-- The case where QuestieDB is not installed is handled quietly.
+Nothing under `tests/` or `scripts/` goes into the addon. `scripts/build.sh`
+copies only `addons/PocketEssentials` and QuestieDB into the zips.
 
-On a pass it prints one summary line and exits 0. On a failure it prints
-`FAIL:` with the first failing quest and its error, and exits 1. If luajit is
-missing, or QuestieDB cannot be downloaded (for example, you are offline), the
-test prints a notice and is skipped, so nobody is locked out.
+### How to run them
 
-`tests/questiedb/baseline.txt` records how many quests get pins. Update it only
-on purpose: when pin-building behaviour intentionally changes, or when the
-QuestieDB pin in `scripts/fetch-questiedb.sh` is bumped. Never update it just
-to make a failing run pass.
+- `scripts/check.sh`: syntax check of every addon file. About 0.1 s.
+- `scripts/test.sh`: everything below except the full audit. A few seconds.
+- `scripts/audit-api.sh`: the full audit of game names. About 45 s.
 
-These tests prove the logic, not the behaviour in the game. Only the device
-test below does that.
+`check.sh` and `test.sh` need `luajit` (`brew install luajit`). Without it they
+print a notice and are skipped, so nobody is locked out. `audit-api.sh` needs
+luajit too, and on the first run it downloads Blizzard's interface source
+(about a minute, once). `test.sh` also downloads the pinned QuestieDB release
+into `vendor/` on the first run. If that download fails (for example, you are
+offline), the parts that need QuestieDB are skipped and it says so; a checksum
+mismatch is a real failure.
+
+The same three scripts run on GitHub for every push and pull request
+(`.github/workflows/test.yml`). That job only reads the repository: it
+publishes nothing and uses no secrets.
+
+### What each layer catches
+
+1. **Fast API check** (`tests/api/`, part of `test.sh`). The game has no
+   "does this function exist?" test you can run from a computer, so we asked
+   the other way round: every game name the addon uses (functions, events,
+   frame methods, settings) was looked up in Blizzard's own interface source
+   for this client build (1.60.1, 70938). The results are saved in
+   `tests/api/verified.txt` and `tests/api/unverified.txt`. The fast check
+   reads the addon, and fails if it now uses a name that is in neither file.
+   This catches a typo in a game function name, or a new call nobody has
+   looked up yet.
+2. **Full audit** (`scripts/audit-api.sh`). Redoes the lookup against
+   Blizzard's source and rewrites the two files. Run it after adding or
+   changing a game call, then commit the new files. Its limits: methods on
+   frames are checked by name, not per kind of frame; template names, font
+   names and script-type strings are not checked at all.
+3. **QuestieDB harness** (`tests/questiedb/`). Puts every quest in the pinned
+   QuestieDB release through our `QuestData.lua` for an Alliance and a Horde
+   player, as "in the log" and as "complete", and checks that none raises an
+   error and that a handful of known quests get pins in the expected places.
+   `tests/questiedb/baseline.txt` records how many quests get pins. Update it
+   only on purpose: when pin-building behaviour intentionally changes, or
+   when the QuestieDB pin in `scripts/fetch-questiedb.sh` is bumped. Never
+   update it just to make a failing run pass.
+4. **Rule tests** (`tests/features/`). One file per feature (sell junk,
+   repair, chat, core, bags, layout, quest arrow, quest icons). Each states
+   the feature's rules in plain terms ("never sells a non-grey item", "does
+   nothing in combat", "off means nothing ticks") and checks them in a
+   stand-in game client.
+5. **Smoke test** (`tests/smoke/`). Loads every file in the addon's TOC in the
+   stand-in client, the way the game would, presses every option on and off,
+   checks the arrow, and fails on any error raised along the way.
+
+The stand-in client (`tests/lib/fakeclient.lua`) is our own imitation of the
+game. It only knows what we believed about the game, and its frame methods and
+`C_` functions are limited to names the audit found in Blizzard's source. If
+it guesses wrong about how the real game behaves, a test can pass here and
+still fail on the device.
+
+### What a known failure is
+
+Each test file has a `KNOWN_FAILURES` table at the top. A test listed there
+is one we know fails and have decided to live with for now (or a rule that was
+stated wrongly and is waiting for a fix). When it fails, the run prints
+"known failure" and still passes. When a listed test passes, the run fails,
+as a reminder to delete the entry. Known failures, if any, are listed at the
+top of each test file.
+
+### Reading the result
+
+On a pass each suite prints one summary line and `test.sh` exits 0. On a
+failure it prints `FAIL:` with the first failing item and exits 1.
+
+### What only the device test proves
+
+A pass here means the logic holds offline. It says nothing about:
+
+- how anything looks (sizes, colours, whether text fits, whether a button is
+  easy to tap);
+- whether the game allows an action: selling, repairing, opening chat, using
+  items, switching layouts;
+- taint, shown as "interface action blocked" or "blocked by an addon";
+- real-game quirks the stand-in does not copy (event order, timing, the
+  quest log's real contents, frame rate, login time).
+
+So far the audit found every one of the 230 game names the addon uses in
+Blizzard's source for this build, and the offline tests pass. That is still
+not evidence that anything works in the game.
 
 ## Device test plan
 

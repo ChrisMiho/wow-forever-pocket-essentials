@@ -1,6 +1,7 @@
 # Commands
 - `scripts/check.sh`: LuaJIT syntax check of every file in the TOC, plus a wording check on comments. About 0.1 s.
-- `scripts/test.sh`: offline QuestieDB harness (Alliance and Horde), about 2 s.
+- `scripts/test.sh`: offline tests: API fast check, QuestieDB harness, feature rule tests, whole-addon smoke test (`tests/`, `docs/TESTING.md`).
+- `scripts/audit-api.sh`: full API audit against Blizzard's source (clones it once); about 45 s; rewrites `tests/api/*.txt`. Run it after adding a game call.
 - `scripts/build.sh`: builds the release zips (GitHub bundle and CurseForge) into `dist/`.
 - `python3 scripts/make_art.py`: regenerates the CurseForge art.
 - Both check and test exit 0 with a notice when luajit is missing (`brew install luajit`).
