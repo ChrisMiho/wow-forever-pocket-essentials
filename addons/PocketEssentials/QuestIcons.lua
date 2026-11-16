@@ -37,6 +37,7 @@ local DEFAULTS = {
     hideHaze = true,  -- hide Blizzard's blue quest areas (map and minimap)
     size = "medium",  -- "small" | "medium" | "large"
     cluster = 2,      -- merge spawns closer than this many % of the map; 0 = off
+    spots = 5,        -- most spots drawn per objective; 0 = all
 }
 
 -- Icon sizes in pixels on a 720p screen (a 6 inch 720p screen has about ten
@@ -55,6 +56,7 @@ local MINI_MAX = 40
 local MINI_INTERVAL = 0.1 -- seconds between minimap updates
 local LABEL_SECONDS = 5
 local DEFAULT_CLUSTER = 2
+local DEFAULT_SPOTS = 5
 
 local OLD_ADDON_MESSAGE = "Delete the old QuestDots folder from AddOns, then reload."
 local TURN_ON_MESSAGE = "Turn on \"Quest icons\" in the Pocket Essentials settings first."
@@ -74,6 +76,24 @@ local STYLE = {
 }
 
 local KIND_LABEL = { slay = "Kill", loot = "Loot", object = "Use", event = "Explore", turnin = "Turn in" }
+
+-- The icon list for the settings page (read from PE.QuestIconKey; tex and
+-- color come from STYLE, label from KIND_LABEL).
+local KIND_DESC = {
+    slay = "A creature to kill.",
+    loot = "Where a quest item comes from: a creature that drops it or a thing that holds it.",
+    object = "An object in the world to click or use.",
+    event = "A place to go to, or someone to talk to.",
+    turnin = "Where to hand the quest in. Shown only once the quest is complete.",
+}
+local KIND_ORDER = { "slay", "loot", "object", "event", "turnin" }
+local iconKey = {}
+for i = 1, #KIND_ORDER do
+    local kind = KIND_ORDER[i]
+    iconKey[i] = { kind = kind, label = KIND_LABEL[kind], tex = STYLE[kind].tex,
+                   color = STYLE[kind].color, desc = KIND_DESC[kind] }
+end
+PE.QuestIconKey = iconKey
 
 local BLOB_TEMPLATE = "QuestBlobPinTemplate" -- Blizzard_SharedMapDataProviders/QuestBlobDataProvider.xml
 
@@ -109,7 +129,8 @@ local QD                   -- PE.QuestData while enabled
 local active = false       -- true while the feature is on and allowed to draw
 local blocked              -- plain-language reason nothing is drawn, or nil
 local trackedID            -- the focused quest, or nil
-local clusterSet = false   -- we changed PE.QuestData.cluster
+local clusterSet = false   -- we changed PE.QuestData.cluster and .spotLimit
+local arrowPin             -- the spot the quest arrow points at; drawn even when it is a surplus one
 local blobsZeroed = false  -- the minimap haze was hidden this session
 
 local EMPTY = {}
@@ -175,6 +196,13 @@ local function ClusterValue()
     return value
 end
 
+-- 0 = all spots; anything unusable falls back to the default.
+local function SpotsValue()
+    local value = tonumber(Opt("spots"))
+    if not value or value ~= value or value < 0 then return DEFAULT_SPOTS end
+    return value
+end
+
 local function ValidPin(d)
     return type(d) == "table" and IsNumber(d.x) and IsNumber(d.y)
 end
@@ -234,7 +262,7 @@ end
 local function AnyShown(list)
     for i = 1, #list do
         local d = list[i]
-        if ValidPin(d) and (showAll or showSet[d.questID]) then return true end
+        if ValidPin(d) and (showAll or showSet[d.questID]) and (not d.extra or d == arrowPin) then return true end
     end
     return false
 end
@@ -580,7 +608,7 @@ local function RefreshWorldMap(force)
     local n = 0
     for i = 1, #list do
         local d = list[i]
-        if ValidPin(d) and (all or set[d.questID]) then
+        if ValidPin(d) and (all or set[d.questID]) and (not d.extra or d == arrowPin) then
             n = n + 1
             local p = mapPins[n]
             if not p then
@@ -760,7 +788,7 @@ local function UpdateMinimap()
 
     for i = 1, #list do
         local d = list[i]
-        if ValidPin(d) and (all or set[d.questID]) then
+        if ValidPin(d) and (all or set[d.questID]) and (not d.extra or d == arrowPin) then
             local dx = (d.x - px) * worldW * yardsToUnits -- east is +x
             local dy = (py - d.y) * worldH * yardsToUnits -- north is +y
             if rotate then dx, dy = dx * c + dy * s, dy * c - dx * s end
@@ -827,6 +855,17 @@ end
 local function OnDataChanged(reason)
     if not active or not QD then return end
     trackedID = QD:GetTrackedQuest()
+    local oldArrow = arrowPin
+    arrowPin = QD:GetArrowPin()
+    if reason == "arrow" then
+        -- Only a surplus spot being shown or hidden changes what is drawn.
+        if (type(oldArrow) == "table" and oldArrow.extra) or (type(arrowPin) == "table" and arrowPin.extra) then
+            last.x = nil
+            acc = MINI_INTERVAL
+            RefreshWorldMap(true)
+        end
+        return
+    end
     if reason ~= "tracked" and reason ~= "quests" then
         RefreshMinimapData() -- "zone": the filter cannot have changed
         RefreshWorldMap(false)
@@ -875,6 +914,12 @@ local function ApplyOption(key)
             clusterSet = true
             QD:RequestRebuild()
         end
+    elseif key == "spots" then
+        if QD then
+            QD.spotLimit = SpotsValue()
+            clusterSet = true
+            QD:RequestRebuild()
+        end
     elseif key == "show" then
         RebuildFilter()
         RefreshAll() -- forgets what the minimap and the world map last drew
@@ -912,11 +957,13 @@ local function OnEnable()
         return
     end
     QD.cluster = ClusterValue()
+    QD.spotLimit = SpotsValue()
     clusterSet = true
     local ok, reason = QD:Acquire(KEY)
     if not ok then
         blocked = (type(reason) == "string" and reason ~= "") and reason or "The QuestieDB addon could not be used."
         QD.cluster = DEFAULT_CLUSTER
+        QD.spotLimit = 0
         clusterSet = false
         return
     end
@@ -930,6 +977,7 @@ local function OnEnable()
     end
     QD:OnChanged(KEY, dataChanged)
     trackedID = QD:GetTrackedQuest()
+    arrowPin = QD:GetArrowPin()
     RebuildFilter()
     if not HookWorldMap() then
         mod:RegisterEvent("ADDON_LOADED", OnAddonLoaded)
@@ -968,6 +1016,7 @@ local function ReleaseData()
     if clusterSet then
         clusterSet = false
         data.cluster = DEFAULT_CLUSTER
+        data.spotLimit = 0
         -- another feature may still be using the data: give it the normal merging back
         if type(data.RequestRebuild) == "function" then data:RequestRebuild() end
     end
@@ -975,7 +1024,7 @@ end
 
 -- Also runs as a rollback after a half-finished OnEnable, so every step stands alone.
 local function OnDisable()
-    active, blocked, trackedID = false, nil, nil
+    active, blocked, trackedID, arrowPin = false, nil, nil, nil
     mod:Safe(StopTicker)
     mod:Safe(HideEverything)
     mod:Safe(RestoreWorldMapHaze)
@@ -1019,6 +1068,9 @@ mod = PE:RegisterModule({
         { key = "cluster", label = "Merge nearby icons",
           choices = { { value = 0, label = "Off" }, { value = 2, label = "Normal" }, { value = 5, label = "More" } },
           OnChange = OptionChanged("cluster") },
+        { key = "spots", label = "Spots per objective",
+          choices = { { value = 0, label = "All" }, { value = 10, label = "10" }, { value = 5, label = "5" }, { value = 3, label = "3" } },
+          OnChange = OptionChanged("spots") },
     },
     status = Status,
     OnEnable = OnEnable,
@@ -1050,8 +1102,9 @@ local TOGGLES = {
     haze = { key = "hideHaze", name = "Hide blue haze" },
 }
 local CLUSTER_WORDS = { off = 0, normal = 2, more = 5 }
+local SPOTS_WORDS = { all = 0, ["10"] = 10, ["5"] = 5, ["3"] = 3 }
 local SHOW_WORDS = { focus = "Focused quest", tracked = "Tracked quests", all = "All quests" }
-local USAGE = "/qd show tracked (or focus, all), /qd map, /qd mini, /qd haze, /qd size small (or medium, large), /qd cluster 2 (0 is off)"
+local USAGE = "/qd show tracked (or focus, all), /qd map, /qd mini, /qd haze, /qd size small (or medium, large), /qd cluster 2 (0 is off), /qd spots all (or 10, 5, 3)"
 
 local function SlashCommand(msg)
     local opts = mod.opts
@@ -1088,6 +1141,10 @@ local function SlashCommand(msg)
         opts.cluster = max(0, min(20, number))
         changed = "cluster"
         PE:Print("Merge nearby icons: " .. (opts.cluster == 0 and "off" or tostring(opts.cluster)) .. ".")
+    elseif cmd == "spots" and SPOTS_WORDS[value] then
+        opts.spots = SPOTS_WORDS[value]
+        changed = "spots"
+        PE:Print("Spots per objective: " .. (opts.spots == 0 and "all" or tostring(opts.spots)) .. ".")
     else
         PE:Print(USAGE)
         return

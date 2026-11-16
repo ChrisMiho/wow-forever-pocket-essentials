@@ -212,6 +212,13 @@ local function SetMessage(big, small)
     SetTitle(small or "")
 end
 
+-- Tells QuestData which spot the arrow points at (nil: none), so the icons
+-- can draw it even when the spots-per-objective limit would hide it.
+local function PublishPin(pin)
+    local data = QD or PE.QuestData
+    if type(data) == "table" and type(data.SetArrowPin) == "function" then data:SetArrowPin(pin) end
+end
+
 local function Select(playerMap, px, py)
     S.selectDue = false
     S.sinceSelect = 0
@@ -247,6 +254,7 @@ local function Select(playerMap, px, py)
     end
 
     S.pin = pin
+    PublishPin(pin)
     if pin then
         S.tx, S.ty = pin.x, pin.y
         S.force = true
@@ -494,6 +502,7 @@ end
 -- Stops the OnUpdate. keepDisplay leaves the text block on screen.
 local function StopDriver(why, keepDisplay)
     S.running = false
+    PublishPin(nil)     -- the arrow no longer points anywhere
     if S.driver then S.driver:Hide() end
     if not keepDisplay then HideDisplay() end
     SetWhy(why)
@@ -622,7 +631,8 @@ local function Evaluate()
     end
 end
 
-local function OnData()
+local function OnData(reason)
+    if reason == "arrow" then return end    -- our own pin, nothing to choose again
     if not S.ready then return end
     S.tracked = QD:GetTrackedQuest()
     Evaluate()                  -- restarts a stopped driver, or asks a running one to choose again
@@ -727,6 +737,7 @@ mod = PE:RegisterModule({
         S.shown = false
         local data = QD or PE.QuestData
         if type(data) == "table" then
+            if data.SetArrowPin then data:SetArrowPin(nil) end      -- before the data is released
             if data.OnChanged then data:OnChanged(KEY, nil) end
             if data.Release then data:Release(KEY) end      -- harmless if it was never acquired
         end
