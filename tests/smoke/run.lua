@@ -1,0 +1,690 @@
+-- Whole-addon smoke test.
+--
+--   luajit tests/smoke/run.lua <repo root> [QuestieDB dir] [--addon-dir=PATH]
+--
+-- Loads every file of PocketEssentials.toc into the stand-in client
+-- (tests/lib/fakeclient.lua), each scenario on a fresh client, and fails on
+-- any Lua error, any PE:LogError, any action the game would block, and any
+-- OnUpdate or event a switched-off feature keeps. --addon-dir loads another
+-- copy of the addon (used to check that this test notices a broken one).
+--
+-- Passing here means "passes offline": it proves the code runs against our
+-- stand-in, not that the game accepts what it does.
+--
+-- Prints one line on pass: "Smoke: 6 scenarios, 0 errors". Exit 1 and FAIL
+-- lines otherwise.
+
+local root, qdbDir, addonDir
+for i = 1, #arg do
+    local a = arg[i]
+    local dir = a:match("^%-%-addon%-dir=(.+)$")
+    if dir then addonDir = dir
+    elseif not root then root = a
+    elseif not qdbDir then qdbDir = a end
+end
+if not root then
+    io.stderr:write("usage: luajit tests/smoke/run.lua <repo root> [QuestieDB dir] [--addon-dir=PATH]\n")
+    os.exit(2)
+end
+
+local Client = dofile(root .. "/tests/lib/fakeclient.lua")
+
+-- The real _G before any client: it must look the same after every scenario
+-- (the addon runs in each client's own global table; QuestieDB's loader writes
+-- to _G and the client puts it back).
+local realG = {}
+for k, v in pairs(_G) do realG[k] = v end
+local function gLeaks()
+    local out = {}
+    for k, v in pairs(_G) do if realG[k] ~= v then out[#out + 1] = tostring(k) end end
+    for k in pairs(realG) do if _G[k] == nil then out[#out + 1] = tostring(k) end end
+    table.sort(out)
+    return out
+end
+
+-- A listed test that fails prints "known failure" and does not fail the run;
+-- a listed test that passes fails the run (the entry must then be removed).
+-- Each entry is a real addon problem, reported to the owner as a finding.
+local KNOWN_FAILURES = {
+}
+
+-- Names the addon looked up that the stand-in does not have, and why that is
+-- right. A lookup not listed here fails the run: either the addon probes for
+-- something this client lacks (check it), or the stand-in is missing a real
+-- game function (add it, with where it was read in Blizzard's source).
+local EXPECTED_MISSING = {
+    ["global PocketEssentialsDB"] = "first install: no saved variables yet (Core.lua InitDB checks)",
+    ["global LibQuestieDB"] = "scenarios without QuestieDB (Core.lua CheckQuestieDB, QuestData.lua InitData)",
+    ["global PocketEssentialsSettingsPanel"] = "Chat.lua HookSettings looks before the settings window was first opened",
+}
+
+-- Frames made by the addon that may keep an OnUpdate script while their
+-- feature is off, because they are hidden (a hidden frame does not tick).
+local HIDDEN_ONUPDATE_OK = {
+    ["QuestArrow.lua"] = "the arrow's driver frame keeps its script and is hidden while off (QuestArrow.lua OnDisable)",
+}
+
+-- The core's own events, registered whatever is switched on.
+local CORE_EVENTS = {
+    PLAYER_LOGIN = "Core.lua: login",
+    PLAYER_REGEN_ENABLED = "Core.lua: runs the out-of-combat queue; UI.lua: re-arms the controller keys",
+    PLAYER_REGEN_DISABLED = "UI.lua: releases the controller keys when combat starts",
+    UI_SCALE_CHANGED = "UI.lua: resizes everything",
+    DISPLAY_SIZE_CHANGED = "UI.lua: resizes everything",
+}
+
+local FEATURES = { "questIcons", "questArrow", "bags", "sellJunk", "repair", "chat", "layout" }
+local QUEST_FEATURES = { questIcons = true, questArrow = true }
+
+---------------------------------------------------------------------------
+-- Helpers
+---------------------------------------------------------------------------
+
+local function check(cond, msg, level)
+    if not cond then error(msg, (level or 1) + 1) end
+end
+
+local missingSeen = {}
+local clients = {}
+
+local function newClient(opts)
+    opts = opts or {}
+    opts.root = root
+    opts.addonDir = addonDir
+    local c = Client.new(opts)
+    clients[#clients + 1] = c
+    return c
+end
+
+local function collectMissing(c)
+    for k in pairs(c.missing) do missingSeen[k] = missingSeen[k] or true end
+end
+
+local function textOf(c, w)
+    local st = c._state(w)
+    return st and st.text or nil
+end
+
+-- The label of one of the addon's buttons: the text of its font string.
+local function labelOf(c, btn)
+    for _, r in ipairs(c._state(btn).regions) do
+        local st = c._state(r)
+        if st.type == "FontString" and st.text then return st.text end
+    end
+    return ""
+end
+
+local function walk(c, w, fn)
+    fn(w)
+    local st = c._state(w)
+    for _, ch in ipairs(st.children) do walk(c, ch, fn) end
+    if st.scrollChild then walk(c, st.scrollChild, fn) end
+end
+
+local function visibleButtons(c, top)
+    local out = {}
+    walk(c, top, function(w)
+        local st = c._state(w)
+        if st.type == "Button" and w:IsVisible() then out[#out + 1] = w end
+    end)
+    local pos = {}
+    for _, b in ipairs(out) do
+        local l, _, t = c._rect(b)
+        pos[b] = { l or 0, t or 0 }
+    end
+    table.sort(out, function(a, b)
+        if math.abs(pos[a][2] - pos[b][2]) > 0.5 then return pos[a][2] > pos[b][2] end
+        return pos[a][1] < pos[b][1]
+    end)
+    return out
+end
+
+-- The nearest visible text at or above a button: the row title for a switch,
+-- the option name for a choice.
+local function contextOf(c, top, btn)
+    local _, _, bt = c._rect(btn)
+    if not bt then return "" end
+    local best, bestGap = "", math.huge
+    walk(c, top, function(w)
+        for _, r in ipairs(c._state(w).regions) do
+            local st = c._state(r)
+            if st.type == "FontString" and st.text and st.text ~= "" and r:IsVisible() and w ~= btn then
+                local _, _, t = c._rect(r)
+                if t and t >= bt - 1 and t - bt < bestGap then best, bestGap = st.text, t - bt end
+            end
+        end
+    end)
+    return best
+end
+
+local function panelOf(c) return rawget(c.env, "PocketEssentialsSettingsPanel") end
+
+local function openPage(c, PE, page)
+    PE:OpenSettings(page ~= "main" and page or nil)
+    c:advance(0.1)
+end
+
+local function isReload(label) return label == "Reload UI" or label == "Reload now" end
+
+-- Presses every button on one settings page once (re-opening the page after a
+-- button closed it or moved to another page), until none is left unpressed.
+local function pressAll(c, PE, page, skip)
+    local pressed, count = {}, 0
+    for _ = 1, 600 do
+        openPage(c, PE, page)
+        local panel = panelOf(c)
+        check(panel and panel:IsShown(), "the settings window did not open on page " .. page)
+        local target, key
+        for _, b in ipairs(visibleButtons(c, panel)) do
+            local label = labelOf(c, b)
+            local ctx = contextOf(c, panel, b)
+            local k = page .. "|" .. ctx .. "|" .. label
+            if not pressed[k] and not isReload(label) and not (skip and skip(label, ctx)) then
+                target, key = b, k
+                break
+            end
+        end
+        if not target then return count end
+        pressed[key] = true
+        count = count + 1
+        c:click(target)
+        c:advance(0.4)
+    end
+    error("pressAll(" .. page .. "): more than 600 presses; the page keeps changing")
+end
+
+local function findButton(c, top, label, ctx)
+    for _, b in ipairs(visibleButtons(c, top)) do
+        if labelOf(c, b) == label and (ctx == nil or contextOf(c, top, b) == ctx) then return b end
+    end
+    return nil
+end
+
+local function addonFrames(c)
+    local out = {}
+    for _, rec in ipairs(c:frames()) do
+        if rec.addonFile then out[#out + 1] = rec end
+    end
+    return out
+end
+
+local function moduleStates(PE)
+    local out = {}
+    for _, key in ipairs(FEATURES) do
+        local state, detail = PE:GetModuleState(key)
+        out[key] = { state = state, detail = detail }
+    end
+    return out
+end
+
+---------------------------------------------------------------------------
+-- The quest log for scenario 2: three real quests from QuestieDB 1.1.1.
+--   33  "Wolves Across the Border" (Elwynn Forest, map 1429): many spots, focused
+--   7   "Kobold Camp Cleanup" (Elwynn Forest), complete: a turn-in spot
+--   55  "Morbent Fel" (Duskwood, map 1431): another zone
+-- Each choice is checked once the pins are built, so a QuestieDB update that
+-- changes them fails here instead of quietly testing less.
+---------------------------------------------------------------------------
+
+local QUEST_MANY, QUEST_DONE, QUEST_AWAY = 33, 7, 55
+local MAP_HOME, MAP_AWAY = 1429, 1431
+
+local function questObjectives(L, id, finished)
+    local out = {}
+    local function name(entity, eid)
+        local ok, n = pcall(entity.name, eid)
+        return ok and type(n) == "string" and n or nil
+    end
+    local function add(text, kind) out[#out + 1] = { text = text, type = kind, finished = finished } end
+    local obj = L.Quest.objectives(id) or {}
+    for _, o in ipairs(obj[1] or {}) do add((name(L.Npc, o[1]) or "Creature") .. " slain: 0/1", "monster") end
+    for _, o in ipairs(obj[2] or {}) do add((o[2] or name(L.Object, o[1]) or "Object") .. ": 0/1", "object") end
+    for _, o in ipairs(obj[3] or {}) do add((name(L.Item, o[1]) or "Item") .. ": 0/1", "item") end
+    for _, o in ipairs(obj[5] or {}) do add((o[3] or name(L.Npc, o[2]) or "Creature") .. ": 0/1", "monster") end
+    return out
+end
+
+local function setupWorld(c)
+    local w = c.world
+    w.maps[MAP_HOME] = { name = "Elwynn Forest", width = 3470, height = 2314 }
+    w.maps[MAP_AWAY] = { name = "Duskwood", width = 2700, height = 1800 }
+    w.player.map, w.player.x, w.player.y, w.player.facing = MAP_HOME, 0.45, 0.62, 0.5
+    w.money = 50000
+    w.merchant.canRepair, w.merchant.repairCost = true, 1234
+    w.group, w.guild = "party", "Pocket Guild"
+    w.channels = { { id = 1, name = "General - Elwynn Forest" }, { id = 2, name = "Trade - City" } }
+    w.bagSizes[0] = 16
+    w.bags[0][1] = { itemID = 2589, name = "Linen Cloth", quality = 1, price = 13, count = 5 }
+    w.bags[0][2] = { itemID = 4865, name = "Ruined Pelt", quality = 0, price = 5, count = 3 }
+    w.bags[0][3] = { itemID = 7073, name = "Broken Fang", quality = 0, price = 6, count = 1 }
+    w.bags[0][4] = { itemID = 7074, name = "Chipped Claw", quality = 0, price = 4, count = 2, locked = true }
+    local L = rawget(c.env, "LibQuestieDB")
+    local function title(id) return L and L.Quest.name(id) or ("Quest " .. id) end
+    w.questLog.quests = {
+        { header = true, title = "Elwynn Forest" },
+        { id = QUEST_MANY, title = title(QUEST_MANY), objectives = L and questObjectives(L, QUEST_MANY, false) or {} },
+        { id = QUEST_DONE, title = title(QUEST_DONE), complete = true, objectives = L and questObjectives(L, QUEST_DONE, true) or {} },
+        { header = true, title = "Duskwood" },
+        { id = QUEST_AWAY, title = title(QUEST_AWAY), objectives = L and questObjectives(L, QUEST_AWAY, false) or {} },
+    }
+    w.questLog.focus = QUEST_MANY
+    w.questLog.watched = { QUEST_MANY, QUEST_DONE }
+end
+
+local function pinCount(byMap, mapID)
+    local list = byMap and byMap[mapID]
+    return type(list) == "table" and #list or 0
+end
+
+local function checkQuestChoice(c, PE)
+    local QD = PE.QuestData
+    local many = QD:GetPinsForQuest(QUEST_MANY)
+    check(pinCount(many, MAP_HOME) >= 6, "quest " .. QUEST_MANY .. " no longer has many spots on map " .. MAP_HOME
+        .. " (" .. pinCount(many, MAP_HOME) .. "); pick another quest")
+    local done = QD:GetPinsForQuest(QUEST_DONE)
+    local turnin = false
+    for _, p in ipairs((done or {})[MAP_HOME] or {}) do if p.kind == "turnin" then turnin = true end end
+    check(turnin, "complete quest " .. QUEST_DONE .. " has no turn-in spot on map " .. MAP_HOME)
+    local away = QD:GetPinsForQuest(QUEST_AWAY)
+    check(pinCount(away, MAP_AWAY) > 0 and pinCount(away, MAP_HOME) == 0,
+        "quest " .. QUEST_AWAY .. " is no longer only in another zone (map " .. MAP_AWAY .. ")")
+    -- stand next to the first wolf spot so the minimap has icons to draw
+    local p = many[MAP_HOME][1]
+    c.world.player.x, c.world.player.y = p.x + 0.01, p.y + 0.01
+end
+
+---------------------------------------------------------------------------
+-- Plausible arguments for every event the addon registers. Events that
+-- change the world go through the client's world actions so the game state
+-- matches the event. A registered event missing here fails the run.
+---------------------------------------------------------------------------
+
+local EVENT_ORDER = {
+    "ADDON_LOADED", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA",
+    "QUEST_ACCEPTED", "QUEST_LOG_UPDATE", "QUEST_WATCH_LIST_CHANGED", "SUPER_TRACKING_CHANGED", "QUEST_REMOVED",
+    "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED", "INPUT_DEVICE_INTERFACE_TRANSITION",
+    "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
+    "MERCHANT_SHOW", "MERCHANT_CLOSED",
+    "CHAT_MSG_WHISPER", "CHAT_MSG_WHISPER_INFORM",
+    "PLAYER_LOGOUT",
+}
+-- Fired once per session by the client; firing it again would not be plausible.
+local NOT_REFIRED = { PLAYER_LOGIN = "fires once per session (Core.lua ignores a second one)" }
+
+local function fireWorldEvent(c, event)
+    local style = c.world.gamepadUI and 1 or 0
+    if event == "ADDON_LOADED" then c:fire(event, "Blizzard_WorldMap", false)
+    elseif event == "PLAYER_ENTERING_WORLD" then c:fire(event, false, false)
+    elseif event == "QUEST_ACCEPTED" then c:fire(event, QUEST_MANY)
+    elseif event == "QUEST_WATCH_LIST_CHANGED" then c:fire(event, QUEST_MANY, true)
+    elseif event == "QUEST_REMOVED" then c:fire(event, 99999, false)
+    elseif event == "INPUT_DEVICE_INTERFACE_TRANSITION" then c:fire(event, style, style)
+    elseif event == "PLAYER_REGEN_DISABLED" then c:enterCombat()
+    elseif event == "PLAYER_REGEN_ENABLED" then c:leaveCombat()
+    elseif event == "MERCHANT_SHOW" then c:openMerchant()
+    elseif event == "MERCHANT_CLOSED" then c:closeMerchant()
+    elseif event == "CHAT_MSG_WHISPER" then c:whisperIn("Thrall-Camelot", "hello")
+    elseif event == "CHAT_MSG_WHISPER_INFORM" then c:whisperOut("Thrall-Camelot", "hi back")
+    else c:fire(event) end
+end
+
+local function registeredEvents(c)
+    local set = {}
+    for _, rec in ipairs(c:frames()) do
+        for e in pairs(rec.events) do set[e] = true end
+    end
+    return set
+end
+
+local function fireEverything(c)
+    local set = registeredEvents(c)
+    local known = {}
+    for _, e in ipairs(EVENT_ORDER) do known[e] = true end
+    for e in pairs(set) do
+        check(known[e] or NOT_REFIRED[e], "no plausible arguments for event " .. e .. "; add it to EVENT_ORDER")
+    end
+    local fired = 0
+    for _, e in ipairs(EVENT_ORDER) do
+        if set[e] then
+            fireWorldEvent(c, e)
+            fired = fired + 1
+        end
+    end
+    return fired
+end
+
+---------------------------------------------------------------------------
+-- Scenario bodies
+---------------------------------------------------------------------------
+
+-- Everything on, then the whole game around it (scenarios 2 and 3).
+local function everythingOn(c, PE, hasQDB)
+    for _, key in ipairs(FEATURES) do PE:SetModuleEnabled(key, true) end
+    c:advance(1)
+    if hasQDB then checkQuestChoice(c, PE) end
+    c:assertClean("switching everything on")
+
+    local fired = fireEverything(c)
+    check(fired >= (hasQDB and 19 or 10), "only " .. fired .. " events registered with everything on")
+    if os.getenv("SMOKE_VERBOSE") then print("  events fired: " .. fired) end
+    c:advance(1)
+    fireEverything(c)
+    c:advance(1)
+    c:assertClean("every event, twice")
+
+    -- walk about for five seconds
+    local before = c.stats.addonOnUpdate
+    for _ = 1, 50 do
+        c.world.player.x = c.world.player.x + 0.0004
+        c.world.player.facing = (c.world.player.facing + 0.13) % (2 * math.pi)
+        c:advance(0.1)
+    end
+    if hasQDB then
+        check(c.stats.addonOnUpdate > before, "no OnUpdate of ours ran while walking with everything on")
+    end
+    if hasQDB then
+        local shown = 0
+        for _, rec in ipairs(c:frames()) do
+            if rec.addonFile == "QuestIcons.lua" and rec.parent == c.minimap and rec.frame:IsVisible() then shown = shown + 1 end
+        end
+        check(shown > 0, "no quest icon on the minimap while standing next to the focused quest's spots")
+    end
+    c:assertClean("walking")
+
+    -- world map
+    c:openWorldMap()
+    c:advance(0.2)
+    c:zoomWorldMap(1.5)
+    c:advance(0.2)
+    if hasQDB then
+        local onMap = 0
+        for _, rec in ipairs(c:frames()) do
+            if rec.addonFile == "QuestIcons.lua" and rec.parent == c.worldMapCanvas and rec.frame:IsVisible() then onMap = onMap + 1 end
+        end
+        check(onMap > 0, "no quest icon on the open world map")
+        check(c.blobPin:GetAlpha() == 0, "the world map's blue quest area was not hidden")
+    end
+    c:closeWorldMap()
+    c:advance(0.2)
+    c:assertClean("world map")
+
+    -- a vendor with greys
+    c.world.merchant.repairCost = 2000
+    local money = c.world.money
+    local sold = #c:callsTo("C_Container.UseContainerItem")
+    c:openMerchant()
+    c:advance(3)
+    c:closeMerchant()
+    c:advance(1.5)
+    sold = #c:callsTo("C_Container.UseContainerItem") - sold
+    check(sold == 2, "at a vendor with two sellable greys, " .. sold .. " items were sold")
+    check(#c:callsTo("RepairAllItems") >= 1, "no repair at a vendor that repairs")
+    check(c.world.money ~= money, "money did not change at the vendor")
+    c:assertClean("vendor")
+
+    -- the bag
+    c:openBag()
+    c:advance(0.2)
+    local sort = findButton(c, c.UIParent, "Sort")
+    check(sort ~= nil, "no Sort button next to the open bag")
+    c:click(sort)
+    c:advance(0.6)
+    check(#c:callsTo("C_Container.SortBags") >= 1, "the Sort button did not sort")
+    c:closeBag()
+    c:advance(0.2)
+    check(not sort:IsVisible(), "the Sort button stayed after the bag closed")
+    c:assertClean("bag")
+
+    -- a whisper in and out, then the chat window
+    c:whisperIn("Jaina-Camelot", "need help?")
+    c:advance(0.2)
+    c:click(PE.Hub.button)
+    c:advance(0.2)
+    local chatPanel = rawget(c.env, "PocketEssentialsChatPanel")
+    check(chatPanel and chatPanel:IsShown(), "a tap on the round button did not open the chat window")
+    local jaina = findButton(c, chatPanel, "Jaina")
+    check(jaina ~= nil, "no button for the player who whispered")
+    c:click(jaina)
+    c:advance(0.2)
+    check(#c:callsTo("ChatFrame1EditBox:SetTellTarget") + #c:callsTo("ChatFrameUtil.SendTell") >= 1,
+        "the whisper button did not address the chat box")
+    c.closeChat()
+    c:whisperOut("Jaina-Camelot", "on my way")
+    c:advance(0.2)
+    c:assertClean("chat")
+
+    -- every settings page again
+    for _, page in ipairs({ "main", "key", "errors" }) do openPage(c, PE, page) end
+    PE:CloseSettings()
+    c:advance(0.2)
+    c:assertClean("settings pages")
+
+    local states = moduleStates(PE)
+    for _, key in ipairs(FEATURES) do
+        local s = states[key]
+        if QUEST_FEATURES[key] and not hasQDB then
+            check(s.state == "blocked", key .. " is " .. s.state .. " without QuestieDB, expected blocked")
+            check(type(s.detail) == "string" and s.detail ~= "", key .. " is blocked without a reason")
+        else
+            check(s.state == "on", key .. " is " .. tostring(s.state) .. " (" .. tostring(s.detail) .. "), expected on")
+        end
+    end
+    collectMissing(c)
+end
+
+local scenarios = {}
+local shared = {}
+
+scenarios[#scenarios + 1] = { name = "1 first install", run = function()
+    local c = newClient()
+    local PE = c:loadAddon()
+    c:assertClean("loading")
+    for _, key in ipairs(FEATURES) do
+        check(PE:GetModule(key) ~= nil, "feature " .. key .. " did not register")
+        check(not PE:IsModuleEnabled(key), key .. " is on at first install")
+        local state = PE:GetModuleState(key)
+        check(state == (QUEST_FEATURES[key] and "blocked" or "off"), key .. " is " .. state .. " at first install")
+    end
+    for _, rec in ipairs(addonFrames(c)) do
+        check(rec.scripts.OnUpdate == nil, "a frame made by " .. rec.addonFile .. " has an OnUpdate at first install")
+    end
+    check(#addonFrames(c) > 0, "the addon made no frames (did it load?)")
+
+    local presses = 0
+    -- bags switched on asks for a reload ("Reload now" in the header)
+    c.world.cvars.combinedBags = "0"
+    for _, size in ipairs({ "Small", "Medium", "Large" }) do
+        openPage(c, PE, "main")
+        local btn = findButton(c, panelOf(c), size, "Button size")
+        check(btn ~= nil, "no " .. size .. " button under \"Button size\"")
+        c:click(btn)
+        c:advance(0.4)
+        check(PE.db.ui.size == size:lower(), "pressing " .. size .. " left the size at " .. tostring(PE.db.ui.size))
+        local skip = function(label, ctx) return ctx == "Button size" end
+        for _, page in ipairs({ "main", "key", "errors" }) do
+            presses = presses + pressAll(c, PE, page, skip)
+            c:assertClean("pressing every button on page " .. page .. " at " .. size)
+        end
+    end
+    check(presses >= 60, "only " .. presses .. " buttons were pressed")
+    if os.getenv("SMOKE_VERBOSE") then print("  buttons pressed: " .. presses) end
+
+    -- Reload buttons: each press calls C_UI.Reload exactly once.
+    PE:SetModuleEnabled("bags", true)
+    openPage(c, PE, "main")
+    for _, label in ipairs({ "Reload UI", "Reload now" }) do
+        local btn = findButton(c, panelOf(c), label)
+        check(btn ~= nil, "no \"" .. label .. "\" button")
+        local before = #c:callsTo("C_UI.Reload")
+        c:click(btn)
+        check(#c:callsTo("C_UI.Reload") - before == 1, "\"" .. label .. "\" called C_UI.Reload "
+            .. (#c:callsTo("C_UI.Reload") - before) .. " times")
+    end
+    PE:CloseSettings()
+    c:advance(0.2)
+    check(not panelOf(c):IsShown(), "the settings window did not close")
+    c:assertClean("closing")
+    collectMissing(c)
+end }
+
+scenarios[#scenarios + 1] = { name = "2 everything on, with QuestieDB", needsQDB = true, run = function()
+    local c = newClient({ questieDB = qdbDir })
+    setupWorld(c)
+    local PE = c:loadAddon()
+    c:assertClean("loading")
+    everythingOn(c, PE, true)
+    shared.everythingOn = { c = c, PE = PE }
+    if os.getenv("SMOKE_DUMP") then
+        local seen = {}
+        for _, call in ipairs(c.calls) do seen[call.name] = (seen[call.name] or 0) + 1 end
+        for k, n in pairs(seen) do print("  call " .. k .. " x" .. n) end
+        for _, l in ipairs(c.chat) do print("  chat " .. l) end
+        for k, n in pairs(c.missing) do print("  missing " .. k .. " x" .. n) end
+        print("  addon OnUpdate calls " .. c.stats.addonOnUpdate .. ", addon timers " .. c.stats.addonTimers)
+    end
+end }
+
+scenarios[#scenarios + 1] = { name = "3 everything on, QuestieDB missing", run = function()
+    local c = newClient()
+    setupWorld(c)
+    local PE = c:loadAddon()
+    everythingOn(c, PE, false)
+end }
+
+scenarios[#scenarios + 1] = { name = "4 everything off again", needsQDB = true, run = function()
+    local s = shared.everythingOn
+    check(s, "scenario 2 did not finish, so there is nothing to switch off")
+    local c, PE = s.c, s.PE
+    for _, key in ipairs(FEATURES) do PE:SetModuleEnabled(key, false) end
+    for _, key in ipairs(FEATURES) do
+        check(not PE:IsModuleEnabled(key), key .. " is still on")
+    end
+    local coreFrame
+    for _, rec in ipairs(addonFrames(c)) do
+        if rec.addonFile == "Core.lua" then coreFrame = coreFrame or rec end
+    end
+    local bagsOpts = PE:GetModule("bags").opts
+    for _, rec in ipairs(addonFrames(c)) do
+        if rec.scripts.OnUpdate then
+            if os.getenv("SMOKE_VERBOSE") then print("  hidden OnUpdate kept: " .. rec.addonFile) end
+            check(not rec.frame:IsVisible(), "a visible frame made by " .. rec.addonFile .. " still has an OnUpdate")
+            check(HIDDEN_ONUPDATE_OK[rec.addonFile], "a hidden frame made by " .. rec.addonFile
+                .. " still has an OnUpdate (not in HIDDEN_ONUPDATE_OK)")
+        end
+        for event in pairs(rec.events) do
+            local ok = (rec == coreFrame and CORE_EVENTS[event])
+                or (rec.addonFile == "Bags.lua" and event == "PLAYER_LOGOUT" and bagsOpts.cvarWant ~= nil)
+            check(ok, "with everything off, a frame made by " .. rec.addonFile .. " still has " .. event)
+            if os.getenv("SMOKE_VERBOSE") then print("  event kept while off: " .. rec.addonFile .. " " .. event) end
+        end
+    end
+    local updates = c.stats.addonOnUpdate
+    c:advance(5)
+    check(c.stats.addonOnUpdate == updates, (c.stats.addonOnUpdate - updates) .. " OnUpdate calls of ours with everything off")
+    local timers = c.stats.addonTimers
+    c:advance(5)
+    check(c.stats.addonTimers == timers, (c.stats.addonTimers - timers) .. " timers of ours still running with everything off")
+    c:assertClean("everything off")
+    collectMissing(c)
+end }
+
+scenarios[#scenarios + 1] = { name = "5 saved settings from 0.0.2", needsQDB = true, run = function()
+    local saved = {
+        version = 1,
+        enabled = { questIcons = true },
+        options = { questIcons = { show = "focus", map = true, mini = true, hideHaze = true, size = "medium", cluster = 2 } },
+        ui = { size = "medium", hubPos = "LEFT" },
+        errors = {},
+    }
+    local c = newClient({ questieDB = qdbDir, saved = saved })
+    setupWorld(c)
+    local PE = c:loadAddon()
+    c:advance(1)
+    c:assertClean("loading old settings")
+    local opts = PE:GetModule("questIcons").opts
+    check(opts == rawget(c.env, "PocketEssentialsDB").options.questIcons, "the saved table was not used")
+    check(opts.spots == 5, "spots is " .. tostring(opts.spots) .. " after an upgrade, expected 5")
+    check(opts.show == "tracked", "show is " .. tostring(opts.show) .. " after an upgrade, expected tracked")
+    check(PE:GetModuleState("questIcons") == "on", "quest icons did not come back on")
+    collectMissing(c)
+end }
+
+local notes = {}
+scenarios[#scenarios + 1] = { name = "6 zip contents", run = function()
+    local f = assert(io.open(root .. "/addons/PocketEssentials/PocketEssentials.toc", "rb"))
+    local version = f:read("*a"):match("## Version:%s*([^\r\n]+)")
+    f:close()
+    version = version and version:gsub("%s+$", "")
+    local zips = { root .. "/dist/PocketEssentials-" .. tostring(version) .. ".zip", root .. "/dist/wow-forever-pocket-essentials.zip" }
+    local looked = 0
+    for _, zip in ipairs(zips) do
+        local z = io.open(zip, "rb")
+        if z then
+            z:close()
+            looked = looked + 1
+            local p = assert(io.popen("unzip -Z1 '" .. zip .. "' 2>/dev/null"))
+            local n = 0
+            for line in p:lines() do
+                n = n + 1
+                check(not line:find("tests/", 1, true) and not line:find("scripts/", 1, true),
+                    zip:match("[^/]+$") .. " contains " .. line)
+            end
+            p:close()
+            check(n > 0, "could not list " .. zip)
+        end
+    end
+    if looked == 0 then notes[#notes + 1] = "zip contents not checked: no dist/PocketEssentials-" .. tostring(version) .. ".zip (run scripts/build.sh)" end
+end }
+
+---------------------------------------------------------------------------
+-- Run
+---------------------------------------------------------------------------
+
+-- Scenario 4 switches off what scenario 2 switched on, on the same client, so
+-- it runs straight after 2; every other scenario has a client of its own.
+local RUN_ORDER = { 1, 2, 4, 3, 5, 6 }
+local failures, known, ran, skipped = {}, {}, 0, 0
+for _, index in ipairs(RUN_ORDER) do
+    local s = scenarios[index]
+    if s.needsQDB and not qdbDir then
+        skipped = skipped + 1
+    else
+        ran = ran + 1
+        local ok, err = xpcall(s.run, debug.traceback)
+        local reason = KNOWN_FAILURES[s.name]
+        if ok and reason then
+            failures[#failures + 1] = s.name .. ": listed in KNOWN_FAILURES (" .. reason .. ") but passed; remove the entry"
+        elseif not ok and reason then
+            known[#known + 1] = s.name .. " (" .. reason .. ")"
+        elseif not ok then
+            failures[#failures + 1] = s.name .. ": " .. tostring(err)
+        end
+    end
+    if s.name:sub(1, 1) ~= "2" then -- put the clients away (scenario 2's after scenario 4)
+        for i = #clients, 1, -1 do clients[i]:destroy() clients[i] = nil end
+        local leaks = gLeaks()
+        if #leaks > 0 then failures[#failures + 1] = s.name .. ": left globals in _G: " .. table.concat(leaks, ", ") end
+    end
+end
+for i = #clients, 1, -1 do clients[i]:destroy() end
+
+local unexpected = {}
+for k in pairs(missingSeen) do
+    if not EXPECTED_MISSING[k] then unexpected[#unexpected + 1] = k end
+end
+table.sort(unexpected)
+if #unexpected > 0 then
+    failures[#failures + 1] = "the addon looked up names the stand-in does not have (see EXPECTED_MISSING):\n    "
+        .. table.concat(unexpected, "\n    ")
+end
+
+for _, k in ipairs(known) do print("known failure: " .. k) end
+for _, n in ipairs(notes) do print("note: " .. n) end
+if #failures > 0 then
+    for _, f in ipairs(failures) do print("FAIL: " .. f) end
+    os.exit(1)
+end
+local line = string.format("Smoke: %d scenarios, 0 errors", ran)
+if #known > 0 then line = line .. string.format(", %d known failure%s", #known, #known == 1 and "" or "s") end
+if skipped > 0 then line = line .. string.format(" (%d skipped: no QuestieDB dir)", skipped) end
+print(line)

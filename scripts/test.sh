@@ -1,9 +1,10 @@
 #!/bin/bash
 # Offline tests: the fast API check (tests/api/), then the QuestieDB harness,
-# which puts every quest in the pinned QuestieDB release through our QuestData.lua under WoW API stand-ins (tests/questiedb/).
+# which puts every quest in the pinned QuestieDB release through our QuestData.lua under WoW API stand-ins (tests/questiedb/),
+# then the whole-addon smoke test in the stand-in game client (tests/smoke/, tests/lib/fakeclient.lua).
 #
-# Exits 0 and prints one summary line on pass; exits 1 with the first failing
-# quest and its error otherwise. Needs luajit (brew install luajit); without it
+# Exits 0 and prints one summary line per suite on pass; exits 1 with FAIL: and
+# the first failure otherwise. Needs luajit (brew install luajit); without it
 # the test is skipped (exit 0) so nobody is locked out. The same goes for a failed
 # QuestieDB download (for example, when offline), but not for a checksum mismatch.
 #
@@ -28,7 +29,9 @@ luajit tests/api/extract.lua "$PWD" | luajit tests/api/fastcheck.lua "$PWD"
 fetch_status=0
 qdb_zip="$(scripts/fetch-questiedb.sh)" || fetch_status=$?
 if [ "$fetch_status" -eq 2 ]; then
-    echo "could not download QuestieDB; offline tests skipped" >&2
+    # The smoke test's scenarios that need no QuestieDB still run.
+    luajit tests/smoke/run.lua "$PWD"
+    echo "could not download QuestieDB; QuestieDB tests skipped" >&2
     exit 0
 elif [ "$fetch_status" -ne 0 ]; then
     echo "error: fetching QuestieDB failed (exit $fetch_status); see above" >&2
@@ -40,3 +43,6 @@ trap 'rm -rf "$work"' EXIT
 unzip -q "$qdb_zip" -d "$work"
 
 luajit tests/questiedb/harness.lua "$work/QuestieDB" "$PWD" "$@"
+
+# Whole-addon smoke test: every file in the TOC, in the stand-in client.
+luajit tests/smoke/run.lua "$PWD" "$work/QuestieDB"
