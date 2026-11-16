@@ -171,6 +171,8 @@ in the quest log works; untracking quests thins the world map. Found:
    (our only world-map hooks redraw our own icons), so it is probably a gap in
    the default UI. To confirm: switch Pocket Essentials off in the addon list,
    reload, open the menu again. See "Parked ideas".
+   **Confirmed 2026-11-15:** still broken with every addon switched off, so
+   it is the default UI's problem, not ours. Not being fixed for now.
 5. Untracking quests was found by guessing.
 6. The arrow's "Focus one in your quest log" line is cut off with "...": the
    line under the arrow is a single line of fixed width (`QuestArrow.lua`
@@ -251,8 +253,7 @@ Rules 1 and 2 apply: one phase at a time, one item at a time.
 
 Open questions from the device tests (not yet known to be ours):
 - Blue icons on the minimap only (second device test, finding 1).
-- The quest log's pop-up menu drawn with no background (finding 4). To check:
-  switch Pocket Essentials off, reload, open the menu again.
+
 
 ## Parked ideas
 
@@ -267,8 +268,11 @@ Everything still to be built, in rough order of how much it is wanted.
   device first; see `docs/TESTING.md` step 9). Revisit in roadmap phase 2.
 - A solid background for the quest log's pop-up menu (2026-11-15): the menu on
   a quest (Track, Focus, Share, Abandon) is drawn with no background and is
-  hard to read (second device test, finding 4). Only if it turns out to be
-  Blizzard's and stays unfixed; spec first.
+  hard to read (second device test, finding 4). Confirmed to be the default
+  UI's problem. **Skipped for now by the maintainer.** If picked up: our own
+  panel behind the menu when it opens (Blizzard announces menu opening to
+  addons through `EventRegistry` "MenuProxy.OnShow"), behind an off-by-default
+  switch so it can be turned off once Blizzard fixes it; spec first.
 - Owner has more ideas; add them here as one line each, then spec before
   building.
 
