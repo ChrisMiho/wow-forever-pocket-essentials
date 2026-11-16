@@ -225,6 +225,8 @@ function Client.new(opts)
         editMode = false,
         worldMapID = nil,            -- the map the world map shows (nil: the player's)
         bagProtected = false,
+        spellTargeting = false,      -- a spell is waiting for a target (the cursor)
+        repairMode = false,          -- the vendor's repair cursor is up
     }
     c.world = world
 
@@ -1207,8 +1209,10 @@ function Client.new(opts)
         GetItemInfo = function(item)
             local it = ItemData(item)
             if not it then return nil end
-            return it.name or "Item", "|Hitem:" .. it.itemID .. "|h", it.quality, 1, 1, "Junk", "Junk", 20, "",
-                134400, it.price or 0, 15, 0, 0, 0, nil, false
+            -- dbQuality / dbPrice: what the item database says when it differs from the bag slot.
+            local quality, price = it.dbQuality or it.quality, it.dbPrice or it.price
+            return it.name or "Item", "|Hitem:" .. it.itemID .. "|h", quality, 1, 1, "Junk", "Junk", 20, "",
+                134400, price or 0, 15, 0, 0, 0, nil, false
         end,
     })
 
@@ -1351,8 +1355,8 @@ function Client.new(opts)
         end
     end, true)
     Global("GetMoney", function() return world.money end)
-    Global("InRepairMode", function() return false end)
-    Global("SpellIsTargeting", function() return false end)
+    Global("InRepairMode", function() return world.repairMode and true or false end)
+    Global("SpellIsTargeting", function() return world.spellTargeting and true or false end)
     Global("InCombatLockdown", function() return world.inCombat and true or false end)
     Global("IsInGroup", function() return world.group ~= "none" end)
     Global("IsInRaid", function() return world.group == "raid" end)

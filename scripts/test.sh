@@ -1,7 +1,8 @@
 #!/bin/bash
 # Offline tests: the fast API check (tests/api/), then the QuestieDB harness,
 # which puts every quest in the pinned QuestieDB release through our QuestData.lua under WoW API stand-ins (tests/questiedb/),
-# then the whole-addon smoke test in the stand-in game client (tests/smoke/, tests/lib/fakeclient.lua).
+# then the whole-addon smoke test in the stand-in game client (tests/smoke/, tests/lib/fakeclient.lua),
+# and the rule tests for sell junk, repair, chat and the core (tests/features/; no QuestieDB needed).
 #
 # Exits 0 and prints one summary line per suite on pass; exits 1 with FAIL: and
 # the first failure otherwise. Needs luajit (brew install luajit); without it
@@ -22,6 +23,9 @@ fi
 # source (tests/api/). Needs no network. A new name fails until scripts/audit-api.sh
 # has been run.
 luajit tests/api/extract.lua "$PWD" | luajit tests/api/fastcheck.lua "$PWD"
+
+# Rule tests: each feature's rules against the stand-in client. Needs no network.
+luajit tests/features/run.lua "$PWD"
 
 # Capture the status explicitly: under set -e a failed $(...) assignment would
 # abort before the handling below runs. Exit code 2 means the download failed
