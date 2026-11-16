@@ -36,7 +36,7 @@ for w in ([[_G math table string os io type pcall xpcall pairs ipairs next selec
 -- Fields that look like methods but are plain data on a Blizzard frame.
 -- (enum values and QuestieDB library members; the last five are C_EditMode's, listed as namespace names below)
 local FIELD = {}
-for w in ("Account Character Gamepad Mkb NumValues Poor Preset Quest Get RequireContract GetLayouts ConvertStringToLayoutInfo SaveLayouts SetActiveLayout OnLayoutAdded"):gmatch("%S+") do FIELD[w] = true end
+for w in ("Account Character Gamepad Mkb NumValues Poor Preset Quest Get RequireContract GetLayouts ConvertStringToLayoutInfo SaveLayouts SetActiveLayout OnLayoutAdded SendTell"):gmatch("%S+") do FIELD[w] = true end
 local STRMETHOD = {}   -- (lowercase ones are skipped anyway; kept for clarity)
 local OWN = {}
 for w in ([[PocketEssentials PocketEssentialsDB LibQuestieDB PocketEssentialsSettingsPanel
@@ -53,6 +53,7 @@ local INDIRECT = {
     -- Real widget methods whose names we also define on our own objects (so by-name exclusion skips them).
     { "method", "RegisterEvent", "Core.lua", "eventFrame.RegisterEvent" },
     { "method", "UnregisterEvent", "Core.lua", "eventFrame.UnregisterEvent" },
+    { "namespace", "ChatFrameUtil.SendTell", "Chat.lua", "util.SendTell" },
     { "namespace", "C_EditMode.ConvertStringToLayoutInfo", "Layout.lua", "api.ConvertStringToLayoutInfo" },
     { "namespace", "C_EditMode.SaveLayouts", "Layout.lua", "api.SaveLayouts" },
     { "namespace", "C_EditMode.OnLayoutAdded", "Layout.lua", "api.OnLayoutAdded" },
@@ -62,6 +63,8 @@ local INDIRECT = {
 -- Strings that look like events but are other constants.
 local NOT_AN_EVENT = { PIN_FRAME_LEVEL_QUEST_PING = true }
 local EVENT_TABLES = { ["QuestData.lua"] = "EVENTS" }
+-- Tables whose first string in each row is a method name called as obj[name](...).
+local METHOD_TABLES = { ["QuestIcons.lua"] = "BLOB_SETTINGS" }
 
 local function tokenize(src)
     local toks, i, n, line = {}, 1, #src, 1
@@ -171,6 +174,7 @@ for _, f in ipairs(files) do
     local toks = parsed[f]
     local eventTable = EVENT_TABLES[f]
     local alias = {}   -- local api = C_EditMode  ->  alias.api = "C_EditMode"
+    local enumAlias = {}   -- local types = ... Enum.EditModeLayoutType  ->  "Enum.EditModeLayoutType" (kept for the file)
     for i, t in ipairs(toks) do
         local nx, n2, pv = toks[i + 1], toks[i + 2], toks[i - 1]
         if isName(pv, "local") and t.t == "name" and isP(nx, "=") then
@@ -181,6 +185,23 @@ for _, f in ipairs(files) do
             else
                 alias[t.v] = nil
             end
+        end
+        if isName(pv, "local") and t.t == "name" and isP(nx, "=") then
+            local j = i + 2
+            while toks[j] and toks[j].line == t.line do
+                if (isName(toks[j], "Enum") or isName(toks[j], "Constants")) and isP(toks[j + 1], ".") and isName(toks[j + 2]) then
+                    enumAlias[t.v] = toks[j].v .. "." .. toks[j + 2].v
+                end
+                j = j + 1
+            end
+        end
+        -- Enum.A.B, Constants.A.B, and the same through a local alias
+        if (isName(t, "Enum") or isName(t, "Constants")) and isP(nx, ".") and isName(n2) and isP(toks[i + 3], ".")
+            and isName(toks[i + 4]) and not isP(pv, ".") and not isP(pv, ":") then
+            emit("enum", t.v .. "." .. n2.v .. "." .. toks[i + 4].v, f, t.line)
+        end
+        if t.t == "name" and enumAlias[t.v] and isP(nx, ".") and isName(n2) and not isP(pv, ".") and not isP(pv, ":") then
+            emit("enum", enumAlias[t.v] .. "." .. n2.v, f, t.line)
         end
         -- alias.Name -> C_Namespace.Name
         if t.t == "name" and alias[t.v] and isP(nx, ".") and isName(n2) and not isP(pv, ".") and not isP(pv, ":") then
@@ -222,6 +243,23 @@ for _, f in ipairs(files) do
         -- CVars
         if t.t == "str" and isP(pv, "(") and toks[i - 2] and (toks[i - 2].v == "GetCVar" or toks[i - 2].v == "SetCVar") then
             emit("cvar", t.v, f, t.line)
+        end
+    end
+    -- method names held as strings in a table
+    local mt = METHOD_TABLES[f]
+    if mt then
+        for i, t in ipairs(toks) do
+            if isName(t, mt) and isP(toks[i + 1], "=") and isP(toks[i + 2], "{") then
+                local depth, j = 1, i + 3
+                while toks[j] and depth > 0 do
+                    local u = toks[j]
+                    if isP(u, "{") then depth = depth + 1 elseif isP(u, "}") then depth = depth - 1 end
+                    if depth == 2 and u.t == "str" and isP(toks[j - 1], "{") and u.v:match("^%u%l") then
+                        emit("method", u.v, f, u.line)
+                    end
+                    j = j + 1
+                end
+            end
         end
     end
     -- event table keys

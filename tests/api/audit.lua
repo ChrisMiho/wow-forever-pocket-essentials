@@ -26,8 +26,84 @@ local function readfile(p)
     local s = f:read("*a"); f:close(); return s
 end
 
+-- Which Blizzard files this client (game type "camelot", family "mainline")
+-- loads. Used only to decide which "used" evidence counts.
+--  * An addon folder counts if a TOC named <Folder>.toc, <Folder>_Mainline.toc,
+--    <Folder>_Camelot.toc or <Folder>_Forever.toc exists, its header does not
+--    say AllowLoad glue-only, its "## AllowLoadGameType:" (if any) lists
+--    camelot or mainline, and its "## ExcludeLoadGameType:" does not.
+--  * A TOC line counts if its [AllowLoadGameType ...] tag (if any) lists camelot
+--    or mainline and its [ExcludeLoadGameType ...] tag does not. [Family]
+--    becomes Mainline and [Game] becomes Camelot in paths.
+--  * Files an XML file pulls in with <Script file=> or <Include file=> count.
+-- Not covered: XML-level conditions, files a Lua file loads by itself, and the
+-- documentation addon's per-function flavour notes.
+local fileIndex = {}   -- lowercase relative path -> real relative path
+do
+    local out = sh("cd " .. q(ADDONS) .. " && find . -type f \\( -name '*.lua' -o -name '*.xml' -o -name '*.toc' \\)")
+    for f in out:gmatch("[^\n]+") do
+        f = f:gsub("^%./", "")
+        fileIndex[f:lower()] = f
+    end
+end
+local loaded = {}      -- real relative path -> true
+local function tagMatches(list)
+    for w in list:gmatch("[%w]+") do
+        w = w:lower()
+        if w == "camelot" or w == "mainline" then return true end
+    end
+    return false
+end
+local function tagsAllow(tags)
+    local allow = tags:match("%[AllowLoadGameType%s+([^%]]*)%]")
+    local exclude = tags:match("%[ExcludeLoadGameType%s+([^%]]*)%]")
+    if allow and not tagMatches(allow) then return false end
+    if exclude and tagMatches(exclude) then return false end
+    return true
+end
+local function addFile(rel, dir, seen)
+    rel = rel:gsub("\\", "/"):gsub("%[Family%]", "Mainline"):gsub("%[Game%]", "Camelot")
+    local real = fileIndex[(dir .. "/" .. rel):lower()] or fileIndex[(dir:match("^[^/]+") .. "/" .. rel):lower()]
+    if not real or seen[real] then return end
+    seen[real] = true
+    loaded[real] = true
+    if real:lower():match("%.xml$") then
+        local xml = readfile(ADDONS .. real) or ""
+        local xdir = real:match("^(.*)/[^/]*$") or ""
+        for inc in xml:gmatch('<[SI][a-z]+%s+file="([^"]+)"') do
+            addFile(inc, xdir, seen)
+        end
+    end
+end
+for dirName in sh("ls " .. q(ADDONS)):gmatch("[^\n]+") do
+    for _, suffix in ipairs({ "", "_Mainline", "_Camelot", "_Forever" }) do
+        local tocPath = fileIndex[(dirName .. "/" .. dirName .. suffix .. ".toc"):lower()]
+        if tocPath then
+            local toc = readfile(ADDONS .. tocPath)
+            local ok = true
+            for line in toc:gmatch("[^\r\n]+") do
+                local v = line:match("^##%s*AllowLoadGameType:%s*(.-)%s*$")
+                if v and not v:find("%[") and not tagMatches(v) then ok = false end
+                v = line:match("^##%s*ExcludeLoadGameType:%s*(.-)%s*$")
+                if v and tagMatches(v) then ok = false end
+                v = line:match("^##%s*AllowLoad:%s*(%a+)")
+                if v and v:lower() == "glue" and not line:find("%[") then ok = false end
+            end
+            if ok then
+                local seen = {}
+                for line in toc:gmatch("[^\r\n]+") do
+                    if not line:match("^%s*#") and line:match("%S") then
+                        local path, tags = line:match("^%s*(%S+)%s*(.*)$")
+                        if tagsAllow(tags) then addFile(path, dirName, seen) end
+                    end
+                end
+            end
+        end
+    end
+end
+
 -- Index the generated documentation ----------------------------------------
-local docNS, docGlobal, docMethod, docEvent, docEnum = {}, {}, {}, {}, {}
+local docNS, docGlobal, docMethod, docEvent, docEnum, docEnumVal = {}, {}, {}, {}, {}, {}
 local listing = sh("ls " .. q(ADDONS .. DOCS))
 for file in listing:gmatch("[^\n]+") do
     local src = readfile(ADDONS .. DOCS .. file)
@@ -50,6 +126,17 @@ for file in listing:gmatch("[^\n]+") do
                 docEnum[name] = docEnum[name] or path
             end
         end
+        -- enum values: { Name = "Poor", Type = "ItemQuality", EnumValue = 0 }
+        for vname, etype in src:gmatch('{ Name = "([^"]+)", Type = "([^"]+)", EnumValue') do
+            docEnumVal["Enum." .. etype .. "." .. vname] = docEnumVal["Enum." .. etype .. "." .. vname] or path
+        end
+        -- constants: Name = "EditModeConsts", Type = "Constants", Values = { { Name = "X", ... Value = } }
+        for cname, bodyStart in src:gmatch('Name = "([^"]+)",%s*Type = "Constants",()') do
+            local body = src:sub(bodyStart):match("^(.-)\n\t\t},\n") or src:sub(bodyStart, bodyStart + 4000)
+            for vname in body:gmatch('{ Name = "([^"]+)", Type = "[^"]+", Value') do
+                docEnumVal["Constants." .. cname .. "." .. vname] = docEnumVal["Constants." .. cname .. "." .. vname] or path
+            end
+        end
         for ev in src:gmatch('LiteralName = "([^"]+)"') do docEvent[ev] = docEvent[ev] or path end
     end
 end
@@ -58,11 +145,19 @@ end
 local function grepFirst(pattern, extended)
     local flag = extended and "-E" or "-F"
     local out = sh("grep -rIl " .. flag .. " --include='*.lua' --include='*.xml' --exclude-dir=Blizzard_APIDocumentationGenerated -e "
-        .. q(pattern) .. " " .. q(ADDONS) .. " | sort | head -1")
-    out = out:gsub("\n", "")
-    if out == "" then return nil end
-    return (out:gsub("^" .. ADDONS:gsub("%p", "%%%0"), ""))
+        .. q(pattern) .. " " .. q(ADDONS) .. " | sort")
+    local prefix = ADDONS:gsub("%p", "%%%0")
+    for path in out:gmatch("[^\n]+") do
+        local rel = path:gsub("^" .. prefix, "")
+        if loaded[rel] then return rel end
+    end
+    return nil
 end
+
+-- Methods the addon calls on a known Blizzard object: cite that object's definition.
+local PREFER_MIXIN = { OnMapChanged = "MapCanvasMixin", OnCanvasScaleChanged = "MapCanvasMixin",
+    GetCanvas = "MapCanvasMixin", EnumeratePinsByTemplate = "MapCanvasMixin",
+    GetPinFrameLevelsManager = "MapCanvasMixin" }
 
 local function verify(kind, name)
     if kind == "event" then
@@ -83,9 +178,16 @@ local function verify(kind, name)
         return p and (p .. " used")
     elseif kind == "method" then
         if docMethod[name] then return docMethod[name] .. " documented" end
-        local p = grepFirst("function [A-Za-z_.]*[:.]" .. name .. "[(]", true)
+        local pm = PREFER_MIXIN[name]
+        local p = (pm and grepFirst("function " .. pm .. "[:.]" .. name .. "[(]", true))
+            or grepFirst("function [A-Za-z_.]*(Mixin|Frame|Manager|Canvas)[A-Za-z_.]*[:.]" .. name .. "[(]", true)
+            or grepFirst("function [A-Za-z_.]*[:.]" .. name .. "[(]", true)
             or grepFirst(name .. " = function", false)
             or grepFirst("[:.]" .. name .. "[(]", true)
+        return p and (p .. " used")
+    elseif kind == "enum" then
+        if docEnumVal[name] then return docEnumVal[name] .. " documented" end
+        local p = grepFirst(name .. "([^A-Za-z0-9_]|$)", true)
         return p and (p .. " used")
     elseif kind == "cvar" then
         local p = grepFirst('"' .. name .. '"')
