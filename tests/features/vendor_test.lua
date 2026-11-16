@@ -234,6 +234,20 @@ test("sell junk: stops when the vendor window closes, and reports what was sold 
     eq(#lineStartingWith(c, "Sold "), 1, "the line is printed once")
 end)
 
+-- Vendor.lua SellStep line 165 (VendorWindowShown): if the window is gone without a closed event, the next step stops.
+test("sell junk: sells nothing more once the vendor window is gone, even without a closed event", function()
+    local c = visit({ on = { "sellJunk" } }, function(c)
+        for slot = 1, 5 do put(c, 0, slot, item(1400 + slot, 0, 3)) end
+    end)
+    c:openMerchant()
+    c:advance(0.4)
+    eq(T.sold(c), { { 0, 1 } })
+    c.env.MerchantFrame:Hide()    -- the window goes, no MERCHANT_CLOSED
+    c:advance(5)
+    eq(T.sold(c), { { 0, 1 } }, "kept selling with the window gone")
+    c:assertClean("window gone")
+end)
+
 -- DECISIONS "Vendor": "Nothing is ever auto-confirmed"; Vendor.lua header.
 test("sell junk: never calls a confirm function (only UseContainerItem and RepairAllItems are called)", function()
     local c = visit({ on = { "sellJunk", "repair" }, merchant = { canRepair = true, repairCost = 500 } }, function(c)

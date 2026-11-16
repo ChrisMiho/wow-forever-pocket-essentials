@@ -8,6 +8,8 @@
 # the first failure otherwise. Needs luajit (brew install luajit); without it
 # the test is skipped (exit 0) so nobody is locked out. The same goes for a failed
 # QuestieDB download (for example, when offline), but not for a checksum mismatch.
+# With PE_TEST_STRICT=1 (CI sets it) a missing luajit or a failed QuestieDB
+# download is a failure (exit 1) instead of a skip, so nothing is skipped silently.
 #
 #     scripts/test.sh                       # test addons/PocketEssentials/QuestData.lua
 #     scripts/test.sh path/to/QuestData.lua # test another copy of it
@@ -15,6 +17,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if ! command -v luajit >/dev/null 2>&1; then
+    if [ "${PE_TEST_STRICT:-}" = "1" ]; then
+        echo "FAIL: luajit not installed and PE_TEST_STRICT=1" >&2
+        exit 1
+    fi
     echo "luajit not installed (brew install luajit); skipping" >&2
     exit 0
 fi
@@ -29,7 +35,10 @@ luajit tests/api/extract.lua "$PWD" | luajit tests/api/fastcheck.lua "$PWD"
 # (offline): skip. Anything else (such as 3, a checksum mismatch) is a real problem.
 fetch_status=0
 qdb_zip="$(scripts/fetch-questiedb.sh)" || fetch_status=$?
-if [ "$fetch_status" -eq 2 ]; then
+if [ "$fetch_status" -eq 2 ] && [ "${PE_TEST_STRICT:-}" = "1" ]; then
+    echo "FAIL: could not download QuestieDB and PE_TEST_STRICT=1" >&2
+    exit 1
+elif [ "$fetch_status" -eq 2 ]; then
     # The rule tests and smoke scenarios that need no QuestieDB still run.
     luajit tests/features/run.lua "$PWD"
     luajit tests/smoke/run.lua "$PWD"

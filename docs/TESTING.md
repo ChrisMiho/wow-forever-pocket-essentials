@@ -24,9 +24,10 @@ luajit too, and on the first run it downloads Blizzard's interface source
 (about a minute, once). `test.sh` also downloads the pinned QuestieDB release
 into `vendor/` on the first run. If that download fails (for example, you are
 offline), the parts that need QuestieDB are skipped and it says so; a checksum
-mismatch is a real failure.
+mismatch is a real failure. With `PE_TEST_STRICT=1` set (the GitHub job sets
+it) a missing luajit or a failed QuestieDB download is a failure instead of a skip.
 
-The same three scripts run on GitHub for every push and pull request
+The same three scripts run on GitHub for every push to main and release-prep and every pull request
 (`.github/workflows/test.yml`). That job only reads the repository: it
 publishes nothing and uses no secrets.
 
@@ -72,8 +73,7 @@ still fail on the device.
 ### What a known failure is
 
 Each test file has a `KNOWN_FAILURES` table at the top. A test listed there
-is one we know fails and have decided to live with for now (or a rule that was
-stated wrongly and is waiting for a fix). When it fails, the run prints
+fails because the addon is wrong; it is kept visible until the addon is fixed. When it fails, the run prints
 "known failure" and still passes. When a listed test passes, the run fails,
 as a reminder to delete the entry. Known failures, if any, are listed at the
 top of each test file.
@@ -95,9 +95,13 @@ A pass here means the logic holds offline. It says nothing about:
 - real-game quirks the stand-in does not copy (event order, timing, the
   quest log's real contents, frame rate, login time).
 
-So far the audit found every one of the 230 game names the addon uses in
-Blizzard's source for this build, and the offline tests pass. That is still
-not evidence that anything works in the game.
+So far the audit found all 236 game names the addon uses in Blizzard's
+source for this build (169 are in Blizzard's generated documentation; 67 are
+seen only in Blizzard's own code, so their restrictions are unknown), and the
+offline tests pass. That is still not evidence that anything works in the game.
+The audit does not cover fields of tables the game returns, template names,
+font names or script-type names, and it checks methods by name, not per
+widget type.
 
 ## Device test plan
 

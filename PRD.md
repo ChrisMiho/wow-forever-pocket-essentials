@@ -125,7 +125,7 @@ Chatting is hard on a handheld because targets are too small to tap.
 
 ## Status
 
-Offline test suite (2026-11-15): the API audit found every one of the 230 game names the addon uses in Blizzard's source for this build, and the rule tests and smoke test pass offline; no addon bug has been found by them so far. None of this proves behaviour in the game; see `docs/TESTING.md`.
+Offline test suite (2026-11-15): the API audit found all 236 game names the addon uses in Blizzard's source for this build (169 documented, 67 seen only in Blizzard's own code, whose restrictions are unknown), and the rule tests and smoke test pass offline; no addon bug has been found by them so far. None of this proves behaviour in the game; see `docs/TESTING.md`.
 
 In progress: device testing. Version 0.0.3 (test build) carries the fixes from
 the first device test of 0.0.1 (in 0.0.2) and the maintainer's follow-up on

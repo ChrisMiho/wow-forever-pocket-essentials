@@ -6,7 +6,7 @@
 -- a table T and registers tests with T.test(name, fn); it returns
 -- { known = KNOWN_FAILURES }. Every test gets a fresh stand-in client
 -- (tests/lib/fakeclient.lua) and a fresh load of the addon. A test file that
--- crashes while loading is reported as one failure and the others still run.
+-- crashes while loading, or registers no tests, is reported as one failure and the others still run.
 --
 -- A test listed in a file's KNOWN_FAILURES that fails prints "known failure"
 -- and does not fail the run; a listed test that passes fails the run (the entry
@@ -155,9 +155,12 @@ for _, file in ipairs(files) do
         failures[#failures + 1] = file .. ": could not run the file: " .. tostring(err)
     else
         local knownList = (type(result) == "table" and result.known) or {}
-        if type(result) == "table" and result.skip then
+        local skipped = type(result) == "table" and result.skip
+        if skipped then
             print("notice: " .. file .. " skipped: " .. result.skip)
             tests = {}
+        elseif #tests == 0 then
+            failures[#failures + 1] = file .. ": registered no tests"
         end
         for _, t in ipairs(tests) do
             total = total + 1
@@ -174,7 +177,7 @@ for _, file in ipairs(files) do
                 failures[#failures + 1] = label .. ": " .. tostring(e)
             end
         end
-        for name in pairs(knownList) do
+        for name in pairs(skipped and {} or knownList) do
             local found = false
             for _, t in ipairs(tests) do if t.name == name then found = true end end
             if not found then failures[#failures + 1] = file .. ": KNOWN_FAILURES names no test: " .. name end

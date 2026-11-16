@@ -114,6 +114,7 @@ so that being wrong cannot raise an error; the worst case is listed.
 | Whether values set on the chat box by an addon stay "clean" for the game's secure commands | Chat | A typed `/cast` or `/target` right after using the picker is refused |
 | Whether `C_EditMode.SetActiveLayout` / `OnLayoutAdded` called by an addon "taints" Edit Mode | Layout | Possible "action blocked" in combat until reload; the panel asks for a reload after every switch for this reason |
 | `Enum.EditModePresetLayoutsMeta.NumValues`; English text of the "Enable Gamepad UI" setting | Layout | A status line reads slightly differently |
+| Blizzard forces the Modern layout whenever the Gamepad UI is switched off (`Blizzard_Gamepad/Core.lua:102-106`: the gamepad shutdown handler calls `C_EditMode.SetActiveLayout` with Modern) | Layout | "Go back to my previous layout" can be undone by the game when the Gamepad UI is turned off |
 | `debugstack` argument form; whether `C_UI.Reload` needs a real press (it is only ever called from one; see "Verified" for what the source shows) | Core | Shorter error details |
 
 Checks that run offline (see `docs/TESTING.md`): `scripts/check.sh` compiles

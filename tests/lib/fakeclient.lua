@@ -10,8 +10,7 @@
 --
 -- Strict where Blizzard's source lets it be:
 --   * A widget has a method only if (a) the method is listed as `method` in
---     tests/api/verified.txt or unverified.txt, or in EXTRA_METHODS below with
---     the Blizzard file it was read from, and (b) that widget type has it in
+--     tests/api/verified.txt or unverified.txt, and (b) that widget type has it in
 --     Blizzard's generated API documentation. Anything else reads as nil, as
 --     on the real client, so `frame:Bogus()` raises "attempt to call method
 --     'Bogus' (a nil value)" and `type(frame.Bogus) == "function"` is false.
@@ -60,16 +59,6 @@ local function ReadSnapshot(root)
     snapshotCache[root] = s
     return s
 end
-
--- Real widget methods the addon calls that the audit cannot see by name (the
--- addon defines a function of the same name on its own tables, so the audit's
--- by-name rule leaves them out). Each was read in Blizzard's generated
--- documentation for this build (Interface/AddOns/Blizzard_APIDocumentationGenerated/).
-local EXTRA_METHODS = {
-    SetShown = "SimpleScriptRegionAPIDocumentation.lua, SimpleFrameAPIDocumentation.lua",
-    IsEnabled = "SimpleButtonAPIDocumentation.lua",
-}
-Client.EXTRA_METHODS = EXTRA_METHODS
 
 ---------------------------------------------------------------------------
 -- Widget types: which methods each has (Blizzard_APIDocumentationGenerated:
@@ -189,7 +178,6 @@ function Client.new(opts)
 
     local allowedMethod = {}
     for k in pairs(snap.method) do allowedMethod[k] = true end
-    for k in pairs(EXTRA_METHODS) do allowedMethod[k] = true end
     c.allowedMethod = allowedMethod
 
     local screen = opts.screen or { 1280, 720 }

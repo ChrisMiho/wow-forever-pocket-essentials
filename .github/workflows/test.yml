@@ -1,11 +1,11 @@
-# Runs the offline tests on every push and pull request. Read-only: it
+# Runs the offline tests on every push to main and release-prep and on every pull request. Read-only: it
 # publishes nothing, uses no secrets, and does not run on tags. Nothing it
 # checks is packaged into the addon zips. See docs/TESTING.md.
 name: Offline tests
 
 on:
   push:
-    branches: ["**"]
+    branches: [main, release-prep]
   pull_request:
 
 permissions:
@@ -24,7 +24,7 @@ jobs:
           sudo apt-get install -y luajit unzip
 
       # The cache keys include the two scripts that hold the pinned QuestieDB
-      # checksum and the pinned Blizzard source build, so a new pin starts a
+      # checksum and the pinned Blizzard source commit, so a new pin starts a
       # fresh download.
       - name: Cache QuestieDB download
         uses: actions/cache@v4
@@ -41,12 +41,19 @@ jobs:
       - name: Syntax check
         run: scripts/check.sh
 
+      # Fetch QuestieDB first so a failed download fails the job here instead
+      # of the QuestieDB parts being skipped.
+      - name: Download QuestieDB
+        run: scripts/fetch-questiedb.sh >/dev/null
+
       - name: Offline tests
+        env:
+          PE_TEST_STRICT: "1"
         run: scripts/test.sh
 
       # An anonymous clone of Blizzard's public interface source, made by the
-      # script itself the first time. Sorting is pinned so the snapshot files
-      # come out the same as on the maintainer's machine.
+      # script itself the first time. The script pins the commit and the
+      # sort order so the snapshot files come out the same as on the maintainer's machine.
       - name: Full API audit
         env:
           LC_ALL: C

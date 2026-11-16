@@ -14,7 +14,7 @@ local function load(name, isUnverified)
     for line in f:lines() do
         local k, n, rest = line:match("^([^\t]+)\t([^\t]+)\t?(.*)$")
         if k then
-            known[k .. "\t" .. n] = true
+            known[k .. "\t" .. n] = isUnverified and "unverified" or (rest:find(" documented", 1, true) and "documented" or "used")
             if isUnverified then
                 nUnverified = nUnverified + 1
                 if rest:find("NOT YET EXPLAINED", 1, true) then unexplained[#unexplained + 1] = k .. " " .. n end
@@ -25,10 +25,10 @@ local function load(name, isUnverified)
 end
 load("verified.txt"); load("unverified.txt", true)
 
-local total, new = 0, {}
+local total, new, tally = 0, {}, { documented = 0, used = 0, unverified = 0 }
 for line in io.lines() do
     total = total + 1
-    if not known[line] then new[#new + 1] = (line:gsub("\t", " ")) end
+    if not known[line] then new[#new + 1] = (line:gsub("\t", " ")) else tally[known[line]] = tally[known[line]] + 1 end
 end
 
 if total == 0 then
@@ -47,4 +47,5 @@ if #new > 0 then
     print("Run scripts/audit-api.sh to check them against Blizzard's source and update tests/api/.")
     os.exit(1)
 end
-print(string.format("API audit: %d names, %d unverified, 0 new", total, nUnverified))
+print(string.format("API audit: %d names found in Blizzard's source (%d documented, %d seen only in Blizzard's own code), %d not found",
+    tally.documented + tally.used, tally.documented, tally.used, tally.unverified))

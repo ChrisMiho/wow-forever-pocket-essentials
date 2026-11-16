@@ -319,4 +319,41 @@ test("core: each failing feature gets its own chat line, once", function()
     eq(#PE.errors, 4)
 end)
 
+---------------------------------------------------------------------------
+-- The on/off switch is saved; a switched-off feature's timers
+---------------------------------------------------------------------------
+
+-- Core.lua SetModuleEnabled (line 640: db.enabled[key] = on); Settings.lua calls it from the switch;
+-- Login enables on a saved true. A copy of the saved table is loaded into a fresh client.
+test("core: switching a feature on is saved, and a fresh client with that saved table has it on; off is saved too", function()
+    local c, PE = T.new({})
+    PE:SetModuleEnabled("sellJunk", true)
+    local db = rawget(c.env, "PocketEssentialsDB")
+    eq(db.enabled.sellJunk, true)
+    local c2, PE2 = T.new({ saved = { version = 1, enabled = { sellJunk = db.enabled.sellJunk }, options = {}, ui = db.ui, errors = {} } })
+    check(PE2:IsModuleEnabled("sellJunk"), "the feature is off after a restart")
+    PE2:SetModuleEnabled("sellJunk", false)
+    local db2 = rawget(c2.env, "PocketEssentialsDB")
+    eq(db2.enabled.sellJunk, false)
+    local _, PE3 = T.new({ saved = { version = 1, enabled = { sellJunk = db2.enabled.sellJunk }, options = {}, ui = db2.ui, errors = {} } })
+    check(not PE3:IsModuleEnabled("sellJunk"), "the feature came back on after being switched off")
+end)
+
+-- Core.lua Methods:After (line 506): "Skipped if the module was switched off ... meanwhile."
+test("core: a feature's pending timer does not fire after the feature is switched off", function()
+    local c, PE = T.new({})
+    local fired = {}
+    local mod = PE:RegisterModule({ key = "probe", label = "Probe", order = 99 })
+    PE:SetModuleEnabled("probe", true)
+    mod:After(5, function() fired[#fired + 1] = "before" end)
+    PE:SetModuleEnabled("probe", false)
+    c:advance(6)
+    eq(fired, {}, "a timer fired after its feature was switched off")
+    PE:SetModuleEnabled("probe", true)
+    mod:After(1, function() fired[#fired + 1] = "after" end)
+    c:advance(2)
+    eq(fired, { "after" }, "a timer set after switching on did not fire")
+    c:assertClean("timer")
+end)
+
 return { known = KNOWN_FAILURES }

@@ -54,6 +54,14 @@ local INDIRECT = {
     { "method", "RegisterEvent", "Core.lua", "eventFrame.RegisterEvent" },
     { "method", "UnregisterEvent", "Core.lua", "eventFrame.UnregisterEvent" },
     { "namespace", "ChatFrameUtil.SendTell", "Chat.lua", "util.SendTell" },
+    -- Functions read off a Blizzard table into a local and called later (the field-read rule only sees "x and x.Name").
+    { "namespace", "ChatFrameUtil.ChooseBoxForSend", "Chat.lua", "util.ChooseBoxForSend" },
+    { "namespace", "ChatFrameUtil.OpenChat", "Chat.lua", "util.OpenChat" },
+    { "namespace", "ChatFrameUtil.GetActiveWindow", "Chat.lua", "util.GetActiveWindow" },
+    { "namespace", "ChatFrameUtil.ResolveChannelName", "Chat.lua", "ChatFrameUtil.ResolveChannelName" },
+    -- Real widget methods whose names the addon also defines on its own objects.
+    { "method", "SetShown", "Chat.lua", ":SetShown(" },
+    { "method", "IsEnabled", "UI.lua", "btn:IsEnabled()" },
     { "namespace", "C_EditMode.ConvertStringToLayoutInfo", "Layout.lua", "api.ConvertStringToLayoutInfo" },
     { "namespace", "C_EditMode.SaveLayouts", "Layout.lua", "api.SaveLayouts" },
     { "namespace", "C_EditMode.OnLayoutAdded", "Layout.lua", "api.OnLayoutAdded" },

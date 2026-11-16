@@ -761,7 +761,7 @@ scenarios[#scenarios + 1] = { name = "5 saved settings from 0.0.2", needsQDB = t
     collectMissing(c)
 end }
 
-local notes = {}
+local notes, zipsChecked = {}, 0
 scenarios[#scenarios + 1] = { name = "6 zip contents", run = function()
     local f = assert(io.open(root .. "/addons/PocketEssentials/PocketEssentials.toc", "rb"))
     local version = f:read("*a"):match("## Version:%s*([^\r\n]+)")
@@ -786,6 +786,7 @@ scenarios[#scenarios + 1] = { name = "6 zip contents", run = function()
                 notes[#notes + 1] = "zip contents: skipped " .. name .. " (holds " .. tostring(zipVersion)
                     .. ", the TOC says " .. tostring(version) .. "; run scripts/build.sh)"
             else
+                zipsChecked = zipsChecked + 1
                 local l = assert(io.popen("unzip -Z1 '" .. z.path .. "' 2>/dev/null"))
                 local n = 0
                 for line in l:lines() do
@@ -845,12 +846,16 @@ if #unexpected > 0 then
 end
 
 for _, k in ipairs(known) do print("known failure: " .. k) end
-for _, n in ipairs(notes) do print("note: " .. n) end
+for _, n in ipairs(notes) do io.stderr:write("note: " .. n .. "\n") end   -- stderr: stdout stays one summary line
 if #failures > 0 then
     for _, f in ipairs(failures) do print("FAIL: " .. f) end
     os.exit(1)
 end
+-- A zip check that found no zip to look at proved nothing, so it is not counted as a passed scenario.
+local zipSkipped = zipsChecked == 0
+if zipSkipped then ran = ran - 1 end
 local line = string.format("Smoke: %d scenarios, 0 errors", ran)
 if #known > 0 then line = line .. string.format(", %d known failure%s", #known, #known == 1 and "" or "s") end
 if skipped > 0 then line = line .. string.format(" (%d skipped: no QuestieDB dir)", skipped) end
+if zipSkipped then line = line .. " (zip check skipped: no usable dist/ zips)" end
 print(line)
