@@ -191,4 +191,3 @@ and `QuestieDB` sit side by side.
 - Decide which of QuestieDB's two identical data files the client loads and
   drop the other (`QUESTIEDB_TOC=Forever scripts/build.sh` or `Camelot`
   builds with one), halving the zip.
-- Revisit Improved Forever's radial wheels if still wanted.
