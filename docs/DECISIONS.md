@@ -154,7 +154,8 @@ Made without the owner:
   "No handheld layout saved yet".
 - **Radial wheel entry.** Asked for: an entry on WoW Forever's controller
   radial wheel that opens the Pocket Essentials settings. The owner cut it
-  from the 0.0.6 batch on 2026-11-15 ("we can come back to this"). What was
+  from the 0.0.6 batch on 2026-11-15, then dropped it the same day while
+  preparing the CurseForge launch. It is now a non-goal in PRD.md. What was
   found in Blizzard's interface source (`github.com/Gethe/wow-ui-source`,
   branch `forever`, build 1.60.1.70938, `Blizzard_Gamepad/UI/Radials/GamepadRadial.lua`
   and `.xml`): the wheel is the frame `GamepadRadial`. Its entries live in two
@@ -177,6 +178,10 @@ Made without the owner:
   controller button can be mapped to in the game's key bindings, which needs
   no Blizzard table at all; (c) keep the round button, whose hold-to-open
   already works. Recommendation: (b) first, because it is the safe one.
+- **Icons for quests not yet picked up** (like Questie's "!"). Dropped by the
+  owner on 2026-11-15 to keep the addon focused on accepted quests. The hard
+  part would have been correctness (quest chains, reputation and profession
+  quests), not speed.
 - **Arrow across zones.** The arrow only points at objectives in the zone you
   are in. If the focused quest is elsewhere it says "Outside this zone"
   rather than guessing a direction. Pointing across zone borders was written,

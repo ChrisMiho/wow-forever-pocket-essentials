@@ -101,6 +101,10 @@ Chatting is hard on a handheld because targets are too small to tap.
   combat-log addons anyway.
 - Replacing or fighting Blizzard's gamepad support (no ConsolePort unless a
   player asks).
+- An entry on Forever's radial wheel (dropped 2026-11-15: the game gives
+  addons no safe way to add one; see `docs/DECISIONS.md`).
+- Icons for quests not yet picked up (dropped 2026-11-15: the addon stays
+  focused on quests you have accepted).
 
 ## What would make this a failure
 
@@ -176,8 +180,8 @@ Follow-up: with "Hide blue haze" switched off and a reload, focusing a quest
 left the minimap normal; switched back on, focusing a different quest turned
 it green again (so the green was ours, finding 3).
 Requests: an icon key (built in 0.0.6); opening the settings from Forever's
-radial wheel so the round button is not needed (parked, findings in
-`docs/DECISIONS.md`).
+radial wheel so the round button is not needed (dropped 2026-11-15, findings
+in `docs/DECISIONS.md`).
 
 **Apart from the quest tests, nothing in this repo has run in the game.**
 Version 0.0.1 was written on a Mac with no game client. Every line was checked against Blizzard's published
@@ -235,36 +239,41 @@ The device test plan is in `docs/TESTING.md`.
 
 Rules 1 and 2 apply: one phase at a time, one item at a time.
 
-1. **Device testing.** Work through `docs/TESTING.md` one step at a time on
-   the reference device. Steps 2 and 3 (quest icons, arrow) ran once on
-   0.0.1; re-test them on 0.0.3, then continue with step 4.
-2. **Performance and user-experience polish.** Fix what the test results
-   show, and flip defaults to on for features that pass.
+1. **Device testing.** Test 0.0.6 first: the spots limit, the arrow's spot,
+   the icon key, the Reload UI button, and 0.0.5's two arrow-text changes
+   (`docs/TESTING.md` steps 1 to 3). Then the features that have never run in
+   the game, one step at a time: bags (step 4), sell junk (5), repair (6),
+   chat (7), layout helper (8), and the wrap-up (9).
+2. **Performance and user-experience polish.** Fix what the tests show, and
+   flip each feature's default to on once it passes.
 3. **First CurseForge upload.** Use `curseforge/FIELDS.md`.
-4. **New features.** Parked until phase 2 is done; see "Parked ideas".
+4. **Left to build.** One at a time, spec first; see "Parked ideas".
+
+Open questions from the device tests (not yet known to be ours):
+- Blue icons on the minimap only (second device test, finding 1).
+- The quest log's pop-up menu drawn with no background (finding 4). To check:
+  switch Pocket Essentials off, reload, open the menu again.
 
 ## Parked ideas
 
-- Improved Forever's radial wheels. Specifically wanted (2026-11-15): a radial
-  wheel entry that opens the Pocket Essentials settings. Cut from 0.0.6; the
-  findings and the options are in `docs/DECISIONS.md`, "Radial wheel entry".
-- A solid background for the quest log's pop-up menu (2026-11-15): the menu on
-  a quest (Track, Focus, Share, Abandon) is drawn with no background and is
-  hard to read (second device test, finding 4). Only if it turns out to be
-  Blizzard's and stays unfixed; spec first.
-- UI arrangement: a bundled handheld layout (needs one exported from the
-  device first; see `docs/TESTING.md` step 9). Revisit in roadmap phase 2.
+Everything still to be built, in rough order of how much it is wanted.
+
 - The quest arrow across zones (removed after review because it could show a
   confidently wrong direction). **Wanted by the maintainer (2026-11-15)**; until
   then the arrow says "Outside this zone" and names the zone. Next step when picked up: study how open-source
   addons route an arrow across zones (Questie, GPL-3.0 like us; TomTom) and
   spec a lightweight version of our own, crediting any borrowed code.
-- Quests not yet picked up, like Questie's "!" (2026-11-15): maybe later, only
-  for the current zone, with filters such as hiding low-level quests. Parked to
-  keep the addon focused on accepted quests; the hard part is correctness
-  (quest chains, reputation and profession quests), not speed.
+- UI arrangement: a bundled handheld layout (needs one exported from the
+  device first; see `docs/TESTING.md` step 9). Revisit in roadmap phase 2.
+- A solid background for the quest log's pop-up menu (2026-11-15): the menu on
+  a quest (Track, Focus, Share, Abandon) is drawn with no background and is
+  hard to read (second device test, finding 4). Only if it turns out to be
+  Blizzard's and stays unfixed; spec first.
 - Owner has more ideas; add them here as one line each, then spec before
   building.
+
+Dropped on 2026-11-15 (see "Non-goals"): the radial wheel entry, and icons for
+quests not yet picked up.
 
 ## Repo layout
 
