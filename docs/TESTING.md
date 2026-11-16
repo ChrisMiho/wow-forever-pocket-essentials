@@ -61,6 +61,12 @@ and `QuestieDB` sit side by side.
   blue outline; the bottom face button (A) presses the outlined button; the
   right face button (B) closes the window. After closing, check the d-pad
   and A/B do their normal jobs again.
+- 0.0.6: at the bottom of the main page, tap **Icon key**: a page opens with
+  five rows (Kill, Loot, Use, Explore, Turn in), each with its icon in its
+  real colour and what it means. The icons should look like the ones on the
+  map. Tap Back to return.
+- 0.0.6: tap **Reload UI**: the interface reloads and you land back in the
+  game.
 - Report: which of the three ways to open worked; is everything big enough;
   does text fit; does the d-pad move the outline at all (if not, touch-only
   is the fallback and we note it); do the buttons return to normal after
@@ -83,6 +89,12 @@ and `QuestieDB` sit side by side.
 - Tap an icon on the map: a text box names the quest and objective. The tap
   does not change the focus.
 - Finish an objective: its icons disappear within a second or two.
+- 0.0.6, **Spots per objective:** track a quest with many spots. On the
+  world map each objective should show at most five icons, spread over the
+  area. Change the choice to 3, 10 and All: the map follows at once. A quest
+  with only one or two spots should look as before.
+- 0.0.6: play about ten minutes, opening and closing the map. Any stutter, or
+  anything on the Errors page?
 - Report: is the map readable now; does the minimap haze stay gone in all
   three cases; do icons follow the focus; any "action blocked" message;
   frame rate with the map open.
@@ -104,6 +116,9 @@ and `QuestieDB` sit side by side.
   quest log".
 - Enter a dungeon: the arrow hides while you are inside.
 - Then switch Quest icons off and confirm the arrow still works alone.
+- 0.0.6: focus a quest with many spots and walk toward the arrow. The spot
+  it points at should have an icon on the minimap, even when it is not one of
+  the five on the map.
 - Report: direction right/mirrored; does it follow the focus; distance
   sensible; any stutter while moving.
 

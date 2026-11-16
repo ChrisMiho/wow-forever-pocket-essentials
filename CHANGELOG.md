@@ -4,6 +4,27 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.0.6] - 2026-11-15
+
+Sixth test build. Not yet tested on a device. It also carries 0.0.5, which has
+not been tested yet either.
+
+### Added
+
+- Quest icons: a new choice, "Spots per objective" (All, 10, 5 or 3, set to 5
+  at first). Each objective now shows at most that many icons in a zone,
+  spread across the area its spots cover, instead of one icon on every spot.
+  An objective with fewer spots than the limit looks the same as before.
+  "Merge nearby icons" works as before. It applies to the world map and the
+  minimap. `/qd spots all`, `10`, `5` or `3` does the same by typing.
+- The quest arrow still points at the nearest spot, and that spot always keeps
+  its icon, even when it is beyond the limit.
+- Settings: an "Icon key" button at the bottom opens a page that shows each
+  quest icon in its real colour and what it means (Kill, Loot, Use, Explore,
+  Turn in).
+- Settings: a "Reload UI" button at the bottom, so you never need to type a
+  reload.
+
 ## [0.0.5] - 2026-11-15
 
 Fifth test build. Not yet tested on a device.

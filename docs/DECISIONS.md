@@ -112,6 +112,23 @@ safer option. Any of them can be reversed.
 - Installing over an existing "Handheld" layout needs a second tap within
   20 seconds.
 
+## Batch of 2026-11-15 (0.0.6)
+
+Chosen by the owner: "Spots per objective" starts at 5, and the spot the arrow
+points at always keeps its icon.
+
+Made without the owner:
+- The limit counts per objective per zone and applies to every icon kind,
+  turn-in included.
+- The first spot kept is the one nearest the middle of the spots, then the
+  farthest-apart ones, so the icons cover the area.
+- Trimming happens when quest data is rebuilt, never per frame.
+- Spots are hidden from the icons only (marked, not deleted), so the arrow
+  sees them all and still points at the truly nearest one.
+- "Reload UI" has no confirmation, because a reload loses nothing.
+- The icon key includes Explore.
+- "Icon key" and "Reload UI" sit in the bottom section next to "Errors".
+
 ## What was left out, and why
 
 - **Edit Mode nudge helper: not shipped, and why.** We wanted big on-screen
@@ -135,6 +152,31 @@ safer option. Any of them can be reversed.
   layout is bundled: the player has to arrange the screen on the device and
   export it first (steps in `docs/TESTING.md`, step 9). Until then the panel says
   "No handheld layout saved yet".
+- **Radial wheel entry.** Asked for: an entry on WoW Forever's controller
+  radial wheel that opens the Pocket Essentials settings. The owner cut it
+  from the 0.0.6 batch on 2026-11-15 ("we can come back to this"). What was
+  found in Blizzard's interface source (`github.com/Gethe/wow-ui-source`,
+  branch `forever`, build 1.60.1.70938, `Blizzard_Gamepad/UI/Radials/GamepadRadial.lua`
+  and `.xml`): the wheel is the frame `GamepadRadial`. Its entries live in two
+  plain tables on that frame, `segmentOptions` (one handler per entry) and
+  `mainMenuPages` (three pages of eight slots; the right-hand page has five
+  empty slots). There is no function for addons to register an entry, and the
+  helper that builds entries (`BasicSegmentHandler`) is private to that file.
+  The wheel is opened by a hidden Blizzard key binding (`OPENRADIAL`,
+  `GamepadMode.OpenRadial`). So the only route is to write our own entry
+  straight into Blizzard's tables. Not checked in game. The risk is the same
+  kind that ruled out the Edit Mode nudge helper: values an addon writes into
+  Blizzard's own tables are marked "touched by an addon", and the wheel reads
+  those tables when it fills its slots and runs its entries (bags, spellbook,
+  PvP and so on), so the game may later refuse some of those actions in combat
+  with "interface action blocked". A client update could also rename the
+  tables and break the entry. Options when it is picked up again: (a) a spike
+  build for the device that adds one entry to an empty slot on the right-hand
+  page, tested hard in combat for "action blocked" messages before deciding;
+  (b) a key binding of our own ("Open Pocket Essentials settings") that a
+  controller button can be mapped to in the game's key bindings, which needs
+  no Blizzard table at all; (c) keep the round button, whose hold-to-open
+  already works. Recommendation: (b) first, because it is the safe one.
 - **Arrow across zones.** The arrow only points at objectives in the zone you
   are in. If the focused quest is elsewhere it says "Outside this zone"
   rather than guessing a direction. Pointing across zone borders was written,

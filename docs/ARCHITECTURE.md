@@ -34,6 +34,10 @@ How the pieces protect each other:
 - Nothing runs every frame while its feature is off. Only two things ever
   tick: the minimap icons (10 times a second, only while moving) and the
   arrow (10 times a second, only while it has something to point at).
+- Quest spots beyond "Spots per objective" are marked (`extra`) when quest
+  data is rebuilt, never per frame. They are not removed: the icon code skips
+  them (except the spot the arrow points at), while the arrow reads them all.
+  The two ticks are unchanged.
 - Sizes are defined as pixels on a 720p screen and converted, so buttons stay
   the same physical size at 1080p. "Button size: Small / Medium / Large" in
   settings re-tunes everything without typing.
@@ -110,7 +114,7 @@ so that being wrong cannot raise an error; the worst case is listed.
 | Whether values set on the chat box by an addon stay "clean" for the game's secure commands | Chat | A typed `/cast` or `/target` right after using the picker is refused |
 | Whether `C_EditMode.SetActiveLayout` / `OnLayoutAdded` called by an addon "taints" Edit Mode | Layout | Possible "action blocked" in combat until reload; the panel asks for a reload after every switch for this reason |
 | `Enum.EditModePresetLayoutsMeta.NumValues`; English text of the "Enable Gamepad UI" setting | Layout | A status line reads slightly differently |
-| `debugstack` argument form; whether `C_UI.Reload` needs a real press (it is only ever called from one) | Core | Shorter error details |
+| `debugstack` argument form; whether `C_UI.Reload` needs a real press (it is only ever called from one; see "Verified" for what the source shows) | Core | Shorter error details |
 
 Syntax check: all eleven Lua files parse as Lua 5.1 (checked by `scripts/check.sh`, which uses LuaJIT). Each file was also
 run against a home-made imitation of the game's API to catch plain coding mistakes. That imitation only knows what its
@@ -177,6 +181,12 @@ authors believed about the game.
   the notice is in `addons/PocketEssentials/Icons/MIT.txt`. That notice
   covers only `loot_mono`, `object_mono` and `slay_mono`; `arrow` and
   `circle` are original art drawn by `scripts/make_art.py --icons`.
+- `C_UI.Reload` is in the generated documentation
+  (`Blizzard_APIDocumentationGenerated/UIManagerDocumentation.lua`) with no
+  restriction listed, and Blizzard calls `ReloadUI` from its own button clicks
+  (`Blizzard_ScriptErrorsFrame/Blizzard_ScriptErrorsFrame.xml`). We only ever
+  call it straight from a tap (the "Reload now" bars and the "Reload UI"
+  button).
 - 0.0.3 on the device: swapping the minimap's quest blob textures for our
   `Icons/blank.tga` turned the minimap solid green when a focused quest had a
   quest area. Removed in 0.0.4.

@@ -129,7 +129,13 @@ Version 0.0.4 (test build) carries fixes 3 and 6 from the second device test
 **Third device test, 2026-11-15 (0.0.4):** no green minimap, no haze, and the
 arrow text wraps. Asked for: a wider text line (only one short word wrapped)
 and text-only messages shown higher, where the arrow normally is. Both are in
-0.0.5 (test build), awaiting device test.
+0.0.5.
+Version 0.0.6 (test build) carries three items: at most N icons per quest
+objective ("Spots per objective", default 5; the arrow's spot always keeps
+its icon), an "Icon key" page in the settings, and a "Reload UI" button in
+the settings (spec
+`docs/superpowers/specs/2026-11-15-fewer-spots-icon-key-reload.md`). It ships
+with 0.0.5's two changes. All of it is awaiting device test.
 
 **First device test, 2026-11-15 (0.0.1, Retroid Pocket 6), quest icons and
 arrow:** no errors, the settings menu is easy to use. Found: the round button
@@ -152,8 +158,15 @@ in the quest log works; untracking quests thins the world map. Found:
    it happens only with "Hide blue haze" on; switched off plus a reload, the
    minimap stays normal. The cause was our blank texture swap on the minimap's
    quest areas. Fixed in 0.0.4 (swap removed), confirmed on the device.
-4. Inside the quest log, sub-menus look hidden or wrongly coloured. Not yet
-   known whether this is ours or Blizzard's.
+4. Inside the quest log, the menu that opens on a quest is hard to read. The
+   owner sent a screenshot (2026-11-15): the menu (Track Quest, Focus, Share
+   Quest, Share in Chat, Abandon Quest) works but is drawn with no background,
+   so its text sits on top of the quest list. It is Blizzard's own pop-up menu
+   in its controller style (the "A Select / B Close" bar is Blizzard's).
+   Nothing in this addon draws, hooks or changes the quest log or that menu
+   (our only world-map hooks redraw our own icons), so it is probably a gap in
+   the default UI. To confirm: switch Pocket Essentials off in the addon list,
+   reload, open the menu again. See "Parked ideas".
 5. Untracking quests was found by guessing.
 6. The arrow's "Focus one in your quest log" line is cut off with "...": the
    line under the arrow is a single line of fixed width (`QuestArrow.lua`
@@ -162,8 +175,9 @@ in the quest log works; untracking quests thins the world map. Found:
 Follow-up: with "Hide blue haze" switched off and a reload, focusing a quest
 left the minimap normal; switched back on, focusing a different quest turned
 it green again (so the green was ours, finding 3).
-Requests: an icon key (parked below); opening the settings from Forever's
-radial wheel so the round button is not needed.
+Requests: an icon key (built in 0.0.6); opening the settings from Forever's
+radial wheel so the round button is not needed (parked, findings in
+`docs/DECISIONS.md`).
 
 **Apart from the quest tests, nothing in this repo has run in the game.**
 Version 0.0.1 was written on a Mac with no game client. Every line was checked against Blizzard's published
@@ -175,10 +189,10 @@ until its step in the test plan passes.
 | Piece | What exists | Status |
 |---|---|---|
 | Pocket Essentials addon (`addons/PocketEssentials`) | One addon holding everything below. Every feature is **off** on first install | Untested in game |
-| Settings window | Own window with one row per feature and a big on/off switch each; big buttons for each feature's choices; an Errors page; works by touch and (if the game allows it) by d-pad / A / B. Opens from the round button, the game's addon list button on the minimap, or `/pe` | Untested |
+| Settings window | Own window with one row per feature and a big on/off switch each; big buttons for each feature's choices; an Errors page; an "Icon key" page and a "Reload UI" button at the bottom (0.0.6); works by touch and (if the game allows it) by d-pad / A / B. Opens from the round button, the game's addon list button on the minimap, or `/pe` | Untested; icon key and Reload UI not yet tested on a device |
 | Round "PE" button | Always on screen, left edge by default, position chosen from six preset spots. Opens settings; opens the chat picker instead when the chat feature is on. Holding it for half a second always opens settings. Smooth round art since 0.0.2 | Works (0.0.1); new art untested |
-| Quest icons | Objective icons on map and minimap from QuestieDB data, blue haze hidden. "Show icons for": Tracked quests (default; the quest tracker's quests plus the focused one), Focused quest, All quests. Tapping an icon shows its text only | 0.0.1 ran without errors; too many icons and minimap haze fixed in 0.0.2, untested |
-| Quest arrow | On-screen arrow to the focused quest's nearest objective in the current zone, with distance and quest name. "Outside this zone / Head to <zone>" when elsewhere, "No quest focused" with none, "Turn around" when the objective is behind you. Pointed arrow art since 0.0.2 | 0.0.1 ran without errors; focus and new art untested |
+| Quest icons | Objective icons on map and minimap from QuestieDB data, blue haze hidden. "Show icons for": Tracked quests (default; the quest tracker's quests plus the focused one), Focused quest, All quests. "Spots per objective" (All / 10 / 5 / 3, default 5; 0.0.6) limits icons per objective. Tapping an icon shows its text only | 0.0.1 ran without errors; too many icons and minimap haze fixed in 0.0.2; the spots limit is new in 0.0.6; all untested |
+| Quest arrow | On-screen arrow to the focused quest's nearest objective in the current zone, with distance and quest name. "Outside this zone / Head to <zone>" when elsewhere, "No quest focused" with none, "Turn around" when the objective is behind you. Pointed arrow art since 0.0.2. Since 0.0.6 the spot it points at always keeps its icon, even beyond the spots limit | 0.0.1 ran without errors; focus and new art untested; 0.0.6 change untested |
 | One big bag | Blizzard's own combined bag, a big Sort button, L3 sorts while the bag is open, three bag sizes | Untested |
 | Sell junk automatically | Sells every grey item at vendors | Untested |
 | Repair automatically | Repairs from your own money at vendors that can | Untested |
@@ -195,7 +209,7 @@ that say "Not needed" are skipped.
 
 | Goal bullet | Where | Built |
 |---|---|---|
-| 1. Icons on the world map and minimap for kill, loot, interact and turn-in objectives | `QuestIcons.lua` `RefreshWorldMap`, `UpdateMinimap`, `RebuildFilter`; `QuestData.lua` `KIND_LABEL` | Yes: kill, loot, interact and turn-in each get their own icon on both the map and the minimap; "Explore" objectives get a fifth kind. Shown for the tracked quests by default |
+| 1. Icons on the world map and minimap for kill, loot, interact and turn-in objectives | `QuestIcons.lua` `RefreshWorldMap`, `UpdateMinimap`, `RebuildFilter`; `QuestData.lua` `KIND_LABEL` | Yes: kill, loot, interact and turn-in each get their own icon on both the map and the minimap; "Explore" objectives get a fifth kind. Shown for the tracked quests by default. Since 0.0.6 each objective shows at most "Spots per objective" icons (5 by default) per zone, spread over its area; the rest are hidden, not deleted (untested) |
 | 1. Hide Blizzard's blue "haze" areas | `QuestIcons.lua` `SetWorldMapHaze`, `ZeroMinimapBlobs`, `ReapplyMinimapHaze` | Yes: hidden on the world map and the minimap (minimap re-hidden after loading screens and zone changes since 0.0.2); switching it off restores the map at once, but the minimap needs a reload |
 | 1. An arrow that points toward the current objective | `QuestArrow.lua` `Select`, `DrawArrow`, `Update`; `QuestData.lua` `GetTrackedQuest` | Partial: follows the quest you focus in the quest log; points only at objectives in the zone you are standing in; for a quest elsewhere it says "Outside this zone" and names the zone (see `docs/DECISIONS.md`) |
 | 2. One combined bag window instead of separate bags | `Bags.lua` `WantCombined`, `Setup` | Yes: uses Blizzard's own combined bag; with the Gamepad UI off, switching it on needs a reload |
@@ -232,8 +246,12 @@ Rules 1 and 2 apply: one phase at a time, one item at a time.
 ## Parked ideas
 
 - Improved Forever's radial wheels. Specifically wanted (2026-11-15): a radial
-  wheel entry that opens the Pocket Essentials settings. First find out
-  whether an addon can add to the wheel at all.
+  wheel entry that opens the Pocket Essentials settings. Cut from 0.0.6; the
+  findings and the options are in `docs/DECISIONS.md`, "Radial wheel entry".
+- A solid background for the quest log's pop-up menu (2026-11-15): the menu on
+  a quest (Track, Focus, Share, Abandon) is drawn with no background and is
+  hard to read (second device test, finding 4). Only if it turns out to be
+  Blizzard's and stays unfixed; spec first.
 - UI arrangement: a bundled handheld layout (needs one exported from the
   device first; see `docs/TESTING.md` step 9). Revisit in roadmap phase 2.
 - The quest arrow across zones (removed after review because it could show a
@@ -241,16 +259,10 @@ Rules 1 and 2 apply: one phase at a time, one item at a time.
   then the arrow says "Outside this zone" and names the zone. Next step when picked up: study how open-source
   addons route an arrow across zones (Questie, GPL-3.0 like us; TomTom) and
   spec a lightweight version of our own, crediting any borrowed code.
-- Quest icon key (2026-11-15): a page in the settings menu explaining what
-  each quest icon means (Kill, Loot, Use, Explore, Turn in). Wanted by the
-  maintainer; small polish item for roadmap phase 2.
 - Quests not yet picked up, like Questie's "!" (2026-11-15): maybe later, only
   for the current zone, with filters such as hiding low-level quests. Parked to
   keep the addon focused on accepted quests; the hard part is correctness
   (quest chains, reputation and profession quests), not speed.
-- A "Reload UI" button in the settings menu (2026-11-15), so a reload never
-  needs a typed command or waiting for a feature to offer one. Small polish
-  item for roadmap phase 2.
 - Owner has more ideas; add them here as one line each, then spec before
   building.
 
