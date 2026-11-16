@@ -85,7 +85,9 @@ and `QuestieDB` sit side by side.
 - Zoom the map in and out: icons stay on their spots and the same size.
 - Minimap: **no blue haze** right after login, after a loading screen, and
   after walking into another zone. Icons move toward the centre as you
-  approach.
+  approach. "Spots per objective" applies to the minimap too, so the minimap
+  is often empty until you are near one of the shown spots (or the arrow is on
+  and pointing at a spot); this is expected.
 - Tap an icon on the map: a text box names the quest and objective. The tap
   does not change the focus.
 - Finish an objective: its icons disappear within a second or two.

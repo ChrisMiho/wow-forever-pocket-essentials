@@ -570,7 +570,7 @@ local function Rebuild()
     clusterCell = cell
 
     local limit = floor(tonumber(QD.spotLimit) or 0)
-    if limit < 1 then limit = 0 end
+    if not (limit >= 1) then limit = 0 end
     if limit ~= builtLimit then
         builtLimit = limit
         wipe(questCache)

@@ -323,7 +323,7 @@ local function BuildCoreSection(y, width)
         },
         {
             label = "Reload UI",
-            -- Called straight from the tap: reloading needs a real button press.
+            -- Called straight from the tap, in case reloading needs a real button press.
             onClick = function() PE:ReloadNow() end,
         },
         {
@@ -588,7 +588,7 @@ local function Build()
     header.reloadText = UI:CreateText(panel.content, "small")
     header.reloadButton = UI:CreateButton(panel.content, "Reload now")
     header.reloadButton:SetStyle("warn")
-    -- Called straight from the tap: reloading needs a real button press.
+    -- Called straight from the tap, in case reloading needs a real button press.
     header.reloadButton:SetScript("OnClick", function() PE:ReloadNow() end)
     header.back = UI:CreateButton(panel.content, "Back")
     header.back:SetScript("OnClick", PE:Wrap("core", function() PE:OpenSettings() end))

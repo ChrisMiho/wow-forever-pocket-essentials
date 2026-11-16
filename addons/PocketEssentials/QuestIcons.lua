@@ -81,8 +81,8 @@ local KIND_LABEL = { slay = "Kill", loot = "Loot", object = "Use", event = "Expl
 -- color come from STYLE, label from KIND_LABEL).
 local KIND_DESC = {
     slay = "A creature to kill.",
-    loot = "Where a quest item comes from: a creature that drops it or a thing that holds it.",
-    object = "An object in the world to click or use.",
+    loot = "A creature that drops a quest item.",
+    object = "An object in the world to click, use or open. It may hold a quest item.",
     event = "A place to go to, or someone to talk to.",
     turnin = "Where to hand the quest in, once you have done everything it asks.",
 }
