@@ -439,4 +439,76 @@ test("repair and sell junk: switching one off leaves the other working", functio
     eq(T.sold(c2), { { 0, 1 } })
 end)
 
+
+---------------------------------------------------------------------------
+-- Rechecks just before each sale, and switching off mid-visit
+---------------------------------------------------------------------------
+
+-- Vendor.lua SellStep (the look "again just before it goes: same item, still grey, ... not locked").
+test("sell junk: an item locked after the scan, while it waits its turn, is not sold", function()
+    local c = visit({ on = { "sellJunk" } }, function(c)
+        for slot = 1, 4 do put(c, 0, slot, item(1700 + slot, 0, 3)) end
+    end)
+    c:openMerchant()
+    c:advance(0.4)
+    eq(T.sold(c), { { 0, 1 } })
+    c.world.bags[0][2].locked = true
+    c:advance(5)
+    eq(T.sold(c), { { 0, 1 }, { 0, 3 }, { 0, 4 } })
+end)
+
+test("sell junk: a slot whose item was replaced after the scan is not sold (not grey, or another item)", function()
+    local c = visit({ on = { "sellJunk" } }, function(c)
+        for slot = 1, 4 do put(c, 0, slot, item(1710 + slot, 0, 3)) end
+    end)
+    c:openMerchant()
+    c:advance(0.4)
+    c.world.bags[0][2] = item(1799, 1, 50)   -- a white item moved into the waiting slot
+    c.world.bags[0][3] = item(1798, 0, 3)    -- a different grey item in the waiting slot
+    c:advance(5)
+    eq(T.sold(c), { { 0, 1 }, { 0, 4 } })
+end)
+
+-- Vendor.lua JunkAt lines 96-99: "Returns nothing while the item's data has not arrived ... left alone for this visit."
+test("sell junk: an item whose data has not loaded is left alone for that visit, and sold on the next", function()
+    local c = visit({ on = { "sellJunk" } }, function(c)
+        put(c, 0, 1, item(1721, 0, 3, { noData = true }))
+        put(c, 0, 2, item(1722, 0, 3))
+    end)
+    c:openMerchant()
+    c:advance(5)
+    eq(T.sold(c), { { 0, 2 } })
+    c.world.bags[0][1].noData = nil
+    c:closeMerchant()
+    c:openMerchant()
+    c:advance(5)
+    eq(T.sold(c), { { 0, 2 }, { 0, 1 } })
+end)
+
+-- Vendor.lua line 230-231: OnDisable = SellOnClosed ("Stops at once; says what was sold so far").
+test("sell junk: switching it off during a visit stops selling at once and reports what was sold", function()
+    local c, PE = visit({ on = { "sellJunk" } }, function(c)
+        for slot = 1, 5 do put(c, 0, slot, item(1730 + slot, 0, 3)) end
+    end)
+    c:openMerchant()
+    c:advance(0.4)
+    eq(T.sold(c), { { 0, 1 } })
+    PE:SetModuleEnabled("sellJunk", false)
+    eq(T.chatLines(c), { "Sold 1 junk item for " .. coin(c, 3) .. "." }, "the line comes at once")
+    c:advance(5)
+    eq(T.sold(c), { { 0, 1 } })
+    eq(#T.chatLines(c), 1)
+end)
+
+-- Vendor.lua RepairOnShow line 255: "if not canRepair then return end" (GetRepairAllCost's second value
+-- means something is repairable; see fakeclient.lua).
+test("repair: does nothing when the game says nothing can be repaired, even with a cost and the money", function()
+    local c = visit({ on = { "repair" }, merchant = { canRepair = true, repairCost = 500, canRepairAll = false } })
+    c:openMerchant()
+    c:advance(2)
+    eq(c:callsTo("RepairAllItems"), {})
+    eq(T.chatLines(c), {})
+    eq(c.world.money, 100000)
+end)
+
 return { known = KNOWN_FAILURES }

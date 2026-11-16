@@ -1208,7 +1208,7 @@ function Client.new(opts)
         -- name, link, quality, level, minLevel, type, subType, stackCount, equipLoc, texture, sellPrice, ...
         GetItemInfo = function(item)
             local it = ItemData(item)
-            if not it then return nil end
+            if not it or it.noData then return nil end -- noData: the item's data has not arrived from the server
             -- dbQuality / dbPrice: what the item database says when it differs from the bag slot.
             local quality, price = it.dbQuality or it.quality, it.dbPrice or it.price
             return it.name or "Item", "|Hitem:" .. it.itemID .. "|h", quality, 1, 1, "Junk", "Junk", 20, "",
@@ -1345,7 +1345,12 @@ function Client.new(opts)
     Global("CanMerchantRepair", function() return world.merchant.open and world.merchant.canRepair and true or false end)
     Global("GetRepairAllCost", function()
         local cost = world.merchant.repairCost or 0
-        return cost, cost > 0 and world.money >= cost
+        -- The second value means "something is repairable", not "affordable"
+        -- (Blizzard_UIPanels_Game/Vanilla/MerchantFrame.lua:732-734; MerchantFrame.xml:217-218).
+        -- world.merchant.canRepairAll overrides it.
+        local can = world.merchant.canRepairAll
+        if can == nil then can = cost > 0 end
+        return cost, can
     end)
     Global("RepairAllItems", function(guildBank)
         local cost = world.merchant.repairCost or 0

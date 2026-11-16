@@ -243,4 +243,80 @@ test("core: PE:RunOutOfCombat defers while in combat and runs once after PLAYER_
     c:assertClean("combat queue")
 end)
 
+
+---------------------------------------------------------------------------
+-- /pe, saved errors, one line per feature
+---------------------------------------------------------------------------
+
+local function settingsShown(c)
+    local p = rawget(c.env, "PocketEssentialsSettingsPanel")
+    return p ~= nil and p:IsShown()
+end
+
+-- Core.lua SlashCommand lines 812-823.
+test("core: /pe errors opens the settings on the errors page", function()
+    local c, PE = T.new({})
+    local asked = {}
+    local open = PE.OpenSettings
+    PE.OpenSettings = function(self, which) asked[#asked + 1] = which or "main" return open(self, which) end
+    c.env.SlashCmdList.POCKETESSENTIALS("errors")
+    eq(asked, { "errors" })
+    check(settingsShown(c), "the settings window did not open")
+    c.env.SlashCmdList.POCKETESSENTIALS("  ERRORS ")   -- spaces and capitals are ignored
+    eq(asked, { "errors", "errors" })
+end)
+
+test("core: bare /pe, and /pe with an unknown word, toggle the settings window", function()
+    local c, PE = T.new({})
+    local slash = c.env.SlashCmdList.POCKETESSENTIALS
+    slash("")
+    check(settingsShown(c), "/pe did not open the settings")
+    slash("")
+    check(not settingsShown(c), "a second /pe did not close the settings")
+    slash("bogus")
+    check(settingsShown(c), "/pe bogus did not open the settings")
+    c:assertClean("/pe")
+end)
+
+-- Core.lua MergeErrors lines 330-357 and ERROR_CAP.
+test("core: saved errors are merged at load: same message counts add up, damaged ones drop, 30 kept", function()
+    local list = {
+        { module = "chat", msg = "old trouble", count = 2, last = 5, stack = "" },
+        { module = "chat", msg = "old trouble", count = 3, last = 6, stack = "" },
+        { module = "bags", msg = "other", count = 1, last = 7, stack = "" },
+        { module = "bags", count = 9 },       -- no message: dropped
+        "junk",
+    }
+    for i = 1, 40 do list[#list + 1] = { module = "core", msg = "saved " .. i, count = 1, last = i, stack = "" } end
+    local c, PE = T.new({ saved = { version = 1, enabled = {}, options = {}, ui = {}, errors = list } })
+    eq(#PE.errors, 30)
+    eq(PE.errors[1].msg, "old trouble"); eq(PE.errors[1].count, 5)
+    eq(PE.errors[2].msg, "other")
+    eq(PE.errors[30].msg, "saved 28")
+    -- new errors go on top and the cap still holds across the reload
+    for i = 1, 4 do PE:LogError("core", "new " .. i) end
+    eq(#PE.errors, 30)
+    eq(PE.errors[1].msg, "new 4")
+    eq(PE.errors[30].msg, "saved 24")
+    eq(rawget(c.env, "PocketEssentialsDB").errors, PE.errors)
+end)
+
+-- Core.lua LogErrorBody lines 98-101: announced per module key.
+test("core: each failing feature gets its own chat line, once", function()
+    local c, PE = T.new({})
+    local state = { a = "first", b = "second" }
+    PE:RegisterModule({ key = "pa", label = "Probe A", order = 1, OnEnable = function(self)
+        self:RegisterEvent("ZONE_CHANGED", function() error(state.a, 0) end) end })
+    PE:RegisterModule({ key = "pb", label = "Probe B", order = 2, OnEnable = function(self)
+        self:RegisterEvent("ZONE_CHANGED", function() error(state.b, 0) end) end })
+    PE:SetModuleEnabled("pa", true)
+    PE:SetModuleEnabled("pb", true)
+    c:fire("ZONE_CHANGED")
+    state.a, state.b = "third", "fourth"
+    c:fire("ZONE_CHANGED")
+    eq(linesWith(c, "Probe A hit a problem"), 1)
+    eq(linesWith(c, "Probe B hit a problem"), 1)
+    eq(#PE.errors, 4)
+end)
+
 return { known = KNOWN_FAILURES }

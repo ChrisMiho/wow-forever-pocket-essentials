@@ -332,7 +332,7 @@ test("chat: tapping Say opens the chat box set to Say", function()
     eq(calls[2].args[1], "SAY")
     eq(c.chatBox.chatType, "SAY")
     check(c.editBox:IsShown(), "the chat box is not open")
-    check(not panelOf(c):IsShown(), "the picker stays open after a tap")
+    check(not panelOf(c):IsShown(), "the picker did not close after a tap")
 end)
 
 test("chat: tapping Party opens the chat box set to Party", function()
@@ -367,7 +367,52 @@ test("chat: tapping a whisperer opens the chat box set to a whisper to that pers
     eq(c:callsTo("ChatFrame1EditBox:SetChatType")[1].args[1], "WHISPER")
     eq(c.chatBox.tellTarget, "Thrall-Camelot")
     eq(c.chatBox.chatType, "WHISPER")
-    check(not panelOf(c):IsShown(), "the picker stays open after a tap")
+    check(not panelOf(c):IsShown(), "the picker did not close after a tap")
+end)
+
+
+---------------------------------------------------------------------------
+-- After a reload, Battle.net, self
+---------------------------------------------------------------------------
+
+-- Chat.lua OnEnable line 594 (UpdateBadge) and CleanList lines 76-92.
+test("chat: saved unanswered whispers show the badge when chat is enabled at login", function()
+    local saved = { version = 1, enabled = { chat = true }, ui = { size = "medium", hubPos = "LEFT" }, errors = {},
+        options = { chat = { whispers = {
+            { name = "Ann", target = "Ann", unanswered = true, time = 1 },
+            { name = "Bob", target = "Bob", unanswered = false, time = 2 },
+            { name = "Cy", target = "Cy-Realm", unanswered = true, time = 3 },
+        } } } }
+    local c, PE = T.new({ saved = saved })
+    eq(badge(c, PE), "2")
+    eq(openPicker(c, PE).whispers, { "Ann", "Bob", "Cy" })
+end)
+
+test("chat: a saved list longer than six, with Battle.net or damaged entries, is cleaned at login", function()
+    local list = { { name = "A1", target = "A1", unanswered = true, time = 1 }, { bn = true, name = "BN", unanswered = true },
+        { name = "", unanswered = true }, "junk" }
+    for i = 2, 8 do list[#list + 1] = { name = "A" .. i, target = "A" .. i, unanswered = true, time = i } end
+    local saved = { version = 1, enabled = { chat = true }, ui = { size = "medium", hubPos = "LEFT" }, errors = {},
+        options = { chat = { whispers = list } } }
+    local c, PE = T.new({ saved = saved })
+    eq(openPicker(c, PE).whispers, { "A1", "A2", "A3", "A4", "A5", "A6" })
+    eq(badge(c, PE), "6")
+end)
+
+-- DECISIONS "What was left out": "Battle.net whispers ... Only ordinary character whispers are listed";
+-- Chat.lua header: only the two character-whisper events are used. (The stand-in has no
+-- CHAT_MSG_BN_WHISPER event to fire, so what is checked is that nothing listens for one.)
+test("chat: only the two character-whisper events are listened for (no Battle.net whisper events)", function()
+    local c, PE = newChat()
+    local listened = {}
+    for _, rec in ipairs(c:frames()) do
+        if rec.addonFile then
+            for e in pairs(rec.events) do
+                if e:find("WHISPER") or e:find("BN_") then listened[e] = true end
+            end
+        end
+    end
+    eq(listened, { CHAT_MSG_WHISPER = true, CHAT_MSG_WHISPER_INFORM = true })
 end)
 
 return { known = KNOWN_FAILURES }
