@@ -57,7 +57,7 @@ local HERE_ENTER, HERE_LEAVE = 10, 14   -- yards: "Here" switches on below the f
 local MIN_AIM_YARDS = 3             -- closer than this the direction is noise; the arrow keeps its last angle
 local ANGLE_STEPS = 180             -- the arrow turns in 2-degree steps
 local STEP = 2 * math.pi / ANGLE_STEPS
-local TITLE_MAX = 26                -- longer quest names are cut
+local TITLE_MAX = 52                -- longer quest names are cut (two lines of about 26)
 local MAX_FAILURES = 5              -- the driver stops itself after this many errors in a row
 local TURN_ENTER = math.rad(150)    -- "Turn around" shows when the objective is further round than this...
 local TURN_LEAVE = math.rad(135)    -- ... and goes again below this
@@ -176,6 +176,7 @@ local function ZoneName(mapID)
     return name
 end
 
+-- Names that fit on two lines are kept whole; longer ones end in "...".
 local function Shorten(text)
     if #text <= TITLE_MAX then return text end
     local n = TITLE_MAX - 3
@@ -392,7 +393,9 @@ local function Build()
     if not S.titleText then
         local text = UI:CreateText(S.display, "font")
         text:SetJustifyH("CENTER")
-        text:SetWordWrap(false)
+        text:SetJustifyV("TOP")
+        text:SetWordWrap(true)       -- a long name continues on a second line
+        if text.SetMaxLines then text:SetMaxLines(2) end
         S.titleText = text
     end
     if not S.driver then
@@ -421,12 +424,13 @@ local function Layout()
     S.titleText:ClearAllPoints()
     S.titleText:SetPoint("TOP", S.distText, "BOTTOM", 0, -UI:Px(2))
     S.titleText:SetWidth(textWidth)
+    S.titleText:SetHeight(fontSize * 2.4)    -- room for two lines
     S.turnText:ClearAllPoints()
     S.turnText:SetPoint("CENTER", S.box, "CENTER", 0, 0)
     S.turnText:SetWidth(textWidth)
 
     local pos = POSITIONS[Opt("position")] or POSITIONS.top
-    S.display:SetSize(textWidth, box + gap + fontSize * 2.6)
+    S.display:SetSize(textWidth, box + gap + fontSize * 3.8)
     S.display:ClearAllPoints()
     S.display:SetPoint(pos[1], UIParent, pos[2], UI:Px(pos[3]), UI:Px(pos[4]))
 

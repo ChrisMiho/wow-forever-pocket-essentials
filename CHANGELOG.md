@@ -4,6 +4,17 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.0.4] - 2026-11-15
+
+Fourth test build. Not yet tested on a device.
+
+### Fixed
+
+- Green minimap with "Hide blue haze" on: we no longer swap the minimap's
+  quest area textures (the blank texture is gone).
+- Arrow text cut off with "...": the quest name under the arrow now wraps to
+  two lines, and only names longer than two lines are cut.
+
 ## [0.0.3] - 2026-11-15
 
 Third test build. Not yet tested on a device.
