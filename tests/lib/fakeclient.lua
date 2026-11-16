@@ -4,6 +4,7 @@
 --
 --   local Client = dofile(root .. "/tests/lib/fakeclient.lua")
 --   local c = Client.new({ root = root, questieDB = dir, saved = db, screen = { w, h }, gamepadUI = false })
+--   (questieDB = dir loads the release for each client; shareQuestieDB = true loads it once per process.)
 --   local PE = c:loadAddon()
 --   c:fire("MERCHANT_SHOW"); c:advance(2); c:assertClean(); c:destroy()
 --
@@ -215,6 +216,7 @@ function Client.new(opts)
         cvars = { combinedBags = "0", rotateMinimap = "0" },
         chatLockdown = false,
         layouts = { layouts = {}, activeLayout = 1 },        -- C_EditMode.GetLayouts(); presets not included
+        layoutImport = nil,          -- what C_EditMode.ConvertStringToLayoutInfo returns (a layout table), or nil
         gamepadUI = opts.gamepadUI and true or false,
         instance = false, indoors = false,
         minimapZoom = 0,
@@ -1244,7 +1246,8 @@ function Client.new(opts)
         OnLayoutAdded = function(index, activate)
             if activate then world.layouts.activeLayout = index end
         end,
-        ConvertStringToLayoutInfo = function(text) return nil end,
+        -- world.layoutImport: the layout the game would read out of any string (nil: the string is refused).
+        ConvertStringToLayoutInfo = function(text) return world.layoutImport and DeepCopy(world.layoutImport) or nil end,
     }, { SetActiveLayout = true, SaveLayouts = true, OnLayoutAdded = true })
 
     Namespace("C_InputInterfaceStyle", {
@@ -1461,8 +1464,28 @@ function Client.new(opts)
         end
         c._stubsS = S
         S.install(opts.persona)
-        local lib = S.loadQuestieDB(opts.questieDB)
-        S.runTimers()
+        -- opts.shareQuestieDB: load the release once per process and give later
+        -- clients the same loaded data (what the load wrote into _G is put back
+        -- after each install). The rule tests use it; QuestieDB's data is only read.
+        local sharedKey = opts.shareQuestieDB and (opts.questieDB .. "|" .. tostring((opts.persona or {}).faction)
+            .. "|" .. tostring((opts.persona or {}).class))
+        Client._shared = Client._shared or {}
+        local shared = sharedKey and Client._shared[sharedKey]
+        local lib
+        if shared then
+            for k, v in pairs(shared.globals) do _G[k] = v end
+            lib = shared.lib
+        else
+            local before = {}
+            for k, v in pairs(_G) do before[k] = v end
+            lib = S.loadQuestieDB(opts.questieDB)
+            S.runTimers()
+            if sharedKey then
+                local globals = {}
+                for k, v in pairs(_G) do if before[k] ~= v then globals[k] = v end end
+                Client._shared[sharedKey] = { lib = lib, globals = globals }
+            end
+        end
         if type(lib) ~= "table" then error("fakeclient: QuestieDB did not load from " .. tostring(opts.questieDB), 2) end
         rawset(env, "LibQuestieDB", lib)
         world.addons.QuestieDB = true

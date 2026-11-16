@@ -1,6 +1,6 @@
 -- Rule tests, one file per feature area.
 --
---   luajit tests/features/run.lua <repo root> [--addon-dir=PATH]
+--   luajit tests/features/run.lua <repo root> [QuestieDB dir] [--addon-dir=PATH]
 --
 -- Runs every *_test.lua in this folder, in name order. Each file is called with
 -- a table T and registers tests with T.test(name, fn); it returns
@@ -15,16 +15,21 @@
 -- Passing here means "passes offline": the rule holds against our stand-in for
 -- the game, not that the game behaves the same.
 --
+-- The quest tests need the unpacked QuestieDB release (T.questieDB, nil when not given): a file
+-- that needs it returns { skip = "reason" } when T.questieDB is nil, and the run prints a notice
+-- and goes on with the other files. T.new{ quest = true } loads that data into the client (one
+-- load per run, shared by every test; the data is only read).
+--
 -- Prints "Features: N tests, K known failures" on pass; exit 1 and FAIL: lines otherwise.
 
-local root, addonDir
+local root, addonDir, qdbDir
 for i = 1, #arg do
     local a = arg[i]
     local dir = a:match("^%-%-addon%-dir=(.+)$")
-    if dir then addonDir = dir elseif not root then root = a end
+    if dir then addonDir = dir elseif not root then root = a elseif not qdbDir then qdbDir = a end
 end
 if not root then
-    io.stderr:write("usage: luajit tests/features/run.lua <repo root> [--addon-dir=PATH]\n")
+    io.stderr:write("usage: luajit tests/features/run.lua <repo root> [QuestieDB dir] [--addon-dir=PATH]\n")
     os.exit(2)
 end
 
@@ -34,7 +39,7 @@ local Client = dofile(root .. "/tests/lib/fakeclient.lua")
 -- Shared helpers handed to every test file
 ---------------------------------------------------------------------------
 
-local T = { root = root, Client = Client }
+local T = { root = root, Client = Client, questieDB = qdbDir, addonDir = addonDir or (root .. "/addons/PocketEssentials") }
 local clients = {}
 
 local function show(v, depth)
@@ -78,10 +83,13 @@ end
 
 -- A fresh client with the addon loaded (the addon runs at login with the saved
 -- values given). opts.setup(c) runs before the addon loads; opts.on lists the
--- features to switch on afterwards; opts.saved is the saved-variables table.
+-- features to switch on afterwards; opts.saved is the saved-variables table;
+-- opts.addonDir loads another copy of the addon (for a test that needs one changed value);
+-- opts.quest = true loads QuestieDB into the client (T.questieDB must be set).
 function T.new(opts)
     opts = opts or {}
-    local c = Client.new({ root = root, addonDir = addonDir, saved = opts.saved, gamepadUI = opts.gamepadUI })
+    local c = Client.new({ root = root, addonDir = opts.addonDir or addonDir, saved = opts.saved, gamepadUI = opts.gamepadUI,
+        questieDB = opts.quest and qdbDir or nil, shareQuestieDB = true, screen = opts.screen })
     clients[#clients + 1] = c
     if opts.setup then opts.setup(c) end
     local PE = c:loadAddon()
@@ -147,6 +155,10 @@ for _, file in ipairs(files) do
         failures[#failures + 1] = file .. ": could not run the file: " .. tostring(err)
     else
         local knownList = (type(result) == "table" and result.known) or {}
+        if type(result) == "table" and result.skip then
+            print("notice: " .. file .. " skipped: " .. result.skip)
+            tests = {}
+        end
         for _, t in ipairs(tests) do
             total = total + 1
             local ok, e = xpcall(t.fn, debug.traceback)
