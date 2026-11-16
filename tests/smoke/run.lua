@@ -121,40 +121,38 @@ local function walk(c, w, fn)
     if st.scrollChild then walk(c, st.scrollChild, fn) end
 end
 
-local function visibleButtons(c, top)
-    local out = {}
+-- One look at a window: its visible buttons in reading order, each with its
+-- label and its context (the nearest visible text at or above it: the row
+-- title for a switch, the option name for a choice). Every rectangle is
+-- measured once per look.
+local function layoutOf(c, top)
+    local buttons, texts = {}, {}
     walk(c, top, function(w)
         local st = c._state(w)
-        if st.type == "Button" and w:IsVisible() then out[#out + 1] = w end
-    end)
-    local pos = {}
-    for _, b in ipairs(out) do
-        local l, _, t = c._rect(b)
-        pos[b] = { l or 0, t or 0 }
-    end
-    table.sort(out, function(a, b)
-        if math.abs(pos[a][2] - pos[b][2]) > 0.5 then return pos[a][2] > pos[b][2] end
-        return pos[a][1] < pos[b][1]
-    end)
-    return out
-end
-
--- The nearest visible text at or above a button: the row title for a switch,
--- the option name for a choice.
-local function contextOf(c, top, btn)
-    local _, _, bt = c._rect(btn)
-    if not bt then return "" end
-    local best, bestGap = "", math.huge
-    walk(c, top, function(w)
-        for _, r in ipairs(c._state(w).regions) do
-            local st = c._state(r)
-            if st.type == "FontString" and st.text and st.text ~= "" and r:IsVisible() and w ~= btn then
+        if st.type == "Button" and w:IsVisible() then
+            local l, _, t = c._rect(w)
+            buttons[#buttons + 1] = { w = w, left = l or 0, top = t or 0, label = labelOf(c, w) }
+        end
+        for _, r in ipairs(st.regions) do
+            local rs = c._state(r)
+            if rs.type == "FontString" and rs.text and rs.text ~= "" and r:IsVisible() then
                 local _, _, t = c._rect(r)
-                if t and t >= bt - 1 and t - bt < bestGap then best, bestGap = st.text, t - bt end
+                if t then texts[#texts + 1] = { top = t, text = rs.text, owner = w } end
             end
         end
     end)
-    return best
+    table.sort(buttons, function(a, b)
+        if math.abs(a.top - b.top) > 0.5 then return a.top > b.top end
+        return a.left < b.left
+    end)
+    for _, b in ipairs(buttons) do
+        local best, gap = "", math.huge
+        for _, t in ipairs(texts) do
+            if t.owner ~= b.w and t.top >= b.top - 1 and t.top - b.top < gap then best, gap = t.text, t.top - b.top end
+        end
+        b.ctx = best
+    end
+    return buttons
 end
 
 local function panelOf(c) return rawget(c.env, "PocketEssentialsSettingsPanel") end
@@ -175,30 +173,67 @@ local function pressAll(c, PE, page, skip)
         local panel = panelOf(c)
         check(panel and panel:IsShown(), "the settings window did not open on page " .. page)
         local target, key
-        for _, b in ipairs(visibleButtons(c, panel)) do
-            local label = labelOf(c, b)
-            local ctx = contextOf(c, panel, b)
-            local k = page .. "|" .. ctx .. "|" .. label
-            if not pressed[k] and not isReload(label) and not (skip and skip(label, ctx)) then
-                target, key = b, k
+        for _, b in ipairs(layoutOf(c, panel)) do
+            local k = page .. "|" .. b.ctx .. "|" .. b.label
+            if not pressed[k] and not isReload(b.label) and not (skip and skip(b.label, b.ctx)) then
+                target, key = b.w, k
                 break
             end
         end
         if not target then return count end
         pressed[key] = true
         count = count + 1
+        -- Checked before and after every press: "Clear" on the errors page
+        -- wipes the error log, so an error must be caught before it can be cleared.
+        c:assertClean("before pressing \"" .. key .. "\"")
         c:click(target)
         c:advance(0.4)
+        c:assertClean("after pressing \"" .. key .. "\"")
     end
     error("pressAll(" .. page .. "): more than 600 presses; the page keeps changing")
 end
 
 local function findButton(c, top, label, ctx)
-    for _, b in ipairs(visibleButtons(c, top)) do
-        if labelOf(c, b) == label and (ctx == nil or contextOf(c, top, b) == ctx) then return b end
+    for _, b in ipairs(layoutOf(c, top)) do
+        if b.label == label and (ctx == nil or b.ctx == ctx) then return b.w end
     end
     return nil
 end
+
+-- The error log must still work: one deliberate error adds exactly one entry,
+-- which is then taken out again. If the addon's logger broke, every other
+-- check would go blind (they all read that log).
+local canarySerial = 0
+local function canary(c, PE, where)
+    canarySerial = canarySerial + 1
+    local msg = "smoke canary " .. canarySerial
+    local before = #PE.errors
+    PE:Safe("core", error, msg)
+    local e = PE.errors[1]
+    check(#PE.errors == before + 1 and type(e) == "table" and tostring(e.msg):find(msg, 1, true),
+        where .. ": a deliberate error did not reach the error log (PE:LogError is not recording)")
+    table.remove(PE.errors, 1)
+end
+
+local function visibleTexts(c, top)
+    local out = {}
+    walk(c, top, function(w)
+        for _, r in ipairs(c._state(w).regions) do
+            local st = c._state(r)
+            if st.type == "FontString" and st.text and r:IsVisible() then out[#out + 1] = st.text end
+        end
+    end)
+    return out
+end
+
+local function tocField(field)
+    local f = assert(io.open((addonDir or (root .. "/addons/PocketEssentials")) .. "/PocketEssentials.toc", "rb"))
+    local v = f:read("*a"):match("## " .. field .. ":%s*([^\r\n]+)")
+    f:close()
+    return v and v:gsub("%s+$", "")
+end
+
+local function isSwitch(label) return label == "ON" or label == "OFF" or label == "PROBLEM" end
 
 local function addonFrames(c)
     local out = {}
@@ -388,6 +423,29 @@ local function everythingOn(c, PE, hasQDB)
             if rec.addonFile == "QuestIcons.lua" and rec.parent == c.minimap and rec.frame:IsVisible() then shown = shown + 1 end
         end
         check(shown > 0, "no quest icon on the minimap while standing next to the focused quest's spots")
+        -- the quest arrow: a spot chosen and its display on screen
+        local pin = PE.QuestData:GetArrowPin()
+        check(type(pin) == "table" and pin.questID == QUEST_MANY,
+            "the quest arrow chose no spot of the focused quest while standing next to its spots")
+        local display = c:find(function(rec)
+            return rec.addonFile == "QuestArrow.lua" and rec.parent == c.UIParent and rec.strata == "BACKGROUND"
+        end)
+        check(display and display.frame:IsVisible(), "the quest arrow is not on screen next to the focused quest's spots")
+        local yards = false
+        for _, t in ipairs(visibleTexts(c, display.frame)) do
+            if t:find("%d+ yd$") or t == "Here" then yards = true end
+        end
+        check(yards, "the quest arrow shows no distance")
+        -- into a dungeon (the arrow goes away) and out again (it comes back)
+        c.world.instance = true
+        c:fire("ZONE_CHANGED_NEW_AREA")
+        c:advance(0.5)
+        check(not display.frame:IsVisible(), "the quest arrow stayed on screen inside a dungeon")
+        c.world.instance = false
+        c:fire("ZONE_CHANGED_NEW_AREA")
+        c:advance(0.5)
+        check(display.frame:IsVisible(), "the quest arrow did not come back after leaving the dungeon")
+        check(type(PE.QuestData:GetArrowPin()) == "table", "the quest arrow chose no spot after leaving the dungeon")
     end
     c:assertClean("walking")
 
@@ -412,14 +470,19 @@ local function everythingOn(c, PE, hasQDB)
     c.world.merchant.repairCost = 2000
     local money = c.world.money
     local sold = #c:callsTo("C_Container.UseContainerItem")
+    local repairs = #c:callsTo("RepairAllItems")
     c:openMerchant()
     c:advance(3)
     c:closeMerchant()
     c:advance(1.5)
     sold = #c:callsTo("C_Container.UseContainerItem") - sold
     check(sold == 2, "at a vendor with two sellable greys, " .. sold .. " items were sold")
-    check(#c:callsTo("RepairAllItems") >= 1, "no repair at a vendor that repairs")
-    check(c.world.money ~= money, "money did not change at the vendor")
+    local calls = c:callsTo("RepairAllItems")
+    check(#calls - repairs == 1, "one vendor visit repaired " .. (#calls - repairs) .. " times, expected once")
+    check(calls[#calls].args[1] == false, "the repair did not use the character's own money (RepairAllItems(false))")
+    -- 3 Ruined Pelts at 5 and 1 Broken Fang at 6 sold, 2000 repair paid
+    check(c.world.money == money + 21 - 2000, "money went from " .. money .. " to " .. c.world.money
+        .. ", expected " .. (money + 21 - 2000) .. " (sales 21, repair 2000)")
     c:assertClean("vendor")
 
     -- the bag
@@ -444,6 +507,10 @@ local function everythingOn(c, PE, hasQDB)
     check(chatPanel and chatPanel:IsShown(), "a tap on the round button did not open the chat window")
     local jaina = findButton(c, chatPanel, "Jaina")
     check(jaina ~= nil, "no button for the player who whispered")
+    for _, want in ipairs({ "Say", "Yell", "Party", "Guild", "1. General - Elwynn Forest", "2. Trade - City" }) do
+        check(findButton(c, chatPanel, want), "the chat window has no \"" .. want .. "\" button (in a party, a guild and two channels)")
+    end
+    check(not findButton(c, chatPanel, "Raid"), "the chat window offers Raid while only in a party")
     c:click(jaina)
     c:advance(0.2)
     check(#c:callsTo("ChatFrame1EditBox:SetTellTarget") + #c:callsTo("ChatFrameUtil.SendTell") >= 1,
@@ -459,6 +526,31 @@ local function everythingOn(c, PE, hasQDB)
     c:advance(0.2)
     c:assertClean("settings pages")
 
+    -- The player turns on the Gamepad UI (so the layout helper's Gamepad button
+    -- does not refuse); the client says so with this event.
+    c.world.gamepadUI = true
+    c:fire("INPUT_DEVICE_INTERFACE_TRANSITION", 1, 0)
+    c:advance(1.5)
+    c:assertClean("switching to the Gamepad UI")
+
+    -- every feature's options, at each button size (switches and reload left alone)
+    local skip = function(label, ctx) return isSwitch(label) or ctx == "Button size" end
+    local presses = 0
+    for _, size in ipairs({ "small", "medium", "large" }) do
+        PE:SetUISetting("size", size)
+        c:advance(0.2)
+        presses = presses + pressAll(c, PE, "main", skip)
+    end
+    PE:CloseSettings()
+    c:advance(0.2)
+    if os.getenv("SMOKE_VERBOSE") then print("  option presses: " .. presses) end
+    check(presses >= (hasQDB and 3 * 30 or 3 * 12), "only " .. presses .. " option buttons were pressed")
+    -- Layout: with the Gamepad UI on, "Use Blizzard's Gamepad layout" switches
+    check(#c:callsTo("C_EditMode.SetActiveLayout") >= 1, "the Gamepad layout button never switched the layout")
+    check(c.world.layouts.activeLayout == 3, "the layout in use is " .. tostring(c.world.layouts.activeLayout)
+        .. ", expected 3 (Blizzard's Gamepad preset)")
+    c:assertClean("pressing every option")
+
     local states = moduleStates(PE)
     for _, key in ipairs(FEATURES) do
         local s = states[key]
@@ -469,6 +561,8 @@ local function everythingOn(c, PE, hasQDB)
             check(s.state == "on", key .. " is " .. tostring(s.state) .. " (" .. tostring(s.detail) .. "), expected on")
         end
     end
+    canary(c, PE, "everything on")
+    c:assertClean("end")
     collectMissing(c)
 end
 
@@ -524,6 +618,49 @@ scenarios[#scenarios + 1] = { name = "1 first install", run = function()
     c:advance(0.2)
     check(not panelOf(c):IsShown(), "the settings window did not close")
     c:assertClean("closing")
+
+    -- The Errors page with an entry on it (what the player reads out to us).
+    canary(c, PE, "first install")
+    PE:LogError("bags", "smoke seeded error: this is what a problem looks like")
+    openPage(c, PE, "errors")
+    local seen = false
+    for _, t in ipairs(visibleTexts(c, panelOf(c))) do
+        if t:find("smoke seeded error", 1, true) then seen = true end
+    end
+    check(seen, "the Errors page does not show a logged error")
+    local clear = findButton(c, panelOf(c), "Clear")
+    check(clear, "no Clear button on the Errors page")
+    c:click(clear)
+    c:advance(0.2)
+    check(#PE.errors == 0, "Clear left " .. #PE.errors .. " entries in the error log")
+    PE:CloseSettings()
+    c:advance(0.2)
+    c:assertClean("errors page")
+
+    -- The minimap's addon list entry (## AddonCompartmentFunc in the TOC) and /pe.
+    local fname = tocField("AddonCompartmentFunc")
+    check(fname and type(rawget(c.env, fname)) == "function", "the TOC's AddonCompartmentFunc "
+        .. tostring(fname) .. " is not a global function after loading")
+    c._protect("AddonCompartmentFunc", rawget(c.env, fname), "PocketEssentials", "LeftButton")
+    c:advance(0.2)
+    check(panelOf(c):IsShown(), "the minimap's addon list entry did not open the settings")
+    c._protect("AddonCompartmentFunc", rawget(c.env, fname), "PocketEssentials", "LeftButton")
+    c:advance(0.2)
+    check(not panelOf(c):IsShown(), "a second tap on the minimap's addon list entry did not close the settings")
+    local slash = rawget(c.env, "SlashCmdList").POCKETESSENTIALS
+    check(rawget(c.env, "SLASH_POCKETESSENTIALS1") == "/pe" and type(slash) == "function", "/pe is not registered")
+    c._protect("/pe", slash, "")
+    c:advance(0.2)
+    check(panelOf(c):IsShown(), "/pe did not open the settings")
+    c._protect("/pe errors", slash, "errors")
+    c:advance(0.2)
+    c._protect("/pe reset", slash, "reset")
+    c:advance(0.2)
+    check(PE.db.ui.size == "medium" and PE.db.ui.hubPos == "LEFT", "/pe reset did not reset the size and position")
+    PE:CloseSettings()
+    c:advance(0.2)
+    canary(c, PE, "first install, end")
+    c:assertClean("slash commands")
     collectMissing(c)
 end }
 
@@ -533,6 +670,18 @@ scenarios[#scenarios + 1] = { name = "2 everything on, with QuestieDB", needsQDB
     local PE = c:loadAddon()
     c:assertClean("loading")
     everythingOn(c, PE, true)
+    -- /qd: usage line, and one toggle there and back
+    local qd = rawget(c.env, "SlashCmdList").POCKETESSENTIALSQD
+    check(rawget(c.env, "SLASH_POCKETESSENTIALSQD1") == "/qd" and type(qd) == "function", "/qd is not registered")
+    local lines = #c.chat
+    c._protect("/qd", qd, "")
+    check(#c.chat > lines, "/qd printed nothing")
+    local mapOpt = PE:GetModule("questIcons").opts.map
+    c._protect("/qd map", qd, "map")
+    check(PE:GetModule("questIcons").opts.map == not mapOpt, "/qd map did not toggle the map icons")
+    c._protect("/qd map", qd, "map")
+    c:advance(0.5)
+    c:assertClean("/qd")
     shared.everythingOn = { c = c, PE = PE }
     if os.getenv("SMOKE_DUMP") then
         local seen = {}
@@ -584,6 +733,7 @@ scenarios[#scenarios + 1] = { name = "4 everything off again", needsQDB = true, 
     local timers = c.stats.addonTimers
     c:advance(5)
     check(c.stats.addonTimers == timers, (c.stats.addonTimers - timers) .. " timers of ours still running with everything off")
+    canary(c, PE, "everything off")
     c:assertClean("everything off")
     collectMissing(c)
 end }
@@ -606,6 +756,8 @@ scenarios[#scenarios + 1] = { name = "5 saved settings from 0.0.2", needsQDB = t
     check(opts.spots == 5, "spots is " .. tostring(opts.spots) .. " after an upgrade, expected 5")
     check(opts.show == "tracked", "show is " .. tostring(opts.show) .. " after an upgrade, expected tracked")
     check(PE:GetModuleState("questIcons") == "on", "quest icons did not come back on")
+    canary(c, PE, "old settings")
+    c:assertClean("old settings")
     collectMissing(c)
 end }
 
@@ -615,25 +767,37 @@ scenarios[#scenarios + 1] = { name = "6 zip contents", run = function()
     local version = f:read("*a"):match("## Version:%s*([^\r\n]+)")
     f:close()
     version = version and version:gsub("%s+$", "")
-    local zips = { root .. "/dist/PocketEssentials-" .. tostring(version) .. ".zip", root .. "/dist/wow-forever-pocket-essentials.zip" }
-    local looked = 0
-    for _, zip in ipairs(zips) do
-        local z = io.open(zip, "rb")
-        if z then
-            z:close()
-            looked = looked + 1
-            local p = assert(io.popen("unzip -Z1 '" .. zip .. "' 2>/dev/null"))
-            local n = 0
-            for line in p:lines() do
-                n = n + 1
-                check(not line:find("tests/", 1, true) and not line:find("scripts/", 1, true),
-                    zip:match("[^/]+$") .. " contains " .. line)
-            end
+    local zips = {
+        { path = root .. "/dist/PocketEssentials-" .. tostring(version) .. ".zip", toc = "PocketEssentials/PocketEssentials.toc" },
+        { path = root .. "/dist/wow-forever-pocket-essentials.zip", toc = "PocketEssentials/PocketEssentials.toc" },
+    }
+    for _, z in ipairs(zips) do
+        local name = z.path:match("[^/]+$")
+        local fh = io.open(z.path, "rb")
+        if not fh then
+            notes[#notes + 1] = "zip contents: " .. name .. " not found (run scripts/build.sh)"
+        else
+            fh:close()
+            local p = assert(io.popen("unzip -p '" .. z.path .. "' '" .. z.toc .. "' 2>/dev/null"))
+            local zipVersion = (p:read("*a") or ""):match("## Version:%s*([^\r\n]+)")
             p:close()
-            check(n > 0, "could not list " .. zip)
+            zipVersion = zipVersion and zipVersion:gsub("%s+$", "")
+            if zipVersion ~= version then
+                notes[#notes + 1] = "zip contents: skipped " .. name .. " (holds " .. tostring(zipVersion)
+                    .. ", the TOC says " .. tostring(version) .. "; run scripts/build.sh)"
+            else
+                local l = assert(io.popen("unzip -Z1 '" .. z.path .. "' 2>/dev/null"))
+                local n = 0
+                for line in l:lines() do
+                    n = n + 1
+                    check(not line:find("tests/", 1, true) and not line:find("scripts/", 1, true), name .. " contains " .. line)
+                end
+                l:close()
+                check(n > 0, "could not list " .. name)
+                notes[#notes + 1] = "zip contents: " .. name .. " (" .. version .. ", " .. n .. " files) has nothing from tests/ or scripts/"
+            end
         end
     end
-    if looked == 0 then notes[#notes + 1] = "zip contents not checked: no dist/PocketEssentials-" .. tostring(version) .. ".zip (run scripts/build.sh)" end
 end }
 
 ---------------------------------------------------------------------------
@@ -650,7 +814,9 @@ for _, index in ipairs(RUN_ORDER) do
         skipped = skipped + 1
     else
         ran = ran + 1
+        local t0 = os.clock()
         local ok, err = xpcall(s.run, debug.traceback)
+        if os.getenv("SMOKE_VERBOSE") then print(string.format("  %s: %.2f s", s.name, os.clock() - t0)) end
         local reason = KNOWN_FAILURES[s.name]
         if ok and reason then
             failures[#failures + 1] = s.name .. ": listed in KNOWN_FAILURES (" .. reason .. ") but passed; remove the entry"
