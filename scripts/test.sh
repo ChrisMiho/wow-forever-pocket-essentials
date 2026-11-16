@@ -1,6 +1,6 @@
 #!/bin/bash
-# Offline QuestieDB harness: puts every quest in the pinned QuestieDB release
-# through our QuestData.lua under WoW API stand-ins (tests/questiedb/).
+# Offline tests: the fast API check (tests/api/), then the QuestieDB harness,
+# which puts every quest in the pinned QuestieDB release through our QuestData.lua under WoW API stand-ins (tests/questiedb/).
 #
 # Exits 0 and prints one summary line on pass; exits 1 with the first failing
 # quest and its error otherwise. Needs luajit (brew install luajit); without it
@@ -16,6 +16,11 @@ if ! command -v luajit >/dev/null 2>&1; then
     echo "luajit not installed (brew install luajit); skipping" >&2
     exit 0
 fi
+
+# Fast API check: every game name the addon uses was checked against Blizzard's
+# source (tests/api/). Needs no network. A new name fails until scripts/audit-api.sh
+# has been run.
+luajit tests/api/extract.lua "$PWD" | luajit tests/api/fastcheck.lua "$PWD"
 
 # Capture the status explicitly: under set -e a failed $(...) assignment would
 # abort before the handling below runs. Exit code 2 means the download failed
