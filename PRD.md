@@ -126,6 +126,10 @@ the first device test of 0.0.1 (in 0.0.2) and the maintainer's follow-up on
 the arrow and icon defaults (spec `docs/superpowers/specs/2026-11-15-arrow-messages.md`).
 Version 0.0.4 (test build) carries fixes 3 and 6 from the second device test
 (spec `docs/superpowers/specs/2026-11-15-green-minimap-and-arrow-text.md`).
+**Third device test, 2026-11-15 (0.0.4):** no green minimap, no haze, and the
+arrow text wraps. Asked for: a wider text line (only one short word wrapped)
+and text-only messages shown higher, where the arrow normally is. Both are in
+0.0.5 (test build), awaiting device test.
 
 **First device test, 2026-11-15 (0.0.1, Retroid Pocket 6), quest icons and
 arrow:** no errors, the settings menu is easy to use. Found: the round button
@@ -147,14 +151,14 @@ in the quest log works; untracking quests thins the world map. Found:
 3. The minimap turns green when a quest is focused. Confirmed by the owner:
    it happens only with "Hide blue haze" on; switched off plus a reload, the
    minimap stays normal. The cause was our blank texture swap on the minimap's
-   quest areas. Fixed in 0.0.4 (swap removed), awaiting device test.
+   quest areas. Fixed in 0.0.4 (swap removed), confirmed on the device.
 4. Inside the quest log, sub-menus look hidden or wrongly coloured. Not yet
    known whether this is ours or Blizzard's.
 5. Untracking quests was found by guessing.
 6. The arrow's "Focus one in your quest log" line is cut off with "...": the
    line under the arrow is a single line of fixed width (`QuestArrow.lua`
    `Layout`, 13 times the font size), and the text is longer than that.
-   Fixed in 0.0.4 (the line now wraps to two lines), awaiting device test.
+   Fixed in 0.0.4 (the line now wraps to two lines), confirmed on the device.
 Follow-up: with "Hide blue haze" switched off and a reload, focusing a quest
 left the minimap normal; switched back on, focusing a different quest turned
 it green again (so the green was ours, finding 3).

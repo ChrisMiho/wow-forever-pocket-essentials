@@ -4,9 +4,19 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.0.5] - 2026-11-15
+
+Fifth test build. Not yet tested on a device.
+
+### Changed
+
+- The text under the quest arrow is wider, so short messages fit on one line.
+- Messages shown without an arrow ("No quest focused", "Outside this zone")
+  now sit where the arrow normally is, instead of lower down.
+
 ## [0.0.4] - 2026-11-15
 
-Fourth test build. Not yet tested on a device.
+Fourth test build. Tested on the device: both fixes work.
 
 ### Fixed
 

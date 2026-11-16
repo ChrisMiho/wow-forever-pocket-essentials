@@ -57,7 +57,7 @@ local HERE_ENTER, HERE_LEAVE = 10, 14   -- yards: "Here" switches on below the f
 local MIN_AIM_YARDS = 3             -- closer than this the direction is noise; the arrow keeps its last angle
 local ANGLE_STEPS = 180             -- the arrow turns in 2-degree steps
 local STEP = 2 * math.pi / ANGLE_STEPS
-local TITLE_MAX = 52                -- longer quest names are cut (two lines of about 26)
+local TITLE_MAX = 52                -- longer quest names are cut (two lines of about 32)
 local MAX_FAILURES = 5              -- the driver stops itself after this many errors in a row
 local TURN_ENTER = math.rad(150)    -- "Turn around" shows when the objective is further round than this...
 local TURN_LEAVE = math.rad(135)    -- ... and goes again below this
@@ -407,6 +407,17 @@ local function Build()
     return true
 end
 
+-- The text sits under the arrow box, or in its place while the box is
+-- hidden (text-only messages), so messages show where the arrow would be.
+local function PlaceDistText()
+    S.distText:ClearAllPoints()
+    if S.boxShown == false then
+        S.distText:SetPoint("TOP", S.box, "TOP", 0, 0)
+    else
+        S.distText:SetPoint("TOP", S.box, "BOTTOM", 0, -(S.gap or 0))
+    end
+end
+
 -- Sizes and position; also after a preset or the screen size changes.
 local function Layout()
     if not S.built then return end
@@ -415,11 +426,11 @@ local function Layout()
     local box = UI:Px(BOX_PX[Opt("size")] or BOX_PX.normal)
     local gap = UI:Px(4)
     local fontSize = (type(m.fontSize) == "number" and m.fontSize > 0) and m.fontSize or UI:Px(25)
-    local textWidth = max(UI:Px(280), fontSize * 13)
+    local textWidth = max(UI:Px(280), fontSize * 16)
 
     S.box:SetSize(box, box)
-    S.distText:ClearAllPoints()
-    S.distText:SetPoint("TOP", S.box, "BOTTOM", 0, -gap)
+    S.gap = gap
+    PlaceDistText()
     S.distText:SetWidth(textWidth)
     S.titleText:ClearAllPoints()
     S.titleText:SetPoint("TOP", S.distText, "BOTTOM", 0, -UI:Px(2))
@@ -492,6 +503,7 @@ local function SetBoxShown(show)
     if S.boxShown ~= show then
         S.boxShown = show
         S.box:SetShown(show)
+        PlaceDistText()
     end
 end
 
