@@ -186,7 +186,69 @@ end
 -- itself notes which box is active in two globals, as it does for every
 -- addon that opens chat; the path that sends a typed line or runs a typed
 -- /cast never reads those.)
+--
+-- With the Gamepad UI on, the box is never opened from here. On the device
+-- (Pocket Probe, 2026-11-17, in town, no fight) an addon opening, focusing
+-- or closing the chat box was blocked inside Blizzard's controller code
+-- (FrameControlsManager:FrameShown > SmartNavigation ActivateBinding), and
+-- afterwards the game forbade its own controller actions
+-- (SetPreferredGamepadInteractTarget, InteractUnit, ClearTarget,
+-- SpellStopCasting) in the addon's name until a reload. Setting the chat type
+-- on the closed box was allowed. So in that mode a tap only sets where the
+-- chat goes, and the player opens chat with the game's own button; the box
+-- keeps the type when it opens (ChatFrameEditBoxMixin:OnShow > ResetChatType
+-- only changes a group type the player is no longer in).
 ---------------------------------------------------------------------------
+
+---------------------------------------------------------------------------
+-- "Press A to type" (Gamepad UI on).
+--
+-- An addon may not open the chat box, but the game's own "open chat" key
+-- binding may, and an addon may point a controller button at a binding (the
+-- probe: override bindings are allowed out of a fight). So after a target is
+-- picked, the A button is lent to the game's OPENCHAT binding for a few
+-- seconds: the press runs Blizzard's code, not ours. It is given back when
+-- chat opens, when the time is up, when a fight starts and on switch-off.
+-- Not in a fight: bindings cannot be changed then.
+---------------------------------------------------------------------------
+
+local TYPE_KEY = "PAD1"            -- the controller's A button
+local TYPE_KEY_SECONDS = 12
+local typeKeyOwner = CreateFrame("Frame", "PocketEssentialsChatKeyOwner", UIParent)
+local typeKeyArmed, typeKeySerial, openChatHooked = false, 0, false
+
+-- Only out of a fight, or from PLAYER_REGEN_DISABLED (lockdown starts after it).
+local function TypeKeyDisarm(why)
+    if not typeKeyArmed then return end
+    typeKeyArmed = false
+    typeKeySerial = typeKeySerial + 1
+    if ClearOverrideBindings then pcall(ClearOverrideBindings, typeKeyOwner) end
+    if PE.debugOn then PE:Debug("chat", "A button given back: " .. tostring(why)) end
+end
+
+-- Returns true if the A button now opens chat.
+local function TypeKeyArm()
+    if not (SetOverrideBinding and ClearOverrideBindings) or PE:InCombat() then return false end
+    if not openChatHooked and type(hooksecurefunc) == "function"
+            and type(ChatFrameUtil) == "table" and type(ChatFrameUtil.OpenChat) == "function" then
+        -- Runs after the game's own function, and only to give the button back.
+        openChatHooked = true
+        hooksecurefunc(ChatFrameUtil, "OpenChat", function()
+            if typeKeyArmed and not PE:InCombat() then PE:Safe("chat", TypeKeyDisarm, "chat opened") end
+        end)
+    end
+    if not pcall(SetOverrideBinding, typeKeyOwner, true, TYPE_KEY, "OPENCHAT") then return false end
+    typeKeyArmed = true
+    typeKeySerial = typeKeySerial + 1
+    local serial = typeKeySerial
+    mod:After(TYPE_KEY_SECONDS, function()
+        if typeKeyArmed and typeKeySerial == serial then
+            PE:RunOutOfCombat("chat:typekey", function() TypeKeyDisarm("time up") end)
+        end
+    end)
+    if PE.debugOn then PE:Debug("chat", "A button opens chat for " .. TYPE_KEY_SECONDS .. " seconds") end
+    return true
+end
 
 local function CanAddress(box, chatType)
     if type(box) ~= "table" then return false end
@@ -196,7 +258,8 @@ local function CanAddress(box, chatType)
     return true
 end
 
--- Returns true if the chat box was asked to open.
+-- Returns true if the chat box was opened and pointed at the target, "set"
+-- if it was only pointed (Gamepad UI on, box closed), false if neither.
 local function OpenChatTo(chatType, target, slash)
     local util = ChatFrameUtil
     if type(util) ~= "table" then
@@ -213,6 +276,19 @@ local function OpenChatTo(chatType, target, slash)
         local box = choose()
         if CanAddress(box, chatType) then
             local ready = (box == active())
+            if not ready and PE:GamepadUI() then
+                -- Closed box, controller style: point it, do not open it.
+                -- No UpdateHeader either: the box redraws its header itself
+                -- when the player opens it.
+                if chatType == "CHANNEL" then
+                    box:SetChannelTarget(target)
+                elseif chatType == "WHISPER" then
+                    box:SetTellTarget(target)
+                end
+                box:SetChatType(chatType)
+                if PE.debugOn then PE:Debug("chat", "chat type set, box left closed (Gamepad UI)") end
+                return "set"
+            end
             if not ready and box.chatFrame ~= nil then
                 -- Naming the chat frame keeps this out of any other window's
                 -- chat line (the guild window has one).
@@ -491,13 +567,10 @@ local function TargetClicked(btn)
         PE:Debug("chat", "tapped: " .. (entry and "whisper"
             or (PE.Plain(target.chatType) .. (target.target ~= nil and (" " .. PE.Plain(target.target)) or ""))))
     end
-    if PE:CombatRestricted() then
-        -- With the Gamepad UI on, the chat box taking the controller's focus
-        -- is a step the game refuses to addons during a fight
-        -- (Blizzard_GamepadSharedUtility FrameControlsManager:FrameShown): it
-        -- prints "Interface action failed because of an AddOn". The game
-        -- decides "during a fight" by its combat restriction, which is asked
-        -- here as well as the usual lockdown.
+    if PE:CombatRestricted() and not PE:GamepadUI() then
+        -- Opening the chat box from an addon during a fight is refused by the
+        -- game. (With the Gamepad UI on the box is never opened from here,
+        -- so a tap is fine in a fight too.)
         panel:Hide()
         if PE.debugOn then PE:Debug("chat", "refused: in a fight") end
         mod:Print("Not during a fight. Open chat the usual way, or try again afterwards.")
@@ -513,7 +586,16 @@ local function TargetClicked(btn)
     else
         return
     end
-    if not opened then mod:Print("The chat box could not be opened.") end
+    if opened == "set" then
+        local name = entry and "your whisper" or (type(target.label) == "string" and target.label or "that")
+        if TypeKeyArm() then
+            mod:Print("Chat is set to " .. name .. ". Press A to type.")
+        else
+            mod:Print("Chat is set to " .. name .. ". Open chat to type your message.")
+        end
+    elseif not opened then
+        mod:Print("The chat box could not be opened.")
+    end
 end
 
 local function ClearMarks()
@@ -630,6 +712,7 @@ mod = PE:RegisterModule({
         CleanList()
         self:RegisterEvent("CHAT_MSG_WHISPER", OnWhisper)
         self:RegisterEvent("CHAT_MSG_WHISPER_INFORM", OnWhisper)
+        self:RegisterEvent("PLAYER_REGEN_DISABLED", function() TypeKeyDisarm("fight started") end)
         hubClick = hubClick or self:Wrap(TogglePanel)
         local hub = PE.Hub
         if hub and hub.SetClickHandler then hub:SetClickHandler(hubClick) end
@@ -645,5 +728,8 @@ mod = PE:RegisterModule({
             if hub.SetBadge then hub:SetBadge(nil) end
         end
         if built and panel then panel:Hide() end
+        if typeKeyArmed then
+            PE:RunOutOfCombat("chat:typekey", function() TypeKeyDisarm("switched off") end)
+        end
     end,
 })

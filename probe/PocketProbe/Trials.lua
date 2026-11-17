@@ -4,6 +4,9 @@ local ADDON_NAME, P = ...
 --
 --   id, area, label, kind   what the saved file lists ("action" or "value")
 --   clean = true            also run alone, first thing after a reload
+--   risky = true            may leave the game's controller code refusing its
+--                           own actions until a reload; runs last in a pass,
+--                           and only with the "Risky trials" switch on
 --   vendor = true           costs something; only with a vendor window open
 --   needs = { "A.B", ... }  game names it calls; one missing -> "missing"
 --   gate()                  false: not this trial's moment (skipped silently)
@@ -18,6 +21,17 @@ local ADDON_NAME, P = ...
 --   check(state)            for "wait": returns true / false / nil as above
 --   undo(state)             puts things back; always runs, in its own pcall
 --   read(c)                 a value: c:add(name, value) for each value read
+--
+-- Which trials are risky, from the first run on the device (Gamepad UI on):
+-- opening, focusing or closing the chat box and opening the bags all go
+-- through Blizzard's controller focus code (FrameControlsManager:FrameShown
+-- -> SmartNavigation:ActivateBinding / SetFallThroughCatcherActive), which
+-- refused there, and afterwards the game refused its own interact and cancel
+-- actions in this addon's name until a reload. Setting the layout is risky by
+-- the source: the game sends its "layouts updated" event from inside our call,
+-- so Blizzard's handler stores values on its own frames with our mark on
+-- them. Taking a key and marking a button touch only our own frames and
+-- showed no sign on the device, so they are not.
 --
 -- Run.lua calls these inside its error catcher and watches for the game's
 -- "blocked" signals while one runs. Nothing here stores a value read from
@@ -131,7 +145,7 @@ local function OpenedOk()
 end
 
 Add({
-    id = "chat.open", area = "Chat box", label = "Open the chat box", kind = "action", clean = true,
+    id = "chat.open", area = "Chat box", label = "Open the chat box", kind = "action", clean = true, risky = true,
     needs = { "ChatFrameUtil.OpenChat", "ChatFrameUtil.GetActiveWindow" },
     run = function(state)
         if ActiveBox() then return false, BUSY end
@@ -145,6 +159,7 @@ Add({
 
 Add({
     id = "chat.openframe", area = "Chat box", label = "Open the chat box on a named chat frame", kind = "action", clean = true,
+    risky = true,
     needs = { "ChatFrameUtil.OpenChat", "ChatFrameUtil.GetActiveWindow" },
     run = function(state)
         local frame = ChatFrame()
@@ -159,7 +174,7 @@ Add({
 })
 
 Add({
-    id = "chat.focus", area = "Chat box", label = "Give the chat edit box focus", kind = "action", clean = true,
+    id = "chat.focus", area = "Chat box", label = "Give the chat edit box focus", kind = "action", clean = true, risky = true,
     needs = { "ChatFrameUtil.ChooseBoxForSend", "ChatFrameUtil.GetActiveWindow" },
     run = function(state)
         if ActiveBox() then return false, BUSY end
@@ -204,7 +219,7 @@ Add({
 })
 
 Add({
-    id = "chat.close", area = "Chat box", label = "Close the chat box again", kind = "action", clean = true,
+    id = "chat.close", area = "Chat box", label = "Close the chat box again", kind = "action", clean = true, risky = true,
     needs = { "ChatFrameUtil.OpenChat", "ChatFrameUtil.GetActiveWindow", "ChatFrameUtil.DeactivateChat" },
     run = function(state)
         if ActiveBox() then return false, BUSY end
@@ -328,7 +343,7 @@ for _, w in ipairs(WINDOWS) do
 end
 
 Add({
-    id = "bag.toggle", area = "Blizzard windows", label = "Open and close the bags", kind = "action",
+    id = "bag.toggle", area = "Blizzard windows", label = "Open and close the bags", kind = "action", clean = true, risky = true,
     needs = { "OpenAllBags", "CloseAllBags", "IsAnyBagOpen" },
     run = function(state)
         local open = Find("IsAnyBagOpen")()
@@ -485,6 +500,7 @@ Add({
 
 Add({
     id = "layout.set", area = "Layout", label = "Set the active layout to the one already active", kind = "action", clean = true,
+    risky = true,
     needs = { "C_EditMode.GetLayouts", "C_EditMode.SetActiveLayout" },
     run = function()
         if EditModeOpen() then return false, "Edit Mode open" end
@@ -768,7 +784,15 @@ Add({ id = "val.whisper", area = "Values", label = "Whisper event payload (when 
 -- The clean series: each of these alone, first thing after a reload
 ---------------------------------------------------------------------------
 
+-- The ones suspected of lasting damage come first.
+local CLEAN_FIRST = { "chat.type", "chat.open", "chat.openframe", "chat.focus", "chat.close", "bag.toggle" }
+
 P.cleanList = {}
+local listed = {}
+for _, id in ipairs(CLEAN_FIRST) do
+    P.cleanList[#P.cleanList + 1] = P.trialById[id]
+    listed[id] = true
+end
 for _, t in ipairs(P.trials) do
-    if t.clean then P.cleanList[#P.cleanList + 1] = t end
+    if t.clean and not listed[t.id] then P.cleanList[#P.cleanList + 1] = t end
 end

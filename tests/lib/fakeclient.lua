@@ -1458,6 +1458,14 @@ function Client.new(opts)
         st.bindings = st.bindings or {}
         st.bindings[key] = buttonName
     end)
+    -- A key pointed at one of the game's own binding commands (stored as "command:NAME").
+    Protected("SetOverrideBinding", function(owner, isPriority, key, command)
+        if not IsWidget(owner) then error("SetOverrideBinding(): owner must be a frame", 2) end
+        if type(key) ~= "string" then error("SetOverrideBinding(): key expected", 2) end
+        local st = W[owner]
+        st.bindings = st.bindings or {}
+        st.bindings[key] = command and ("command:" .. tostring(command)) or nil
+    end)
     Protected("ClearOverrideBindings", function(owner)
         if not IsWidget(owner) then error("ClearOverrideBindings(): owner must be a frame", 2) end
         W[owner].bindings = nil

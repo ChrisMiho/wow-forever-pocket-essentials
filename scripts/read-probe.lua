@@ -270,7 +270,9 @@ function M.formatHeader(db, situations, areas)
     return {
         "Restriction probe",
         "Game " .. (db.game ~= nil and clean(db.game) or "unknown") .. ", probe " .. (db.probe ~= nil and clean(db.probe) or "unknown"),
-        plural(#situations, "situation", "situations") .. ", " .. plural(trialCount(areas), "trial", "trials"),
+        plural(#situations, "situation", "situations") .. ", " .. plural(trialCount(areas), "trial", "trials")
+            .. (type(tbl(db.options).risky) == "boolean"
+                and (", risky trials " .. (db.options.risky and "on" or "off")) or ""),
     }
 end
 
@@ -400,6 +402,21 @@ end
 
 -- Everything the command prints for one file.
 -- opts: { markdown = bool, detailsOnly = bool, logOnly = bool }.
+-- Which trial had just run when the game first refused something outside a
+-- trial (probe 0.2.0, the saved "spoiled" table), one line per situation.
+function M.formatSpoiled(db, byKey)
+    local spoiled = tbl(tbl(db).spoiled)
+    local keys = sortedKeys(spoiled)
+    if #keys == 0 then return {} end
+    local out = { "The game's own actions were first refused after:" }
+    for _, key in ipairs(keys) do
+        local s = byKey and byKey[key]
+        local name = type(s) == "table" and s.name or nil
+        out[#out + 1] = "  " .. clean(spoiled[key]) .. "  (" .. (name ~= nil and clean(name) or clean(key)) .. ")"
+    end
+    return out
+end
+
 function M.format(db, opts)
     opts = opts or {}
     db = tbl(db)
@@ -424,7 +441,10 @@ function M.format(db, opts)
         add({ "No results in this file yet." }, true)
     end
     add(M.formatTables(db, situations, areas, opts.markdown), true)
-    if not opts.markdown then add(M.formatDetails(db, byKey, areas), true) end
+    if not opts.markdown then
+        add(M.formatSpoiled(db, byKey), true)
+        add(M.formatDetails(db, byKey, areas), true)
+    end
     return out
 end
 

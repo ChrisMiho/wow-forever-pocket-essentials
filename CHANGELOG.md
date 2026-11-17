@@ -4,6 +4,32 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.0.9] - 2026-11-17
+
+Ninth test build, from the first Pocket Probe file sent from the device.
+Not yet tested on a device.
+
+The probe showed that, with the Gamepad UI on, an addon opening the chat box
+is blocked inside the game's controller code, and that afterwards the game
+refuses its own controller actions (interact, cancel, clear target) in the
+addon's name until a reload. This is the likely cause of the "blocked from
+an action only available to the Blizzard UI" pop-up from the fourth device
+test.
+
+### Changed
+
+- Big chat buttons, Gamepad UI on: a tap no longer opens the chat box. It
+  sets where your chat goes (Say, Party, a channel, a whisper) and a chat line
+  says "Chat is set to Say. Press A to type." For the next 12 seconds the
+  controller's A button opens the chat box through the game's own key
+  binding, which the game allows; the button is given back when chat opens,
+  when the time is up or when a fight starts. During a fight the tap still
+  sets the chat, but the button cannot be lent, so the line says to open chat
+  yourself. With the Gamepad UI off, a tap opens the chat box as before.
+- Pocket Probe 0.2.0: the trials that upset the controller run last and only
+  when "Risky trials" is switched on; what the game refuses afterwards is
+  counted in the table; the one-per-reload trials watch for after-effects.
+
 ## [0.0.8] - 2026-11-17
 
 Eighth test build, from the first debug log sent from the device (0.0.7).

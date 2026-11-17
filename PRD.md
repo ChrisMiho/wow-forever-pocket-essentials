@@ -226,7 +226,7 @@ until its step in the test plan passes.
 | One big bag | Blizzard's own combined bag, a big Sort button, L3 sorts while the bag is open, three bag sizes | Untested |
 | Sell junk automatically | Sells every grey item at vendors | Untested |
 | Repair automatically | Repairs from your own money at vendors that can | Untested |
-| Big chat buttons | Picker with one big button per channel plus the last six whisperers; badge on the round button for unanswered whispers | Untested |
+| Big chat buttons | Picker with one big button per channel plus the last six whisperers; badge on the round button for unanswered whispers. With the Gamepad UI on (0.0.9) a tap sets where the chat goes and the player opens chat with the game's own button; with it off the tap opens the chat box | Picker and sending worked on the device (0.0.7); opening the box from the addon caused blocks; the 0.0.9 two-step is untested |
 | Layout helper (experimental) | One-tap switch to Blizzard's Gamepad layout and back; a dormant path to install a ready-made handheld layout. **No nudge arrows** (see `docs/DECISIONS.md`) | Untested |
 | QuestieDB | Official Questie data addon, Forever build 1.1.1, shipped unmodified. Only the two quest features need it | Untested |
 | `scripts/build.sh` | Downloads QuestieDB (pinned checksum), checks the addon's file list, writes `dist/wow-forever-pocket-essentials.zip` (GitHub bundle) and `dist/PocketEssentials-<version>.zip` (CurseForge, addon only) | Runs on the Mac |
@@ -302,6 +302,19 @@ the tap would only set who the chat goes to, and the player opens chat with
 the game's own button (owner's decision, not built). Quest data rebuilt 11
 quests into 345 icons in about 0.1 to 0.2 seconds at login. Sell junk and
 repair were not exercised in this log.
+
+**Sixth device test, 2026-11-17, Pocket Probe 0.1.0**
+(`docs/errorLogs/PocketProbe.lua`; table in `docs/ARCHITECTURE.md` "What the
+device allows"): Gamepad UI on, in town, no fight. Opening, focusing or
+closing the chat box, and opening or closing the bags, from addon code is
+blocked or forbidden, and afterwards the game forbids its own controller
+actions (`InteractUnit`, `SetPreferredGamepadInteractTarget`, `ClearTarget`,
+`SpellStopCasting`) in the addon's name until a reload. Everything else tried
+was allowed and every value was readable. This is the likely cause of the
+pop-up at the innkeeper in the fourth test (chat buttons were on), not yet
+confirmed for Pocket Essentials itself. 0.0.9 (untested): chat buttons no
+longer open the chat box with the Gamepad UI on. Still not probed: a fight,
+the vendor trials, the clean trials.
 
 Upcoming from the fourth device test (2026-11-16), one at a time:
 - Bags: reach the Sort tab with the d-pad (Blizzard's controller navigation

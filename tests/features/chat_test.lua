@@ -351,6 +351,87 @@ test("chat: a tap while the game's combat restriction is active opens nothing, e
     check(#chatCalls(c) > 0, "the chat box did not open once the restriction was over")
 end)
 
+-- Chat.lua OpenChatTo, Gamepad UI on. Pocket Probe on the device (docs/errorLogs/PocketProbe.lua,
+-- 2026-11-17): an addon opening the chat box is blocked in Blizzard's controller code and the game
+-- then forbids its own controller actions until a reload; setting the chat type on the closed box
+-- is allowed. So the tap sets the type and never calls OpenChat.
+test("chat: with the Gamepad UI on, a tap sets the chat type and never opens the chat box", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = true })
+    local PE = c.PE
+    openPicker(c, PE)
+    c:click(buttonLabelled(c, "Say"))
+    c:advance(0.2)
+    local names = {}
+    for _, call in ipairs(chatCalls(c)) do names[#names + 1] = call.name end
+    eq(names, { "ChatFrame1EditBox:SetChatType" })
+    eq(chatCalls(c)[1].args[1], "SAY")
+    local said = false
+    for _, line in ipairs(T.chatLines(c)) do
+        if line:find("Chat is set to Say. Press A to type.", 1, true) then said = true end
+    end
+    check(said, "no chat line tells the player how to open chat: " .. table.concat(T.chatLines(c), " / "))
+end)
+
+-- Chat.lua TypeKeyArm / TypeKeyDisarm: the A button is lent to the game's own OPENCHAT binding
+-- (an addon may not open the chat box; the game's binding may), and given back when chat opens.
+test("chat: with the Gamepad UI on, the A button is lent to the game's open-chat binding and given back", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = true })
+    local PE = c.PE
+    local owner = rawget(c.env, "PocketEssentialsChatKeyOwner")
+    local function bound() local b = c._state(owner).bindings return b and b.PAD1 or nil end
+    eq(bound(), nil, "before any tap")
+    openPicker(c, PE)
+    c:click(buttonLabelled(c, "Say"))
+    eq(bound(), "command:OPENCHAT")
+    c.env.ChatFrameUtil.OpenChat(nil) -- the player's press runs the game's binding
+    eq(bound(), nil, "after chat opened")
+    c.closeChat()
+    -- and by itself when the time is up
+    openPicker(c, PE)
+    c:click(buttonLabelled(c, "Say"))
+    eq(bound(), "command:OPENCHAT")
+    c:advance(13)
+    eq(bound(), nil, "after 12 seconds")
+    -- and when a fight starts
+    openPicker(c, PE)
+    c:click(buttonLabelled(c, "Say"))
+    c:enterCombat()
+    eq(bound(), nil, "when a fight starts")
+    c:leaveCombat()
+    eq(#c:problems(), 0, table.concat(c:problems(), " / "))
+end)
+
+-- Bindings cannot be changed in a fight: the type is set, the button is not lent.
+test("chat: with the Gamepad UI on, a tap during a fight lends no button and says to open chat", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = true })
+    local PE = c.PE
+    local owner = rawget(c.env, "PocketEssentialsChatKeyOwner")
+    openPicker(c, PE)
+    c:enterCombat()
+    c:click(buttonLabelled(c, "Say"))
+    eq(c._state(owner).bindings, nil)
+    local said = false
+    for _, line in ipairs(T.chatLines(c)) do
+        if line:find("Open chat to type your message.", 1, true) then said = true end
+    end
+    check(said, "no chat line: " .. table.concat(T.chatLines(c), " / "))
+    eq(#c:problems(), 0, table.concat(c:problems(), " / "))
+    c:leaveCombat()
+end)
+
+-- Same rule: nothing is opened, so a tap is fine during a fight too.
+test("chat: with the Gamepad UI on, a tap during a fight still sets the chat type", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = true })
+    local PE = c.PE
+    openPicker(c, PE)
+    c:enterCombat()
+    c:click(buttonLabelled(c, "Say"))
+    c:advance(0.2)
+    eq(#chatCalls(c), 1)
+    eq(chatCalls(c)[1].name, "ChatFrame1EditBox:SetChatType")
+    c:leaveCombat()
+end)
+
 -- Chat.lua OpenChatTo: choose the box, open it with OpenChat(nil, frame), then set the
 -- type and call UpdateHeader; nothing typed into the box.
 test("chat: tapping Say opens the chat box set to Say", function()

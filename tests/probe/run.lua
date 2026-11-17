@@ -166,6 +166,15 @@ local function install(c)
     }
 end
 
+local function riskyOn() return { options = { risky = true } } end
+
+-- The place of a log line that starts (after the time) with this text.
+local function logAt(db, text)
+    for i, line in ipairs(db.log) do
+        if line:sub(10, 9 + #text) == text then return i end
+    end
+end
+
 -- A fresh client with the probe loaded. opts.saved: the saved table (a
 -- reload is a new client with the same table). opts.setup(c) runs after the
 -- names above are installed and before the probe loads.
@@ -252,8 +261,11 @@ test("saved table has the fixed shape", function()
     local c, P, db = new()
     eq(db.version, 1)
     eq(db.game, "1.16.0 (60000)")
-    eq(db.probe, "0.1.0")
+    eq(db.probe, "0.2.0")
     eq(db.options.vendor, true)
+    eq(db.options.risky, false)
+    eq(type(db.spoiled), "table")
+    eq(db.trials[1].id, "chat.open", "the saved list keeps the display order")
     eq(db.clean.index, 0); eq(db.clean.running, false)
     check(#db.trials >= 30, "trial list too short")
     local seen = {}
@@ -267,11 +279,57 @@ test("saved table has the fixed shape", function()
     noErrors(c)
 end)
 
-test("an automatic pass after login records every trial under trig=auto", function()
+local RISKY = { "chat.open", "chat.openframe", "chat.focus", "chat.close", "bag.toggle", "layout.set" }
+
+test("with the risky switch off (the default) a pass leaves the risky trials out", function()
     local c, P, db = new()
+    c:advance(25)
+    noErrors(c)
+    for _, id in ipairs(RISKY) do check(not db.results[id], id .. " ran with the switch off") end
+    eq(#c:callsTo("ChatFrameUtil.OpenChat"), 0)
+    eq(#c:callsTo("C_EditMode.SetActiveLayout"), 0)
+    eq(cell(db, "own.show", KEY_AUTO), "allowed")
+    eq(cell(db, "chat.type", KEY_AUTO), "allowed")
+    eq(cell(db, "val.money", KEY_AUTO), "readable")
+    eq(countLog(db, "risky trials off"), 1)
+    eq(db.situations[KEY_AUTO].passes, 1)
+    -- Switching them on makes the situation count as not covered yet.
+    local switch = button(c, "PocketProbeRiskyButton")
+    eq(switch.label:GetText(), "Risky trials: off")
+    c:click(switch)
+    eq(db.options.risky, true)
+    eq(switch.label:GetText(), "Risky trials: on")
+    c:enterCombat(); c:advance(0.5); c:leaveCombat(); c:advance(30)
+    eq(cell(db, "chat.open", KEY_AUTO), "allowed")
+    eq(db.situations[KEY_AUTO].passes, 2)
+end)
+
+test("risky trials run last: other actions, then values, then the risky ones", function()
+    local c, P, db = new({ saved = riskyOn() })
+    c:advance(30)
+    noErrors(c)
+    local lastSafe, firstValue, lastValue, firstRisky = 0, math.huge, 0, math.huge
+    for _, t in ipairs(db.trials) do
+        local at = logAt(db, t.id .. ": ")
+        if at then
+            local risky = false
+            for _, id in ipairs(RISKY) do if id == t.id then risky = true end end
+            if risky then firstRisky = math.min(firstRisky, at)
+            elseif t.kind == "value" then firstValue, lastValue = math.min(firstValue, at), math.max(lastValue, at)
+            else lastSafe = math.max(lastSafe, at) end
+        end
+    end
+    check(lastSafe > 0 and lastSafe < firstValue, "safe actions come before the values")
+    check(lastValue < firstRisky and firstRisky < math.huge, "risky trials come after the values")
+    eq(countLog(db, "risky trials off"), 0)
+end)
+
+test("an automatic pass after login records every trial under trig=auto", function()
+    -- The bag has been opened once before, so it has a position to move.
+    local c, P, db = new({ saved = riskyOn(), setup = function(cl) cl:openBag(); cl:closeBag() end })
     c:advance(2.5)
     eq(next(db.results), nil, "nothing runs in the first seconds")
-    c:advance(25)
+    c:advance(30)
     noErrors(c)
     for _, t in ipairs(passTrials(db)) do
         check(cell(db, t.id, KEY_AUTO), "no result for " .. t.id)
@@ -325,7 +383,7 @@ test("a fight gets its own situation, one second after it starts", function()
     local s = db.situations[KEY_FIGHT]
     check(s, "no fight situation")
     eq(s.lockdown, true); eq(s.restrictions.combat, true); eq(s.passes, 1)
-    eq(cell(db, "chat.open", KEY_FIGHT), "allowed")
+    eq(cell(db, "own.show", KEY_FIGHT), "allowed")
     -- The game refuses the key in a fight and names the function.
     eq(cell(db, "pad.bind", KEY_FIGHT), "blocked")
     local d = detail(db, "pad.bind", KEY_FIGHT)
@@ -352,7 +410,7 @@ end)
 test("a fight starting mid-pass stops it; the pass runs again afterwards", function()
     local c, P, db = new()
     c:advance(4.5)
-    check(cell(db, "chat.open", KEY_AUTO), "the pass had begun")
+    check(cell(db, "own.show", KEY_AUTO), "the pass had begun")
     c:enterCombat()
     c:advance(30)
     noErrors(c)
@@ -368,46 +426,69 @@ end)
 
 test("a press pass starts inside the tap and each tap starts with the next trial", function()
     local c, P, db = new({ setup = function(cl)
-        -- The chat box refuses to open and the game prints its line (no event).
-        cl.env.ChatFrameUtil.OpenChat = function() cl.env.DisplayInterfaceActionBlockedMessage() end
+        -- Setting the chat type makes the game print its line (no event).
+        rawset(cl.editBox, "SetChatType", function() cl.env.DisplayInterfaceActionBlockedMessage() end)
     end })
     c:advance(25)
-    eq(cell(db, "chat.open", KEY_AUTO), "blocked")
+    eq(cell(db, "chat.type", KEY_AUTO), "blocked")
     c:click(button(c, "PocketProbeButton"))
     -- Before any timer: the first trial already has its result.
-    eq(cell(db, "chat.open", KEY_PRESS), "blocked")
+    eq(cell(db, "chat.type", KEY_PRESS), "blocked")
     eq(db.pressIndex, 1)
-    local d = detail(db, "chat.open", KEY_PRESS)
+    local d = detail(db, "chat.type", KEY_PRESS)
     eq(d.inPress, true)
     eq(d.result, "blocked"); eq(d.func, nil)
     check(d.stack and d.stack:find("Trials.lua", 1, true), "stack")
+    check(not d.stack:match("^[^\n]*Run%.lua"), "our own listening lines are left off the top of the stack")
     check(d.at:match("^%d%d%d%d%-"), "at")
     check(not cell(db, "own.show", KEY_PRESS), "the rest waits for the timers")
     c:advance(25)
     noErrors(c)
     for _, t in ipairs(passTrials(db)) do
-        if not t.id:find("%.create$") or t.id == "own.create" then
+        local risky = false
+        for _, id in ipairs(RISKY) do if id == t.id then risky = true end end
+        if not risky and (not t.id:find("^win%.") or t.id:find("attach$")) then
             check(cell(db, t.id, KEY_PRESS), "no press result for " .. t.id)
         end
     end
+    for _, id in ipairs(RISKY) do check(not db.results[id], id .. " ran from a press with the switch off") end
     eq(db.situations[KEY_PRESS].trigger, "press")
-    eq(detail(db, "chat.close", KEY_PRESS).inPress, false)
+    eq(detail(db, "val.name.target", KEY_PRESS).inPress, false)
     eq(detail(db, "val.name.target", KEY_AUTO).inPress, nil)
     -- Press passes always run, and the next one starts with the next action trial.
     c:click(button(c, "PocketProbeButton"))
     eq(db.pressIndex, 2)
-    eq(detail(db, "chat.openframe", KEY_PRESS).inPress, true)
+    eq(countLog(db, "own.show: allowed (straight from the press)"), 1)
     c:advance(25)
     eq(db.situations[KEY_PRESS].passes, 2)
     -- /probe is the same thing.
     c.env.SlashCmdList.POCKETPROBE("")
     eq(db.pressIndex, 3)
-    check(countLog(db, "chat.focus: allowed (straight from the press)") == 1, "third press ran chat.focus directly")
+    eq(countLog(db, "own.escape: allowed (straight from the press)"), 1)
     c.env.SlashCmdList.POCKETPROBE("stop")
     check(P.status:find("stopped", 1, true), "status after /probe stop")
     local before = countLog(db, ": ")
     c:advance(25)
     eq(countLog(db, ": "), before, "nothing runs after Stop")
+    noErrors(c)
+end)
+
+test("with the switch on, a risky trial straight from a press is a pass of its own", function()
+    local c, P, db = new({ saved = riskyOn() })
+    c:advance(30)
+    c:click(button(c, "PocketProbeButton"))
+    eq(db.pressIndex, 1)
+    eq(cell(db, "chat.open", KEY_PRESS), "allowed")
+    eq(countLog(db, "chat.open: allowed (straight from the press)"), 1)
+    c:advance(30)
+    check(not cell(db, "own.show", KEY_PRESS), "nothing else runs after a risky trial in that pass")
+    eq(db.situations[KEY_PRESS].passes, 0)
+    -- Later presses reach the trials that are not risky and run whole passes.
+    for _ = 1, 4 do c:click(button(c, "PocketProbeButton")); c:advance(30) end
+    eq(db.pressIndex, 5)
+    eq(countLog(db, "chat.type: allowed (straight from the press)"), 1)
+    check(cell(db, "val.money", KEY_PRESS), "a whole press pass ran")
+    eq(db.situations[KEY_PRESS].passes, 1)
     noErrors(c)
 end)
 
@@ -426,8 +507,8 @@ test("a forbidden call and a blocked message are recorded with function and stac
         -- A trial that raises.
         rawset(cl.env.C_EditMode, "SetActiveLayout", function() error("layout exploded") end)
         cl.world.focusFrame = cl.env.WorldMapFrame
-    end })
-    c:advance(25)
+    end, saved = riskyOn() })
+    c:advance(30)
     noErrors(c)
     eq(cell(db, "bags.sort", KEY_AUTO), "forbidden")
     local d = detail(db, "bags.sort")
@@ -457,8 +538,8 @@ test("an action that does nothing is 'no effect'; Edit Mode open is left alone",
     local c, P, db = new({ setup = function(cl)
         cl.env.ChatFrameUtil.OpenChat = function() end
         cl.world.editMode = true
-    end })
-    c:advance(25)
+    end, saved = riskyOn() })
+    c:advance(30)
     noErrors(c)
     eq(cell(db, "chat.open", KEY_AUTO), "no effect")
     eq(cell(db, "layout.set", KEY_AUTO), "no effect")
@@ -473,8 +554,8 @@ test("a missing function is 'missing'", function()
         rawset(cl.env, "UnitName", nil)
         cl.typeMethods.EditBox.SetFocus = nil
         rawset(cl.env, "WorldMapFrame", nil)
-    end })
-    c:advance(25)
+    end, saved = riskyOn() })
+    c:advance(30)
     noErrors(c)
     eq(cell(db, "bags.sort", KEY_AUTO), "missing")
     check(detail(db, "bags.sort").message:find("C_Container.SortBags", 1, true), "message names it")
@@ -506,22 +587,25 @@ test("two different answers for one cell are both kept, across sessions", functi
     noErrors(c3)
 end)
 
-test("the clean series runs one trial per reload and ends", function()
+test("the clean series runs one trial per reload, watches, and ends", function()
     local saved = {}
     local c, P, db = new({ saved = saved })
     c:advance(25)
     local n = #P.cleanList
-    check(n >= 10, "clean list")
-    eq(P.cleanList[n].id, "vendor.sell1", "the vendor trial is last")
+    local order = {}
+    for i, t in ipairs(P.cleanList) do order[i] = t.id end
+    eq(table.concat(order, " "), "chat.type chat.open chat.openframe chat.focus chat.close bag.toggle win.map.create "
+        .. "win.bag.create win.chat.create pad.bind pad.mark layout.set vendor.sell1")
     c:click(button(c, "PocketProbeCleanButton"))
     eq(c.reloads, 1, "Clean trials reloads from the tap")
     eq(saved.clean.running, true); eq(saved.clean.index, 0)
+    eq(saved.options.risky, false, "the series runs the risky trials whatever the switch says")
     local started = countLog(saved, "pass started")
 
     for i = 1, n do
         c, P = new({ saved = saved })
         local trial = P.cleanList[i]
-        local detailsBefore, resultsBefore = #saved.details, #dump(saved.results)
+        local resultsBefore = #dump(saved.results)
         c:advance(2.5)
         eq(#dump(saved.results), resultsBefore, "nothing before the clean trial")
         if trial.vendor then
@@ -535,17 +619,20 @@ test("the clean series runs one trial per reload and ends", function()
         eq(saved.clean.index, i, "index after trial " .. i)
         check(cell(saved, trial.id, KEY_CLEAN), "no clean result for " .. trial.id)
         eq(countLog(saved, "pass started"), started, "no pass in a clean session")
-        -- Only that one trial ran.
         local ran = 0
         for _, cells in pairs(saved.results) do
             if cells[KEY_CLEAN] then ran = ran + 1 end
         end
-        eq(ran, i, "clean results so far")
+        eq(ran, i, "only that one trial ran")
+        -- The watch: Next is not offered yet.
         local nextButton = button(c, "PocketProbeNextButton")
+        check(P.status:find("watching for after-effects… ", 1, true) and P.status:match("%d$"),
+            "status during the watch: " .. tostring(P.status))
+        check(not nextButton:IsShown(), "Next waits for the watch")
+        -- A fight in a clean session starts no pass either.
+        c:enterCombat(); c:advance(2); c:leaveCombat(); c:advance(8)
+        eq(countLog(saved, "pass started"), started, "no pass while the series runs")
         if i < n then
-            -- A fight in a clean session starts no pass either.
-            c:enterCombat(); c:advance(5); c:leaveCombat(); c:advance(5)
-            eq(countLog(saved, "pass started"), started, "no pass while the series runs")
             eq(saved.clean.running, true)
             eq(P.status, "clean trial " .. i .. " of " .. n .. ": tap Next")
             check(nextButton:IsShown(), "Next is showing")
@@ -559,10 +646,107 @@ test("the clean series runs one trial per reload and ends", function()
     end
     eq(saved.situations[KEY_CLEAN].trigger, "clean")
     eq(#c:callsTo("C_Container.UseContainerItem"), 1)
+    eq(next(saved.spoiled), nil, "nothing was refused afterwards")
     -- The next login is an ordinary one again.
     c = new({ saved = saved })
     c:advance(25)
     eq(countLog(saved, "pass started"), started + 1)
+end)
+
+test("a refusal during a clean trial's watch is pinned on that trial", function()
+    local saved = { clean = { running = true, index = 1 } }
+    local c, P = new({ saved = saved })
+    c:advance(4)
+    eq(saved.clean.index, 2)
+    check(cell(saved, "chat.open", KEY_CLEAN), "the clean trial ran")
+    check(not P.warning, "no warning yet")
+    c:fire("ADDON_ACTION_FORBIDDEN", "PocketProbe", "InteractUnit()")
+    c:advance(2)
+    c:fire("ADDON_ACTION_FORBIDDEN", "PocketProbe", "InteractUnit()")
+    eq(saved.spoiled[KEY_CLEAN], "chat.open")
+    eq(cell(saved, "after.InteractUnit", KEY_CLEAN), "forbidden")
+    eq(detail(saved, "after.InteractUnit").message, "seen 2 times this session; first seen after: chat.open")
+    eq(P.warning, "controls may misbehave until a reload — tap Save")
+    c:advance(8)
+    eq(P.status, "clean trial 2 of " .. #P.cleanList .. ": tap Next")
+    noErrors(c)
+end)
+
+test("refusals outside a trial are counted once per situation, with a quiet log", function()
+    local saved = {}
+    local c, P, db = new({ saved = saved })
+    c:advance(25)
+    local trialCount = #db.trials
+    check(not P.warning, "no warning before anything was refused")
+    c:fire("ADDON_ACTION_FORBIDDEN", "SomeOtherAddon", "InteractUnit()")
+    eq(next(db.spoiled), nil, "another addon's refusal is not ours")
+    -- The player presses interact and cancel for a minute.
+    for _ = 1, 60 do
+        c:fire("ADDON_ACTION_FORBIDDEN", "PocketProbe", "InteractUnit()")
+        c:fire("ADDON_ACTION_FORBIDDEN", "PocketProbe", "ClearTarget()")
+        c:advance(1)
+    end
+    c.env.DisplayInterfaceActionBlockedMessage()
+    noErrors(c)
+    eq(db.spoiled[KEY_AUTO], "val.name.target", "the last trial of the pass")
+    eq(cell(db, "after.InteractUnit", KEY_AUTO), "forbidden")
+    eq(cell(db, "after.ClearTarget", KEY_AUTO), "forbidden")
+    eq(cell(db, "after.message", KEY_AUTO), "blocked")
+    eq(#db.trials, trialCount + 3)
+    local entry = db.trials[trialCount + 1]
+    eq(entry.id, "after.InteractUnit"); eq(entry.kind, "action")
+    eq(entry.area, "Afterwards (the game's own actions refused in the probe's name)")
+    eq(entry.label, "InteractUnit refused afterwards")
+    local entries = 0
+    for _, d in ipairs(db.details) do if d.trial == "after.InteractUnit" then entries = entries + 1 end end
+    eq(entries, 1, "one detail entry per refused function and situation")
+    local d = detail(db, "after.InteractUnit")
+    eq(d.result, "forbidden"); eq(d.func, "InteractUnit()"); eq(d.situation, KEY_AUTO)
+    eq(d.message, "seen 60 times this session; first seen after: val.name.target")
+    check(type(d.stack) == "string" and d.stack ~= "", "stack kept")
+    eq(countLog(db, "after.InteractUnit: forbidden"), 1, "one log line on first sight")
+    local summaries = countLog(db, "more refusal")
+    check(summaries >= 3 and summaries <= 7, "about one summary line per ten seconds, got " .. summaries)
+    eq(P.warning, "controls may misbehave until a reload — tap Save")
+    -- A fight is another situation: counted there too.
+    c:enterCombat(); c:advance(30)
+    c:fire("ADDON_ACTION_FORBIDDEN", "PocketProbe", "InteractUnit()")
+    eq(cell(db, "after.InteractUnit", KEY_FIGHT), "forbidden")
+    eq(db.spoiled[KEY_FIGHT], nil, "only the first refusal of a session names a trial")
+    -- The next session: the list keeps its extra entries once, and a second answer is merged.
+    local c2, P2 = new({ saved = saved, setup = function(cl) rawset(cl.env, "UnitName", nil) end })
+    eq(#saved.trials, trialCount + 3)
+    c2:fire("ADDON_ACTION_FORBIDDEN", "PocketProbe", "InteractUnit()")
+    eq(saved.spoiled[KEY_AUTO], "val.name.target / no trial yet")
+    eq(#saved.trials, trialCount + 3)
+    eq(detail(saved, "after.InteractUnit").message, "seen 1 time this session; first seen after: no trial yet")
+    noErrors(c2)
+end)
+
+test("results from another probe version are cleared at load", function()
+    local saved = {
+        version = 1, probe = "0.1.0", options = { vendor = false },
+        results = { ["chat.open"] = { [KEY_AUTO] = "allowed" } }, details = { { trial = "chat.open" } },
+        situations = { [KEY_AUTO] = { passes = 3 } }, spoiled = { [KEY_AUTO] = "chat.open" },
+        log = { "00:00:00 old line" }, clean = { index = 5, running = true }, pressIndex = 9,
+        trials = { { id = "after.InteractUnit", area = "x", label = "y", kind = "action" } },
+    }
+    local c, P, db = new({ saved = saved })
+    eq(db, saved)
+    eq(db.probe, "0.2.0")
+    eq(next(db.results), nil); eq(#db.details, 0); eq(next(db.situations), nil); eq(next(db.spoiled), nil)
+    eq(db.clean.running, false); eq(db.clean.index, 0); eq(db.pressIndex, 0)
+    eq(db.options.vendor, false, "the switches are kept")
+    eq(countLog(db, "old line"), 0)
+    eq(countLog(db, "results from probe 0.1.0 cleared"), 1)
+    for _, t in ipairs(db.trials) do check(not t.id:find("^after%."), "old extra entries are dropped too") end
+    c:advance(25)
+    eq(db.situations[KEY_AUTO].passes, 1)
+    -- The same version again: nothing is cleared.
+    local c2 = new({ saved = saved })
+    eq(saved.situations[KEY_AUTO].passes, 1)
+    eq(countLog(saved, "cleared"), 1)
+    noErrors(c2)
 end)
 
 test("Stop ends the clean series; Next skips a trial waiting for a vendor", function()
@@ -751,7 +935,7 @@ test("the probe's frames are made at load and nothing ticks", function()
     local c, P, db = new()
     local atLoad = #c:frames()
     for _, name in ipairs({ "PocketProbeButton", "PocketProbeCleanButton", "PocketProbeSaveButton",
-        "PocketProbeVendorButton", "PocketProbeStopButton", "PocketProbeNextButton" }) do
+        "PocketProbeVendorButton", "PocketProbeRiskyButton", "PocketProbeStopButton", "PocketProbeNextButton" }) do
         local b = button(c, name)
         local st = c._state(b)
         eq(st.strata, "HIGH", name .. " strata")

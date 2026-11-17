@@ -223,17 +223,46 @@ removes a row from the table above: those are still unconfirmed.
 
 ### What the device allows (from the probe)
 
-Empty for now. The restriction probe (`probe/PocketProbe/`, see
-`docs/TESTING.md` "Restriction probe") tries each action on the device and
-records whether the game allowed it, in each situation: Gamepad UI on or off,
-in a fight or not, open world or dungeon, started by itself or from a tap.
+From the restriction probe (`probe/PocketProbe/`, `docs/TESTING.md`
+"Restriction probe"). Produce the full table from a saved file with
+`scripts/read-probe.sh <file> --markdown`.
 
-When the first probe file comes back from the device, the table goes here. It
-is produced by:
+First file, 2026-11-17: probe 0.1.0, game 1.60.1 (70959), Gamepad UI on, in a
+town, no fight, automatic passes only (three logins). Not yet covered: a
+fight, a dungeon, a pass straight from a press, the Gamepad UI off, the
+vendor trials (no grey item, and the vendor did not repair) and the clean
+one-per-reload trials.
 
-```bash
-scripts/read-probe.sh path/to/PocketProbe.lua --markdown
-```
+| Action by an addon | Result |
+|---|---|
+| Open the chat box (`ChatFrameUtil.OpenChat`) | allowed once per login, but closing it again was blocked |
+| Open the chat box on a named chat frame; give the edit box focus; close the chat box | blocked ("Interface action failed"), sometimes forbidden (the pop-up) |
+| Set the chat type on the closed chat box | allowed |
+| Open and close the bags (`OpenAllBags` / `CloseAllBags`) | forbidden / blocked |
+| Show, hide and create our own windows; a window registered for Escape | allowed |
+| Create a button under the world map, the bag, the chat frame | allowed |
+| Move and resize the bag | allowed |
+| Take a controller button (override binding); mark a button for controller navigation | allowed |
+| Sort the bags | allowed |
+| Write the combined-bags setting | allowed |
+| Read Edit Mode layouts; set the active layout to the one already active | allowed |
+| Read position, facing, map, quest log and objectives, bag items, money, repair cost, unit names | readable |
 
-Until then, what the game allows is known only from reading Blizzard's source
-and from the device tests recorded above.
+Where the blocks come from: showing or focusing a Blizzard window that the
+controller navigation manages goes through
+`GamepadFrameControlsManagerMixin:FrameShown`, then
+`SmartNavigationMixin:ActivateBinding` (refuses any call with addon code
+behind it) and `SetFallThroughCatcherActive`, which ends in the protected
+`SetPreferredGamepadInteractTarget`.
+
+The lasting effect, which matters more than the blocks themselves: after
+those trials the game kept forbidding its own controller actions in the
+probe's name for the rest of the session (`SetPreferredGamepadInteractTarget`,
+`InteractUnit`, `ClearTarget`, `SpellStopCasting`, `SpellStopTargeting`), so
+the interact and cancel buttons misbehave until a reload. Which single trial
+starts it is not yet known (the chat trials ran first in every pass); the
+clean trials of probe 0.2.0 are for that.
+
+Rule for the addon, from this: with the Gamepad UI on, never open, focus or
+close a Blizzard window that takes controller focus (chat box, bags) from
+addon code. Set state and let the player open it.

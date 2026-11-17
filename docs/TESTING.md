@@ -192,16 +192,29 @@ A small "Probe" button sits at the top centre of the screen, with a line of
 text under it saying what it is doing. A pass is one run through all the
 trials; it takes a few seconds and ends with "pass done".
 
+The trials are in two groups (probe 0.2.0):
+
+- **Safe trials** run by themselves and leave your controls alone.
+- **Risky trials** (opening the chat box and the bags, switching the layout)
+  can leave the controller's interact and cancel buttons refusing to work
+  until a reload. They only run when **Risky trials** is switched on, or one
+  at a time in the clean trials. If the second line under the button says
+  "controls may misbehave until a reload", tap **Save**.
+
+Leave "Risky trials" off for steps 1 to 4.
+
 1. With Pocket Essentials off and PocketProbe loaded, log in in a town. Wait
    for "pass done".
 2. Tap **Probe** once.
 3. Pick a fight with something weak. Wait for "pass done", tap **Probe** once
    during the fight, finish the fight and wait for "pass done" again.
 4. Open a vendor with a few grey items in your bags and damaged gear.
-5. Tap **Clean trials**, then **Next (reload)** until it says done (about ten
-   taps). Each tap reloads the interface and runs one trial as the first thing
-   after the reload.
-6. If a dungeon is handy, walk in and wait for "pass done".
+5. Tap **Clean trials**, then **Next (reload)** each time it appears, until it
+   says done (13 trials). Each tap reloads the interface and runs one trial as
+   the first thing after the reload, then watches for a few seconds for
+   after-effects.
+6. Optional, last: switch **Risky trials** on, tap **Probe** in town, then
+   again during a fight. Expect the controls to misbehave afterwards.
 7. Tap **Save** (this reloads, which is when the game writes the file) and
    send this file:
    `World of Warcraft/_forever_/WTF/Account/<account>/SavedVariables/PocketProbe.lua`

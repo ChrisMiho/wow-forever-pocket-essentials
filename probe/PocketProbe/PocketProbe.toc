@@ -3,7 +3,7 @@
 ## Author: ChrisMiho
 ## X-License: GPL-3.0
 ## Notes: Test tool, not for play. Tries a list of addon actions in each situation (Gamepad UI, fights, dungeons, vendors) and saves what the game allowed. Run it with Pocket Essentials switched off.
-## Version: 0.1.0
+## Version: 0.2.0
 ## SavedVariables: PocketProbeDB
 
 Core.lua

@@ -34,6 +34,7 @@ local ADDON_NAME, P = ...
 --   issecretvalue, canaccessvalue                Doc/FrameScriptDocumentation.lua:287, 65
 --   debugstack                                   Blizzard_ScriptErrors/Blizzard_ScriptErrors.lua:59
 --   date                                         Blizzard_FrameXMLUtil/GameTimeUtil.lua:78
+--   GetTime                                      Doc/SystemTimeDocumentation.lua:57
 --   SlashCmdList, SLASH_<KEY>1                   Blizzard_ChatFrameBase/Shared/SlashCommandsRegistry.lua:16
 --   UISpecialFrames                              Blizzard_UIParentPanelManager/Shared/UIParentPanelManager.lua:21
 --   GamepadMode.FrameControlsManager             Blizzard_GamepadSharedUtility/FrameControlsManager.lua:1012
@@ -104,7 +105,7 @@ local type, tostring, pairs, ipairs, pcall, select = type, tostring, pairs, ipai
 local tconcat, tremove = table.concat, table.remove
 
 P.name = ADDON_NAME or "PocketProbe"
-P.VERSION = "0.1.0"          -- used when the game cannot read the TOC's version line
+P.VERSION = "0.2.0"          -- used when the game cannot read the TOC's version line
 
 local LOG_MAX, LOG_DROP = 2000, 200   -- the activity log drops its oldest lines in blocks
 local DETAILS_MAX = 400
@@ -227,28 +228,46 @@ function P.InitDB()
     local saved = _G.PocketProbeDB
     if type(saved) ~= "table" then saved = {} end
     _G.PocketProbeDB = saved
+    -- Results from another probe version were made with another run order:
+    -- they are dropped, so one table never mixes the two.
+    local version, cleared = ProbeVersion(), nil
+    if saved.probe ~= nil and saved.probe ~= version then
+        cleared = P.Plain(saved.probe, 40)
+        for _, key in ipairs({ "results", "details", "situations", "spoiled", "log" }) do saved[key] = {} end
+        saved.clean, saved.pressIndex = nil, nil
+    end
     saved.version = 1
     saved.game = GameVersion()
-    saved.probe = ProbeVersion()
+    saved.probe = version
     if type(saved.options) ~= "table" then saved.options = {} end
     if type(saved.options.vendor) ~= "boolean" then saved.options.vendor = true end
+    if type(saved.options.risky) ~= "boolean" then saved.options.risky = false end
     if type(saved.clean) ~= "table" then saved.clean = {} end
     if type(saved.clean.index) ~= "number" then saved.clean.index = 0 end
     saved.clean.running = saved.clean.running == true
     if type(saved.pressIndex) ~= "number" then saved.pressIndex = 0 end
-    for _, key in ipairs({ "situations", "results", "details", "log" }) do
+    for _, key in ipairs({ "situations", "results", "details", "log", "spoiled" }) do
         if type(saved[key]) ~= "table" then saved[key] = {} end
     end
+    -- The trial list is written fresh; the "afterwards" entries earlier
+    -- sessions added (see P.AddTrial) are kept at its end.
+    local old = type(saved.trials) == "table" and saved.trials or {}
     saved.trials = {}
     for i, t in ipairs(P.trials) do
         saved.trials[i] = { id = t.id, area = t.area, label = t.label, kind = t.kind }
     end
     db = saved
     P.db = saved
+    for _, t in ipairs(old) do
+        if type(t) == "table" and type(t.id) == "string" and t.id:find("^after%.") and not cleared then
+            P.AddTrial(t.id, t.area, t.label)
+        end
+    end
     local early = earlyLog
     earlyLog = {}
     for i = 1, #early do saved.log[#saved.log + 1] = early[i] end
     Log("loaded: probe " .. saved.probe .. ", game " .. saved.game)
+    if cleared then Log("results from probe " .. cleared .. " cleared") end
     return saved
 end
 
@@ -361,6 +380,15 @@ end
 
 local QUIET = { allowed = true, readable = true }   -- results that need no detail entry
 
+-- Adds an entry to the saved trial list unless its id is already there.
+-- Used for the "afterwards" entries, which are only known once seen.
+function P.AddTrial(id, area, label)
+    for _, t in ipairs(db.trials) do
+        if t.id == id then return end
+    end
+    db.trials[#db.trials + 1] = { id = id, area = area, label = label, kind = "action" }
+end
+
 -- Two different answers for one cell are both kept: "allowed / blocked".
 local function Merge(old, new)
     if type(old) ~= "string" or old == "" then return new end
@@ -370,7 +398,10 @@ local function Merge(old, new)
     return old .. " / " .. new
 end
 
+P.Merge = Merge
+
 -- Stores one result. info (all optional): func, message, stack, inPress.
+-- Returns the detail entry when one was made.
 function P.Record(trialId, key, result, info)
     info = info or {}
     local cell = db.results[trialId]
@@ -385,11 +416,13 @@ function P.Record(trialId, key, result, info)
         .. (info.message and (" - " .. info.message) or ""))
     if QUIET[result] then return end
     local details = db.details
-    details[#details + 1] = {
+    local entry = {
         trial = trialId, situation = key, result = result, func = info.func, message = info.message,
         stack = info.stack, focus = P.FocusName(), at = Stamp("%Y-%m-%d %H:%M:%S"), inPress = info.inPress,
     }
+    details[#details + 1] = entry
     while #details > DETAILS_MAX do tremove(details, 1) end
+    return entry
 end
 
 ---------------------------------------------------------------------------
@@ -413,6 +446,8 @@ function P.TrimStack(text)
     local lines, ours = {}, nil
     for line in text:gmatch("[^\r\n]+") do
         line = line:gsub("^%s+", ""):gsub("Interface[/\\]AddOns[/\\]", ""):sub(1, 160)
+        -- The first lines are our own listening code (Run.lua): left out.
+        if #lines == 0 and (line:find("Run.lua", 1, true) or line:find("^%[C%]: %?")) then line = "" end
         if line ~= "" then
             if #lines < STACK_LINES then
                 lines[#lines + 1] = line

@@ -318,6 +318,17 @@ function PE:InCombat()
     return (InCombatLockdown and InCombatLockdown()) and true or false
 end
 
+-- True while the game's Gamepad UI (its controller style) is in use.
+function PE:GamepadUI()
+    if not (C_InputInterfaceStyle and C_InputInterfaceStyle.GetCurrentStyle
+            and Enum and Enum.InputDeviceInterfaceType) then
+        return false
+    end
+    local ok, style = pcall(C_InputInterfaceStyle.GetCurrentStyle)
+    if not ok or style == nil or (issecretvalue and issecretvalue(style)) then return false end
+    return style == Enum.InputDeviceInterfaceType.Gamepad
+end
+
 -- Blizzard's controller navigation does not ask InCombatLockdown: it asks
 -- whether the "Combat" addon restriction is active
 -- (Blizzard_GamepadSmartNavigation/SecureHelper.lua), which can be so when
