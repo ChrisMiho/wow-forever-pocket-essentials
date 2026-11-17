@@ -193,6 +193,7 @@ local STYLES = {
     on       = { fill = { 0.07, 0.40, 0.13 }, border = { 0.35, 0.92, 0.45 }, text = { 1, 1, 1 } },
     off      = { fill = { 0.25, 0.25, 0.27 }, border = { 0.52, 0.52, 0.54 }, text = { 0.82, 0.82, 0.82 } },
     warn     = { fill = { 0.52, 0.28, 0.03 }, border = { 1.00, 0.62, 0.15 }, text = { 1, 1, 1 } },
+    tab      = { fill = { 0.07, 0.06, 0.04 }, border = { 0.80, 0.64, 0.20 }, text = { 1, 0.82, 0 } },
     disabled = { fill = { 0.11, 0.11, 0.12 }, border = { 0.27, 0.27, 0.29 }, text = { 0.50, 0.50, 0.50 } },
 }
 local SELECTED = { fill = { 0.56, 0.42, 0.03 }, border = { 1, 0.82, 0 }, text = { 1, 1, 1 } }
@@ -265,7 +266,8 @@ function ButtonMethods:SetSelected(selected)
     end
 end
 
--- "normal", "on" (green), "off" (grey), "warn" (amber) or "disabled" (dim; still tappable).
+-- "normal", "on" (green), "off" (grey), "warn" (amber), "tab" (gold on dark, like a bag
+-- window) or "disabled" (dim; still tappable).
 function ButtonMethods:SetStyle(style)
     if not STYLES[style] then style = "normal" end
     if self.peStyle ~= style then

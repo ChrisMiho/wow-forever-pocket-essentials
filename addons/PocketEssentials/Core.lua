@@ -37,6 +37,115 @@ function PE:Print(text)
 end
 
 ---------------------------------------------------------------------------
+-- Debug log: an opt-in record of what the addon did and decided, kept in the
+-- saved settings (PocketEssentialsDB.debug) so the game writes it to disk at
+-- logout and at a reload, and the file can be sent. Off by default.
+--
+-- Callers check the flag before building the text, so it costs one test
+-- while off:   if PE.debugOn then PE:Debug("sellJunk", "vendor opened") end
+--
+-- Never a player's name or chat text; a value from the game goes through
+-- PE.Plain, which writes a hidden one as "<secret>".
+--
+-- Storage is a ring: lines[1..DEBUG_CAP], `next` is the slot written next.
+-- Once full, the oldest line is at `next`.
+---------------------------------------------------------------------------
+
+local DEBUG_CAP = 10000
+local DEBUG_LINE_MAX = 200
+PE.DEBUG_CAP = DEBUG_CAP
+PE.debugOn = false
+local debugStore -- PocketEssentialsDB.debug once the saved settings are loaded
+
+-- Text for a value from the game, safe to join into a line.
+function PE.Plain(v)
+    if issecretvalue then
+        local ok, secret = pcall(issecretvalue, v)
+        if not ok or secret then return "<secret>" end
+    end
+    return tostring(v)
+end
+
+local function DebugWrite(text)
+    local store = debugStore
+    if not store then return end
+    local i = store.next
+    store.lines[i] = text
+    store.next = i % DEBUG_CAP + 1
+end
+
+function PE:Debug(key, text)
+    if not PE.debugOn or not debugStore then return end
+    if issecretvalue and issecretvalue(text) then text = "<secret>" end
+    local ms = GetTime and math.floor((GetTime() % 1) * 1000) or 0
+    local line = date("%H:%M:%S") .. string.format(".%03d ", ms) .. tostring(key) .. ": " .. tostring(text)
+    if #line > DEBUG_LINE_MAX then line = line:sub(1, DEBUG_LINE_MAX) end
+    DebugWrite(line)
+end
+
+function PE:DebugCount()
+    return debugStore and #debugStore.lines or 0
+end
+
+function PE:ClearDebug()
+    if not debugStore then return end
+    debugStore.lines, debugStore.next = {}, 1
+    self:RefreshSettings()
+end
+
+-- Screen and interface facts for the top of a session, each read on its own
+-- so one missing function does not lose the rest.
+local function DebugHeader()
+    local parts = { date("%Y-%m-%d") }
+    local function add(label, fn)
+        local ok, value = pcall(fn)
+        if ok and value ~= nil then parts[#parts + 1] = label .. "=" .. PE.Plain(value) end
+    end
+    add("addon", function() return C_AddOns.GetAddOnMetadata(PE.name, "Version") end)
+    add("game", function()
+        local version, build = GetBuildInfo()
+        return PE.Plain(version) .. " (" .. PE.Plain(build) .. ")"
+    end)
+    add("gamepadUI", function()
+        local style = C_InputInterfaceStyle.GetCurrentStyle()
+        if style == nil then return nil end
+        return style == Enum.InputDeviceInterfaceType.Gamepad and "on" or "off"
+    end)
+    add("screen", function()
+        return math.floor(UIParent:GetWidth() + 0.5) .. "x" .. math.floor(UIParent:GetHeight() + 0.5)
+            .. " scale " .. string.format("%.2f", UIParent:GetEffectiveScale())
+    end)
+    local on = {}
+    for _, mod in ipairs(PE.moduleList) do
+        if PE.db and PE.db.enabled[mod.key] == true then on[#on + 1] = mod.key end
+    end
+    parts[#parts + 1] = "features=" .. (#on > 0 and table.concat(on, ",") or "none")
+    return table.concat(parts, " ")
+end
+
+local DebugWatchFights -- set below, once the event frame exists
+
+-- Called when the saved settings are loaded and at login.
+local function DebugSessionStart()
+    if not PE.debugOn then return end
+    PE:Debug("core", "---- session ---- " .. DebugHeader())
+end
+
+function PE:SetDebug(on)
+    if not debugStore then return end
+    on = on and true or false
+    if on == PE.debugOn then return end
+    if not on then PE:Debug("core", "debug log switched off") end
+    debugStore.on = on
+    PE.debugOn = on
+    DebugWatchFights()
+    if on then
+        PE:Debug("core", "---- debug log switched on ---- " .. DebugHeader())
+    end
+    self:RefreshSettings()
+end
+
+---------------------------------------------------------------------------
 -- Error log (newest first). Kept in memory until the saved variables are
 -- loaded, then merged into PE.db.errors.
 ---------------------------------------------------------------------------
@@ -75,8 +184,9 @@ local function LogErrorBody(moduleKey, msg, stack)
     msg = ShortPath(tostring(msg)):sub(1, 300)
     stack = TrimStack(stack)
     PE.errorSerial = PE.errorSerial + 1
+    if PE.debugOn then PE:Debug(moduleKey, "ERROR " .. msg) end
 
-    local list, now, isNew = PE.errors, time(), true
+    local list, now, isNew, entry = PE.errors, time(), true, nil
     for i = 1, #list do
         local e = list[i]
         if type(e) == "table" and e.module == moduleKey and e.msg == msg then
@@ -87,15 +197,17 @@ local function LogErrorBody(moduleKey, msg, stack)
                 tinsert(list, 1, e)
             end
             isNew = false
+            entry = e
             break
         end
     end
     if isNew then
-        tinsert(list, 1, { module = moduleKey, msg = msg, stack = stack, count = 1, last = now })
+        entry = { module = moduleKey, msg = msg, stack = stack, count = 1, last = now }
+        tinsert(list, 1, entry)
         for i = #list, ERROR_CAP + 1, -1 do list[i] = nil end
     end
 
-    if not announced[moduleKey] then
+    if not announced[moduleKey] and moduleKey ~= "blocked" then
         announced[moduleKey] = true
         PE:Print(PE:ModuleLabel(moduleKey) .. " hit a problem. See Settings > Errors.")
     end
@@ -103,13 +215,16 @@ local function LogErrorBody(moduleKey, msg, stack)
     -- second must not), and RefreshSettings itself only marks the panel as
     -- needing one redraw on the next frame.
     if isNew and PE.RefreshSettings then PE:RefreshSettings() end
+    return entry
 end
 
+-- Returns the log entry (nil if it could not be written).
 function PE:LogError(moduleKey, msg, stack)
     if inLogError then return end
     inLogError = true
-    pcall(LogErrorBody, moduleKey, msg, stack)
+    local ok, entry = pcall(LogErrorBody, moduleKey, msg, stack)
     inLogError = false
+    if ok then return entry end
 end
 
 function PE:ClearErrors()
@@ -143,13 +258,29 @@ local function ErrorHandlerFor(key)
     if type(key) ~= "string" or key == "" then key = "core" end
     local handler = errorHandlers[key]
     if not handler then
+        -- A handler failing many times a second (a tick, a busy event) must
+        -- stay cheap: the same error again within a second only counts up
+        -- on the entry already at the top of the log, with no stack read.
+        local lastErr, lastAt, lastEntry
         handler = function(err)
+            if issecretvalue and issecretvalue(err) then
+                err = "(an error message the game hides from addons)"
+            end
+            local now = GetTime and GetTime() or time()
+            if lastEntry and err == lastErr and type(err) == "string"
+                    and now - lastAt < 1 and PE.errors[1] == lastEntry then
+                lastEntry.count = (tonumber(lastEntry.count) or 1) + 1
+                lastEntry.last = time()
+                PE.errorSerial = PE.errorSerial + 1
+                return err
+            end
             local stack
             if debugstack then
                 local ok, text = pcall(debugstack, 2)
                 if ok then stack = text end
             end
-            PE:LogError(key, err, stack)
+            lastEntry = PE:LogError(key, err, stack)
+            lastErr, lastAt = err, now
             return err
         end
         errorHandlers[key] = handler
@@ -208,6 +339,7 @@ function PE:RunOutOfCombat(key, fn)
     end
     if combatFns[key] == nil then combatOrder[#combatOrder + 1] = key end
     combatFns[key] = fn
+    if PE.debugOn and type(key) == "string" then PE:Debug("core", "held for after the fight: " .. key) end
 end
 
 local function FlushCombatQueue()
@@ -222,7 +354,10 @@ local function FlushCombatQueue()
     for i = 1, #order do
         local key = order[i]
         local fn = fns[key]
-        if fn then xpcall(fn, ErrorHandlerFor(KeyOwner(key))) end
+        if fn then
+            if PE.debugOn and type(key) == "string" then PE:Debug("core", "fight over, running: " .. key) end
+            xpcall(fn, ErrorHandlerFor(KeyOwner(key)))
+        end
     end
 end
 
@@ -265,6 +400,17 @@ end
 local function FrameUnregisterIfUnused(event)
     if not EventNeeded(event) then
         pcall(eventFrame.UnregisterEvent, eventFrame, event)
+    end
+end
+
+-- The start of a fight is only listened for while the debug log is on.
+DebugWatchFights = function()
+    if PE.debugOn then
+        coreOwn.PLAYER_REGEN_DISABLED = true
+        FrameRegister("PLAYER_REGEN_DISABLED")
+    else
+        coreOwn.PLAYER_REGEN_DISABLED = nil
+        FrameUnregisterIfUnused("PLAYER_REGEN_DISABLED")
     end
 end
 
@@ -371,6 +517,21 @@ local function InitDB()
     if type(db.ui.hubPos) ~= "string" then db.ui.hubPos = "LEFT" end
     db.errors = MergeErrors(db.errors)
     PE.errors = db.errors
+    local dbg = db.debug
+    if type(dbg) ~= "table" then
+        dbg = {}
+        db.debug = dbg
+    end
+    if type(dbg.lines) ~= "table" or #dbg.lines > DEBUG_CAP then dbg.lines = {} end
+    local nextSlot = dbg.next
+    if type(nextSlot) ~= "number" or nextSlot < 1 or nextSlot > DEBUG_CAP or nextSlot % 1 ~= 0
+            or nextSlot > #dbg.lines + 1 then
+        nextSlot = #dbg.lines % DEBUG_CAP + 1
+    end
+    dbg.next = nextSlot
+    dbg.on = dbg.on == true
+    debugStore = dbg
+    PE.debugOn = dbg.on
     PE.db = db
     for _, mod in ipairs(PE.moduleList) do AttachOptions(mod) end
 end
@@ -423,6 +584,8 @@ local function EnableModule(mod)
     if st.busy then return false end
     if mod.requiresQuestieDB and not PE.hasQuestieDB then return false end
     st.failed = nil
+    -- Only with a feature on can a block be ours; nothing is hooked before.
+    if PE.WatchBlockedMessage then PE.WatchBlockedMessage() end
     st.active = true -- events may be registered and delivered from here on
     local ok = true
     if type(mod.OnEnable) == "function" then
@@ -432,8 +595,10 @@ local function EnableModule(mod)
     end
     if ok then
         st.enabled = true
+        if PE.debugOn then PE:Debug(mod.key, "feature on") end
         return true
     end
+    if PE.debugOn then PE:Debug(mod.key, "feature failed to start") end
     -- OnEnable failed part-way: let the module undo what it did, drop its
     -- events, and remember the failure for the panel.
     st.failed = true
@@ -446,7 +611,10 @@ local function DisableModule(mod)
     if not st or st.dead then return end
     if st.busy then return end
     st.failed = nil
-    if st.enabled then Deactivate(mod, true) end
+    if st.enabled then
+        Deactivate(mod, true)
+        if PE.debugOn then PE:Debug(mod.key, "feature off") end
+    end
 end
 
 local Methods = {}
@@ -700,6 +868,11 @@ local function Login()
     xpcall(CheckQuestieDB, coreHandler)
     PE.oldQuestDotsLoaded = IsAddOnLoaded("QuestDots") == true
     PE.loggedIn = true
+    DebugWatchFights()
+    xpcall(DebugSessionStart, coreHandler)
+    if PE.debugOn then
+        PE:Debug("core", "QuestieDB " .. (PE.hasQuestieDB and "found" or ("not usable: " .. tostring(PE.questieDBReason))))
+    end
 
     for i = 1, #coreLoginFns do xpcall(coreLoginFns[i], coreHandler) end
     coreLoginFns = {}
@@ -723,9 +896,127 @@ end
 -- Event dispatch
 ---------------------------------------------------------------------------
 
+---------------------------------------------------------------------------
+-- Actions the game blocked. ADDON_ACTION_BLOCKED (chat: "Interface action
+-- failed because of an AddOn") and ADDON_ACTION_FORBIDDEN (the "has been
+-- blocked from an action only available to the Blizzard UI" pop-up) carry
+-- the addon's name and the blocked function, but the game shows neither.
+-- Both fire synchronously (RestrictedActionsDocumentation.lua), inside the
+-- blocked call, so the call stack here leads back to our line that made it.
+-- Each block goes on the Errors page; one chat line per function per session.
+---------------------------------------------------------------------------
+
+PE.blockedSerial = 0          -- goes up by one for every block of ours
+local blockedAnnounced = {}   -- [function name] = true
+
+local function IsPlainString(v)
+    if type(v) ~= "string" then return false end
+    if issecretvalue then
+        local ok, secret = pcall(issecretvalue, v)
+        if not ok or secret then return false end
+    end
+    return true
+end
+
+-- The call stack, at most six lines: our own lines if there are any (the
+-- first of them, "File.lua:123", is also returned), else the top lines.
+-- Third result: whether any line of ours is on it. Fourth: the whole text.
+-- The game writes a line as "[...File.lua]:123:" or "...File.lua:123:".
+local function BlockStack()
+    if not debugstack then return "", nil, false end
+    -- Deep enough to get past the game's own event and hook layers to the
+    -- line of ours that made the call (the default stops after 12 lines).
+    local ok, text = pcall(debugstack, 3, 40, 0)
+    if not ok or type(text) ~= "string" then return "", nil, false end
+    local ours, top, first = {}, {}, nil
+    for line in text:gmatch("[^\r\n]+") do
+        line = ShortPath(line:gsub("^%s+", "")):sub(1, 160)
+        if line ~= "" then
+            if #top < 6 then top[#top + 1] = line end
+            if line:find(ADDON_NAME, 1, true) and not line:find("Core.lua", 1, true) and #ours < 6 then
+                ours[#ours + 1] = line
+                if not first then
+                    local file, num = line:match("([%w_]+%.lua)[%]\"]*:(%d+)")
+                    if file then first = file .. ":" .. num end
+                end
+            end
+        end
+    end
+    return table.concat(#ours > 0 and ours or top, "\n"), first, #ours > 0, text
+end
+
+local function FeaturesOn()
+    local names = {}
+    for _, mod in ipairs(PE.moduleList) do
+        local st = S[mod]
+        if st and st.active then names[#names + 1] = mod.label or mod.key end
+    end
+    return #names > 0 and table.concat(names, ", ") or "none"
+end
+
+local function RecordBlock(kind, func)
+    PE.blockedSerial = PE.blockedSerial + 1
+    local stack, from = BlockStack()
+    local inCombat = PE:InCombat() and ", in combat" or ""
+    PE:LogError("blocked", "The game " .. kind .. " " .. func .. (from and (" (from " .. from .. ")") or "")
+        .. inCombat .. ". Features on: " .. FeaturesOn() .. ".", stack)
+    if not blockedAnnounced[func] then
+        blockedAnnounced[func] = true
+        PE:Print("The game blocked Pocket Essentials from using " .. func
+            .. (from and (" (" .. from .. ")") or "") .. ". Details in Settings > Errors.")
+    end
+end
+
+local function OnActionBlocked(event, addon, func)
+    if not IsPlainString(addon) or addon ~= ADDON_NAME then return end
+    if not IsPlainString(func) or func == "" then func = "an unnamed action" end
+    RecordBlock(event == "ADDON_ACTION_FORBIDDEN" and "forbade" or "blocked", func)
+end
+
+-- Blizzard's own code also prints "Interface action failed because of an
+-- AddOn" by itself, with no event and no addon name, when code it expects to
+-- run untouched by addons does not (the controller navigation's checks in
+-- Blizzard_GamepadSmartNavigation, opening panels in combat). Only the
+-- stack can say whether we are involved: recorded only when one of our
+-- lines is on it. On this client the message function counts and prints
+-- once, but is called every time, so the hook runs on every call. Reading
+-- the stack is not free: after the first twenty of a session it is read at
+-- most once a second.
+-- Blizzard's ADDON_ACTION_BLOCKED handler (GameEvent.HandleActionBlocked)
+-- calls it too: that block is already reported by OnActionBlocked, whichever
+-- runs first, so it is skipped here.
+local blockedReads, blockedReadAt = 0, 0
+
+local function OnBlockedMessage()
+    local now = GetTime and GetTime() or time()
+    if blockedReads >= 20 and now - blockedReadAt < 1 then return end
+    blockedReads, blockedReadAt = blockedReads + 1, now
+    local _, _, involved, text = BlockStack()
+    if not involved then return end
+    if text and (text:find("HandleActionBlocked", 1, true) or text:find("HandleMacroActionBlocked", 1, true)) then
+        return
+    end
+    RecordBlock("stopped", "a protected step of Blizzard's own interface")
+end
+
+local BLOCKED_MESSAGE_FN = "DisplayInterfaceActionBlockedMessage" -- ChatFrameUtil.lua
+
+local blockedMessageHooked = false
+
+-- Installed once, when the first feature is switched on.
+function PE.WatchBlockedMessage()
+    if blockedMessageHooked then return end
+    blockedMessageHooked = true
+    if type(hooksecurefunc) == "function" and type(_G[BLOCKED_MESSAGE_FN]) == "function" then
+        hooksecurefunc(BLOCKED_MESSAGE_FN, function() xpcall(OnBlockedMessage, coreHandler) end)
+    end
+end
+
 coreOwn.ADDON_LOADED = true
 coreOwn.PLAYER_LOGIN = true
 coreOwn.PLAYER_REGEN_ENABLED = true
+coreOwn.ADDON_ACTION_BLOCKED = true
+coreOwn.ADDON_ACTION_FORBIDDEN = true
 
 local function OnEvent(_, event, ...)
     if event == "ADDON_LOADED" then
@@ -740,7 +1031,12 @@ local function OnEvent(_, event, ...)
     elseif event == "PLAYER_LOGIN" then
         xpcall(Login, coreHandler)
     elseif event == "PLAYER_REGEN_ENABLED" then
+        if PE.debugOn then PE:Debug("core", "fight ended") end
         xpcall(FlushCombatQueue, coreHandler)
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        if PE.debugOn then PE:Debug("core", "fight started") end
+    elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
+        xpcall(OnActionBlocked, coreHandler, event, ...)
     end
 
     local list = coreHandlers[event]
@@ -813,6 +1109,16 @@ local function SlashCommand(msg)
     msg = type(msg) == "string" and msg:lower():gsub("^%s+", ""):gsub("%s+$", "") or ""
     if msg == "errors" then
         PE:OpenSettings("errors")
+    elseif msg == "debug on" or msg == "debug off" then
+        EnsureDB()
+        if not debugStore then
+            PE:Print("The debug log is not available: the saved settings could not be loaded.")
+            return
+        end
+        PE:SetDebug(msg == "debug on")
+        PE:Print(PE.debugOn
+            and "Debug log on. Play until the problem happens, then use Save log now on Settings > Errors (or /reload)."
+            or "Debug log off. The lines so far are kept until you clear them.")
     elseif msg == "reset" then
         PE:SetUISetting("size", "medium")
         PE:SetUISetting("hubPos", "LEFT")

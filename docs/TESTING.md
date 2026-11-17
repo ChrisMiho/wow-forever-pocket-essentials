@@ -63,6 +63,9 @@ publishes nothing and uses no secrets.
 5. **Smoke test** (`tests/smoke/`). Loads every file in the addon's TOC in the
    stand-in client, the way the game would, presses every option on and off,
    checks the arrow, and fails on any error raised along the way.
+6. **Debug log reader tests** (`tests/readlog/`). Checks that
+   `scripts/read-log.sh` prints a wrapped log oldest line first, one block per
+   session, and that the saved file it reads cannot reach files or the system.
 
 The stand-in client (`tests/lib/fakeclient.lua`) is our own imitation of the
 game. It only knows what we believed about the game, and its frame methods and
@@ -102,6 +105,41 @@ offline tests pass. That is still not evidence that anything works in the game.
 The audit does not cover fields of tables the game returns, template names,
 font names or script-type names, and it checks methods by name, not per
 widget type.
+
+## Debug log
+
+A device test can come back as one file instead of screenshots. The addon
+keeps a timestamped line for each thing it does or decides, and the game
+writes those lines to disk with the saved settings.
+
+On the device:
+
+1. Round button → Errors. Turn **Debug log** on (it is off by default, and
+   stays as you left it across logins). `/pe debug on` and `/pe debug off` do
+   the same if the settings window is the thing that is broken.
+2. Play until the problem happens.
+3. Back on the Errors page, tap **Save log now**. This reloads the interface,
+   which is when the game writes the file. Logging out writes it too.
+4. Send this file:
+   `World of Warcraft/_forever_/WTF/Account/<account>/SavedVariables/PocketEssentials.lua`
+
+The line under the switch ("N of 10,000 lines") shows how much is held. When
+it is full the oldest lines are replaced. Switching the log off keeps the
+lines; **Clear log** removes them. The log never holds player names or chat
+text.
+
+Reading the file on a computer:
+
+```bash
+scripts/read-log.sh path/to/PocketEssentials.lua                  # the log, one block per session, then the Errors page
+scripts/read-log.sh path/to/PocketEssentials.lua --grep sellJunk  # only lines matching a Lua pattern
+scripts/read-log.sh path/to/PocketEssentials.lua --errors         # the Errors page only
+```
+
+Each line is `HH:MM:SS.mmm feature: what happened`. A session starts with a
+header line giving the addon version, game build, features on, Gamepad UI and
+screen size. The reader needs `luajit`; it only reads the file, with no access
+to files or the system from inside it.
 
 ## Device test plan
 
@@ -202,8 +240,12 @@ and `QuestieDB` sit side by side.
 
 ### 4. Bags
 - Switch on **One big bag**. If a "Reload now" bar appears, tap it.
-- Open your bags: one combined window, with a big **Sort** button just
-  outside it. Tap Sort: items should tidy up.
+- Open your bags: one combined window, with a tall gold **Sort** tab
+  against its left edge, below the round bag picture (the sort icon at the
+  top, "Sort" written down the tab). Tap it: items should tidy up. Check it at
+  each Bag size.
+- Set **Sort button** to Hide: the tab disappears, L3 still sorts. Set it back
+  to Show.
 - With the bag open, press L3 (click the left stick): it should sort. Close
   the bag: L3 should do its normal job again (auto-run).
 - Try Bag size Large and Extra large.
@@ -224,11 +266,17 @@ and `QuestieDB` sit side by side.
   the chat line matches.
 - Report: sold yes/no; anything non-grey sold (should be impossible; tell us
   immediately); any "blocked by an addon" popup; the chat line's numbers.
+- 0.0.7: test this with only Sell junk on. If the game refuses, selling
+  stops with "The game would not let Pocket Essentials sell items here",
+  plus a line "The game blocked Pocket Essentials from using …". Screenshot
+  both, and Settings > Errors.
 
 ### 6. Repair
 - With damaged gear, switch on **Repair automatically** and open a vendor
   that repairs. Expect "Repairing for …" and yellow/red gear fixed.
 - Report: repaired yes/no; cost line matches money spent; any popup.
+- 0.0.7: test with only Repair on; screenshot any "The game blocked Pocket
+  Essentials from using …" line and Settings > Errors.
 
 ### 7. Chat
 - Switch on **Big chat buttons**. Tap the round button: a picker opens with
@@ -244,6 +292,9 @@ and `QuestieDB` sit side by side.
 - Hold the round button for half a second: settings should open instead.
 - Report: header shows the right target each time; keyboard appears with the
   three-finger tap; badge behaves; any refused command; d-pad in the picker.
+- 0.0.7: test with only Big chat buttons on. After each tap, look for "The
+  game blocked Pocket Essentials from using …" in chat and note what you had
+  just tapped. Screenshot it and Settings > Errors.
 
 ### 8. Layout (experimental)
 - Switch on **Layout helper**. Read the status under the row: it names the

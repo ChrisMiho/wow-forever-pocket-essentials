@@ -54,15 +54,50 @@ test("bags: the Sort button is shown while the bag is open and hidden when it cl
     check(not btn:IsVisible(), "button still visible after the bag closed")
 end)
 
--- DECISIONS "Bags": "The Sort button floats beside the bag"; Bags.lua LayoutButton: TOPRIGHT of
--- the button on TOPLEFT of the bag. Not a child of the bag (header: children of UIParent).
-test("bags: the Sort button sits beside the bag and is a child of UIParent, not of the bag", function()
+-- Spec 2026-11-16-vertical-sort-tab: a tab flush against the bag's left edge (TOPRIGHT of the
+-- tab on TOPLEFT of the bag, no gap). Not a child of the bag (header: children of UIParent).
+test("bags: the Sort tab sits against the bag's left edge and is a child of UIParent, not of the bag", function()
     local c = newBags()
     c:openBag()
     local btn = sortButton(c)
     eq(btn:GetParent(), c.UIParent, "parent")
-    local point, rel, relPoint = btn:GetPoint(1)
-    eq({ point, rel, relPoint }, { "TOPRIGHT", c.bagFrame, "TOPLEFT" })
+    local point, rel, relPoint, x = btn:GetPoint(1)
+    eq({ point, rel, relPoint, x }, { "TOPRIGHT", c.bagFrame, "TOPLEFT", 0 })
+end)
+
+-- Spec 2026-11-16-vertical-sort-tab: tall and narrow, at least three button heights tall.
+test("bags: the Sort tab is a tall, narrow tab", function()
+    local c = newBags()
+    c:openBag()
+    local btn = sortButton(c)
+    check(btn:GetHeight() > btn:GetWidth() * 2,
+        "tab not tall and narrow: " .. btn:GetWidth() .. " x " .. btn:GetHeight())
+end)
+
+local function chooseOption(c, key, value)
+    local mod = c.PE:GetModule("bags")
+    mod.opts[key] = value
+    for _, opt in ipairs(mod.options) do
+        if opt.key == key then opt.OnChange(mod, value) end
+    end
+    c:advance(0.5)
+end
+
+-- Spec 2026-11-16-vertical-sort-tab, "Sort button" choice: shown by default; hidden, the stick
+-- click still sorts; shown again, the tab comes back with the bag open.
+test("bags: the Sort button choice hides the tab, the left stick still sorts, and Show brings it back", function()
+    local c = newBags()
+    c:openBag()
+    local btn = sortButton(c)
+    check(btn:IsVisible(), "tab not shown by default")
+    chooseOption(c, "showTab", false)
+    check(not btn:IsVisible(), "tab still visible after Hide")
+    eq(bindings(c), { PADLSTICK = "PocketEssentialsBagSortKey" })
+    c:closeBag()
+    c:openBag()
+    check(not btn:IsVisible(), "tab came back on reopening while hidden")
+    chooseOption(c, "showTab", true)
+    check(btn:IsVisible(), "tab not shown again after Show")
 end)
 
 -- Bags.lua OnSortTapped -> DoSort: one C_Container.SortBags per tap while the bag is open.
@@ -250,6 +285,24 @@ test("bags: a tall bag is made as big as the screen allows and no bigger", funct
     check(top <= 768 + 0.5, "the bag's top is off the screen: " .. tostring(top))
 end)
 
+-- Spec 2026-11-16-vertical-sort-tab: about half the bag's height on screen. Changing Bag size with
+-- the bag open (option OnChange -> SyncScale) must resize the tab too, not only the bag.
+test("bags: the Sort tab grows with the bag when Bag size changes while it is open", function()
+    local c = scaleAfterOpen("normal", 500)
+    local mod = c.PE:GetModule("bags")
+    local btn = sortButton(c)
+    local before = btn:GetHeight()
+    mod.opts.size = "large"
+    for _, opt in ipairs(mod.options) do
+        if opt.key == "size" then opt.OnChange(mod, "large") end
+    end
+    c:advance(0.5)
+    eq(c.bagFrame:GetScale(), 1.25)
+    local after = btn:GetHeight()
+    check(math.abs(after - before * 1.25) < 0.5,
+        "tab height did not follow the bag: " .. before .. " -> " .. after)
+end)
+
 -- Bags.lua OnDisable -> RestoreScaleNow: puts back exactly what Blizzard's layout pass set.
 test("bags: switching the feature off puts the game's own scale back", function()
     local c, scale = scaleAfterOpen("large")
@@ -259,6 +312,34 @@ test("bags: switching the feature off puts the game's own scale back", function(
     eq(c.bagFrame:GetScale(), 1)
     local point, _, relPoint, x, y = c.bagFrame:GetPoint(1)
     eq({ point, relPoint, x, y }, { "BOTTOMRIGHT", "BOTTOMRIGHT", 4, 85 })
+end)
+
+-- The debug log's lines for one feature, without the time and the feature's name.
+local function debugLines(c, key)
+    local out = {}
+    local prefix = " " .. key .. ": "
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        local at = line:find(prefix, 1, true)
+        if at and at <= 14 then out[#out + 1] = line:sub(at + #prefix) end
+    end
+    return out
+end
+
+-- Spec 2026-11-17-debug-log, row "One big bag": combined or not and why; Sort pressed.
+test("debug log: switching the bags on and tapping Sort writes why and what was pressed", function()
+    local c = newBags({ cvar = "1" })
+    c.PE:SetDebug(true)
+    c.PE:SetModuleEnabled("bags", false)
+    c.PE:SetModuleEnabled("bags", true)
+    c:openBag()
+    c:click(sortButton(c))
+    local lines = debugLines(c, "bags")
+    local seen = {}
+    for _, line in ipairs(lines) do seen[line] = true end
+    for _, want in ipairs({ "combined: the setting is already on", "Sort pressed: the tab", "sorting" }) do
+        check(seen[want], "no line \"" .. want .. "\" in: " .. table.concat(lines, " / "))
+    end
+    eq(sorts(c), 1)
 end)
 
 return { known = KNOWN_FAILURES }

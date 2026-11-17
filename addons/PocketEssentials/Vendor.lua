@@ -69,6 +69,7 @@ end
 local SELL_START_DELAY = 0.3 -- after the window opens, before the first sale
 local SELL_STEP = 0.2        -- seconds between sales
 local SELL_REPORT_DELAY = 1  -- after the last sale, before the chat line
+local SELL_CHECK_DELAY = 1   -- after the first sale, before checking that it went
 
 local POOR = 0
 if Enum and Enum.ItemQuality and type(Enum.ItemQuality.Poor) == "number" then
@@ -143,10 +144,23 @@ local function SellReport(r)
     if r.reported then return end
     r.reported = true
     r.stopped = true
-    if r.attempts <= 0 or not r.startMoney then return end
+    if r.attempts <= 0 or not r.startMoney then
+        if PE.debugOn then
+            PE:Debug("sellJunk", r.attempts <= 0 and "money line: nothing said, no sale tried"
+                or "money line: nothing said, money at the start was unreadable")
+        end
+        return
+    end
     local money = Num(GetMoney())
-    if not money then return end
+    if not money then
+        if PE.debugOn then PE:Debug("sellJunk", "money line: nothing said, money unreadable now") end
+        return
+    end
     local gain = money - r.startMoney + (repairSpent - r.startRepair)
+    if PE.debugOn then
+        PE:Debug("sellJunk", "money line: " .. r.attempts .. " tried, " .. gain .. " copper gained"
+            .. (gain <= 0 and ", nothing said" or ""))
+    end
     if gain <= 0 then return end
     local text = "Sold " .. r.attempts .. (r.attempts == 1 and " junk item for " or " junk items for ") .. Money(gain) .. "."
     sellJunk:Print(text)
@@ -159,20 +173,33 @@ local function SellStop(r)
     sellJunk:After(SELL_REPORT_DELAY, function() SellReport(r) end)
 end
 
+-- Only for the debug log: which of the checks in SellStep ended the selling.
+local function StopReason()
+    if not VendorWindowShown() then return "vendor window closed" end
+    if MerchantFrame and MerchantFrame.selectedTab == 2 then return "Buyback tab showing" end
+    if InRepairMode and InRepairMode() then return "repair cursor up" end
+    if TradeFrame and TradeFrame.IsShown and TradeFrame:IsShown() then return "trade open" end
+    return "spell waiting for a target"
+end
+
 -- One step: sell the next grey item, then wait.
 local function SellStep(r)
     if run ~= r or r.stopped then return end
     if not VendorWindowShown()
+            or (MerchantFrame and MerchantFrame.selectedTab == 2)
             or (InRepairMode and InRepairMode())
             or (TradeFrame and TradeFrame.IsShown and TradeFrame:IsShown())
             or (SpellIsTargeting and SpellIsTargeting()) then
-        -- Window gone, repair cursor up, a trade open or a spell waiting
+        -- Window gone, the Buyback tab showing (the game's own click sells
+        -- nothing there), repair cursor up, a trade open or a spell waiting
         -- for a target: a "use" would mean something else now.
+        if PE.debugOn then PE:Debug("sellJunk", "stopped: " .. StopReason()) end
         SellStop(r)
         return
     end
     if PE:InCombat() then
         -- Not while fighting: carry on when the fight ends, if still here.
+        if PE.debugOn then PE:Debug("sellJunk", "selling held: in a fight") end
         PE:RunOutOfCombat("sellJunk:resume", function() SellStep(r) end)
         return
     end
@@ -184,11 +211,51 @@ local function SellStep(r)
         -- worth something, not locked. Otherwise skipped.
         if JunkAt(e.bag, e.slot) == e.itemID then
             r.attempts = r.attempts + 1
+            if PE.debugOn then
+                PE:Debug("sellJunk", "selling bag " .. e.bag .. " slot " .. e.slot .. " item " .. e.itemID)
+            end
+            local blockedBefore = PE.blockedSerial
             C_Container.UseContainerItem(e.bag, e.slot)
-            sellJunk:After(SELL_STEP, function() SellStep(r) end)
+            if PE.blockedSerial ~= blockedBefore then
+                -- The game refused the sale (it reports that synchronously,
+                -- inside the call). Trying the next item would only bring its
+                -- warning back every step: stop for this visit.
+                r.attempts = r.attempts - 1
+                if PE.debugOn then PE:Debug("sellJunk", "stopped: the game refused the sale") end
+                sellJunk:Print("The game would not let Pocket Essentials sell items here; stopped selling.")
+                SellStop(r)
+                return
+            end
+            if r.checked then
+                sellJunk:After(SELL_STEP, function() SellStep(r) end)
+                return
+            end
+            -- The first sale of a visit is looked at again after a longer
+            -- wait. An item still in its slot means the game is not selling
+            -- for us, and it may not have told us so: stop, so its warning
+            -- cannot come back once for every grey item.
+            r.checked = true
+            sellJunk:After(SELL_CHECK_DELAY, function()
+                if run ~= r or r.stopped then return end
+                if JunkAt(e.bag, e.slot) == e.itemID then
+                    r.attempts = r.attempts - 1
+                    if PE.debugOn then
+                        PE:Debug("sellJunk", "first sale check: still there")
+                        PE:Debug("sellJunk", "stopped: the first item did not sell")
+                    end
+                    sellJunk:Print("The first junk item did not sell; stopped selling for this visit.")
+                    SellStop(r)
+                    return
+                end
+                if PE.debugOn then PE:Debug("sellJunk", "first sale check: went") end
+                SellStep(r)
+            end)
             return
+        elseif PE.debugOn then
+            PE:Debug("sellJunk", "skipped bag " .. e.bag .. " slot " .. e.slot .. ": changed since the scan")
         end
     end
+    if PE.debugOn then PE:Debug("sellJunk", "stopped: list finished") end
     SellStop(r)
 end
 
@@ -196,18 +263,28 @@ local function SellOnShow(mod)
     if run then return end -- this visit is already being handled
     local r = { list = {}, i = 1, attempts = 0, startMoney = Num(GetMoney()), startRepair = repairSpent }
     run = r
+    if PE.debugOn then PE:Debug("sellJunk", "vendor opened") end
     -- A short wait so the window and the bags have settled.
     mod:After(SELL_START_DELAY, function()
         if run ~= r or r.stopped then return end
         r.list = ScanJunk()
+        if PE.debugOn then PE:Debug("sellJunk", "found " .. #r.list .. " grey items to sell") end
         SellStep(r)
     end)
 end
 
-local function SellOnClosed()
+-- `why` is only for the debug log.
+local function SellEnd(why)
     local r = run
     run = nil
-    if r then SellReport(r) end
+    if r then
+        if PE.debugOn and not r.stopped then PE:Debug("sellJunk", "stopped: " .. why) end
+        SellReport(r)
+    end
+end
+
+local function SellOnClosed()
+    SellEnd("vendor window closed")
 end
 
 sellJunk = PE:RegisterModule({
@@ -228,7 +305,9 @@ sellJunk = PE:RegisterModule({
     end,
 
     -- Stops at once; says what was sold so far.
-    OnDisable = SellOnClosed,
+    OnDisable = function()
+        SellEnd("switched off")
+    end,
 })
 
 ---------------------------------------------------------------------------
@@ -242,21 +321,41 @@ local function RepairOnShow()
     if repairOpen then return end
     repairOpen = true
     local vendorRepairs = CanMerchantRepair()
+    if PE.debugOn then PE:Debug("repair", "vendor opened, can repair: " .. PE.Plain(vendorRepairs)) end
     if IsSecret(vendorRepairs) or not vendorRepairs then return end
     local cost, canRepair = GetRepairAllCost()
+    if PE.debugOn then
+        PE:Debug("repair", "cost " .. PE.Plain(cost) .. " copper, repair possible: " .. PE.Plain(canRepair))
+    end
     cost = Num(cost)
-    if not cost or cost <= 0 or IsSecret(canRepair) then return end
+    if not cost or cost <= 0 or IsSecret(canRepair) then
+        if PE.debugOn then PE:Debug("repair", "nothing to repair, or the cost is unreadable") end
+        return
+    end
     local money = Num(GetMoney())
+    if PE.debugOn then PE:Debug("repair", "money " .. (money or "unreadable") .. " copper") end
     if not money then return end
     if money < cost then
+        if PE.debugOn then PE:Debug("repair", "not enough money") end
         repair:Print("Not enough money to repair (needs " .. Money(cost) .. ").")
         return
     end
-    if not canRepair then return end
-    repair:Print("Repairing for " .. Money(cost) .. ".")
-    repairSpent = repairSpent + cost
+    if not canRepair then
+        if PE.debugOn then PE:Debug("repair", "not repaired: the game says it cannot repair now") end
+        return
+    end
+    local blockedBefore = PE.blockedSerial
     -- false = pay with the character's own money, never the guild bank's.
     RepairAllItems(false)
+    if PE.blockedSerial ~= blockedBefore then
+        -- The game refused (it reports that inside the call): nothing was spent.
+        if PE.debugOn then PE:Debug("repair", "refused by the game") end
+        repair:Print("The game would not let Pocket Essentials repair here.")
+        return
+    end
+    if PE.debugOn then PE:Debug("repair", "repaired for " .. cost .. " copper") end
+    repair:Print("Repairing for " .. Money(cost) .. ".")
+    repairSpent = repairSpent + cost
 end
 
 local function RepairOnClosed()

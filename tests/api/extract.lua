@@ -36,7 +36,7 @@ for w in ([[_G math table string os io type pcall xpcall pairs ipairs next selec
 -- Fields that look like methods but are plain data on a Blizzard frame.
 -- (enum values and QuestieDB library members; the last five are C_EditMode's, listed as namespace names below)
 local FIELD = {}
-for w in ("Account Character Gamepad Mkb NumValues Poor Preset Quest Get RequireContract GetLayouts ConvertStringToLayoutInfo SaveLayouts SetActiveLayout OnLayoutAdded SendTell"):gmatch("%S+") do FIELD[w] = true end
+for w in ("Account Character Gamepad Mkb NumValues Poor Preset Quest Get RequireContract GetLayouts ConvertStringToLayoutInfo SaveLayouts SetActiveLayout OnLayoutAdded"):gmatch("%S+") do FIELD[w] = true end
 local STRMETHOD = {}   -- (lowercase ones are skipped anyway; kept for clarity)
 local OWN = {}
 for w in ([[PocketEssentials PocketEssentialsDB LibQuestieDB PocketEssentialsSettingsPanel
@@ -48,12 +48,12 @@ local function isOwnGlobal(n) return OWN[n] or n:match("^SLASH_") or n:match("^P
 local INDIRECT = {
     { "frame",  "ContainerFrameCombinedBags", "Bags.lua", "ContainerFrameCombinedBags" },
     { "global", "UpdateContainerFrameAnchors", "Bags.lua", "UpdateContainerFrameAnchors" },
+    { "global", "DisplayInterfaceActionBlockedMessage", "Core.lua", "BLOCKED_MESSAGE_FN" },
     { "method", "OnMapChanged", "QuestIcons.lua", '"OnMapChanged"' },
     { "method", "OnCanvasScaleChanged", "QuestIcons.lua", '"OnCanvasScaleChanged"' },
     -- Real widget methods whose names we also define on our own objects (so by-name exclusion skips them).
     { "method", "RegisterEvent", "Core.lua", "eventFrame.RegisterEvent" },
     { "method", "UnregisterEvent", "Core.lua", "eventFrame.UnregisterEvent" },
-    { "namespace", "ChatFrameUtil.SendTell", "Chat.lua", "util.SendTell" },
     -- Functions read off a Blizzard table into a local and called later (the field-read rule only sees "x and x.Name").
     { "namespace", "ChatFrameUtil.ChooseBoxForSend", "Chat.lua", "util.ChooseBoxForSend" },
     { "namespace", "ChatFrameUtil.OpenChat", "Chat.lua", "util.OpenChat" },

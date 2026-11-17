@@ -93,6 +93,9 @@ local watched = {}                -- reused by QD:GetWatchedQuests()
 
 local EMPTY = {}                  -- shared empty table; only ever read
 
+-- Debug log only (PE.debugOn): quests rebuilt in the running rebuild, and when it began.
+local dbg = { rebuilt = 0, start = nil }
+
 -- Small helpers --------------------------------------------------------------
 local function LogError(msg, stack)
     if type(PE.LogError) == "function" then
@@ -480,7 +483,7 @@ local function BuildObjectives(out, q, blizz)
         end
     end
     -- helper spots QuestieDB adds by hand:
-    -- { spawnList?, icon, text?, objectiveIndex, { {"monster"|"object", id}, ... }? }
+    -- { spawnList?, icon, text?, objectiveIndex, { {"monster"|"object"|"item", id}, ... }? }
     for _, o in ipairs(List(Read(QuestDB, "extraObjectives", q.id))) do
         local b = blizz[o[4] or 0]
         if not (b and b.finished) then
@@ -490,6 +493,8 @@ local function BuildObjectives(out, q, blizz)
                 local entity = (ref[1] == "monster" and NpcDB) or (ref[1] == "object" and ObjectDB)
                 if entity then
                     AddSpawns(Spawns(entity, ref[2]), kind, q, text, Name(entity, ref[2]))
+                elseif ref[1] == "item" then
+                    AddItemSources(ref[2], q, text)
                 end
             end
             Flush(out)
@@ -594,6 +599,7 @@ local function Rebuild()
                 if state == "rebuilt" then
                     budget = budget - 1
                     dirty = true
+                    if PE.debugOn then dbg.rebuilt = dbg.rebuilt + 1 end
                 end
                 present[id] = true
                 n = n + 1
@@ -666,11 +672,25 @@ local function After(delay, fn)
     return C_Timer and C_Timer.After and pcall(C_Timer.After, delay, fn) or false
 end
 
+-- Debug log: one line for a finished rebuild. Only called while the log is on.
+-- GetTime only moves between frames, so a rebuild done in one step reads 0 ms.
+local function DebugRebuild(changed)
+    local pins, maps = 0, 0
+    for _, list in pairs(pinsByMap) do
+        pins, maps = pins + #list, maps + 1
+    end
+    local ms = dbg.start and floor((GetTime() - dbg.start) * 1000 + 0.5) or 0
+    PE:Debug("questData", "rebuild: " .. #order .. " quests in log, " .. dbg.rebuilt .. " rebuilt, " .. pins
+        .. " icons on " .. maps .. " maps, " .. ms .. " ms" .. (changed and "" or ", nothing changed"))
+end
+
 -- Returns true when the rebuild is not finished and wants another step.
 local function RebuildStep()
     if userCount <= 0 then return false end
+    if PE.debugOn and not dbg.start then dbg.start = GetTime() end
     local changed, more = Rebuild()
     if more then return true end
+    if PE.debugOn then DebugRebuild(changed) end
     local force = forceNotify
     forceNotify = false
     if changed or force then Fire("quests") end
@@ -682,6 +702,7 @@ local function OnRebuildTimer()
     local ok, more = Safe(RebuildStep)
     if ok and more and After(STEP_DELAY, OnRebuildTimer) then return end
     rebuildPending = false
+    dbg.rebuilt, dbg.start = 0, nil
 end
 
 -- At most one rebuild per REBUILD_DELAY, and never a second one while one is waiting or running.
@@ -692,6 +713,7 @@ end
 
 local function OnZoneTimer()
     zonePending = false
+    if PE.debugOn then PE:Debug("questData", "zone change noticed, map " .. PE.Plain((QD:GetPlayerPosition()))) end
     if userCount > 0 then Fire("zone") end
 end
 
@@ -747,6 +769,7 @@ function QD:Acquire(userKey)
         for event in pairs(EVENTS) do
             pcall(frame.RegisterEvent, frame, event)
         end
+        if PE.debugOn then PE:Debug("questData", "first use (" .. tostring(userKey) .. "): events registered") end
     end
     forceNotify = true      -- the new user gets a "quests" callback even if nothing changed
     ScheduleRebuild()
@@ -770,6 +793,8 @@ function QD:Release(userKey)
     lastTracked = nil
     wipe(watched)
     arrowPin = nil
+    dbg.rebuilt, dbg.start = 0, nil
+    if PE.debugOn then PE:Debug("questData", "last release (" .. tostring(userKey) .. "): events dropped, caches wiped") end
 end
 
 function QD:OnChanged(userKey, fn)

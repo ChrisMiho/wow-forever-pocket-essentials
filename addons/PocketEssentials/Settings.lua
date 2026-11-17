@@ -360,10 +360,57 @@ end
 -- Errors page
 ---------------------------------------------------------------------------
 
+-- 12345 -> "12,345"
+local function WithCommas(n)
+    local text = tostring(floor(tonumber(n) or 0))
+    local done
+    repeat
+        text, done = text:gsub("^(%d+)(%d%d%d)", "%1,%2")
+    until done == 0
+    return text
+end
+
+-- The debug log's switch, line count and buttons. The count is read when the
+-- page is drawn (on opening, and after the switch or a button), never per
+-- logged line.
+local function BuildDebugLog(y, width)
+    local x = M.gap
+    local toggleWidth = M.button * 2.8
+    local textWidth = width - toggleWidth - x - M.pad
+    local on = PE.debugOn == true
+    local ty = y + M.gap * 0.3
+    ty = ty + PlaceText("font", "Debug log", x, ty, textWidth, COLOR.title) + M.gap * 0.3
+    ty = ty + PlaceText("small", "Turn this on, play until the problem happens, tap Save log now, then send the file "
+        .. "WTF/Account/<account>/SavedVariables/PocketEssentials.lua.", x, ty, textWidth) + M.gap * 0.3
+    ty = ty + PlaceText("small", WithCommas(PE:DebugCount()) .. " of " .. WithCommas(PE.DEBUG_CAP) .. " lines",
+        x, ty, textWidth, COLOR.status) + M.gap * 0.3
+    local rowHeight = max(M.row, ty - y)
+    local toggle = PlaceButton(on and "ON" or "OFF", width - toggleWidth, y + (M.row - M.button) * 0.5, toggleWidth, M.button,
+        on and "on" or "off", PE:Wrap("core", function() PE:SetDebug(not PE.debugOn) end))
+    toggle.peScrollTop, toggle.peScrollBottom = y, y + rowHeight
+    y = y + rowHeight + M.gap * 0.5
+    y = FlowButtons({
+        {
+            label = "Save log now",
+            -- A reload is what writes the file. Called straight from the tap,
+            -- in case reloading needs a real button press.
+            onClick = function() PE:ReloadNow() end,
+        },
+        {
+            label = "Clear log",
+            onClick = PE:Wrap("core", function() PE:ClearDebug() end),
+        },
+    }, x, y, width - x * 2, M.button * 3) + M.gap
+    return y + PlaceLine(y, width) + M.gap
+end
+
 local function BuildErrors(width)
     local x = M.gap
     local innerWidth = width - x * 2
     local y = M.gap * 0.5
+    -- On its own, so a problem drawing it still leaves the error list below.
+    local ok, nextY = PE:Safe("core", BuildDebugLog, y, width)
+    y = (ok and type(nextY) == "number") and nextY or (max(y, lowest) + M.gap)
     local list = PE.errors
     if #list == 0 then
         return y + PlaceText("font", "No errors recorded.", x, y, innerWidth) + M.gap
@@ -517,8 +564,8 @@ local function DoRefresh()
     area:SetContentHeight(total)
 
     if page ~= "main" then
-        -- Nothing on these pages can take the controller highlight, so
-        -- the paging buttons do.
+        -- Little or nothing in these lists can take the controller
+        -- highlight, so the paging buttons do.
         navList[#navList + 1] = area.upButton
         navList[#navList + 1] = area.downButton
     end

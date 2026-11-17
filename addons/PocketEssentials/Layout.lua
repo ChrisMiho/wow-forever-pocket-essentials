@@ -90,6 +90,7 @@ end
 
 local function Say(text)
     note = text
+    if PE.debugOn then PE:Debug("layout", "answer: " .. text) end
     if mod then mod:Print(text) end
 end
 
@@ -287,6 +288,11 @@ local function Activate(state, index)
         return false
     end
     local after = ReadState()
+    if PE.debugOn then
+        PE:Debug("layout", "asked the game for layout " .. index .. ", it now reports "
+            .. (after and PE.Plain(after.active) or "nothing readable")
+            .. ((after ~= nil and after.active == index) and " (changed)" or " (not changed)"))
+    end
     return after ~= nil and after.active == index
 end
 
@@ -471,6 +477,7 @@ local function DoInstall(state)
     local savedOk, err = pcall(api.SaveLayouts, info)
     if not savedOk then
         PE:LogError("layout", "C_EditMode.SaveLayouts failed: " .. tostring(err))
+        if PE.debugOn then PE:Debug("layout", "the game refused to save the layout list") end
         Say("The game refused to save the handheld layout.")
         return
     end
@@ -483,6 +490,11 @@ local function DoInstall(state)
 
     local after = ReadState()
     local savedIndex = after and FindSaved(after, HANDHELD_NAME)
+    if PE.debugOn then
+        PE:Debug("layout", "saved at index " .. newIndex .. " (" .. (existingIndex and "replaced" or "new")
+            .. "), the game now has it at " .. tostring(savedIndex) .. ", active "
+            .. (after and PE.Plain(after.active) or "unreadable"))
+    end
     if not savedIndex then
         Say("The game did not keep the handheld layout. Nothing else was changed.")
     elseif after.active ~= savedIndex then
@@ -498,12 +510,21 @@ local ACTIONS = { gamepad = DoGamepad, back = DoBack, install = DoInstall }
 local function Do(kind)
     if not mod or not mod:IsEnabled() then return end
     if EditModeOpen() then
+        if PE.debugOn then PE:Debug("layout", kind .. ": refused, Edit Mode is open") end
         Say("Close Edit Mode first, then tap this again.")
     else
         local state = ReadState()
         if not state then
+            if PE.debugOn then PE:Debug("layout", kind .. ": the layout list could not be read") end
             Say("The game's layout list is not available right now. Nothing was changed.")
         else
+            if PE.debugOn then
+                local current = state.current
+                PE:Debug("layout", kind .. ": " .. state.numPresets .. " built-in, " .. #state.saved
+                    .. " saved, active " .. PE.Plain(state.active) .. " ("
+                    .. (current and ((current.isPreset and "built-in " or "saved ") .. PE.Plain(current.name)) or "unknown")
+                    .. ")")
+            end
             ACTIONS[kind](state)
         end
     end
@@ -511,7 +532,9 @@ local function Do(kind)
 end
 
 local function Request(kind)
+    if PE.debugOn then PE:Debug("layout", "button pressed: " .. kind) end
     if PE:InCombat() then
+        if PE.debugOn then PE:Debug("layout", kind .. ": in a fight, will be done when it ends") end
         Say("This will be done when the fight is over.")
     end
     PE:RunOutOfCombat(COMBAT_KEY, function() Do(kind) end)

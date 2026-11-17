@@ -10,7 +10,7 @@ One addon folder, one Lua file per part, no libraries.
 ```
 addons/PocketEssentials/
   PocketEssentials.toc   interface 16001, one saved table PocketEssentialsDB, QuestieDB as optional dependency
-  Core.lua        feature registry, saved settings, error catching and log, combat queue, /pe
+  Core.lua        feature registry, saved settings, error catching and log, debug log, combat queue, /pe
   UI.lua          sizes for touch, big buttons, windows, controller navigation
   Hub.lua         the round button and the minimap addon-list entry
   Settings.lua    the settings window and Errors page
@@ -80,6 +80,10 @@ How the pieces protect each other:
    `PE:LogError(key, msg)` to record a problem on the Errors page. Any other
    callback (hooks, frame scripts) goes through `PE:Wrap(key, fn)` or
    `PE:Safe(key, fn, ...)`.
+   Debug log: one line per decision, never per frame, written as
+   `if PE.debugOn then PE:Debug(key, text) end` so the text is not built while
+   the log is off. Never a player's name or chat text; a value from the game
+   goes through `PE.Plain(v)`, which writes a hidden one as `<secret>`.
 7. Tick budget: nothing runs every frame or on a timer while the feature is
    off. If it needs a tick (an `OnUpdate`), run it only while it has work, stop
    it in `OnDisable`, and keep it to about 10 per second like the two existing
@@ -109,9 +113,13 @@ so that being wrong cannot raise an error; the worst case is listed.
 | `C_EncodingUtil` decode functions behave as QuestieDB expects; which of QuestieDB's two identical data files the client loads | QuestieDB itself | QuestieDB fails to load; quest features stay off and say why |
 | `CanMerchantRepair`, `GetRepairAllCost`, `RepairAllItems`, `InRepairMode`, `SpellIsTargeting` (used by Blizzard's own vendor code but absent from the generated documentation, so their restrictions are unknown) | Repair, sell junk | Repair row shows "PROBLEM", or the game shows its own "blocked" message once |
 | Whether selling (`C_Container.UseContainerItem`) or repairing needs a real button press on this client | Sell junk, repair | The game shows a "blocked by an addon" message at the vendor and nothing is sold/repaired |
+| `debugstack(start, count1, count2)` taking line counts (only `debugstack()` / `debugstack(level)` appear in Blizzard's source) | Blocked-action report | The report names the blocked function but not our file and line |
+| Whether `ADDON_ACTION_BLOCKED` / `ADDON_ACTION_FORBIDDEN` reach addon frames and carry the addon's name first (documented, untested here) | Blocked-action report | Nothing is reported; the game's own message and pop-up still appear |
+| `C_Texture.GetAtlasInfo` and the `bags-button-autosort-up` atlas on this client | Bag Sort tab | The tab shows the letters without the icon |
 | Whether a setting written at logout sticks (`combinedBags`) | Bags, only when the Gamepad UI is off | Bag does not combine; the row says to use the game's own bag menu |
 | `GetChannelList`, `IsInGroup`, `IsInRaid` (source use only) | Chat | A channel button missing from the picker |
-| Whether values set on the chat box by an addon stay "clean" for the game's secure commands | Chat | A typed `/cast` or `/target` right after using the picker is refused |
+| Whether values set on the chat box by an addon stay "clean" for the game's secure commands. By the source, attributes (`SetChatType`, `SetTellTarget`, `SetChannelTarget`) carry no taint, but `ChatFrameUtil.OpenChat` called by an addon writes `ACTIVE_CHAT_EDIT_BOX` / `LAST_ACTIVE_CHAT_EDIT_BOX` tainted, and with the Gamepad UI on the chat frame's controller prompts are then set up by tainted code (`FloatingChatFrame.lua` `FocusGamepad`) | Chat | A typed `/cast` or `/target` right after using the picker is refused, or a controller focus change in combat is blocked and blamed on us, until a reload. If the device shows this: stop calling `OpenChat`, only set the box's target and let the player open chat |
+| Blizzard's controller navigation hooks `CreateFrame` (`Blizzard_GamepadSmartNavigation/SmartNavigation.lua:260`); a frame of ours created in combat under a Blizzard panel that has controller focus makes it print "Interface action failed" | Quest icons (map icons are created as needed under the world map) | The chat message once, in combat with the map open; the blocked-action report names our line |
 | Whether `C_EditMode.SetActiveLayout` / `OnLayoutAdded` called by an addon "taints" Edit Mode | Layout | Possible "action blocked" in combat until reload; the panel asks for a reload after every switch for this reason |
 | `Enum.EditModePresetLayoutsMeta.NumValues`; English text of the "Enable Gamepad UI" setting | Layout | A status line reads slightly differently |
 | Blizzard forces the Modern layout whenever the Gamepad UI is switched off (`Blizzard_Gamepad/Core.lua:102-106`: the gamepad shutdown handler calls `C_EditMode.SetActiveLayout` with Modern) | Layout | "Go back to my previous layout" can be undone by the game when the Gamepad UI is turned off |

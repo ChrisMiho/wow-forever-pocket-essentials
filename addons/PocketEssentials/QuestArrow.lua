@@ -118,6 +118,14 @@ local function IsSecret(v)
     return secret and true or false
 end
 
+-- Debug log: the arrow's state, written only when it differs from the last
+-- one written (S.dbgState). Only called while the log is on.
+local function DebugState(text)
+    if text == S.dbgState then return end
+    S.dbgState = text
+    PE:Debug(KEY, text)
+end
+
 local function Opt(key)
     local opts = mod and mod.opts
     local value = type(opts) == "table" and opts[key] or nil
@@ -230,6 +238,7 @@ local function Select(playerMap, px, py)
     local tracked = S.tracked
     if not tracked then
         SetMessage("No quest focused", "Focus one in your quest log")
+        if PE.debugOn then DebugState("text only: no quest focused") end
     else
         local byMap = QD:GetPinsForQuest(tracked)
         local pins = type(byMap) == "table" and byMap[playerMap]
@@ -241,14 +250,20 @@ local function Select(playerMap, px, py)
                 pin = Nearest(pins, px, py, width, height)
                 S.width, S.height = width, height
             end
+            if PE.debugOn then
+                DebugState(pin and ("pointing at quest " .. tracked .. " on map " .. playerMap .. " (focused quest, nearest spot)")
+                    or ("hidden: quest " .. tracked .. ", size not readable of map " .. playerMap))
+            end
         else
             local title = QD:GetQuestTitle(tracked)
             if type(title) ~= "string" or title == "" then title = "Quest" end
             if type(byMap) == "table" and HasPlaces(byMap) then
                 local zone = ZoneName(BusiestMap(byMap))
                 SetMessage("Outside this zone", zone and Shorten("Head to " .. zone) or Shorten(title))
+                if PE.debugOn then DebugState("text only: quest " .. tracked .. " has no spot on map " .. playerMap) end
             else
                 SetMessage("No known location", Shorten(title))
+                if PE.debugOn then DebugState("text only: quest " .. tracked .. " has no known location") end
             end
         end
     end
@@ -322,6 +337,7 @@ local function ShowDistance(dist)
     elseif dist < HERE_ENTER then
         here = true
     end
+    if PE.debugOn and here ~= S.here then PE:Debug(KEY, here and "arrived at the spot" or "left the spot") end
     S.here = here
     local code
     if here then
@@ -498,11 +514,17 @@ local function Idle(why)
     S.selectDue = true  -- choose (and publish) again when the position is back
     HideDisplay()
     SetWhy(why)
+    if PE.debugOn then DebugState("hidden: position not readable") end
     return true
 end
 
 -- Stops the OnUpdate. keepDisplay leaves the text block on screen.
 local function StopDriver(why, keepDisplay)
+    if PE.debugOn then
+        if S.running then PE:Debug(KEY, "driver stopped") end
+        if why == "instance" then DebugState("stopped inside an instance") end
+        if why == "failed" then DebugState("stopped after " .. MAX_FAILURES .. " errors in a row") end
+    end
     S.running = false
     PublishPin(nil)     -- the arrow no longer points anywhere
     if S.driver then S.driver:Hide() end
@@ -610,6 +632,7 @@ local function StartDriver()
     S.failures = 0
     S.running = true
     S.driver:Show()
+    if PE.debugOn then PE:Debug(KEY, "driver started") end
 end
 
 local function InInstance()
@@ -702,11 +725,13 @@ mod = PE:RegisterModule({
         QD = PE.QuestData
         if type(QD) ~= "table" or type(QD.Acquire) ~= "function" then
             S.failReason = "Quest locations are not available."
+            if PE.debugOn then PE:Debug(KEY, "not started: quest data did not load") end
             return
         end
         local ok, reason = QD:Acquire(KEY)
         if not ok then
             S.failReason = (type(reason) == "string" and reason ~= "") and reason or "Quest locations are not available."
+            if PE.debugOn then PE:Debug(KEY, "not started: " .. S.failReason) end
             return
         end
         S.acquired = true
@@ -714,6 +739,7 @@ mod = PE:RegisterModule({
             S.failReason = "The arrow cannot be drawn on this version of the game."
             QD:Release(KEY)     -- nothing will be shown, so do not keep the quest data busy
             S.acquired = false
+            if PE.debugOn then PE:Debug(KEY, "not started: the arrow cannot be drawn") end
             return
         end
         if not S.driver:GetScript("OnUpdate") then S.driver:SetScript("OnUpdate", SafeOnUpdate) end
@@ -733,7 +759,9 @@ mod = PE:RegisterModule({
     -- Also runs after a half-finished OnEnable, so every step checks first.
     OnDisable = function(self)
         S.ready = false
+        if PE.debugOn and S.running then PE:Debug(KEY, "driver stopped: feature off") end
         S.running = false
+        S.dbgState = nil
         if S.driver then S.driver:Hide() end
         if S.display then S.display:Hide() end
         S.shown = false

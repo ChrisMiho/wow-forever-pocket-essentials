@@ -70,8 +70,10 @@ safer option. Any of them can be reversed.
   With it off, the change is written at logout/reload and the panel shows
   "Reload now". Changing it live would make the game re-open bags inside our
   code, which risks "action blocked" when using items.
-- The Sort button floats beside the bag rather than inside it, so Blizzard's
-  controller cursor does not treat it as an item slot.
+- The Sort button is a tall tab against the bag's left edge (since
+  2026-11-16, spec `2026-11-16-vertical-sort-tab.md`), outside the window
+  rather than inside it, so Blizzard's controller cursor does not treat it as
+  an item slot. Reaching it with the d-pad is a later roadmap item.
 - L3 sorts only while the bag is open and never during combat.
 - Bag size never goes below the game's own size; "Extra large" may equal
   "Large" when the bag is already as tall as the screen.

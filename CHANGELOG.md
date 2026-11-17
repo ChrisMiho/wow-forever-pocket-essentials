@@ -4,6 +4,60 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.0.7] - 2026-11-17
+
+Seventh test build, from the fourth device test. Not yet tested on a device.
+
+### Added
+
+- When the game blocks something Pocket Essentials tried to do, it now says
+  what: one chat line per blocked action ("The game blocked Pocket Essentials
+  from using …", with the file and line), and an entry on Settings > Errors
+  listing which features were on. This is to find the cause of the
+  "Interface action failed" message and the "blocked from an action" pop-up.
+- A debug log that can be sent as a file. Settings > Errors has a "Debug log"
+  switch (off by default; `/pe debug on` and `/pe debug off` do the same).
+  While it is on, the addon keeps a timestamped line for each thing it does
+  or decides, up to 10,000 lines, with no player names and no chat text.
+  "Save log now" reloads the interface so the game writes the file
+  (`WTF/Account/<account>/SavedVariables/PocketEssentials.lua`); "Clear log"
+  empties it. `scripts/read-log.sh` prints the file as plain text.
+- One big bag: a "Sort button" choice (Show / Hide). Hidden, the left stick
+  click still sorts.
+
+### Changed
+
+- One big bag: the Sort button is now a tall gold tab against the bag's left
+  edge, below the round bag picture, with the game's sort icon and "Sort"
+  written down it. It follows the bag size.
+- Sell junk: if the game refuses a sale, selling stops for that visit with a
+  chat line, instead of trying every item (which brought the pop-up back
+  again and again).
+- Sell junk: the first sale of a visit is checked a second later; if the item
+  is still in the bag, selling stops for that visit. This covers the game
+  refusing without telling the addon.
+- Sell junk: nothing is sold while the vendor's Buyback tab is showing.
+- Big chat buttons: a tap during a fight no longer opens the chat box; a chat
+  line says to try again afterwards. With the Gamepad UI on, the game refuses
+  that step to addons in combat and printed "Interface action failed".
+
+### Fixed
+
+Found by a code review against Blizzard's interface source, not on a device.
+
+- Repair: "Repairing for …" is now said only after the game accepted the
+  repair; a refused repair gets its own line and is not counted as money spent.
+- Big chat buttons: when the chat box cannot be opened the expected way, the
+  addon no longer falls back to having the game read a typed command, which
+  could make a later typed `/cast` or `/target` fail.
+- The blocked-action report now recognises the game's call-stack format
+  ("[File.lua]:123") and no longer drops a report when it cannot read the line.
+- An error repeating many times a second (for example in the arrow's update)
+  now only counts up, instead of reading the call stack every time.
+- Quest icons on the minimap come back after a loading screen even when the
+  game is a moment late with the player's position.
+- Quest icons: helper spots that QuestieDB ties to an item now get icons.
+
 ## [0.0.6] - 2026-11-15
 
 Sixth test build. Not yet tested on a device. It also carries 0.0.5, which has

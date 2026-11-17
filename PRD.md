@@ -187,6 +187,28 @@ Requests: an icon key (built in 0.0.6); opening the settings from Forever's
 radial wheel so the round button is not needed (dropped 2026-11-15, findings
 in `docs/DECISIONS.md`).
 
+**Fourth device test, 2026-11-15 (0.0.6), bags, chat, sell junk, repair:**
+screenshots in `docs/screenshots/`.
+1. One big bag: Sort works and the bag looked good. The game's controller
+   style already shows one combined bag, so this feature only adds the Sort
+   button, the left-stick sort and the size choice. Request: the combined
+   bag scatters items and empty slots by the bag they sit in; the owner wants
+   one plain box with every item packed at the top. Not built; Blizzard's
+   window lays out its own slots, so this would need a bag window of our own
+   (a new roadmap item, spec first).
+2. Big chat buttons: the window opens and works but is a little too big.
+   After tapping buttons in it, the chat showed "Interface action failed
+   because of an AddOn" (the game blocked something). Which action is not
+   yet known.
+3. Sell junk and repair: at the innkeeper the game showed "PocketEssentials
+   has been blocked from an action only available to the Blizzard UI"
+   (Disable / Ignore), and the owner could not clear it. Likely cause, not
+   confirmed: the game forbids addon selling (`C_Container.UseContainerItem`)
+   and the sell loop retries every 0.2 seconds, bringing the warning back
+   each time. The blocked action's name is passed only to addons
+   (`ADDON_ACTION_FORBIDDEN` / `ADDON_ACTION_BLOCKED`), so the next step is
+   to print it in chat and retest each feature on its own.
+
 **Apart from the quest tests, nothing in this repo has run in the game.**
 Version 0.0.1 was written on a Mac with no game client. Every line was checked against Blizzard's published
 interface code for this exact build, syntax-checked, exercised against a
@@ -252,6 +274,23 @@ Rules 1 and 2 apply: one phase at a time, one item at a time.
    flip each feature's default to on once it passes.
 3. **First CurseForge upload.** Use `curseforge/FIELDS.md`.
 4. **Left to build.** One at a time, spec first; see "Parked ideas".
+
+0.0.7 (2026-11-17, untested) answers this with a report of what the game
+blocked, a debug log that is sent as a file (Settings > Errors, spec
+`docs/superpowers/specs/2026-11-17-debug-log.md`), and the fixes from a code
+review against Blizzard's source (CHANGELOG 0.0.7, "Fixed"). The review could
+not prove the cause of the pop-up; the next device test, with the debug log
+on, should name it.
+
+Upcoming from the fourth device test (2026-11-16), one at a time:
+- Bags: reach the Sort tab with the d-pad (Blizzard's controller navigation
+  has helpers for addon buttons; needs a device test that item use is never
+  blocked).
+- Bags: clearer settings wording (the game's controller mode already combines
+  the bags, so the feature is really "Bag sorting"), and a choice of sort
+  key: left stick, right stick or the button only.
+- Bags: one plain box with items packed at the top (needs a bag window of our
+  own; not planned yet).
 
 Open questions from the device tests (not yet known to be ours):
 - Blue icons on the minimap only (second device test, finding 1).

@@ -340,4 +340,55 @@ test("quest arrow: nothing ticks and nothing shows after the feature is switched
     c:assertClean("off")
 end)
 
+---------------------------------------------------------------------------
+-- Debug log (docs/superpowers/specs/2026-11-17-debug-log.md)
+---------------------------------------------------------------------------
+
+-- The debug log's lines that contain `text` (plain match).
+local function logLines(c, text)
+    local out = {}
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        if line:find(text, 1, true) then out[#out + 1] = line end
+    end
+    return out
+end
+
+-- Spec "What is written", Quest arrow: "each change of state (pointing at a quest, text only, hidden) and
+-- why; not the distance or the turning". "Not doing: No log of every frame or every update of the arrow".
+test("debug log: the arrow's ticks write nothing; a change of state writes one line", function()
+    local c, PE = newArrow()
+    PE:SetDebug(true)
+    placeAt(c, 0.4505, 0.6205, nil, 1.5)                   -- the next choice of spot writes the state once
+    eq(#logLines(c, "questArrow: pointing at quest " .. QW.MANY .. " on map " .. QW.HOME), 1)
+    local count, ticks = #logLines(c, ""), c.stats.addonOnUpdate
+    c:advance(10)
+    check(c.stats.addonOnUpdate >= ticks + 90, "test setup: the arrow's driver did not tick")
+    eq(#logLines(c, ""), count, "lines written by ticks with nothing changing")
+    placeAt(c, 0.451, 0.621, 0.5, 3)                       -- walking and turning: still the same state
+    eq(#logLines(c, ""), count, "lines written while walking towards the same quest")
+
+    c.world.questLog.focus = QW.ONE                        -- another quest focused: one new state
+    c:fire("SUPER_TRACKING_CHANGED")
+    c:advance(1.2)
+    eq(#logLines(c, "questArrow: pointing at quest " .. QW.ONE .. " on map " .. QW.HOME), 1)
+    c.world.questLog.focus = nil
+    c:fire("SUPER_TRACKING_CHANGED")
+    c:advance(1.2)
+    eq(#logLines(c, "questArrow: text only: no quest focused"), 1)
+    eq(#logLines(c, "questArrow: driver stopped"), 1)
+    count = #logLines(c, "")
+    c:advance(5)
+    eq(#logLines(c, ""), count, "lines written while stopped")
+    c:assertClean("arrow lines")
+end)
+
+-- Spec "Cost while off": "No text is built, nothing is stored."
+test("debug log: with the log off the arrow writes nothing", function()
+    local c, PE = newArrow()
+    c.world.questLog.focus = nil
+    c:fire("SUPER_TRACKING_CHANGED")
+    c:advance(1.2)
+    eq(#rawget(c.env, "PocketEssentialsDB").debug.lines, 0)
+end)
+
 return { known = KNOWN_FAILURES }

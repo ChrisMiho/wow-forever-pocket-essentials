@@ -157,8 +157,39 @@ test("sell junk: sells one item about every 0.2 seconds, not all at once", funct
     eq(#T.sold(c), 0, "before the start delay of 0.3 s")
     c:advance(0.2) -- 0.4 s: the first sale at 0.3 s
     eq(#T.sold(c), 1, "after 0.4 s")
-    c:advance(0.4) -- 0.8 s: second at 0.5 s, third at 0.7 s
-    eq(#T.sold(c), 3, "after 0.8 s")
+    c:advance(0.8) -- 1.2 s: the first sale is checked 1 s after it (SELL_CHECK_DELAY)
+    eq(#T.sold(c), 1, "after 1.2 s, before the first sale has been checked")
+    c:advance(0.6) -- 1.8 s: second at 1.3 s, third at 1.5 s, fourth at 1.7 s
+    eq(#T.sold(c), 4, "after 1.8 s")
+end)
+
+-- Vendor.lua SellStep: the first sale is looked at again; an item still in its slot stops the visit
+-- even when the game sent no "blocked" event.
+test("sell junk: stops when the first item is still there a second later (a refusal with no event)", function()
+    local c = visit({ on = { "sellJunk" } }, function(c)
+        for slot = 1, 4 do put(c, 0, slot, item(1600 + slot, 0, 3)) end
+        c.world.forbidUse = function() end
+    end)
+    c:openMerchant()
+    c:advance(10)
+    eq(#T.sold(c), 1, "kept trying after the first item did not sell")
+    eq(#lineStartingWith(c, "The first junk item did not sell"), 1)
+    eq(#lineStartingWith(c, "Sold "), 0, "reported a sale that did not happen")
+end)
+
+-- Blizzard's own bag click sells nothing on the Buyback tab
+-- (Blizzard_UIPanels_Game/Mainline/ContainerFrame.lua, MerchantFrame.selectedTab == 2).
+test("sell junk: stops when the vendor's Buyback tab is showing", function()
+    local c = visit({ on = { "sellJunk" } }, function(c)
+        for slot = 1, 5 do put(c, 0, slot, item(1700 + slot, 0, 3)) end
+    end)
+    c:openMerchant()
+    c:advance(0.4)
+    eq(#T.sold(c), 1, "one sold on the vendor's own tab")
+    c.env.MerchantFrame.selectedTab = 2
+    c:advance(10)
+    eq(#T.sold(c), 1, "sold on the Buyback tab")
+    c.env.MerchantFrame.selectedTab = 1
 end)
 
 -- DECISIONS "Vendor": "Selling pauses in combat"; Vendor.lua SellStep (RunOutOfCombat).
@@ -258,6 +289,8 @@ test("sell junk: never calls a confirm function (only UseContainerItem and Repai
     c:advance(5)
     local names = {}
     for _, call in ipairs(c.calls) do names[call.name] = true end
+    -- Core.lua WatchBlockedMessage: one hook on Blizzard's "action blocked" message once a feature is on.
+    names.hooksecurefunc = nil
     eq(names, { ["C_Container.UseContainerItem"] = true, RepairAllItems = true })
     for key in pairs(c.missing) do
         check(not key:lower():find("confirm") and not key:lower():find("popup") and not key:lower():find("accept"),
@@ -523,6 +556,128 @@ test("repair: does nothing when the game says nothing can be repaired, even with
     eq(c:callsTo("RepairAllItems"), {})
     eq(T.chatLines(c), {})
     eq(c.world.money, 100000)
+end)
+
+-- Vendor.lua RepairOnShow: a repair the game refuses is not announced as done, and does not
+-- count as money spent.
+test("repair: says so when the game refuses, and does not claim a repair", function()
+    local c = visit({ on = { "repair" }, money = 5000, merchant = { canRepair = true, repairCost = 1240 } })
+    local real = c.env.RepairAllItems
+    c.env.RepairAllItems = function() c:fire("ADDON_ACTION_FORBIDDEN", "PocketEssentials", "RepairAllItems") end
+    c:openMerchant()
+    c:advance(1)
+    c.env.RepairAllItems = real
+    eq(c.world.money, 5000)
+    eq(#lineStartingWith(c, "Repairing for"), 0, "claimed a repair the game refused")
+    eq(#lineStartingWith(c, "The game would not let Pocket Essentials repair here"), 1)
+end)
+
+-- Spec 2026-11-16-blocked-action-report: if the game refuses a sale, selling stops for the visit
+-- (no warning every 0.2 seconds), with one line saying so, and the block names Vendor.lua.
+test("sell junk: stops at the first sale the game refuses", function()
+    local c = visit({ on = { "sellJunk" } }, function(c)
+        put(c, 0, 1, item(1401, 0, 5))
+        put(c, 0, 2, item(1402, 0, 5))
+        put(c, 0, 3, item(1403, 0, 5))
+        c.world.forbidUse = function() c:fire("ADDON_ACTION_FORBIDDEN", "PocketEssentials", "UseContainerItem") end
+    end)
+    c:openMerchant()
+    c:advance(5)
+    eq(#T.sold(c), 1, "kept trying after the game refused")
+    eq(#lineStartingWith(c, "The game would not let Pocket Essentials sell items here"), 1)
+    eq(#lineStartingWith(c, "Sold "), 0, "reported a sale that did not happen")
+    local named = false
+    for _, line in ipairs(T.chatLines(c)) do
+        if line:find("UseContainerItem (Vendor.lua:", 1, true) then named = true end
+    end
+    check(named, "the block line does not name Vendor.lua: " .. table.concat(T.chatLines(c), " / "))
+end)
+
+-- Spec 2026-11-16-blocked-action-report: Blizzard's ADDON_ACTION_BLOCKED handler
+-- (Mainline EventImplementation.lua GameEvent.HandleActionBlocked) also calls the hooked
+-- message function, inside the same blocked call. That block is reported once, not twice.
+test("sell junk: a blocked sale is reported once, not again through Blizzard's message", function()
+    local c = visit({ on = { "sellJunk" } }, function(c)
+        put(c, 0, 1, item(1501, 0, 5))
+        c.world.forbidUse = function()
+            local function HandleActionBlocked() c.env.DisplayInterfaceActionBlockedMessage() end
+            HandleActionBlocked()
+            c:fire("ADDON_ACTION_BLOCKED", "PocketEssentials", "UseContainerItem")
+        end
+    end)
+    c:openMerchant()
+    c:advance(5)
+    eq(#lineStartingWith(c, "The game blocked Pocket Essentials"), 1)
+    local blocked = 0
+    for _, e in ipairs(c.PE.errors) do if e.module == "blocked" then blocked = blocked + 1 end end
+    eq(blocked, 1, "Errors entries for the one block")
+end)
+
+-- The debug log's lines for one feature, without the time and the feature's name.
+local function debugLines(c, key)
+    local out = {}
+    local prefix = " " .. key .. ": "
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        local at = line:find(prefix, 1, true)
+        if at and at <= 14 then out[#out + 1] = line:sub(at + #prefix) end
+    end
+    return out
+end
+
+-- Spec 2026-11-17-debug-log, table rows "Sell junk" and "Repair", and part 5 ("one vendor visit
+-- producing the expected lines"): one line per decision, items by number.
+test("debug log: one vendor visit writes the sell junk and repair lines in order", function()
+    local c, PE = visit({ on = { "sellJunk", "repair" }, money = 5000, merchant = { canRepair = true, repairCost = 1240 } },
+        function(c)
+            put(c, 0, 1, item(1601, 0, 5))
+            put(c, 0, 2, item(1602, 1, 50))   -- white: kept, no line
+            put(c, 0, 3, item(1603, 0, 6))
+        end)
+    PE:SetDebug(true)
+    c:openMerchant()
+    c:advance(5)
+    c:closeMerchant()
+    eq(debugLines(c, "sellJunk"), {
+        "vendor opened",
+        "found 2 grey items to sell",
+        "selling bag 0 slot 1 item 1601",
+        "first sale check: went",
+        "selling bag 0 slot 3 item 1603",
+        "stopped: list finished",
+        "money line: 2 tried, 11 copper gained",
+    })
+    eq(debugLines(c, "repair"), {
+        "vendor opened, can repair: true",
+        "cost 1240 copper, repair possible: true",
+        "money 5000 copper",
+        "repaired for 1240 copper",
+    })
+    c:assertClean("vendor visit with the debug log on")
+end)
+
+-- Spec 2026-11-17-debug-log, "why selling stopped": each stop has its own reason.
+test("debug log: closing the vendor in the middle of selling is written as the stop reason", function()
+    local c, PE = visit({ on = { "sellJunk" } }, function(c)
+        for slot = 1, 6 do put(c, 0, slot, item(1700 + slot, 0, 3)) end
+    end)
+    PE:SetDebug(true)
+    c:openMerchant()
+    c:advance(0.4)
+    c:closeMerchant()
+    local lines = debugLines(c, "sellJunk")
+    eq(lines[#lines - 1], "stopped: vendor window closed")
+    eq(lines[#lines]:sub(1, 11), "money line:")
+end)
+
+-- Spec 2026-11-17-debug-log, "Cost while off": nothing is stored while the switch is off.
+test("debug log: a vendor visit with the log off writes no lines", function()
+    local c = visit({ on = { "sellJunk", "repair" }, money = 5000, merchant = { canRepair = true, repairCost = 1240 } },
+        function(c) put(c, 0, 1, item(1801, 0, 5)) end)
+    c:openMerchant()
+    c:advance(5)
+    c:closeMerchant()
+    eq(#T.sold(c), 1)
+    eq(rawget(c.env, "PocketEssentialsDB").debug.lines, {})
 end)
 
 return { known = KNOWN_FAILURES }

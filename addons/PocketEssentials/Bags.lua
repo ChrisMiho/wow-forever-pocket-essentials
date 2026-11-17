@@ -22,6 +22,7 @@ local max, abs = math.max, math.abs
 local FRAME_NAME = "ContainerFrameCombinedBags"
 local LAYOUT_FUNC = "UpdateContainerFrameAnchors"
 local CVAR = "combinedBags"
+local SORT_ATLAS = "bags-button-autosort-up" -- Blizzard's own sort button (ContainerFrame.xml)
 local SORT_KEY = "PADLSTICK" -- left stick click (Blizzard_SharedXML/Shared/GamepadConstants.lua)
 local KEY_BUTTON_NAME = "PocketEssentialsBagSortKey"
 local SIZE_FACTOR = { normal = 1, large = 1.25, xlarge = 1.5 }
@@ -191,18 +192,26 @@ local function WantCombined()
         end
         UpdateLogoutWatch()
         CancelReload() -- nothing visible waits for a reload in this style
+        if PE.debugOn then PE:Debug("bags", "combined: Gamepad UI is on, the game always uses one bag") end
         return
     end
     local current = ReadCVar()
-    if current == nil then return end
+    if current == nil then
+        if PE.debugOn then PE:Debug("bags", "not combined: the combinedBags setting cannot be read") end
+        return
+    end
     if current == "1" then
+        if PE.debugOn then PE:Debug("bags", "combined: the setting is already on") end
         opts.cvarWant, opts.cvarTried, opts.cvarFailed, opts.userSeparate = nil, nil, nil, nil
         opts.sawCombined = true
         UpdateLogoutWatch()
         CancelReload()
         return
     end
-    if opts.cvarFailed then return end
+    if opts.cvarFailed then
+        if PE.debugOn then PE:Debug("bags", "not combined: the game did not keep the setting last time") end
+        return
+    end
     if opts.cvarWant ~= "1" and (opts.sawCombined or opts.userSeparate) then
         -- It was one big bag while this feature was on and now it is not, and
         -- not by our doing: the player changed it in Blizzard's bag menu.
@@ -210,11 +219,13 @@ local function WantCombined()
         opts.sawCombined, opts.userSeparate = nil, true
         ForgetCVar(opts)
         UpdateLogoutWatch()
+        if PE.debugOn then PE:Debug("bags", "not combined: switched back in the game's bag menu, left alone") end
         return
     end
     if opts.cvarPrev == nil then opts.cvarPrev = current end
     opts.cvarWant, opts.cvarTried = "1", nil
     UpdateLogoutWatch()
+    if PE.debugOn then PE:Debug("bags", "not combined yet: setting is " .. current .. ", change waits for a reload") end
     mod:RequestReload(RELOAD_REASON)
 end
 
@@ -229,10 +240,12 @@ local function RestoreCVar()
         -- Nothing of ours to undo (never applied, or changed by hand since).
         ForgetCVar(opts)
         UpdateLogoutWatch()
+        if PE.debugOn then PE:Debug("bags", "switched off: no bag setting of ours to put back") end
         return
     end
     opts.cvarWant, opts.cvarTried = prev, nil
     UpdateLogoutWatch()
+    if PE.debugOn then PE:Debug("bags", "switched off: setting goes back to " .. prev .. " at the next reload") end
     if IsGamepadStyle() then CancelReload() else mod:RequestReload(RELOAD_REASON) end
 end
 
@@ -241,11 +254,22 @@ end
 ---------------------------------------------------------------------------
 
 local function DoSort(fromKey)
-    if not active or not BagShown() then return end -- also covers a stale key binding
+    if PE.debugOn then PE:Debug("bags", fromKey and "Sort pressed: stick click" or "Sort pressed: the tab") end
+    if not active or not BagShown() then -- also covers a stale key binding
+        if PE.debugOn then PE:Debug("bags", "Sort ignored: bag not open or feature off") end
+        return
+    end
     local now = (GetTime and GetTime()) or 0
-    if now - lastSort < 0.5 and now >= lastSort then return end
-    if not (C_Container and C_Container.SortBags) then return end
+    if now - lastSort < 0.5 and now >= lastSort then
+        if PE.debugOn then PE:Debug("bags", "Sort ignored: pressed again within half a second") end
+        return
+    end
+    if not (C_Container and C_Container.SortBags) then
+        if PE.debugOn then PE:Debug("bags", "Sort ignored: no C_Container.SortBags") end
+        return
+    end
     lastSort = now
+    if PE.debugOn then PE:Debug("bags", "sorting") end
     if PlaySound and SOUNDKIT and SOUNDKIT.UI_BAG_SORTING_01 then
         pcall(PlaySound, SOUNDKIT.UI_BAG_SORTING_01)
     end
@@ -262,7 +286,10 @@ end
 local function OnSortKey(_, _, down)
     if down then return end
     -- The shoulder "modifier" buttons held: that press belongs to the game.
-    if IsModifierKeyDown and IsModifierKeyDown() then return end
+    if IsModifierKeyDown and IsModifierKeyDown() then
+        if PE.debugOn then PE:Debug("bags", "stick click left to the game: a modifier is held") end
+        return
+    end
     DoSort(true)
 end
 
@@ -270,22 +297,70 @@ end
 -- The Sort button and the left stick click
 ---------------------------------------------------------------------------
 
+-- The tab's width in UIParent units (also the room the bag size leaves for it).
+local function TabWidth()
+    return PE.UI:Metrics().button
+end
+
+-- How far the round bag picture reaches below the bag's top edge, in the
+-- bag's own units (62-tall picture at y +7: SharedUIPanelTemplates.xml), plus
+-- a little room.
+local PICTURE_DROP = 58
+
+-- One bag unit in UIParent units, or nil if it cannot be read.
+local function BagToUI()
+    local bagScale = Plain(bagFrame:GetEffectiveScale())
+    local uiScale = Plain(UIParent:GetEffectiveScale())
+    if not (bagScale and uiScale) or bagScale <= 0 or uiScale <= 0 then return nil end
+    return bagScale / uiScale
+end
+
 local function LayoutButton()
     if not sortButton or not bagFrame then return end
     local m = PE.UI:Metrics()
-    sortButton:SetSize(max(m.button * 2.4, PE.UI:Px(110)), m.button)
+    local width = TabWidth()
+    local toUI = BagToUI()
+    local bagHeight = Plain(bagFrame:GetHeight())
+    -- About half the bag's height, never shorter than three and a half
+    -- buttons (room for the icon and four letters).
+    local height = max(m.button * 3.5, (toUI and bagHeight and bagHeight * toUI or 0) * 0.5)
+    -- Starts below the round picture, at any bag size.
+    local drop = max(m.button, toUI and PICTURE_DROP * toUI or 0)
+    sortButton:SetSize(width, height)
     sortButton:ClearAllPoints()
-    -- Sits to the left of the top left corner, outside the window: clear of the
-    -- item slots, money, search box and close button, of the controller hints
+    -- A tab against the window's left edge, outside it: clear of the item
+    -- slots, money, search box and close button, of the controller hints
     -- Blizzard hangs below the window and of the extra bags it stacks from the
-    -- bottom left. The gap keeps it off the round picture, which sticks out a
-    -- little. Being beside the window, it costs the bag no height.
-    sortButton:SetPoint("TOPRIGHT", bagFrame, "TOPLEFT", -m.gap * 1.5, 0)
+    -- bottom left. It starts below the round picture, which sticks out of
+    -- the top left corner. Being beside the window, it costs the bag no height.
+    -- (Anchored to the bag, the offset is in the tab's own UIParent units.)
+    sortButton:SetPoint("TOPRIGHT", bagFrame, "TOPLEFT", 0, -drop)
+    -- Icon at the top, the letters stacked in the space below it.
+    local icon, letters = sortButton.peSortIcon, sortButton.peSortLetters
+    local iconSize = width - m.gap
+    if icon then
+        icon:SetSize(iconSize, iconSize)
+        icon:ClearAllPoints()
+        icon:SetPoint("TOP", sortButton, "TOP", 0, -m.gap * 0.5)
+    end
+    if letters then
+        local top = (icon and icon:IsShown()) and (iconSize + m.gap) or m.gap * 0.5
+        letters:ClearAllPoints()
+        letters:SetPoint("TOPLEFT", sortButton, "TOPLEFT", 0, -top)
+        letters:SetPoint("BOTTOMRIGHT", sortButton, "BOTTOMRIGHT", 0, m.gap * 0.5)
+    end
+end
+
+-- The "Sort button" choice: shown unless the player hid it (they sort with
+-- the stick click instead).
+local function TabWanted()
+    local opts = Opts()
+    return not (opts and opts.showTab == false)
 end
 
 local function SyncButton()
     if not sortButton then return end
-    if active and BagShown() then
+    if active and BagShown() and TabWanted() then
         LayoutButton()
         sortButton:Show()
     else
@@ -300,8 +375,10 @@ local function ApplyBinding()
     if not (SetOverrideBindingClick and ClearOverrideBindings) then return end
     if active and BagShown() then
         SetOverrideBindingClick(keyButton, true, SORT_KEY, KEY_BUTTON_NAME, "LeftButton")
+        if PE.debugOn then PE:Debug("bags", "stick click taken for Sort (bag open)") end
     else
         ClearOverrideBindings(keyButton)
+        if PE.debugOn then PE:Debug("bags", "stick click given back to the game") end
     end
 end
 
@@ -333,6 +410,28 @@ local function CreateButtons()
         btn:Hide()
         btn:SetFrameStrata("MEDIUM")
         btn:SetFrameLevel(50)
+        btn:SetStyle("tab")
+        -- The label stays "Sort" (it is what the button is called); what is
+        -- drawn is Blizzard's sort icon over the letters one per line.
+        btn.peText:Hide()
+        local m = PE.UI:Metrics()
+        local icon = btn:CreateTexture(nil, "OVERLAY")
+        -- An unknown atlas raises no error, it just draws nothing: ask first.
+        local hasAtlas = false
+        if C_Texture and C_Texture.GetAtlasInfo then
+            local ok, info = pcall(C_Texture.GetAtlasInfo, SORT_ATLAS)
+            hasAtlas = ok and type(info) == "table"
+        end
+        if not (hasAtlas and pcall(icon.SetAtlas, icon, SORT_ATLAS)) then icon:Hide() end
+        btn.peSortIcon = icon
+        local letters = btn:CreateFontString(nil, "OVERLAY", m.font)
+        if not letters:GetFont() and GameFontHighlight then letters:SetFontObject(GameFontHighlight) end
+        letters:SetWordWrap(true)
+        letters:SetJustifyH("CENTER")
+        letters:SetJustifyV("MIDDLE")
+        letters:SetTextColor(1, 0.82, 0, 1)
+        letters:SetText("S\no\nr\nt")
+        btn.peSortLetters = letters
         btn:SetScript("OnClick", mod:Wrap(OnSortTapped))
         sortButton = btn
     end
@@ -396,7 +495,7 @@ local function ApplyScaleNow(frame)
         local toParent = uiScale / parentScale -- our sizes are in UIParent units
         local offX = -base.x * base.scale -- Blizzard's gap to the right edge, in parent units
         local offY = base.y * base.scale  -- and to the bottom edge
-        local buttonRoom = (max(m.button * 2.4, PE.UI:Px(110)) + m.gap * 2.5) * toParent
+        local buttonRoom = TabWanted() and (TabWidth() + m.gap) * toParent or 0
         local fitW = (pw - offX - buttonRoom) / fw
         local fitH = (ph - offY - PE.UI:Px(4) * toParent) / fh
         if fitW < target then target = fitW end
@@ -408,11 +507,18 @@ local function ApplyScaleNow(frame)
     end
 
     if Near(target, base.scale) then
-        if ours then SetAnchor(frame, rel, base.scale, base.x, base.y) end
+        if ours then
+            SetAnchor(frame, rel, base.scale, base.x, base.y)
+            if PE.debugOn then PE:Debug("bags", "size: back to the game's own scale") end
+        end
         applied = nil
     elseif not (ours and Near(target, applied.scale)) then
         local nx, ny = base.x * base.scale / target, base.y * base.scale / target
         SetAnchor(frame, rel, target, nx, ny)
+        if PE.debugOn then
+            PE:Debug("bags", ("size applied: scale %.2f (game's %.2f, wanted %.2f%s)"):format(
+                target, base.scale, want, clamped and ", held to the screen" or ""))
+        end
         applied = applied or {}
         applied.scale, applied.x, applied.y = target, nx, ny
     end
@@ -431,6 +537,9 @@ local function RestoreScaleNow(frame)
         and type(rel) == "table" and Near(current, was.scale)
         and Near(Plain(x), was.x) and Near(Plain(y), was.y) then
         SetAnchor(frame, rel, orig.scale, orig.x, orig.y)
+        if PE.debugOn then PE:Debug("bags", "switched off: the game's own bag scale put back") end
+    elseif PE.debugOn then
+        PE:Debug("bags", "switched off: bag scale left alone, it is no longer what was set here")
     end
 end
 
@@ -438,10 +547,17 @@ local function SyncScale()
     local frame = bagFrame
     if not frame then return end
     if PE:InCombat() and IsProtectedNow(frame) then
+        if PE.debugOn then PE:Debug("bags", "size held for after the fight") end
         PE:RunOutOfCombat("bags:scale", SyncScale)
         return
     end
-    if active then ApplyScaleNow(frame) else RestoreScaleNow(frame) end
+    if active then
+        ApplyScaleNow(frame)
+        -- The bag's height and scale may have changed: the tab follows.
+        SyncButton()
+    else
+        RestoreScaleNow(frame)
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -548,6 +664,9 @@ local function Status(self)
         end
     end
     local lines = { "Controller: click the left stick to sort while the bag is open." }
+    if opts and opts.showTab == false then
+        lines[#lines + 1] = "The Sort button is hidden; show it again here if you need it."
+    end
     if clamped then lines[#lines + 1] = "The bag is as big as the screen allows." end
     return lines
 end
@@ -557,7 +676,7 @@ mod = PE:RegisterModule({
     label = "One big bag",
     desc = "All your bags in one window, with a big Sort button.",
     order = 30,
-    defaults = { size = "normal" },
+    defaults = { size = "normal", showTab = true },
 
     options = {
         { key = "size", label = "Bag size",
@@ -567,6 +686,20 @@ mod = PE:RegisterModule({
               { value = "xlarge", label = "Extra large" },
           },
           OnChange = function()
+              if PE.debugOn then
+                  local opts = Opts()
+                  PE:Debug("bags", "size choice: " .. tostring(opts and opts.size))
+              end
+              if active then SyncScale() end
+          end },
+        { key = "showTab", label = "Sort button",
+          choices = {
+              { value = true, label = "Show" },
+              { value = false, label = "Hide" },
+          },
+          -- The bag may now grow into the tab's space, or make room for it.
+          OnChange = function()
+              if PE.debugOn then PE:Debug("bags", TabWanted() and "Sort tab choice: show" or "Sort tab choice: hide") end
               if active then SyncScale() end
           end },
     },
@@ -577,6 +710,7 @@ mod = PE:RegisterModule({
         local opts = self.opts
         if type(opts) ~= "table" then return end
         if not SIZE_FACTOR[opts.size] then opts.size = "normal" end
+        if type(opts.showTab) ~= "boolean" then opts.showTab = true end
         ResolvePendingCVar()
     end,
 
@@ -586,6 +720,7 @@ mod = PE:RegisterModule({
             Start()
         else
             -- Blizzard's bag code is not loaded (yet): wait for it, do nothing else.
+            if PE.debugOn then PE:Debug("bags", "combined bag window not found yet: waiting for it to load") end
             self:RegisterEvent("ADDON_LOADED", OnAddonLoaded)
         end
         self:RegisterEvent("INPUT_DEVICE_INTERFACE_TRANSITION", OnStyleChanged)

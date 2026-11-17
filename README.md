@@ -69,7 +69,9 @@ load."). Everything else keeps working.
 - **Reload UI button:** at the bottom of the settings, so a reload never
   needs a typed command.
 - **Errors page:** if something goes wrong, the settings window has an Errors
-  page that shows what failed, in large text.
+  page that shows what failed, in large text. It also has a **Debug log**
+  switch: turn it on, play until the problem happens, tap Save log now, and
+  send the file `WTF/Account/<account>/SavedVariables/PocketEssentials.lua`.
 
 ## For developers
 

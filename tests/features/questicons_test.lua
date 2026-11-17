@@ -517,4 +517,81 @@ test("quest icons: closing the world map hides the text box", function()
     check(not box:IsShown())
 end)
 
+---------------------------------------------------------------------------
+-- Debug log (docs/superpowers/specs/2026-11-17-debug-log.md)
+---------------------------------------------------------------------------
+
+-- The debug log's lines that contain `text` (plain match).
+local function logLines(c, text)
+    local out = {}
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        if line:find(text, 1, true) then out[#out + 1] = line end
+    end
+    return out
+end
+
+local FIVE = { { id = QW.MANY }, { id = QW.SEVEN }, { id = QW.ONE }, { id = QW.HANDIN, complete = true }, { id = QW.ELSEWHERE } }
+
+-- Spec "What is written", Quest data: "each rebuild as one line (quests in the log, quests rebuilt, icons
+-- made, time taken)". Five quests are rebuilt in two steps (QuestData.lua QUESTS_PER_STEP = 4): still one line.
+test("debug log: a rebuild of five quests writes one rebuild line, not one per quest or step", function()
+    local c, PE = newIcons(basicSpec({ quests = FIVE }))
+    PE:SetDebug(true)
+    setOpt(PE, "cluster", 5)                               -- every quest is built again
+    c:advance(1.5)
+    local lines = logLines(c, "questData: rebuild:")
+    eq(#lines, 1, "rebuild lines")
+    check(lines[1]:find("5 quests in log, 5 rebuilt, %d+ icons on %d+ maps, %d+ ms"), lines[1])
+    PE.QuestData:RequestRebuild()                          -- nothing to build again: one more line
+    c:advance(1)
+    lines = logLines(c, "questData: rebuild:")
+    eq(#lines, 2, "rebuild lines after a second rebuild")
+    check(lines[2]:find("5 quests in log, 0 rebuilt", 1, true), lines[2])
+    c:assertClean("rebuild line")
+end)
+
+-- Spec "Cost while off": "No text is built, nothing is stored."
+test("debug log: with the log off the quest features write nothing", function()
+    local c, PE = newIcons(basicSpec({ quests = FIVE }))
+    setOpt(PE, "cluster", 5)
+    openMap(c)
+    c:click(iconsOn(c, c.worldMapCanvas)[1])
+    c:closeWorldMap()
+    c:advance(1.5)
+    eq(#rawget(c.env, "PocketEssentialsDB").debug.lines, 0)
+end)
+
+-- Spec "What is written": "One line per decision, never per frame"; "Not doing: No log of every frame or
+-- every update of the arrow or minimap."
+test("debug log: the minimap tick writes nothing while nothing changes", function()
+    local c, PE = newIcons()
+    PE:SetDebug(true)
+    c:advance(0.5)
+    check(tickerRunning(c), "test setup: the minimap ticker is not running")
+    local count, ticks = #logLines(c, ""), c.stats.addonOnUpdate
+    c:advance(10)
+    check(c.stats.addonOnUpdate >= ticks + 90, "test setup: the minimap ticker did not tick")
+    eq(#logLines(c, ""), count, "lines written by ticks")
+end)
+
+-- Spec "What is written", Quest icons: "world map opened / closed with the number of icons drawn; minimap
+-- icons started / stopped and why".
+test("debug log: the world map and the minimap write their lines, by map number", function()
+    local c, PE = newIcons()                               -- 5 icons of quest 33 and 1 of quest 6 are shown
+    PE:SetDebug(true)
+    openMap(c)
+    eq(#logLines(c, "questIcons: world map opened"), 1)
+    eq(#logLines(c, "questIcons: world map shows map " .. QW.HOME .. ": 6 icons"), 1)
+    c:click(iconsOn(c, c.worldMapCanvas)[1])
+    eq(#logLines(c, "questIcons: icon tapped (world map): quest "), 1)
+    c:closeWorldMap()
+    eq(#logLines(c, "questIcons: world map closed"), 1)
+    c.world.player.map, c.world.player.x, c.world.player.y = QW.AWAY, 0.5, 0.5
+    c:fire("ZONE_CHANGED_NEW_AREA")
+    c:advance(1.5)
+    eq(#logLines(c, "questData: zone change noticed, map " .. QW.AWAY), 1)
+    eq(#logLines(c, "questIcons: minimap icons stopped: no icons on map " .. QW.AWAY), 1)
+    c:assertClean("icon lines")
+end)
+
 return { known = KNOWN_FAILURES }

@@ -316,7 +316,25 @@ local function chatCalls(c)
     return out
 end
 
--- Chat.lua OpenChatTo lines 190-231: choose the box, open it with OpenChat(nil, frame), then set the
+-- Chat.lua TargetClicked: with the Gamepad UI on, the game refuses the chat box's controller focus
+-- to addons during a fight (Blizzard_GamepadSharedUtility/FrameControlsManager.lua FrameShown), so
+-- a tap in combat opens nothing and says why.
+test("chat: a tap during a fight does not open the chat box, and says so", function()
+    local c, PE = newChat()
+    openPicker(c, PE)
+    c:enterCombat()
+    c:click(buttonLabelled(c, "Say"))
+    c:advance(0.2)
+    eq(#chatCalls(c), 0, "the chat box was touched in combat")
+    local said = false
+    for _, line in ipairs(T.chatLines(c)) do
+        if line:find("Not during a fight", 1, true) then said = true end
+    end
+    check(said, "no chat line explains why nothing opened")
+    c:leaveCombat()
+end)
+
+-- Chat.lua OpenChatTo: choose the box, open it with OpenChat(nil, frame), then set the
 -- type and call UpdateHeader; nothing typed into the box.
 test("chat: tapping Say opens the chat box set to Say", function()
     local c, PE = newChat()
@@ -413,6 +431,55 @@ test("chat: only the two character-whisper events are listened for (no Battle.ne
         end
     end
     eq(listened, { CHAT_MSG_WHISPER = true, CHAT_MSG_WHISPER_INFORM = true })
+end)
+
+-- The debug log's lines for one feature, without the time and the feature's name.
+local function debugLines(c, key)
+    local out = {}
+    local prefix = " " .. key .. ": "
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        local at = line:find(prefix, 1, true)
+        if at and at <= 14 then out[#out + 1] = line:sub(at + #prefix) end
+    end
+    return out
+end
+
+-- Spec 2026-11-17-debug-log, "Rules for every line": no names of players and no chat text; a
+-- whisper target is written as "whisper".
+test("debug log: a whisper and a tap on its button are written without the name or the text", function()
+    local c, PE = newChat()
+    PE:SetDebug(true)
+    c:whisperIn("Zugzug-Camelot", "meet me at the bank")
+    openPicker(c, PE)
+    c:click(buttonLabelled(c, "Zugzug"))
+    c:advance(0.2)
+    local lines = debugLines(c, "chat")
+    local noted, tapped = false, false
+    for _, line in ipairs(lines) do
+        if line == "whisper noted (incoming)" then noted = true end
+        if line == "tapped: whisper" then tapped = true end
+    end
+    check(noted and tapped, "missing whisper lines: " .. table.concat(lines, " / "))
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        check(not line:lower():find("zugzug", 1, true), "a player's name is in the log: " .. line)
+        check(not line:find("bank", 1, true), "chat text is in the log: " .. line)
+    end
+end)
+
+-- Spec 2026-11-17-debug-log, row "Chat buttons": picker opened, the kind of target tapped, chat
+-- box opened or not.
+test("debug log: opening the picker and tapping Say writes the counts, the kind and the result", function()
+    local c, PE = newChat()
+    PE:SetDebug(true)
+    openPicker(c, PE)
+    c:click(buttonLabelled(c, "Say"))
+    c:advance(0.2)
+    eq(debugLines(c, "chat"), {
+        "picker opened",
+        "picker drawn: 2 targets, 0 whisper entries, 0 marked",
+        "tapped: SAY",
+        "chat box opened",
+    })
 end)
 
 return { known = KNOWN_FAILURES }

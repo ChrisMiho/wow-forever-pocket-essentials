@@ -70,6 +70,8 @@ local CORE_EVENTS = {
     PLAYER_REGEN_ENABLED = "Core.lua: runs the out-of-combat queue; UI.lua: re-arms the controller keys",
     PLAYER_REGEN_DISABLED = "UI.lua: releases the controller keys when combat starts",
     UI_SCALE_CHANGED = "UI.lua: resizes everything",
+    ADDON_ACTION_BLOCKED = "Core.lua: names an action the game blocked",
+    ADDON_ACTION_FORBIDDEN = "Core.lua: names an action the game forbade",
     DISPLAY_SIZE_CHANGED = "UI.lua: resizes everything",
 }
 
@@ -162,7 +164,7 @@ local function openPage(c, PE, page)
     c:advance(0.1)
 end
 
-local function isReload(label) return label == "Reload UI" or label == "Reload now" end
+local function isReload(label) return label == "Reload UI" or label == "Reload now" or label == "Save log now" end
 
 -- Presses every button on one settings page once (re-opening the page after a
 -- button closed it or moved to another page), until none is left unpressed.
@@ -341,6 +343,7 @@ local EVENT_ORDER = {
     "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
     "MERCHANT_SHOW", "MERCHANT_CLOSED",
     "CHAT_MSG_WHISPER", "CHAT_MSG_WHISPER_INFORM",
+    "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN",
     "PLAYER_LOGOUT",
 }
 -- Fired once per session by the client; firing it again would not be plausible.
@@ -360,6 +363,9 @@ local function fireWorldEvent(c, event)
     elseif event == "MERCHANT_CLOSED" then c:closeMerchant()
     elseif event == "CHAT_MSG_WHISPER" then c:whisperIn("Thrall-Camelot", "hello")
     elseif event == "CHAT_MSG_WHISPER_INFORM" then c:whisperOut("Thrall-Camelot", "hi back")
+    -- Another addon's block: ours would be a real problem (and is logged as one).
+    elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
+        c:fire(event, "SomeOtherAddon", "CastSpellByName")
     else c:fire(event) end
 end
 
@@ -630,6 +636,12 @@ scenarios[#scenarios + 1] = { name = "1 first install", run = function()
     check(seen, "the Errors page does not show a logged error")
     local clear = findButton(c, panelOf(c), "Clear")
     check(clear, "no Clear button on the Errors page")
+    -- "Save log now" is a reload (the game writes the saved file then): one call per press.
+    local save = findButton(c, panelOf(c), "Save log now")
+    check(save, "no Save log now button on the Errors page")
+    local reloadsBefore = #c:callsTo("C_UI.Reload")
+    c:click(save)
+    check(#c:callsTo("C_UI.Reload") - reloadsBefore == 1, "\"Save log now\" did not call C_UI.Reload once")
     c:click(clear)
     c:advance(0.2)
     check(#PE.errors == 0, "Clear left " .. #PE.errors .. " entries in the error log")

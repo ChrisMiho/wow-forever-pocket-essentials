@@ -159,9 +159,19 @@ end
 -- Payload (Blizzard_APIDocumentationGenerated/ChatInfoDocumentation.lua):
 -- 1 text, 2 playerName, ...
 local function OnWhisper(_, event, ...)
-    if InLockdown() then return end
+    if InLockdown() then
+        if PE.debugOn then PE:Debug("chat", "whisper skipped: chat lockdown") end
+        return
+    end
     local short, raw = CleanName((select(2, ...)))
-    if short then Touch(short, raw, event == "CHAT_MSG_WHISPER") end
+    if short then
+        if PE.debugOn then
+            PE:Debug("chat", event == "CHAT_MSG_WHISPER" and "whisper noted (incoming)" or "whisper noted (outgoing)")
+        end
+        Touch(short, raw, event == "CHAT_MSG_WHISPER")
+    elseif PE.debugOn then
+        PE:Debug("chat", "whisper skipped: secret")
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -189,9 +199,15 @@ end
 -- Returns true if the chat box was asked to open.
 local function OpenChatTo(chatType, target, slash)
     local util = ChatFrameUtil
-    if type(util) ~= "table" then return false end
+    if type(util) ~= "table" then
+        if PE.debugOn then PE:Debug("chat", "chat box not opened: no ChatFrameUtil") end
+        return false
+    end
     local choose, open, active = util.ChooseBoxForSend, util.OpenChat, util.GetActiveWindow
-    if type(open) ~= "function" then return false end
+    if type(open) ~= "function" then
+        if PE.debugOn then PE:Debug("chat", "chat box not opened: no ChatFrameUtil.OpenChat") end
+        return false
+    end
 
     if type(choose) == "function" and type(active) == "function" then
         local box = choose()
@@ -213,21 +229,22 @@ local function OpenChatTo(chatType, target, slash)
                 end
                 box:SetChatType(chatType)
                 box:UpdateHeader()
+                if PE.debugOn then PE:Debug("chat", "chat box opened") end
                 return true
             end
+            if PE.debugOn then PE:Debug("chat", "chat box not opened: it did not open") end
+        elseif PE.debugOn then
+            PE:Debug("chat", "chat box not opened: box shape unexpected")
         end
+    elseif PE.debugOn then
+        PE:Debug("chat", "chat box not opened: ChatFrameUtil has no ChooseBoxForSend or GetActiveWindow")
     end
 
     -- The edit box does not look the way this file expects, or it did not
-    -- open: fall back to letting the game read a typed command.
-    if chatType == "WHISPER" then
-        if type(util.SendTell) ~= "function" then return false end
-        util.SendTell(target)
-        return true
-    end
-    if type(slash) ~= "string" then return false end
-    open(slash .. " ")
-    return true
+    -- open. Nothing else is tried: having the game read a typed command for
+    -- us (SendTell, OpenChat with text) leaves our mark on the box's own
+    -- fields, which a later typed /cast or /target then runs into.
+    return false
 end
 
 ---------------------------------------------------------------------------
@@ -355,6 +372,9 @@ local function DoRefresh()
         end
     end
     local marked = CountUnanswered(list)
+    if PE.debugOn then
+        PE:Debug("chat", "picker drawn: " .. #targets .. " targets, " .. #shown .. " whisper entries, " .. marked .. " marked")
+    end
 
     local gap = M.gap
     local width, height = panel.contentWidth, panel.contentHeight
@@ -465,6 +485,22 @@ end
 
 local function TargetClicked(btn)
     local entry, target = btn.peChatEntry, btn.peChatTarget
+    if not (entry or target) then return end
+    if PE.debugOn then
+        -- The kind only: never who a whisper is for.
+        PE:Debug("chat", "tapped: " .. (entry and "whisper"
+            or (PE.Plain(target.chatType) .. (target.target ~= nil and (" " .. PE.Plain(target.target)) or ""))))
+    end
+    if PE:InCombat() then
+        -- With the Gamepad UI on, the chat box taking the controller's focus
+        -- is a step the game refuses to addons during a fight
+        -- (Blizzard_GamepadSharedUtility FrameControlsManager:FrameShown): it
+        -- prints "Interface action failed because of an AddOn".
+        panel:Hide()
+        if PE.debugOn then PE:Debug("chat", "refused: in a fight") end
+        mod:Print("Not during a fight. Open chat the usual way, or try again afterwards.")
+        return
+    end
     local opened
     if entry then
         panel:Hide()
@@ -485,6 +521,7 @@ local function ClearMarks()
             if type(list[i]) == "table" then list[i].unanswered = false end
         end
     end
+    if PE.debugOn then PE:Debug("chat", "marks cleared") end
     UpdateBadge()
     Refresh()
 end
@@ -553,12 +590,14 @@ local function OpenPanel()
     end
     if not built then
         -- Never leave the round button dead.
+        if PE.debugOn then PE:Debug("chat", "picker could not be built: opening the settings instead") end
         PE:OpenSettings()
         return
     end
     PE:CloseSettings()
     HookSettings()
     area.offset = 0
+    if PE.debugOn then PE:Debug("chat", "picker opened") end
     if not panel:IsShown() then panel:Show() end
     panel:Raise()
     Refresh()
@@ -567,6 +606,7 @@ end
 -- What a tap on the round button does while this feature is on.
 local function TogglePanel()
     if built and panel:IsShown() then
+        if PE.debugOn then PE:Debug("chat", "picker closed by the round button") end
         panel:Hide()
     else
         OpenPanel()

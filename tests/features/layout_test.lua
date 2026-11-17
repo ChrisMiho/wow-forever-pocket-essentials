@@ -245,4 +245,28 @@ test("layout: a second tap 21 seconds after the first writes nothing and asks ag
     end)
 end)
 
+-- The debug log's lines for one feature, without the time and the feature's name.
+local function debugLines(c, key)
+    local out = {}
+    local prefix = " " .. key .. ": "
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        local at = line:find(prefix, 1, true)
+        if at and at <= 14 then out[#out + 1] = line:sub(at + #prefix) end
+    end
+    return out
+end
+
+-- Spec 2026-11-17-debug-log, row "Layout": each button pressed and what the game answered.
+test("debug log: the Gamepad layout button writes the press, what was read and the answer", function()
+    local c, PE = newLayout({ gamepadUI = true })
+    PE:SetDebug(true)
+    action(PE, GAMEPAD)()
+    eq(debugLines(c, "layout"), {
+        "button pressed: gamepad",
+        "gamepad: 3 built-in, 0 saved, active 1 (built-in Modern)",
+        "asked the game for layout 3, it now reports 3 (changed)",
+        "answer: Now using Blizzard's Gamepad layout.",
+    })
+end)
+
 return { known = KNOWN_FAILURES }

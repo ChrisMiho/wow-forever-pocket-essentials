@@ -135,6 +135,8 @@ local blobsZeroed = false  -- the minimap haze was hidden this session
 
 local EMPTY = {}
 
+local dbgMini              -- debug log only: the last minimap line written, so a repeat is not written again
+
 -- Which quests get icons. Rebuilt only when the focus, the quest tracker or
 -- the option changes; the draw loops only look questIDs up in it. Two tables
 -- take turns so a rebuild allocates nothing.
@@ -211,6 +213,14 @@ local function Escape(text)
     return (tostring(text):gsub("|", "||"))
 end
 
+-- Debug log: a minimap line, written only when it differs from the last one.
+-- Only called while the log is on.
+local function DebugMini(text)
+    if text == dbgMini then return end
+    dbgMini = text
+    PE:Debug(KEY, text)
+end
+
 ---------------------------------------------------------------------------
 -- Which quests get icons ("Show icons for")
 ---------------------------------------------------------------------------
@@ -256,6 +266,16 @@ local function RebuildFilter()
     end
     spareSet, showSet, showAll = showSet, set, all
     return changed
+end
+
+-- Debug log only: how many pins of this list the filter lets through.
+local function CountShown(list)
+    local n = 0
+    for i = 1, #list do
+        local d = list[i]
+        if ValidPin(d) and (showAll or showSet[d.questID]) and (not d.extra or d == arrowPin) then n = n + 1 end
+    end
+    return n
 end
 
 -- Is there anything in this pin list that the filter lets through?
@@ -440,6 +460,7 @@ local function OnPinClick(self)
     local target = onMap and self or NearestMiniPin(self)
     local d = target and target.data
     if type(d) ~= "table" then return end
+    if PE.debugOn then PE:Debug(KEY, "icon tapped (" .. (onMap and "world map" or "minimap") .. "): quest " .. PE.Plain(d.questID)) end
 
     if label and label.data == d and label:IsShown() then
         HideLabel() -- a second tap on the same icon puts the text away
@@ -475,11 +496,13 @@ local function SetWorldMapHaze(map, hide)
                 if hazeTouched[pin] == nil then
                     local alpha = type(pin.GetAlpha) == "function" and pin:GetAlpha()
                     hazeTouched[pin] = IsNumber(alpha) and alpha or 1
+                    if PE.debugOn then PE:Debug(KEY, "world map haze hidden") end
                 end
                 pin:SetAlpha(0)
             end
         end
     elseif next(hazeTouched) ~= nil then
+        if PE.debugOn then PE:Debug(KEY, "world map haze restored") end
         for pin, alpha in pairs(hazeTouched) do
             hazeTouched[pin] = nil
             pcall(pin.SetAlpha, pin, alpha)
@@ -497,7 +520,10 @@ local function ZeroMinimapBlobs()
     for i = 1, #BLOB_SETTINGS do
         local entry = BLOB_SETTINGS[i]
         local setter = mm[entry[1]]
-        if type(setter) == "function" and pcall(setter, mm, entry[2]) then blobsZeroed = true end
+        if type(setter) == "function" and pcall(setter, mm, entry[2]) then
+            if PE.debugOn and not blobsZeroed then PE:Debug(KEY, "minimap haze hidden") end
+            blobsZeroed = true
+        end
     end
 end
 
@@ -627,10 +653,19 @@ local function RefreshWorldMap(force)
     end
     HideMapPins(n + 1)
     mapShown = n
+    if PE.debugOn then
+        PE:Debug(KEY, "world map shows map " .. PE.Plain(mapID) .. ": " .. n .. " icons"
+            .. (n >= MAP_MAX and (", " .. (CountShown(list) - n) .. " cut by the cap of " .. MAP_MAX) or ""))
+    end
 end
 
 local function OnMapChanged()
     if active then RefreshWorldMap(false) end
+end
+
+local function OnMapShow()
+    if active and PE.debugOn then PE:Debug(KEY, "world map opened") end
+    OnMapChanged()
 end
 
 -- Runs every frame while the map is being zoomed or panned with the stick, so it is kept tiny.
@@ -646,6 +681,7 @@ local function OnMapScale()
 end
 
 local function OnMapHide()
+    if active and PE.debugOn then PE:Debug(KEY, "world map closed") end
     if label and label.view == "map" then HideLabel() end
 end
 
@@ -712,6 +748,9 @@ local function ClearMinimap()
     last.x = nil
 end
 
+local miniRetries, miniRetryWaiting = 0, false
+local RetryMinimapData -- set below
+
 -- Chooses the pin list for the map the player is on and starts or stops the
 -- update. The update only runs while this map has icons the "Show icons for"
 -- filter lets through; the next zone, quest or focus change looks again.
@@ -721,22 +760,43 @@ local function RefreshMinimapData()
     local mm = Minimap
     if not Opt("mini") or type(mm) ~= "table" or type(mm.GetWidth) ~= "function" then
         ClearMinimap()
+        if PE.debugOn then DebugMini(Opt("mini") and "minimap icons stopped: no minimap" or "minimap icons stopped: option off") end
         return
     end
     local mapID = QD:GetPlayerPosition()
     if not mapID then
         ClearMinimap() -- not readable (loading screen, inside a dungeon)
+        if PE.debugOn then DebugMini("minimap icons stopped: position not readable (loading screen or instance)") end
+        -- Just after a loading screen the position can be a moment late and
+        -- no zone or quest event may follow: look again, three times at most.
+        if miniRetries < 3 and not miniRetryWaiting then
+            miniRetries = miniRetries + 1
+            miniRetryWaiting = true
+            if PE.debugOn then PE:Debug(KEY, "minimap position retry " .. miniRetries .. " of 3") end
+            mod:After(1, RetryMinimapData)
+        end
         return
     end
+    miniRetries = 0
     local list = QD:GetPins(mapID)
     local width, height = QD:GetMapWorldSize(mapID)
     if type(list) ~= "table" or not AnyShown(list) or not (IsNumber(width) and IsNumber(height)) then
         ClearMinimap()
         miniMapID = mapID
+        if PE.debugOn then
+            DebugMini("minimap icons stopped: " .. ((IsNumber(width) and IsNumber(height)) and "no icons on map "
+                or "size not readable of map ") .. mapID)
+        end
         return
     end
     miniList, miniMapID, miniW, miniH = list, mapID, width, height
     StartTicker()
+    if PE.debugOn then DebugMini("minimap icons started on map " .. mapID) end
+end
+
+RetryMinimapData = function()
+    miniRetryWaiting = false
+    RefreshMinimapData()
 end
 
 local function UpdateMinimap()
@@ -841,6 +901,7 @@ local function OnTick(_, elapsed)
         -- change starts it again.
         StopTicker()
         HideMiniPins()
+        if PE.debugOn then DebugMini("minimap icons stopped: an update failed") end
         return
     end
     tickBusy = true
@@ -855,6 +916,7 @@ end
 local function OnDataChanged(reason)
     if not active or not QD then return end
     trackedID = QD:GetTrackedQuest()
+    if PE.debugOn and reason == "tracked" then PE:Debug(KEY, "focused quest is now " .. (trackedID and PE.Plain(trackedID) or "none")) end
     local oldArrow = arrowPin
     arrowPin = QD:GetArrowPin()
     if reason == "arrow" then
@@ -904,6 +966,7 @@ end
 -- Called after a setting changed, from the panel or from /qd.
 local function ApplyOption(key)
     if not active then return end
+    if PE.debugOn then PE:Debug(KEY, "option " .. tostring(key) .. " = " .. tostring(Opt(key))) end
     if key == "hideHaze" then
         if Opt("hideHaze") then ZeroMinimapBlobs() end
         UpdateReloadPrompt()
@@ -948,12 +1011,14 @@ local function OnEnable()
     mapState.list, mapState.mapID = nil, nil
     if PE.oldQuestDotsLoaded then
         blocked = OLD_ADDON_MESSAGE -- two copies would draw every icon twice
+        if PE.debugOn then PE:Debug(KEY, "not drawing: the old QuestDots addon is loaded") end
         return
     end
     QD = PE.QuestData
     if type(QD) ~= "table" or type(QD.Acquire) ~= "function" then
         QD = nil
         blocked = "The quest data part of this addon did not load. See Errors."
+        if PE.debugOn then PE:Debug(KEY, "not drawing: quest data did not load") end
         return
     end
     QD.cluster = ClusterValue()
@@ -965,6 +1030,7 @@ local function OnEnable()
         QD.cluster = DEFAULT_CLUSTER
         QD.spotLimit = 0
         clusterSet = false
+        if PE.debugOn then PE:Debug(KEY, "not drawing: " .. blocked) end
         return
     end
     active = true
@@ -1024,7 +1090,9 @@ end
 
 -- Also runs as a rollback after a half-finished OnEnable, so every step stands alone.
 local function OnDisable()
+    miniRetries, miniRetryWaiting = 0, false -- a waiting retry is dropped with the switch-off
     active, blocked, trackedID, arrowPin = false, nil, nil, nil
+    dbgMini = nil
     mod:Safe(StopTicker)
     mod:Safe(HideEverything)
     mod:Safe(RestoreWorldMapHaze)
@@ -1083,7 +1151,7 @@ pinClick = mod:Wrap(OnPinClick)
 tickHandler = mod:Wrap(OnTick)
 mapChangedHook = mod:Wrap(OnMapChanged)
 mapScaleHook = mod:Wrap(OnMapScale)
-mapShowHook = mod:Wrap(OnMapChanged)
+mapShowHook = mod:Wrap(OnMapShow)
 mapHideHook = mod:Wrap(OnMapHide)
 dataChanged = mod:Wrap(OnDataChanged)
 

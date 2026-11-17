@@ -73,7 +73,7 @@ local M_SCRIPT_REGION = list([[Show Hide SetShown IsShown IsVisible GetWidth Get
     GetBottom EnableMouse EnableMouseWheel SetMouseMotionEnabled SetScript GetScript HookScript IsProtected
     SetPoint ClearAllPoints SetAllPoints SetSize SetWidth SetHeight GetPoint GetNumPoints]])
 local M_REGION = list("GetAlpha SetAlpha GetScale SetScale GetEffectiveScale SetVertexColor CreateAnimationGroup")
-local M_TEXTURE = list("SetColorTexture SetTexture SetRotation")
+local M_TEXTURE = list("SetColorTexture SetTexture SetAtlas SetRotation")
 local M_LINE = list("SetColorTexture SetTexture SetStartPoint SetEndPoint SetThickness")
 local M_FONT_INSTANCE = list("SetFont GetFont SetFontObject SetTextColor SetShadowColor SetShadowOffset SetJustifyH SetJustifyV")
 local M_FONTSTRING = list("SetText GetText SetWordWrap SetMaxLines GetStringHeight GetUnboundedStringWidth SetRotation")
@@ -579,6 +579,11 @@ function Client.new(opts)
         end
         St(self).texture = path
         return path ~= nil
+    end
+    function METHODS:SetAtlas(atlas)
+        if type(atlas) ~= "string" then error("SetAtlas(): atlas name expected", 2) end
+        local st = St(self)
+        st.atlas, st.texture, st.color = atlas, nil, nil
     end
     function METHODS:SetRotation(r) CheckNumber(r, "SetRotation()"); St(self).rotation = r end
     function METHODS:SetStartPoint(point, rel, x, y)
@@ -1141,6 +1146,11 @@ function Client.new(opts)
             local on = world.addons[name] and true or false
             return on, on
         end,
+        -- Only the addon's own version line is modelled.
+        GetAddOnMetadata = function(name, field)
+            if name == "PocketEssentials" and field == "Version" then return "0.0.0-test" end
+            return nil
+        end,
     })
 
     Namespace("C_CVar", {
@@ -1182,6 +1192,9 @@ function Client.new(opts)
         UseContainerItem = function(bag, slot)
             local it = ItemAt(bag, slot)
             if not it or it.locked then return end
+            -- world.forbidUse: a test's function standing in for the game refusing the
+            -- call (it fires ADDON_ACTION_FORBIDDEN synchronously, inside the call).
+            if world.forbidUse then world.forbidUse(bag, slot) return end
             if world.merchant.open then
                 world.money = world.money + (it.price or 0) * (it.count or 1)
                 world.bags[bag][slot] = nil
@@ -1215,6 +1228,10 @@ function Client.new(opts)
         return table.concat(parts, " ")
     end
     Namespace("C_CurrencyInfo", { GetCoinTextureString = function(amount) return CoinText(amount) end })
+    -- TextureUtilsDocumentation.lua: an AtlasInfo table, or nothing for an unknown atlas.
+    Namespace("C_Texture", { GetAtlasInfo = function(atlas)
+        if atlas == "bags-button-autosort-up" then return { width = 28, height = 26 } end
+    end })
 
     local function NumPresets() return #PRESETS end
     Namespace("C_EditMode", {
@@ -1381,7 +1398,28 @@ function Client.new(opts)
     Global("GetTime", function() return c.now end)
     Global("time", function() return 1763200000 + floor(c.now) end)
     Global("date", function(fmt, t) return os.date(fmt, t) end)
-    Global("debugstack", function(level) return debug.traceback("", (level or 1) + 1) end)
+    -- debugstack([start[, count1[, count2]]]): the top count1 lines (default 12) and the
+    -- bottom count2 (default 10), "..." between when lines are left out, as in the game.
+    Global("debugstack", function(level, top, bottom)
+        top, bottom = top or 12, bottom or 10
+        local lines = {}
+        local i = (level or 1) + 1
+        while true do
+            local info = debug.getinfo(i, "Sln")
+            if not info then break end
+            lines[#lines + 1] = info.short_src .. ":" .. (info.currentline or 0) .. ": in function "
+                .. (info.name and ("'" .. info.name .. "'") or "<anonymous>")
+            i = i + 1
+        end
+        if #lines > top + bottom then
+            local kept = {}
+            for j = 1, top do kept[#kept + 1] = lines[j] end
+            kept[#kept + 1] = "..."
+            for j = #lines - bottom + 1, #lines do kept[#kept + 1] = lines[j] end
+            lines = kept
+        end
+        return table.concat(lines, "\n") .. "\n"
+    end)
     Global("wipe", function(t) for k in pairs(t) do t[k] = nil end return t end)
     Global("print", function(...)
         local parts = {}
@@ -1389,6 +1427,8 @@ function Client.new(opts)
         c.chat[#c.chat + 1] = table.concat(parts, " ")
     end)
     Global("issecretvalue", function(v) return v ~= nil and world.secrets[v] == true end)
+    -- version, build, date, interface number
+    Global("GetBuildInfo", function() return "1.16.0", "60000", "Nov 1 2026", 16001 end)
     Global("PlaySound", function() return true end, true)
     Global("ReloadUI", function() c.reloads = c.reloads + 1 end, true)
     -- Protected: in combat the game refuses ("action blocked"), it does not raise.
@@ -1419,6 +1459,11 @@ function Client.new(opts)
         bag:SetScale(scale)
         bag:ClearAllPoints()
         bag:SetPoint("BOTTOMRIGHT", bag:GetParent(), "BOTTOMRIGHT", 4 / scale, 85 / scale)
+    end)
+    -- ChatFrameUtil.lua (Shared): prints INTERFACE_ACTION_BLOCKED once, then turns itself off.
+    Global("DisplayInterfaceActionBlockedMessage", function()
+        c.chat[#c.chat + 1] = "Interface action failed because of an AddOn"
+        rawset(env, "DisplayInterfaceActionBlockedMessage", function() end)
     end)
     Global("hooksecurefunc", function(a, b, cc)
         local tbl, name, hook = a, b, cc
