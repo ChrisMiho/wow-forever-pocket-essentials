@@ -221,17 +221,48 @@ local typeKeyArmed, typeKeySerial, openChatHooked = false, 0, false
 -- shown when the A button is lent and hidden when it is given back, and
 -- nowhere else.
 local prompt
-local function PromptLayout()
-    if not prompt then return end
+local PromptLayout
+local PROMPT_KEY = "chatPrompt"
+local PROMPT_SAMPLE = "Chat is set to Say"      -- the second line's size when no prompt is up
+
+-- Creates the prompt hidden. It is shown only by PromptShow.
+local function PromptBuild()
+    local UI = PE.UI
+    if prompt or not UI then return end
+    prompt = CreateFrame("Frame", nil, UIParent)
+    prompt:Hide()                -- a new frame starts shown; only PromptShow may show it
+    prompt:SetFrameStrata("HIGH")
+    prompt:EnableMouse(false)
+    prompt.back = prompt:CreateTexture(nil, "BACKGROUND")
+    prompt.back:SetAllPoints(prompt)
+    prompt.back:SetColorTexture(0, 0, 0, 0.75)
+    prompt.title = UI:CreateText(prompt, "title")
+    prompt.title:SetJustifyH("CENTER")
+    prompt.font = UI:CreateText(prompt, "font")
+    prompt.font:SetJustifyH("CENTER")
+    UI:OnMetricsChanged(mod:Wrap(PromptLayout))
+end
+
+-- The prompt's size, text width, padding and anchor offset (the moved offset
+-- included). Shared by PromptLayout and the "Move things" outline.
+local function PromptGeometry()
     local UI = PE.UI
     local pad = UI:Px(14)
     local titleHeight = prompt.title:GetStringHeight() or UI:Px(24)
     local fontHeight = prompt.font:GetStringHeight() or UI:Px(18)
     local width = max(prompt.title:GetUnboundedStringWidth() or 0, prompt.font:GetUnboundedStringWidth() or 0)
     width = max(width, UI:Px(240))
-    prompt:SetSize(width + pad * 2, titleHeight + fontHeight + pad * 3)
+    local Move, dx, dy = PE.Move, 0, 0
+    if Move and Move.GetOffset then dx, dy = Move:GetOffset(PROMPT_KEY) end
+    return width, pad, width + pad * 2, titleHeight + fontHeight + pad * 3, dx, UI:Px(110) + dy
+end
+
+PromptLayout = function()
+    if not prompt then return end
+    local width, pad, w, h, x, y = PromptGeometry()
+    prompt:SetSize(w, h)
     prompt:ClearAllPoints()
-    prompt:SetPoint("CENTER", UIParent, "CENTER", 0, UI:Px(110))
+    prompt:SetPoint("CENTER", UIParent, "CENTER", x, y)
     prompt.title:ClearAllPoints()
     prompt.title:SetPoint("TOP", prompt, "TOP", 0, -pad)
     prompt.title:SetWidth(width)
@@ -243,19 +274,7 @@ end
 local function PromptShow(name)
     local UI = PE.UI
     if not UI then return end
-    if not prompt then
-        prompt = CreateFrame("Frame", nil, UIParent)
-        prompt:SetFrameStrata("HIGH")
-        prompt:EnableMouse(false)
-        prompt.back = prompt:CreateTexture(nil, "BACKGROUND")
-        prompt.back:SetAllPoints(prompt)
-        prompt.back:SetColorTexture(0, 0, 0, 0.75)
-        prompt.title = UI:CreateText(prompt, "title")
-        prompt.title:SetJustifyH("CENTER")
-        prompt.font = UI:CreateText(prompt, "font")
-        prompt.font:SetJustifyH("CENTER")
-        UI:OnMetricsChanged(mod:Wrap(PromptLayout))
-    end
+    PromptBuild()
     prompt.title:SetText("Press A to type")
     prompt.font:SetText("Chat is set to " .. name)
     PromptLayout()
@@ -912,3 +931,26 @@ mod = PE:RegisterModule({
         end
     end,
 })
+
+-- "Move things": the prompt's backdrop can be nudged from its usual spot.
+if PE.Move and PE.Move.Register then
+    PE.Move:Register({
+        key = PROMPT_KEY, label = "Chat prompt", order = 20,
+        available = function() return mod ~= nil and mod:IsEnabled() end,
+        apply = function() PromptLayout() end,      -- does nothing until the prompt is built
+        outline = function(box)
+            -- Works before the prompt was ever shown: it is built hidden and, while
+            -- it is not up, holds sample text so the size is the real one.
+            PromptBuild()
+            if not prompt then return end
+            if not prompt:IsShown() then
+                prompt.title:SetText("Press A to type")
+                prompt.font:SetText(PROMPT_SAMPLE)
+            end
+            local _, _, w, h, x, y = PromptGeometry()
+            box:ClearAllPoints()
+            box:SetPoint("CENTER", UIParent, "CENTER", x, y)
+            box:SetSize(w, h)
+        end,
+    })
+end

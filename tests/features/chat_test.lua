@@ -1003,4 +1003,129 @@ test("settings: an option row with a value and buttons draws the text and runs e
     check(hasText(c, "Test row: n = 1"), "not redrawn: " .. table.concat(settingsTexts(c), " | "))
 end)
 
+---------------------------------------------------------------------------
+-- Move things: the chat prompt as a movable piece (docs/superpowers/specs/2026-11-17-move-things.md)
+---------------------------------------------------------------------------
+
+local function movePanel(c) return rawget(c.env, "PocketEssentialsMovePanel") end
+local function moveButton(c, label)
+    local found
+    local function walk(w, seen)
+        if seen[w] then return end
+        seen[w] = true
+        local st = c._state(w)
+        if st.type == "Button" and w:IsVisible() and T.labelOf(w) == label then found = w end
+        for _, ch in ipairs(st.children) do walk(ch, seen) end
+    end
+    walk(movePanel(c), {})
+    return found
+end
+local function moveOutline(c)
+    for _, rec in ipairs(c:frames()) do
+        if rec.name == "PocketEssentialsMoveOutline" then return rec.frame end
+    end
+end
+local function openMove(c, PE)
+    PE.Move:Open()
+    c:advance(0.1)
+    check(movePanel(c) and movePanel(c):IsShown(), "the Move things panel did not open")
+end
+local function nudge(c, label)
+    local b = moveButton(c, label)
+    check(b, "no '" .. label .. "' button")
+    c:script(b, "OnMouseDown", "LeftButton")
+    c:script(b, "OnMouseUp", "LeftButton")
+    c:script(b, "OnClick", "LeftButton", false)
+end
+local function rect(c, w)
+    local l, r, t, b = c._rect(w)
+    return { l = l, r = r, t = t, b = b }
+end
+local function sameRect(a, b)
+    return math.abs(a.l - b.l) < 1e-3 and math.abs(a.r - b.r) < 1e-3
+        and math.abs(a.t - b.t) < 1e-3 and math.abs(a.b - b.b) < 1e-3
+end
+
+local function promptSelected(c, PE)
+    openMove(c, PE)
+    c:click(moveButton(c, "Chat prompt"))
+end
+
+test("chat: move: no saved offset leaves the prompt where it was", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = true })
+    local PE = c.PE
+    tapLabel(c, PE, "Say")
+    local f = promptLines(c)
+    local point, rel, relPoint, x, y = f:GetPoint(1)
+    eq({ point, rel, relPoint }, { "CENTER", c.UIParent, "CENTER" })
+    check(math.abs(x) < 0.01 and math.abs(y - PE.UI:Px(110)) < 0.01, "at " .. x .. "," .. y)
+end)
+
+test("chat: move: a saved offset is added when the prompt is laid out", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = true })
+    local PE = c.PE
+    PE.db.ui.moved.chatPrompt = { x = -20, y = 8 }
+    local dx, dy = PE.Move:GetOffset("chatPrompt")
+    tapLabel(c, PE, "Say")
+    local _, _, _, x, y = promptLines(c):GetPoint(1)
+    check(dx ~= 0 and math.abs(x - dx) < 0.01 and math.abs(y - (PE.UI:Px(110) + dy)) < 0.01, "at " .. x .. "," .. y)
+end)
+
+test("chat: move: listed while Big chat buttons is on, not when it is off", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = true })
+    openMove(c, c.PE)
+    check(moveButton(c, "Chat prompt"), "not listed while on")
+    c.PE.Move:Close("test")
+    local c2 = T.new({ on = {}, gamepadUI = true })
+    openMove(c2, c2.PE)
+    check(moveButton(c2, "Chat prompt") == nil, "listed while off")
+end)
+
+test("chat: move: the outline shows over the prompt's place before any prompt, and shows no prompt", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = true })
+    local PE = c.PE
+    check(not promptShown(c), "setup")
+    promptSelected(c, PE)
+    local outline = moveOutline(c)
+    check(outline and outline:IsVisible(), "no outline")
+    local r = rect(c, outline)
+    check(r.r - r.l > 50 and r.t - r.b > 20, "empty outline")
+    check(not promptShown(c), "the prompt was shown by the outline")
+    nudge(c, "Up")
+    check(not promptShown(c), "the prompt was shown by a move")
+    -- the prompt then appears where the outline was, 2 pixels higher (one Up press after r was read)
+    PE.Move:Close("test")
+    tapLabel(c, PE, "Say")
+    local shown = rect(c, promptLines(c))
+    check(math.abs((shown.l + shown.r) / 2 - (r.l + r.r) / 2) < 0.01, "centre differs from the outline")
+    check(math.abs(shown.t - (r.t + PE.UI:Px(2))) < 0.01, "the prompt is not where the outline showed, moved up 2 pixels")
+end)
+
+test("chat: move: a press while the prompt shows moves it 2 pixels, and it stays shown and unhidden by the panel", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = true })
+    local PE = c.PE
+    tapLabel(c, PE, "Say")
+    local f = promptLines(c)
+    local _, _, _, x0, y0 = f:GetPoint(1)
+    promptSelected(c, PE)
+    nudge(c, "Right")
+    local _, _, _, x1, y1 = f:GetPoint(1)
+    check(math.abs(x1 - x0 - PE.UI:Px(2)) < 0.01 and math.abs(y1 - y0) < 0.01, "moved " .. (x1 - x0))
+    check(f:IsShown(), "prompt hidden by a move")
+    check(sameRect(rect(c, moveOutline(c)), rect(c, f)), "outline differs from the shown prompt")
+end)
+
+test("chat: move: moving with no prompt showing never shows or hides it", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = true })
+    local PE = c.PE
+    promptSelected(c, PE)
+    nudge(c, "Left"); nudge(c, "Down")
+    check(not promptShown(c), "shown")
+    eq(PE.db.ui.moved.chatPrompt, { x = -2, y = -2 })
+    PE.Move:Close("test")
+    c:advance(0.5)
+    check(not promptShown(c), "shown after the panel closed")
+    eq(#c:problems(), 0, table.concat(c:problems(), " / "))
+end)
+
 return { known = KNOWN_FAILURES }

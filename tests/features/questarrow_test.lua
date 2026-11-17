@@ -615,4 +615,140 @@ test("debug log: a quest-log change with no quest focused writes no driver start
     eq(logLines(c, "questArrow: driver"), {})
 end)
 
+---------------------------------------------------------------------------
+-- Move things: the quest arrow as a movable piece (docs/superpowers/specs/2026-11-17-move-things.md)
+---------------------------------------------------------------------------
+
+local function movePanel(c) return rawget(c.env, "PocketEssentialsMovePanel") end
+local function moveButton(c, label)
+    local found
+    local function walk(w, seen)
+        if seen[w] then return end
+        seen[w] = true
+        local st = c._state(w)
+        if st.type == "Button" and w:IsVisible() and T.labelOf(w) == label then found = w end
+        for _, ch in ipairs(st.children) do walk(ch, seen) end
+    end
+    walk(movePanel(c), {})
+    return found
+end
+local function moveOutline(c)
+    for _, rec in ipairs(c:frames()) do
+        if rec.name == "PocketEssentialsMoveOutline" then return rec.frame end
+    end
+end
+local function openMove(c, PE)
+    PE.Move:Open()
+    c:advance(0.1)
+    check(movePanel(c) and movePanel(c):IsShown(), "the Move things panel did not open")
+end
+local function nudge(c, label)
+    local b = moveButton(c, label)
+    check(b, "no '" .. label .. "' button")
+    c:script(b, "OnMouseDown", "LeftButton")
+    c:script(b, "OnMouseUp", "LeftButton")
+    c:script(b, "OnClick", "LeftButton", false)
+end
+local function rect(c, w)
+    local l, r, t, b = c._rect(w)
+    return { l = l, r = r, t = t, b = b }
+end
+local function sameRect(a, b)
+    return math.abs(a.l - b.l) < 1e-3 and math.abs(a.r - b.r) < 1e-3
+        and math.abs(a.t - b.t) < 1e-3 and math.abs(a.b - b.b) < 1e-3
+end
+
+local function arrowSelected(c, PE)
+    openMove(c, PE)
+    c:click(moveButton(c, "Quest arrow"))
+end
+
+test("quest arrow: move: no saved offset leaves the block where it was", function()
+    local c, PE = newArrow(focusOne())
+    local point, _, _, x, y = parts(c).display.frame:GetPoint(1)
+    eq(point, "TOP")
+    check(math.abs(x) < 0.01 and math.abs(y + PE.UI:Px(40)) < 0.01, "moved: " .. x .. "," .. y)
+    eq({ PE.Move:GetOffset("questArrow") }, { 0, 0 })
+end)
+
+test("quest arrow: move: a saved offset is added to the preset when the block is laid out", function()
+    local c, PE = newArrow(focusOne())
+    PE.db.ui.moved.questArrow = { x = 14, y = -6 }
+    local mod = PE:GetModule("questArrow")
+    for _, opt in ipairs(mod.options) do
+        if opt.key == "size" then PE:Safe(mod.key, opt.OnChange, mod, "normal") end
+    end
+    local _, _, _, x, y = parts(c).display.frame:GetPoint(1)
+    local dx, dy = PE.Move:GetOffset("questArrow")
+    check(math.abs(x - dx) < 0.01 and math.abs(y - (PE.UI:Px(-40) + dy)) < 0.01, "at " .. x .. "," .. y)
+    check(dx ~= 0 and dy ~= 0, "no offset read")
+end)
+
+test("quest arrow: move: listed while the feature is on, not when it is off", function()
+    local c, PE = newArrow(focusOne())
+    openMove(c, PE)
+    check(moveButton(c, "Quest arrow"), "not listed while on")
+    PE.Move:Close("test")
+    PE:SetModuleEnabled("questArrow", false)
+    c:advance(0.2)
+    openMove(c, PE)
+    check(moveButton(c, "Quest arrow") == nil, "listed while off")
+end)
+
+test("quest arrow: move: a press moves the real block 2 pixels and the outline covers the whole block", function()
+    local c, PE = newArrow(focusOne())
+    local display = parts(c).display.frame
+    local _, _, _, x0, y0 = display:GetPoint(1)
+    arrowSelected(c, PE)
+    nudge(c, "Right")
+    nudge(c, "Up")
+    local _, _, _, x1, y1 = display:GetPoint(1)
+    check(math.abs(x1 - x0 - PE.UI:Px(2)) < 0.01 and math.abs(y1 - y0 - PE.UI:Px(2)) < 0.01, "moved " .. (x1 - x0) .. "," .. (y1 - y0))
+    eq(PE.db.ui.moved.questArrow, { x = 2, y = 2 })
+    check(sameRect(rect(c, moveOutline(c)), rect(c, display)), "the outline is not over the block")
+end)
+
+test("quest arrow: move: the outline works while the arrow is hidden (no quest focused, feature just on)", function()
+    local c, PE = newArrow({ nofocus = true })
+    arrowSelected(c, PE)
+    local outline = moveOutline(c)
+    check(outline and outline:IsVisible(), "no outline")
+    local r = rect(c, outline)
+    check(r.r - r.l > 10 and r.t - r.b > 10, "empty outline")
+    nudge(c, "Left")
+    check(sameRect(rect(c, outline), rect(c, parts(c).display.frame)), "outline and block differ after a move")
+end)
+
+test("quest arrow: move: choosing an Arrow position clears the offset", function()
+    local c, PE = newArrow(focusOne())
+    arrowSelected(c, PE)
+    nudge(c, "Right")
+    check(PE.db.ui.moved.questArrow, "no offset saved")
+    local mod = PE:GetModule("questArrow")
+    for _, opt in ipairs(mod.options) do
+        if opt.key == "position" then PE:Safe(mod.key, opt.OnChange, mod, "lower") end
+    end
+    eq(PE.db.ui.moved.questArrow, nil)
+    eq({ PE.Move:GetOffset("questArrow") }, { 0, 0 })
+end)
+
+test("quest arrow: move: a hold-free update tick does nothing new (same driver, no extra OnUpdate)", function()
+    local c, PE = newArrow(focusOne())
+    arrowSelected(c, PE)
+    PE.Move:Close("test")
+    local n = 0
+    for _, rec in ipairs(c:frames()) do
+        if rec.frame:GetScript("OnUpdate") and rec.addonFile == "QuestArrow.lua" then n = n + 1 end
+    end
+    eq(n, 1, "frames with an OnUpdate from QuestArrow.lua")
+end)
+
+test("quest arrow: move: stays clean", function()
+    local c, PE = newArrow(focusOne())
+    arrowSelected(c, PE)
+    nudge(c, "Down")
+    c:advance(1.2)
+    eq(#c:problems(), 0, table.concat(c:problems(), " / "))
+end)
+
 return { known = KNOWN_FAILURES }

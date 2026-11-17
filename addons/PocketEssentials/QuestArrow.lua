@@ -565,15 +565,29 @@ local function PlaceDistText()
     end
 end
 
--- Sizes and position; also after a preset or the screen size changes.
-local function Layout()
-    if not S.built then return end
+-- The sizes of the whole block (arrow box, distance line and quest name) and
+-- where it sits, offset included. Shared by Layout and by the "Move things"
+-- outline, so the outline is right even before anything has been built.
+-- Returns box, gap, fontSize, textWidth, width, height, point, relPoint, x, y.
+local function Geometry()
     local UI = PE.UI
     local m = UI:Metrics()
     local box = UI:Px(BOX_PX[Opt("size")] or BOX_PX.normal)
     local gap = UI:Px(4)
     local fontSize = (type(m.fontSize) == "number" and m.fontSize > 0) and m.fontSize or UI:Px(25)
     local textWidth = max(UI:Px(280), fontSize * 16)
+    local pos = POSITIONS[Opt("position")] or POSITIONS.top
+    local Move, dx, dy = PE.Move, 0, 0
+    if Move and Move.GetOffset then dx, dy = Move:GetOffset(KEY) end
+    return box, gap, fontSize, textWidth, textWidth, box + gap + fontSize * 3.8,
+        pos[1], pos[2], UI:Px(pos[3]) + dx, UI:Px(pos[4]) + dy
+end
+
+-- Sizes and position; also after a preset, a move or the screen size changes.
+local function Layout()
+    if not S.built then return end
+    local UI = PE.UI
+    local box, gap, fontSize, textWidth, width, height, point, relPoint, x, y = Geometry()
 
     S.box:SetSize(box, box)
     S.gap = gap
@@ -587,10 +601,9 @@ local function Layout()
     S.turnText:SetPoint("CENTER", S.box, "CENTER", 0, 0)
     S.turnText:SetWidth(textWidth)
 
-    local pos = POSITIONS[Opt("position")] or POSITIONS.top
-    S.display:SetSize(textWidth, box + gap + fontSize * 3.8)
+    S.display:SetSize(width, height)
     S.display:ClearAllPoints()
-    S.display:SetPoint(pos[1], UIParent, pos[2], UI:Px(pos[3]), UI:Px(pos[4]))
+    S.display:SetPoint(point, UIParent, relPoint, x, y)
 
     -- Fallback only: line end points for the arrow pointing up. The outline
     -- copies are longer and thicker by `edge` all round.
@@ -828,7 +841,12 @@ mod = PE:RegisterModule({
               { value = "left", label = "Left" },
               { value = "right", label = "Right" },
           },
-          OnChange = function() Relayout() end },
+          OnChange = function()
+              -- A preset puts the block back at its spot; a moved offset goes.
+              local Move = PE.Move
+              if Move and Move.ClearOffset then Move:ClearOffset(KEY) end
+              Relayout()
+          end },
         { key = "size", label = "Arrow size",
           choices = {
               { value = "normal", label = "Normal" },
@@ -910,3 +928,18 @@ mod = PE:RegisterModule({
 SafeUpdate = mod:Wrap(Update)
 SafeOnUpdate = mod:Wrap(OnUpdate)
 SafeOnData = mod:Wrap(OnData)
+
+-- "Move things": the whole block can be nudged from the preset spot.
+if PE.Move and PE.Move.Register then
+    PE.Move:Register({
+        key = KEY, label = "Quest arrow", order = 10,
+        available = function() return mod ~= nil and mod:IsEnabled() end,
+        apply = function() Layout() end,       -- does nothing until the frames are built
+        outline = function(box)
+            local _, _, _, _, width, height, point, relPoint, x, y = Geometry()
+            box:ClearAllPoints()
+            box:SetPoint(point, UIParent, relPoint, x, y)
+            box:SetSize(width, height)
+        end,
+    })
+end
