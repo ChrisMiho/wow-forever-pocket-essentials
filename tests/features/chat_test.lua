@@ -715,4 +715,250 @@ test("debug log: opening the picker and tapping Say writes the counts, the kind 
     })
 end)
 
+
+---------------------------------------------------------------------------
+-- Spec 2026-11-17-post-0.0.9-batch, section 3: "Chat text size" (Chat.lua, Settings.lua).
+---------------------------------------------------------------------------
+
+local function settingsOf(c) return rawget(c.env, "PocketEssentialsSettingsPanel") end
+
+-- Opens the settings window and returns a button with that label (any, shown or scrolled away).
+local function settingsButton(c, PE, label)
+    PE:OpenSettings()
+    c:advance(0.2)
+    local found
+    walk(c, settingsOf(c), function(w)
+        if not found and c._state(w).type == "Button" and T.labelOf(w) == label then found = w end
+    end)
+    return found
+end
+
+-- Every text drawn in the settings window.
+local function settingsTexts(c)
+    local out = {}
+    walk(c, settingsOf(c), function(w)
+        for _, r in ipairs(c._state(w).regions) do
+            local st = c._state(r)
+            if st.type == "FontString" and st.text and st.text ~= "" then out[#out + 1] = st.text end
+        end
+    end)
+    return out
+end
+
+local function hasText(c, text)
+    for _, t in ipairs(settingsTexts(c)) do if t == text then return true end end
+    return false
+end
+
+local function sizeCalls(c)
+    local out = {}
+    for _, call in ipairs(c.calls) do
+        if call.name == "SetChatWindowSize" then out[#out + 1] = call.args[1] .. "=" .. call.args[2] end
+    end
+    return out
+end
+
+local function setAllTo(c, size)
+    for _, f in ipairs(c.chatWindows) do f:SetFont("Fonts\\ARIALN.TTF", size, "") end
+end
+
+local function mainSize(c) return (select(2, c.chatFrame:GetFont())) end
+
+-- Spec 3 "Behaviour": each tap moves one step and every chat window gets the same size.
+test("chat size: Bigger moves one step and all ten chat windows follow", function()
+    local c, PE = newChat()
+    c:click(settingsButton(c, PE, "Bigger"))
+    c:advance(0.5)
+    for i, f in ipairs(c.chatWindows) do eq(select(2, f:GetFont()), 20, "window " .. i) end
+    eq(c.chatSizes[1], 20)
+    eq(c.chatSizes[10], 20)
+    eq(#sizeCalls(c), 10)
+    check(hasText(c, "Chat text size: 20"), "the row does not show the new size: " .. table.concat(settingsTexts(c), " | "))
+end)
+
+test("chat size: Smaller moves one step down", function()
+    local c, PE = newChat()
+    c:click(settingsButton(c, PE, "Smaller"))
+    eq(mainSize(c), 16)
+    eq(c.chatSizes[3], 16)
+end)
+
+-- Spec 3: the list goes on from 27 to 30 and 34, and at either end the button does nothing more.
+test("chat size: the steps run 12 14 16 18 20 24 27 30 34 and stop at both ends", function()
+    local c, PE = newChat()
+    local seen = { mainSize(c) }
+    for _ = 1, 10 do
+        c:click(settingsButton(c, PE, "Bigger"))
+        seen[#seen + 1] = mainSize(c)
+    end
+    eq(seen, { 18, 20, 24, 27, 30, 34, 34, 34, 34, 34, 34 })
+    local before = #sizeCalls(c)
+    c:click(settingsButton(c, PE, "Bigger"))
+    eq(#sizeCalls(c), before, "a tap at the top still called the game")
+    seen = {}
+    for _ = 1, 10 do
+        c:click(settingsButton(c, PE, "Smaller"))
+        seen[#seen + 1] = mainSize(c)
+    end
+    eq(seen, { 30, 27, 24, 20, 18, 16, 14, 12, 12, 12 })
+end)
+
+-- Spec 3: a size that is not on the list moves to the next listed size in the tapped direction.
+test("chat size: a size between steps moves to the next listed size in the tapped direction", function()
+    local cases = {
+        { 19, "Bigger", 20 }, { 19, "Smaller", 18 }, { 13, "Smaller", 12 }, { 13, "Bigger", 14 },
+        { 11, "Bigger", 12 }, { 40, "Smaller", 34 }, { 28.4, "Bigger", 30 }, { 17.6, "Smaller", 16 },
+    }
+    for _, case in ipairs(cases) do
+        local c, PE = newChat()
+        setAllTo(c, case[1])
+        c:click(settingsButton(c, PE, case[2]))
+        eq(mainSize(c), case[3], case[1] .. " " .. case[2])
+    end
+end)
+
+-- Spec 3: below the first and above the last step nothing is done.
+test("chat size: a size beyond the list in the tapped direction does nothing", function()
+    for _, case in ipairs({ { 35, "Bigger" }, { 11, "Smaller" } }) do
+        local c, PE = newChat()
+        setAllTo(c, case[1])
+        c:click(settingsButton(c, PE, case[2]))
+        eq(#sizeCalls(c), 0, case[1] .. " " .. case[2])
+        eq(mainSize(c), case[1])
+    end
+end)
+
+-- Spec 3 "How": applied only out of a fight.
+test("chat size: a tap in a fight is held until the fight ends", function()
+    local c, PE = newChat()
+    PE:SetDebug(true)
+    local bigger = settingsButton(c, PE, "Bigger")
+    c:enterCombat()
+    c:click(bigger)
+    eq(#sizeCalls(c), 0, "the game was called during the fight")
+    eq(mainSize(c), 18)
+    c:leaveCombat()
+    c:advance(0.5)
+    eq(mainSize(c), 20)
+    eq(#sizeCalls(c), 10)
+    local lines = debugLines(c, "chat")
+    local held = false
+    for _, l in ipairs(lines) do if l == "text size change held for after the fight" then held = true end end
+    check(held, "no held line: " .. table.concat(lines, " / "))
+end)
+
+test("chat size: two taps in one fight apply once, from the size the game has then", function()
+    local c, PE = newChat()
+    local bigger = settingsButton(c, PE, "Bigger")
+    c:enterCombat()
+    c:click(bigger)
+    c:click(bigger)
+    c:leaveCombat()
+    c:advance(0.5)
+    eq(mainSize(c), 20)
+end)
+
+-- Spec 3 "Debug log".
+test("chat size: the debug log has one line for the change, without a player's name", function()
+    local c, PE = newChat()
+    PE:SetDebug(true)
+    c:click(settingsButton(c, PE, "Bigger"))
+    eq(debugLines(c, "chat"), { "text size 18 -> 20 (10 windows)" })
+end)
+
+test("chat size: a tap at the end writes a line and calls nothing", function()
+    local c, PE = newChat()
+    PE:SetDebug(true)
+    setAllTo(c, 34)
+    c:click(settingsButton(c, PE, "Bigger"))
+    eq(debugLines(c, "chat"), { "text size 34: already the biggest" })
+    eq(#sizeCalls(c), 0)
+end)
+
+-- Spec 3: "The addon stores nothing" and "With no tap, nothing is changed".
+test("chat size: nothing is called or saved until a button is tapped", function()
+    local c, PE = newChat()
+    settingsButton(c, PE, "Bigger")
+    eq(#sizeCalls(c), 0)
+    local saved = rawget(c.env, "PocketEssentialsDB").options.chat
+    eq(saved.whispers, {})
+    local keys = 0
+    for _ in pairs(saved) do keys = keys + 1 end
+    eq(keys, 1, "the chat feature saved something besides its whisper list")
+end)
+
+-- Spec 3 "Rules": the edit box is never touched; the game's own size list is not written to.
+test("chat size: the edit box is not touched and the game's own size list stays as it is", function()
+    local c, PE = newChat()
+    c:click(settingsButton(c, PE, "Bigger"))
+    for _, call in ipairs(c.calls) do
+        check(not tostring(call.name):find("EditBox", 1, true) and not tostring(call.name):find("OpenChat", 1, true),
+            "touched the chat box: " .. tostring(call.name))
+    end
+    eq(rawget(c.env, "CHAT_FONT_HEIGHTS"), { 12, 14, 16, 18, 20, 24, 27 })
+    c:assertClean("chat size")
+end)
+
+-- Spec 3: the row shows the current size and the two buttons.
+test("chat size: the row in the chat block shows the label, the size and both buttons", function()
+    local c, PE = newChat()
+    check(settingsButton(c, PE, "Smaller") and settingsButton(c, PE, "Bigger"), "buttons missing")
+    check(hasText(c, "Chat text size: 18"), "no size text: " .. table.concat(settingsTexts(c), " | "))
+end)
+
+test("chat size: the row is not drawn while the chat feature is off", function()
+    local c, PE = T.new({})
+    PE:OpenSettings()
+    c:advance(0.2)
+    check(not hasText(c, "Chat text size: 18"), "drawn with the feature off")
+end)
+
+-- Spec 3: "If the function or the main chat window is missing, the row says 'Not available...'".
+test("chat size: without the game's function the row says so and has no buttons", function()
+    local c, PE = newChat(function(cc) rawset(cc.env, "FCF_SetChatWindowFontSize", nil) end)
+    PE:OpenSettings()
+    c:advance(0.2)
+    check(hasText(c, "Chat text size: Not available on this version of the game"), table.concat(settingsTexts(c), " | "))
+    check(not settingsButton(c, PE, "Bigger") and not settingsButton(c, PE, "Smaller"), "buttons drawn")
+end)
+
+test("chat size: without a main chat window the row says so and has no buttons", function()
+    local c, PE = newChat(function(cc) rawset(cc.env, "DEFAULT_CHAT_FRAME", nil) end)
+    PE:OpenSettings()
+    c:advance(0.2)
+    check(hasText(c, "Chat text size: Not available on this version of the game"), table.concat(settingsTexts(c), " | "))
+    check(not settingsButton(c, PE, "Bigger"), "buttons drawn")
+end)
+
+-- Guard: a window that fails does not stop the others.
+test("chat size: one chat window that raises an error does not stop the rest", function()
+    local c, PE = newChat()
+    local real = rawget(c.env, "FCF_SetChatWindowFontSize")
+    rawset(c.env, "FCF_SetChatWindowFontSize", function(self, f, size)
+        if f:GetID() == 2 then error("boom") end
+        return real(self, f, size)
+    end)
+    c:click(settingsButton(c, PE, "Bigger"))
+    eq(c.chatSizes[1], 20)
+    eq(c.chatSizes[3], 20)
+    eq(c.chatSizes[2], nil)
+end)
+
+-- Settings.lua: the new row kind works for any feature (no chat code involved in the drawing).
+test("settings: an option row with a value and buttons draws the text and runs each action then redraws", function()
+    local c, PE = T.new({ on = { "bags" } })
+    local mod = PE:GetModule("bags")
+    local n = 0
+    mod.options[#mod.options + 1] = { label = "Test row", value = function() return "n = " .. n end,
+        buttons = { { label = "Add one", action = function() n = n + 1 end }, { label = "Add ten", action = function() n = n + 10 end } } }
+    PE:OpenSettings()
+    c:advance(0.2)
+    check(hasText(c, "Test row: n = 0"), table.concat(settingsTexts(c), " | "))
+    local one
+    walk(c, settingsOf(c), function(w) if c._state(w).type == "Button" and T.labelOf(w) == "Add one" then one = w end end)
+    c:click(one)
+    c:advance(0.5)
+    check(hasText(c, "Test row: n = 1"), "not redrawn: " .. table.concat(settingsTexts(c), " | "))
+end)
+
 return { known = KNOWN_FAILURES }

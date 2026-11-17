@@ -1046,6 +1046,29 @@ function Client.new(opts)
     BlizzMethod(editBox, "UpdateHeader", function() Log("ChatFrame1EditBox:UpdateHeader") end)
     c.chatFrame, c.editBox = chatFrame, editBox
 
+    -- Chat windows ChatFrame1 .. NUM_CHAT_WINDOWS (Constants.ChatFrameConstants.MaxChatWindows = 10,
+    -- ChatConstantsDocumentation.lua:214; Deprecated_ChatFrame.lua:18) with the game's default font
+    -- size (CHAT_FRAME_DEFAULT_FONT_SIZE = 18, FloatingChatFrame.lua:31).
+    local chatWindows = { chatFrame }
+    c.chatWindows, c.chatSizes = chatWindows, {}
+    for i = 2, 10 do chatWindows[i] = Blizz("ScrollingMessageFrame", "ChatFrame" .. i, UIParent) end
+    for i, f in ipairs(chatWindows) do
+        rawset(f, "GetID", function() return i end)
+        f:SetFont("Fonts\\ARIALN.TTF", 18, "")
+    end
+    rawset(env, "NUM_CHAT_WINDOWS", 10)
+    rawset(env, "CHAT_FONT_HEIGHTS", { 12, 14, 16, 18, 20, 24, 27 })    -- FloatingChatFrame.lua:33
+    -- FloatingChatFrame.lua:1090-1109, minus the GM and Communities chat (not in this stand-in).
+    -- SetChatWindowSize is the game's own saver (C side): the stand-in records it.
+    rawset(env, "FCF_SetChatWindowFontSize", function(self, frame, fontSize)
+        if not frame then error("FCF_SetChatWindowFontSize: no frame (the stand-in has no current chat frame)", 2) end
+        if not fontSize then fontSize = self.value end
+        local fontFile, _, fontFlags = frame:GetFont()
+        frame:SetFont(fontFile, fontSize, fontFlags)
+        Log("SetChatWindowSize", frame:GetID(), fontSize)
+        c.chatSizes[frame:GetID()] = fontSize
+    end)
+
     -----------------------------------------------------------------------
     -- Constants, enums and Blizzard Lua tables
     -----------------------------------------------------------------------

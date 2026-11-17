@@ -752,6 +752,112 @@ local function TogglePanel()
 end
 
 ---------------------------------------------------------------------------
+-- Chat text size.
+-- The game's own function FCF_SetChatWindowFontSize(nil, chatFrame, size)
+-- (Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua) sets the font of
+-- one chat window and tells the game to remember the size. By Blizzard's
+-- source it makes no protected call and never touches the chat box. It is
+-- called for every chat window so all tabs match, and only out of a fight.
+-- Nothing is saved here: the game keeps the size, and nothing is changed
+-- until one of the two buttons in the settings is tapped.
+---------------------------------------------------------------------------
+
+-- The game's own list (CHAT_FONT_HEIGHTS: 12 to 27) and two larger sizes.
+-- Our own copy: the game's list is never written to.
+local TEXT_SIZES = { 12, 14, 16, 18, 20, 24, 27, 30, 34 }
+local FALLBACK_WINDOWS = 10 -- Constants.ChatFrameConstants.MaxChatWindows
+
+local function WindowCount()
+    local n = tonumber(NUM_CHAT_WINDOWS)
+    if n and n >= 1 then return floor(n) end
+    return FALLBACK_WINDOWS
+end
+
+-- The main chat window, or nil when this version of the game has none.
+local function MainChatWindow()
+    local frame = DEFAULT_CHAT_FRAME
+    if type(frame) == "table" and type(frame.GetFont) == "function" then return frame end
+    return nil
+end
+
+local function TextSizeAvailable()
+    return type(FCF_SetChatWindowFontSize) == "function" and MainChatWindow() ~= nil
+end
+
+-- The main window's font height as a whole number, or nil.
+local function CurrentTextSize()
+    local frame = MainChatWindow()
+    if not frame then return nil end
+    local ok, _, size = pcall(frame.GetFont, frame)
+    if ok and type(size) == "number" and size > 0 then return floor(size + 0.5) end
+    return nil
+end
+
+-- The next listed size in a direction (1 bigger, -1 smaller), or nil at the end.
+local function NextTextSize(current, direction)
+    if direction > 0 then
+        for i = 1, #TEXT_SIZES do
+            if TEXT_SIZES[i] > current then return TEXT_SIZES[i] end
+        end
+    else
+        for i = #TEXT_SIZES, 1, -1 do
+            if TEXT_SIZES[i] < current then return TEXT_SIZES[i] end
+        end
+    end
+    return nil
+end
+
+-- Runs when out of a fight (see ChangeTextSize).
+local function ApplyTextSize(direction)
+    if not TextSizeAvailable() then
+        if PE.debugOn then PE:Debug("chat", "text size: not available") end
+        return
+    end
+    local current = CurrentTextSize()
+    if not current then
+        if PE.debugOn then PE:Debug("chat", "text size: not available") end
+        return
+    end
+    local size = NextTextSize(current, direction)
+    if not size then
+        if PE.debugOn then
+            PE:Debug("chat", "text size " .. current .. ": already the " .. (direction > 0 and "biggest" or "smallest"))
+        end
+        return
+    end
+    local done = 0
+    for i = 1, WindowCount() do
+        local frame = _G["ChatFrame" .. i]
+        if type(frame) == "table" then
+            local ok = pcall(FCF_SetChatWindowFontSize, nil, frame, size)
+            if ok then done = done + 1 end
+        end
+    end
+    if PE.debugOn then
+        PE:Debug("chat", "text size " .. current .. " -> " .. size .. " (" .. done .. " windows)")
+    end
+end
+
+local function ChangeTextSize(direction)
+    if PE.debugOn and PE:InCombat() then PE:Debug("chat", "text size change held for after the fight") end
+    PE:RunOutOfCombat("chat:fontsize", function() ApplyTextSize(direction) end)
+end
+
+local function TextSizeValue()
+    local size = TextSizeAvailable() and CurrentTextSize()
+    if size then return tostring(size) end
+    return "Not available on this version of the game"
+end
+
+local function TextSizeButtons()
+    if not (TextSizeAvailable() and CurrentTextSize()) then return {} end
+    return {
+        { label = "Smaller", action = function() ChangeTextSize(-1) end },
+        { label = "Bigger", action = function() ChangeTextSize(1) end },
+    }
+end
+
+---------------------------------------------------------------------------
 -- The module
 ---------------------------------------------------------------------------
 
@@ -761,6 +867,10 @@ mod = PE:RegisterModule({
     desc = "Tap the round button to pick who to talk to.",
     order = 60,
     defaults = { whispers = {} },
+
+    options = {
+        { label = "Chat text size", value = TextSizeValue, buttons = TextSizeButtons },
+    },
 
     OnEnable = function(self)
         CleanList()

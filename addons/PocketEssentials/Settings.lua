@@ -171,6 +171,19 @@ local function ChooseOption(mod, opt, value)
     PE:RefreshSettings()
 end
 
+-- Option rows: the list `options` of a feature, drawn under its switch while
+-- the feature is on. Each row is a table of one of these kinds:
+--   choices: { key, label, choices = { { value, label }, ... }, OnChange }
+--            a row of buttons; the tapped one is saved as mod.opts[key].
+--   action:  { label, action = function(mod) }
+--            one wide button that runs the action.
+--   buttons: { label, value = function(mod) -> text, buttons = { { label,
+--            action = function(mod) }, ... } }
+--            the label with the value text after it ("label: text"), then a
+--            row of buttons. `buttons` may also be a function(mod) that
+--            returns that list (an empty list draws no buttons). Each tap
+--            runs its action, then the window is drawn again, so the value
+--            text is read again.
 local function BuildOptions(mod, y, width)
     local x = M.pad * 2
     local innerWidth = width - x - M.gap
@@ -202,6 +215,33 @@ local function BuildOptions(mod, y, width)
                     end),
                 } }
                 y = FlowButtons(items, x, y, innerWidth, M.button * 4) + M.gap
+            elseif type(opt.buttons) == "table" or type(opt.buttons) == "function" then
+                local text = type(opt.label) == "string" and opt.label or ""
+                if type(opt.value) == "function" then
+                    local ok, shown = pcall(opt.value, mod)
+                    if ok and shown ~= nil then text = (text ~= "" and (text .. ": ") or "") .. tostring(shown) end
+                end
+                if text ~= "" then
+                    y = y + PlaceText("small", text, x, y, innerWidth, COLOR.option) + M.gap * 0.4
+                end
+                local list = opt.buttons
+                if type(list) == "function" then
+                    local ok, got = pcall(list, mod)
+                    list = ok and got or nil
+                end
+                local items = {}
+                for _, b in ipairs(type(list) == "table" and list or {}) do
+                    if type(b) == "table" and type(b.action) == "function" then
+                        items[#items + 1] = {
+                            label = tostring(b.label ~= nil and b.label or "Do it"),
+                            onClick = PE:Wrap("core", function()
+                                PE:Safe(mod.key, b.action, mod)
+                                PE:RefreshSettings()
+                            end),
+                        }
+                    end
+                end
+                if #items > 0 then y = FlowButtons(items, x, y, innerWidth) + M.gap end
             end
         end
     end

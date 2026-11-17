@@ -59,6 +59,7 @@ frame	GameFontNormalLarge	Blizzard_Fonts_Shared/Shared/FontStyles.xml used
 frame	MerchantFrame	Blizzard_UIPanels_Game/Mainline/MerchantFrame.xml used
 frame	Minimap	Blizzard_Minimap/Mainline/Minimap.xml used
 frame	NUM_BAG_SLOTS	Blizzard_FrameXMLBase/Constants.lua used
+frame	NUM_CHAT_WINDOWS	Blizzard_DeprecatedChatInfo/Deprecated_ChatFrame.lua used
 frame	SOUNDKIT	Blizzard_SharedXML/Mainline/SoundKitConstants.lua used
 frame	STANDARD_TEXT_FONT	Blizzard_Fonts_Shared/Shared/GameFonts.xml used
 frame	SlashCmdList	Blizzard_ChatFrameBase/Shared/SlashCommandsRegistry.lua used
@@ -72,6 +73,7 @@ global	ClearOverrideBindings	Blizzard_RestrictedAddOnEnvironment/RestrictedFrame
 global	CreateFont	Blizzard_SharedXML/FontableFrameMixin.lua used
 global	CreateFrame	Blizzard_AchievementUI/Mainline/Blizzard_AchievementUI.lua used
 global	DisplayInterfaceActionBlockedMessage	Blizzard_ChatFrameBase/Mainline/ChatFrameUtilOverrides.lua used
+global	FCF_SetChatWindowFontSize	Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua used
 global	GetBuildInfo	Blizzard_APIDocumentationGenerated/BuildDocumentation.lua documented
 global	GetCVar	Blizzard_SharedXMLBase/CvarUtil.lua used
 global	GetChannelList	Blizzard_ChatFrame/Mainline/ChatConfigFrame.lua used
