@@ -4,6 +4,34 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-11-17
+
+Eleventh test build, asked for during the play test of 0.1.0: a way to put
+the arrow and the other on-screen pieces exactly where you want them. Not
+yet tested on a device. (0.1.0's changes are still being tested too.)
+
+### Added
+
+- **Move things.** A new button at the bottom of the settings opens a small
+  panel that moves the addon's on-screen pieces: the quest arrow, the "Press
+  A to type" text, and the round button.
+  - Pick a piece from the list; a gold outline shows where it sits, even if
+    the piece itself is not showing at the moment.
+  - Up, Down, Left and Right move it. One press is a small nudge. Hold the
+    button and it keeps moving, faster after a moment.
+  - With the controller: d-pad to a button, A to press or hold it, B to
+    close. Touch works on the same buttons.
+  - Reset puts the piece back on its preset spot. A piece cannot be pushed
+    off the screen.
+  - Positions are saved as you go and remembered between sessions.
+  - The panel moves to the other bottom corner if it is in the way.
+  - It cannot be opened during a fight, and closes if one starts.
+- The preset choices ("Arrow position", "Round button position") are still
+  there as starting points. Choosing a preset puts the piece exactly on it
+  again.
+- This does not use the game's Edit Mode and does not touch any of the
+  game's own frames.
+
 ## [0.1.0] - 2026-11-17
 
 Tenth test build, from the first long play test of 0.0.9 (five sessions and

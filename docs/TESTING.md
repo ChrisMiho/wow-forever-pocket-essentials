@@ -486,3 +486,33 @@ finished: Settings > Errors > **Save log now** (it reloads), then send
    the quest: the arrow should move to a place for a part that is not
    finished.
 9. Report each step yes / no with notes, anything odd, and the saved file.
+
+### 11. Version 0.2.0: Move things
+
+Debug log on first; save and send the file afterwards, as in step 10.
+
+1. Log in. Everything should sit exactly where it did in 0.1.0.
+2. Settings, bottom row: tap **Move things**. The settings close and a small
+   "Move things" panel opens in the bottom right corner, listing Round
+   button, and Quest arrow / Chat prompt if those features are on. A gold
+   outline shows where the selected piece is.
+3. Pick **Quest arrow**. Tap **Left** once: the arrow and its outline move a
+   tiny step. Hold **Left**: after a moment it keeps moving, then faster. Let
+   go: it stops at once.
+4. The same with the controller: d-pad to **Up**, tap A (one small step),
+   then hold A (keeps moving), let go (stops). If it does not stop when you
+   let go, tell me; it should stop by itself after 8 seconds at most.
+5. Hold a direction until the piece reaches the screen edge: it should stop
+   there, not leave the screen.
+6. Move a piece down toward the panel: the panel should hop to the bottom
+   left corner.
+7. Pick **Chat prompt** and move it; then close with B, tap a chat button and
+   check "Press A to type" appears where you put it.
+8. Pick **Round button**, move it, tap **Reset**: it returns to its preset
+   spot.
+9. Close with B. Reload: the pieces are still where you put them.
+10. Settings: choose a different **Arrow position**: the arrow goes exactly
+    to that preset (your nudge is cleared).
+11. Start a fight with the panel open: it closes. During a fight, **Move
+    things** says it cannot open.
+12. Report each step yes / no with notes, anything odd, and the saved file.

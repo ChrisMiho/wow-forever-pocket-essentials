@@ -12,6 +12,7 @@ addons/PocketEssentials/
   PocketEssentials.toc   interface 16001, one saved table PocketEssentialsDB, QuestieDB as optional dependency
   Core.lua        feature registry, saved settings, error catching and log, debug log, combat queue, /pe
   UI.lua          sizes for touch, big buttons, windows, controller navigation
+  Move.lua        "Move things": saved offsets for our on-screen pieces, the small panel that nudges them
   Hub.lua         the round button and the minimap addon-list entry
   Settings.lua    the settings window and Errors page
   QuestData.lua   reads QuestieDB + the quest log into objective locations (shared, no switch of its own)
@@ -47,6 +48,15 @@ How the pieces protect each other:
   data is rebuilt, never per frame. They are not removed: the icon code skips
   them (except the spot the arrow points at), while the arrow reads them all.
   The two ticks are unchanged.
+- Our own on-screen pieces (quest arrow, chat prompt, round button) can be
+  moved with the "Move things" panel (0.2.0). `Move.lua` keeps one offset per
+  piece in `PocketEssentialsDB.ui.moved[key] = { x, y }` (720p pixels from the
+  piece's preset) and a list of pieces; each piece adds its offset in its own
+  layout and registers `{ key, label, order, available, apply, outline }`
+  with `PE.Move:Register`. Nothing exists or runs until the panel is opened,
+  and the only tick is the hold-to-repeat driver, live only while an arrow
+  button is held (it stops itself after 8 seconds). The game's Edit Mode is
+  never used.
 - Sizes are defined as pixels on a 720p screen and converted, so buttons stay
   the same physical size at 1080p. "Button size: Small / Medium / Large" in
   settings re-tunes everything without typing.
@@ -142,6 +152,9 @@ so that being wrong cannot raise an error; the worst case is listed.
 | `NUM_CHAT_WINDOWS` (defined in `Blizzard_DeprecatedChatInfo`, which this client may not load) | Chat text size | None: falls back to 10 windows |
 | `PADRSTICK` taken as an override binding while the bag is open (the key name is in `GamepadConstants.lua`; only `PADLSTICK` has run on the device) | Bag sorter, "Right stick click" | The right stick keeps its normal job; the Sort tab still works |
 | `date("%H:%M:%S", time)` with a time argument (Blizzard's source only shows `date("*t", time)`; it is standard Lua) | Debug log time stamps | The stamp falls back to the old form (seconds and milliseconds from two clocks); guarded so a log line can never raise an error |
+| Whether the controller's A release always reaches our navigation button during a long hold, whether A repeats while held, and whether a finger sliding off a button still sends its release | Move things, hold to repeat | A hold keeps moving until the 8-second stop or the screen edge; a single press still nudges |
+| `GetLeft` / `GetRight` / `GetTop` / `GetBottom` read straight after `SetPoint` giving the new rectangle | Move things, the screen-edge rule and the panel's corner hop | A piece can be nudged partly off the screen, or the panel does not hop; Reset recovers |
+| Whether a moved piece near a screen edge is covered by one of the game's own frames | Move things | The piece is hard to see there; move it or Reset |
 | `debugstack` argument form; whether `C_UI.Reload` needs a real press (it is only ever called from one; see "Verified" for what the source shows) | Core | Shorter error details |
 
 Checks that run offline (see `docs/TESTING.md`): `scripts/check.sh` compiles

@@ -229,6 +229,7 @@ until its step in the test plan passes.
 | Big chat buttons | Picker with one big button per channel plus the last six whisperers; badge on the round button for unanswered whispers. With the Gamepad UI on (0.0.9) a tap sets where the chat goes and the player opens chat with the game's own button; with it off the tap opens the chat box | Say and Guild through "Press A to type" worked on the device (0.0.9); a whisper is untried. 0.1.0 adds the on-screen "Press A to type" prompt and "Chat text size" (Smaller / Bigger, the game's own setting); both untested |
 | Layout helper (experimental) | One-tap switch to Blizzard's Gamepad layout and back; a dormant path to install a ready-made handheld layout. **No nudge arrows** (see `docs/DECISIONS.md`) | Untested |
 | QuestieDB | Official Questie data addon, Forever build 1.1.1, shipped unmodified. Only the two quest features need it | Untested |
+| Move things (0.2.0) | A small panel, opened from the settings' bottom row, that nudges the quest arrow, the "Press A to type" text and the round button with Up / Down / Left / Right buttons (press = 2 pixels, hold = repeat and speed up), by touch or d-pad / A / B. Saved as an offset from each piece's preset. Does not use the game's Edit Mode | Untested |
 | `scripts/build.sh` | Downloads QuestieDB (pinned checksum), checks the addon's file list, writes `dist/wow-forever-pocket-essentials.zip` (GitHub bundle) and `dist/PocketEssentials-<version>.zip` (CurseForge, addon only) | Runs on the Mac |
 
 ### Goal coverage
@@ -252,6 +253,7 @@ that say "Not needed" are skipped.
 | 4. Tapping a channel or name opens the chat box set to that target | `Chat.lua` `TargetClicked`, `OpenChatTo` | Yes |
 | 4. The icon shows when there is an unanswered whisper | `Chat.lua` `UpdateBadge`, `OnWhisper`; `Hub.lua` `SetBadge` | Yes: a badge on the round button, plus a "Clear marks" button |
 | 5. A way to arrange the interface that does not depend on fiddly touch dragging | `Layout.lua` `DoGamepad`, `DoBack`, `DoInstall` | Partial: one-tap switch to Blizzard's Gamepad layout and back. No nudge arrows (not safe, see `docs/DECISIONS.md`) and no ready-made handheld layout is bundled yet |
+| 5. (same goal) Our own on-screen pieces | `Move.lua` `Open`, `Nudge`; each piece's layout | Yes (0.2.0, untested): the "Move things" panel moves the quest arrow, the chat prompt and the round button with big buttons or the d-pad, no dragging |
 | 6. One touch-friendly place to turn each feature on or off, no typed commands | `Settings.lua` `PE:OpenSettings`, `BuildModuleRow`; `Hub.lua` `OnClick` | Yes: one row and big switch per feature, opened from the round button |
 
 Defaults: every feature is off so players can switch them on one at a time.
@@ -373,6 +375,18 @@ owner's request, spec `docs/superpowers/specs/2026-11-17-post-0.0.9-batch.md`),
 
 Next: device test of 0.1.0 with the debug log on (all six items, plus a
 whisper through the chat buttons).
+
+**Ninth device test, 2026-11-17 (0.1.0), under way.** First impressions from
+the owner: so far so good, the folding settings are "great". Requests so far:
+- Move the arrow (and the other on-screen text) exactly where the player
+  wants, with the d-pad as well as touch; some presets are good but everyone
+  will want to tweak. **Built in 0.2.0** at the owner's instruction while the
+  test was still running (spec `docs/superpowers/specs/2026-11-17-move-things.md`):
+  a "Move things" panel of our own with arrow buttons (press to nudge, hold to
+  keep moving), d-pad / A / B, for the quest arrow, the "Press A to type"
+  text and the round button. The game's Edit Mode is not used. Untested.
+- Chat options should be more configurable than two buttons (a small
+  refinement; the owner will say what once they have played more). Not built.
 
 Upcoming from the fourth device test (2026-11-16), one at a time:
 - Bags: reach the Sort tab with the d-pad (Blizzard's controller navigation
