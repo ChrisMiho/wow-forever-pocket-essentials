@@ -6,7 +6,23 @@ local ADDON_NAME, PE = ...
 --
 -- Which objective (only pins on the map you are on are ever pointed at):
 --   * A quest is focused (QuestData:GetTrackedQuest) and has known places on
---     this map: its nearest pin.
+--     this map: its nearest pin, chosen again once a second while you move,
+--     with these rules:
+--       - A spot is known by its position and objective, not by its table, so
+--         the target and "Here" survive the quest data being rebuilt (which
+--         happens after every kill).
+--       - If the target is gone (its objective finished), the nearest spot
+--         left is taken at once.
+--       - Otherwise another spot only takes over when it is at least
+--         KEEP_RATIO of the way nearer and KEEP_YARDS nearer, so two spots at
+--         a similar distance do not swap back and forth; and never while the
+--         arrow reads "Here".
+--       - A spot where the arrow read "Here" is set aside for ASIDE_SECONDS
+--         once you walk away from it: the arrow leads on to the nearest spot
+--         you have not reached yet. When every spot here is set aside the list
+--         is cleared and the nearest is taken again (so a quest with one spot
+--         keeps pointing at it). The list is cleared when the focused quest or
+--         the map changes, and when the feature goes off.
 --   * Its places are all on other maps: no arrow; the text reads "Outside
 --     this zone" over "Head to <zone>" (the zone with most of its places;
 --     the quest's name if the zone name cannot be read).
@@ -43,16 +59,19 @@ local ADDON_NAME, PE = ...
 -- driver is stopped completely inside instances, while there is nothing to
 -- point at (QuestData's callbacks start it again) and while the feature is off.
 
-local type, pairs, pcall = type, pairs, pcall
+local type, pairs, next, pcall = type, pairs, next, pcall
 local floor, sqrt, sin, cos, max, huge = math.floor, math.sqrt, math.sin, math.cos, math.max, math.huge
 local atan2 = math.atan2
-local strbyte, strsub = string.byte, string.sub
+local strbyte, strsub, format = string.byte, string.sub, string.format
 
 local KEY = "questArrow"
 
 local ACTIVE_INTERVAL = 1 / 10      -- seconds between updates while the arrow is showing
 local IDLE_INTERVAL = 1             -- ... while the position cannot be read
 local SELECT_INTERVAL = 1           -- the nearest objective is re-chosen at most this often
+local KEEP_RATIO = 0.8              -- another spot takes over only under this share of the target's distance...
+local KEEP_YARDS = 15               -- ... and at least this many yards nearer
+local ASIDE_SECONDS = 180           -- a reached spot is skipped for this long after you leave it
 local HERE_ENTER, HERE_LEAVE = 10, 14   -- yards: "Here" switches on below the first, off above the second
 local MIN_AIM_YARDS = 3             -- closer than this the direction is noise; the arrow keeps its last angle
 local ANGLE_STEPS = 180             -- the arrow turns in 2-degree steps
@@ -107,6 +126,10 @@ local S = {
     here = false,
     turn = false,                       -- "Turn around" is showing instead of the arrow
     arrow = nil,                        -- the arrow picture, when it can be turned (else `lines` are used)
+    pinMap = nil,                       -- the map the target (S.pin) is on
+    aside = {},                         -- spots set aside after being reached: [PosKey] = GetTime() they come back
+    asideQuest = nil, asideMap = nil,   -- the quest and map the set-aside spots belong to
+    dbgArrow = false,                   -- debug log: the last "driver" line said an arrow is showing
 }
 local lines = {}
 local gx1, gy1, gx2, gy2 = {}, {}, {}, {}   -- line end points before turning, in UI units
@@ -137,19 +160,45 @@ end
 -- Choosing the objective
 ---------------------------------------------------------------------------
 
--- Nearest pin of `pins`, or `best` if that is nearer. Returns pin, d2.
-local function Nearest(pins, px, py, width, height, best, bestD2)
-    bestD2 = bestD2 or huge
+-- A spot's position as one number (map fractions to 5 decimals), for the set-aside list.
+local function PosKey(x, y)
+    return floor(x * 1e5 + 0.5) * 1e6 + floor(y * 1e5 + 0.5)
+end
+
+-- Nearest pin of `pins` not in `skip` (a set-aside list, or nil). Returns
+-- pin, d2, how many pins were skipped, how many were looked at.
+local function Nearest(pins, px, py, width, height, skip)
+    local best, bestD2, skipped, count = nil, huge, 0, 0
     for i = 1, #pins do
         local pin = pins[i]
         local x, y = pin.x, pin.y
         if type(x) == "number" and type(y) == "number" then
-            local dx, dy = (x - px) * width, (y - py) * height
-            local d2 = dx * dx + dy * dy
-            if d2 < bestD2 then best, bestD2 = pin, d2 end
+            count = count + 1
+            if skip and skip[PosKey(x, y)] then
+                skipped = skipped + 1
+            else
+                local dx, dy = (x - px) * width, (y - py) * height
+                local d2 = dx * dx + dy * dy
+                if d2 < bestD2 then best, bestD2 = pin, d2 end
+            end
         end
     end
-    return best, bestD2
+    return best, bestD2, skipped, count
+end
+
+-- The pin of `pins` that is the same spot as `old` (position and objective), or nil.
+local function SameSpot(pins, old)
+    local x, y, obj = old.x, old.y, old.obj
+    for i = 1, #pins do
+        local pin = pins[i]
+        if pin.x == x and pin.y == y and pin.obj == obj then return pin end
+    end
+    return nil
+end
+
+local function Yards(pin, px, py, width, height)
+    local dx, dy = (pin.x - px) * width, (pin.y - py) * height
+    return sqrt(dx * dx + dy * dy)
 end
 
 local function HasPlaces(byMap)
@@ -227,15 +276,76 @@ local function PublishPin(pin)
     if type(data) == "table" and type(data.SetArrowPin) == "function" then data:SetArrowPin(pin) end
 end
 
+-- Forgets the set-aside spots when the focused quest or the map changed, and
+-- drops the ones whose time is up.
+local function RefreshAside(tracked, playerMap)
+    local aside = S.aside
+    if tracked ~= S.asideQuest or playerMap ~= S.asideMap then
+        S.asideQuest, S.asideMap = tracked, playerMap
+        wipe(aside)
+        return
+    end
+    if next(aside) == nil then return end
+    local now = GetTime()
+    for key, back in pairs(aside) do
+        if back <= now then aside[key] = nil end
+    end
+end
+
+-- The spot to point at among `pins` (this map's spots of the focused quest).
+local function Pick(pins, px, py, width, height, old)
+    local aside = S.aside
+    local nearest, nearestD2, skipped, count = Nearest(pins, px, py, width, height, aside)
+    local restart = false
+    if not nearest and skipped > 0 then
+        wipe(aside)
+        restart = true
+        if PE.debugOn then PE:Debug(KEY, "all spots reached: starting again") end
+        nearest, nearestD2, skipped, count = Nearest(pins, px, py, width, height, nil)
+    end
+    local pin, why = nearest, nil
+    if old then
+        local same = SameSpot(pins, old)
+        if not same then
+            why = "spot changed: objective finished or spot gone"
+        elseif S.here or nearest == same then
+            pin = same
+        elseif restart or aside[PosKey(same.x, same.y)] then
+            pin = nearest                   -- just set aside (its own line was written then): no margin
+        elseif not nearest then
+            pin = same
+        else
+            local near, far = sqrt(nearestD2), Yards(same, px, py, width, height)
+            if near <= far * KEEP_RATIO and far - near >= KEEP_YARDS then
+                why = "spot changed: another is nearer (" .. floor(near + 0.5) .. " yd against " .. floor(far + 0.5) .. " yd)"
+            else
+                pin = same
+            end
+        end
+    end
+    if why and PE.debugOn then PE:Debug(KEY, why) end
+    return pin, count - skipped, skipped
+end
+
+local function PointingText(tracked, pin, playerMap, choices, skipped)
+    local what = pin.obj and (" objective " .. pin.obj) or (pin.kind == "turnin" and " turn-in" or "")
+    return "pointing at quest " .. tracked .. what .. " spot " .. format("%.1f,%.1f", pin.x * 100, pin.y * 100)
+        .. " on map " .. playerMap .. " (nearest of " .. choices .. ", " .. skipped .. " set aside)"
+end
+
 local function Select(playerMap, px, py)
     S.selectDue = false
     S.sinceSelect = 0
     S.selX, S.selY = px, py
     S.map = playerMap
 
+    -- The target before this pick, if it is a spot of this quest on this map.
     local old = S.pin
-    local pin = nil
     local tracked = S.tracked
+    if old and (old.questID ~= tracked or S.pinMap ~= playerMap) then old = nil end
+    RefreshAside(tracked, playerMap)
+
+    local pin = nil
     if not tracked then
         SetMessage("No quest focused", "Focus one in your quest log")
         if PE.debugOn then DebugState("text only: no quest focused") end
@@ -246,12 +356,13 @@ local function Select(playerMap, px, py)
             -- Here; if the map's size cannot be read there is no arrow and no message.
             S.msgBig = nil
             local width, height = QD:GetMapWorldSize(playerMap)
+            local choices, skipped
             if width then
-                pin = Nearest(pins, px, py, width, height)
+                pin, choices, skipped = Pick(pins, px, py, width, height, old)
                 S.width, S.height = width, height
             end
             if PE.debugOn then
-                DebugState(pin and ("pointing at quest " .. tracked .. " on map " .. playerMap .. " (focused quest, nearest spot)")
+                DebugState(pin and PointingText(tracked, pin, playerMap, choices, skipped)
                     or ("hidden: quest " .. tracked .. ", size not readable of map " .. playerMap))
             end
         else
@@ -269,11 +380,13 @@ local function Select(playerMap, px, py)
     end
 
     S.pin = pin
+    S.pinMap = pin and playerMap or nil
     PublishPin(pin)
     if pin then
         S.tx, S.ty = pin.x, pin.y
         S.force = true
-        if pin ~= old then
+        -- The same spot rebuilt as a new table keeps "Here" and the distance shown.
+        if not (old and pin.x == old.x and pin.y == old.y and pin.obj == old.obj) then
             S.here = false
             S.distCode = nil
             SetTitle(TitleFor(pin))
@@ -338,6 +451,12 @@ local function ShowDistance(dist)
         here = true
     end
     if PE.debugOn and here ~= S.here then PE:Debug(KEY, here and "arrived at the spot" or "left the spot") end
+    if S.here and not here then
+        -- Reached and left: lead on to a spot not reached yet (the next pick skips this one).
+        S.aside[PosKey(S.tx, S.ty)] = GetTime() + ASIDE_SECONDS
+        S.selectDue = true
+        if PE.debugOn then PE:Debug(KEY, "spot set aside for " .. ASIDE_SECONDS .. " s after being reached") end
+    end
     S.here = here
     local code
     if here then
@@ -521,11 +640,13 @@ end
 -- Stops the OnUpdate. keepDisplay leaves the text block on screen.
 local function StopDriver(why, keepDisplay)
     if PE.debugOn then
-        if S.running then PE:Debug(KEY, "driver stopped") end
+        -- Only a real change is written: from showing an arrow to not showing one.
+        if S.dbgArrow then PE:Debug(KEY, "driver stopped") end
         if why == "instance" then DebugState("stopped inside an instance") end
         if why == "failed" then DebugState("stopped after " .. MAX_FAILURES .. " errors in a row") end
     end
     S.running = false
+    S.dbgArrow = false
     PublishPin(nil)     -- the arrow no longer points anywhere
     if S.driver then S.driver:Hide() end
     if not keepDisplay then HideDisplay() end
@@ -571,6 +692,10 @@ local function Update()
     end
 
     S.interval = ACTIVE_INTERVAL
+    if not S.dbgArrow and PE.debugOn then
+        S.dbgArrow = true
+        PE:Debug(KEY, "driver started")     -- written when an arrow starts showing, not on every start
+    end
     SetBoxShown(true)
     if not S.shown then
         S.shown = true
@@ -632,7 +757,6 @@ local function StartDriver()
     S.failures = 0
     S.running = true
     S.driver:Show()
-    if PE.debugOn then PE:Debug(KEY, "driver started") end
 end
 
 local function InInstance()
@@ -748,7 +872,7 @@ mod = PE:RegisterModule({
         self:RegisterEvent("PLAYER_ENTERING_WORLD", OnWorldEvent)
         self:RegisterEvent("ZONE_CHANGED_NEW_AREA", OnWorldEvent)
         S.tracked = QD:GetTrackedQuest()
-        S.pin, S.map, S.title, S.msgBig = nil, nil, nil, nil
+        S.pin, S.pinMap, S.map, S.title, S.msgBig = nil, nil, nil, nil, nil
         S.titleText:SetText("")
         S.distText:SetText("")
         S.distCode, S.here = nil, false
@@ -761,7 +885,7 @@ mod = PE:RegisterModule({
         S.ready = false
         if PE.debugOn and S.running then PE:Debug(KEY, "driver stopped: feature off") end
         S.running = false
-        S.dbgState = nil
+        S.dbgState, S.dbgArrow = nil, false
         if S.driver then S.driver:Hide() end
         if S.display then S.display:Hide() end
         S.shown = false
@@ -772,8 +896,10 @@ mod = PE:RegisterModule({
             if data.Release then data:Release(KEY) end      -- harmless if it was never acquired
         end
         S.acquired = false
-        S.pin, S.map, S.tracked, S.msgBig = nil, nil, nil, nil
+        S.pin, S.pinMap, S.map, S.tracked, S.msgBig = nil, nil, nil, nil, nil
         S.why, S.failReason = nil, nil
+        wipe(S.aside)
+        S.asideQuest, S.asideMap = nil, nil
     end,
 })
 

@@ -29,7 +29,9 @@ local ADDON_NAME, PE = ...
 -- Blizzard's quest tracker; a change to that list fires "quests" without
 -- rebuilding any pins (only what users choose to show changes).
 --
--- A pin is { x=, y= (0..1), kind=, questID=, title=, objText=, target=, inside=, extra= }.
+-- A pin is { x=, y= (0..1), kind=, questID=, title=, objText=, target=, inside=, extra=, obj= }.
+-- `obj` is the number of the pin's objective in the game's quest log (nil for a
+-- turn-in pin, or when no quest-log objective matched).
 -- `inside` is only set for a target that lives in a dungeon: the pin then sits
 -- on the dungeon's entrance and `inside` is the dungeon's name.
 --
@@ -240,7 +242,9 @@ end
 
 -- Building pins ----------------------------------------------------------------
 -- Pins of the objective being built wait here until Flush() moves them out.
+-- bufObj is that objective's number in the quest log (nil: none matched).
 local buf, bufMap, seen = {}, {}, {}
+local bufObj
 
 local function AddPin(mapID, x, y, kind, quest, objText, target, inside)
     local n = #buf + 1
@@ -248,7 +252,7 @@ local function AddPin(mapID, x, y, kind, quest, objText, target, inside)
     buf[n] = {
         x = x / 100, y = y / 100, kind = kind,
         questID = quest.id, title = quest.title,
-        objText = objText, target = target, inside = inside,
+        objText = objText, target = target, inside = inside, obj = bufObj,
     }
 end
 
@@ -330,6 +334,7 @@ local function Flush(out)
     wipe(buf)
     wipe(bufMap)
     wipe(seen)
+    bufObj = nil
 end
 
 -- The target is inside a dungeon: point at the dungeon's entrance(s) instead.
@@ -394,7 +399,7 @@ end
 -- given names the tightest fit wins ("Night Web Spider" must not pick "Young
 -- Night Web Spider slain"); the right type and not yet used by an earlier
 -- objective count for more. With no name hit, a lone objective of that type is it.
--- Returns done, text.
+-- Returns done, text, index (the log objective's number; nil when none matched).
 local function ObjectiveState(blizz, claimed, wantType, sole, ...)
     local best, bestScore, typed, typedCount = nil, nil, nil, 0
     for index, o in ipairs(blizz) do
@@ -416,9 +421,9 @@ local function ObjectiveState(blizz, claimed, wantType, sole, ...)
         end
     end
     if not best and sole and typedCount == 1 then best = typed end
-    if not best then return false, nil end
+    if not best then return false, nil, nil end
     claimed[best] = true
-    return blizz[best].finished and true or false, Str(blizz[best].text)
+    return blizz[best].finished and true or false, Str(blizz[best].text), best
 end
 
 -- QuestieDB's icon numbers (src/corrections/enum/icons.lua): slay, loot, event, object, talk, interact.
@@ -436,8 +441,9 @@ local function BuildObjectives(out, q, blizz)
     -- [1] creatures: { npcId, text?, icon } (the icon says kill, talk to, use...)
     for _, o in ipairs(kills) do
         local name, dbText = Name(NpcDB, o[1]), Str(o[2])
-        local done, text = ObjectiveState(blizz, claimed, "monster", soleMonster, name, dbText)
+        local done, text, index = ObjectiveState(blizz, claimed, "monster", soleMonster, name, dbText)
         if not done then
+            bufObj = index
             AddSpawns(Spawns(NpcDB, o[1]), ICON_KIND[o[3]] or "slay", q, text or dbText or name, name)
             Flush(out)
         end
@@ -445,8 +451,9 @@ local function BuildObjectives(out, q, blizz)
     -- [2] objects to use: { objectId, text?, icon }
     for _, o in ipairs(objects) do
         local name, dbText = Name(ObjectDB, o[1]), Str(o[2])
-        local done, text = ObjectiveState(blizz, claimed, "object", #objects == 1, dbText, name)
+        local done, text, index = ObjectiveState(blizz, claimed, "object", #objects == 1, dbText, name)
         if not done then
+            bufObj = index
             AddSpawns(Spawns(ObjectDB, o[1]), "object", q, text or dbText or name, name)
             Flush(out)
         end
@@ -454,8 +461,9 @@ local function BuildObjectives(out, q, blizz)
     -- [3] items to collect: { itemId, text?, icon }; show whatever drops them
     for _, o in ipairs(items) do
         local name, dbText = Name(ItemDB, o[1]), Str(o[2])
-        local done, text = ObjectiveState(blizz, claimed, "item", #items == 1, name, dbText)
+        local done, text, index = ObjectiveState(blizz, claimed, "item", #items == 1, name, dbText)
         if not done then
+            bufObj = index
             AddItemSources(o[1], q, text or dbText or name)
             Flush(out)
         end
@@ -463,8 +471,9 @@ local function BuildObjectives(out, q, blizz)
     -- [5] kill credit: { {npcIds}, baseNpcId, text?, icon }
     for _, o in ipairs(credits) do
         local baseName, dbText = Name(NpcDB, o[2]), Str(o[3])
-        local done, text = ObjectiveState(blizz, claimed, "monster", soleMonster, baseName, dbText)
+        local done, text, index = ObjectiveState(blizz, claimed, "monster", soleMonster, baseName, dbText)
         if not done then
+            bufObj = index
             for _, id in ipairs(List(o[1])) do
                 AddSpawns(Spawns(NpcDB, id), ICON_KIND[o[4]] or "slay", q, text or dbText or baseName, Name(NpcDB, id))
             end
@@ -476,8 +485,9 @@ local function BuildObjectives(out, q, blizz)
     if type(te[2]) == "table" then
         known = known + 1
         local dbText = Str(te[1])
-        local done, text = ObjectiveState(blizz, claimed, "event", true, dbText)
+        local done, text, index = ObjectiveState(blizz, claimed, "event", true, dbText)
         if not done then
+            bufObj = index
             AddSpawns(te[2], "event", q, text or dbText, nil)
             Flush(out)
         end
@@ -487,6 +497,7 @@ local function BuildObjectives(out, q, blizz)
     for _, o in ipairs(List(Read(QuestDB, "extraObjectives", q.id))) do
         local b = blizz[o[4] or 0]
         if not (b and b.finished) then
+            bufObj = b and o[4] or nil
             local kind, text = ICON_KIND[o[2] or 0] or "event", Str(o[3])
             AddSpawns(o[1], kind, q, text, nil)
             for _, ref in ipairs(List(o[5])) do
