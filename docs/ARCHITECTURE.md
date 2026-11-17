@@ -17,7 +17,7 @@ addons/PocketEssentials/
   QuestData.lua   reads QuestieDB + the quest log into objective locations (shared, no switch of its own)
   QuestIcons.lua  feature: quest icons        (also keeps /qd working)
   QuestArrow.lua  feature: quest arrow
-  Bags.lua        feature: one big bag
+  Bags.lua        feature: bag sorter (key `bags`; called "One big bag" before 0.1.0)
   Vendor.lua      features: sell junk, repair (two switches)
   Chat.lua        feature: big chat buttons
   Layout.lua      feature: layout helper (experimental)
@@ -38,6 +38,11 @@ How the pieces protect each other:
 - Nothing runs every frame while its feature is off. Only two things ever
   tick: the minimap icons (10 times a second, only while moving) and the
   arrow (10 times a second, only while it has something to point at).
+- The arrow chooses its spot once a second at most, never per frame. It
+  knows a spot by its place on the map and its objective number (`pin.obj`),
+  not by its table, because every quest-log change rebuilds the tables. A
+  spot it has reached ("Here", then left) is set aside for 180 seconds in a
+  small table that is only read in that once-a-second choice (0.1.0).
 - Quest spots beyond "Spots per objective" are marked (`extra`) when quest
   data is rebuilt, never per frame. They are not removed: the icon code skips
   them (except the spot the arrow points at), while the arrow reads them all.
@@ -67,7 +72,13 @@ How the pieces protect each other:
    - `defaults`: a table of saved options, merged into `mod.opts` (stored in
      `PocketEssentialsDB.options[key]`). `options`: a list of rows for the
      settings window, each either `{key, label, choices = {{value, label}}}`
-     or `{label, action = function}`, with an optional `OnChange`.
+     or `{label, action = function}`, with an optional `OnChange`; or a row
+     of buttons with a value text, `{label, value = function(mod) -> text,
+     buttons = {{label, action = function(mod)}, ...}}` (0.1.0, used by "Chat
+     text size"; `buttons` may also be a function returning the list).
+   - A feature that is on and has `options` gets a "Hide options" / "Show
+     options" button in its row; the choice is saved in
+     `PocketEssentialsDB.ui.folded[key]` (0.1.0).
    - Lifecycle: `OnLoad(mod)` once at login, before anything is enabled;
      `OnEnable(mod)` when switched on, and at login if saved on;
      `OnDisable(mod)` when switched off. An error in `OnEnable` marks the
@@ -116,7 +127,6 @@ so that being wrong cannot raise an error; the worst case is listed.
 | Hiding the world-map haze by making its frame transparent | Quest icons | Haze stays visible on the world map. An alternative is noted in the file |
 | `C_EncodingUtil` decode functions behave as QuestieDB expects; which of QuestieDB's two identical data files the client loads | QuestieDB itself | QuestieDB fails to load; quest features stay off and say why |
 | `CanMerchantRepair`, `GetRepairAllCost`, `RepairAllItems`, `InRepairMode`, `SpellIsTargeting` (used by Blizzard's own vendor code but absent from the generated documentation, so their restrictions are unknown) | Repair, sell junk | Repair row shows "PROBLEM", or the game shows its own "blocked" message once |
-| Whether selling (`C_Container.UseContainerItem`) or repairing needs a real button press on this client | Sell junk, repair | The game shows a "blocked by an addon" message at the vendor and nothing is sold/repaired |
 | `debugstack(start, count1, count2)` taking line counts (only `debugstack()` / `debugstack(level)` appear in Blizzard's source) | Blocked-action report | The report names the blocked function but not our file and line |
 | Whether `ADDON_ACTION_BLOCKED` / `ADDON_ACTION_FORBIDDEN` reach addon frames and carry the addon's name first (documented, untested here) | Blocked-action report | Nothing is reported; the game's own message and pop-up still appear |
 | `C_Texture.GetAtlasInfo` and the `bags-button-autosort-up` atlas on this client | Bag Sort tab | The tab shows the letters without the icon |
@@ -127,6 +137,11 @@ so that being wrong cannot raise an error; the worst case is listed.
 | Whether `C_EditMode.SetActiveLayout` / `OnLayoutAdded` called by an addon "taints" Edit Mode | Layout | Possible "action blocked" in combat until reload; the panel asks for a reload after every switch for this reason |
 | `Enum.EditModePresetLayoutsMeta.NumValues`; English text of the "Enable Gamepad UI" setting | Layout | A status line reads slightly differently |
 | Blizzard forces the Modern layout whenever the Gamepad UI is switched off (`Blizzard_Gamepad/Core.lua:102-106`: the gamepad shutdown handler calls `C_EditMode.SetActiveLayout` with Modern) | Layout | "Go back to my previous layout" can be undone by the game when the Gamepad UI is turned off |
+| `SetChatWindowSize` (called inside the game's `FCF_SetChatWindowFontSize`, no source to read): whether sizes above the game's own list (30, 34) are kept across a reload, and whether a chat window that is not in use accepts a size | Chat text size | The size falls back after a reload, or one window keeps its old size (each window's call is guarded on its own) |
+| Whether calling `FCF_SetChatWindowFontSize` from addon code with the Gamepad UI on has an after-effect. By the source it only sets fonts and saves the size: no protected call, no edit box. Applied only out of a fight | Chat text size | A block report in the next debug log names it |
+| `NUM_CHAT_WINDOWS` (defined in `Blizzard_DeprecatedChatInfo`, which this client may not load) | Chat text size | None: falls back to 10 windows |
+| `PADRSTICK` taken as an override binding while the bag is open (the key name is in `GamepadConstants.lua`; only `PADLSTICK` has run on the device) | Bag sorter, "Right stick click" | The right stick keeps its normal job; the Sort tab still works |
+| `date("%H:%M:%S", time)` with a time argument (Blizzard's source only shows `date("*t", time)`; it is standard Lua) | Debug log time stamps | The stamp falls back to the old form (seconds and milliseconds from two clocks); guarded so a log line can never raise an error |
 | `debugstack` argument form; whether `C_UI.Reload` needs a real press (it is only ever called from one; see "Verified" for what the source shows) | Core | Shorter error details |
 
 Checks that run offline (see `docs/TESTING.md`): `scripts/check.sh` compiles
@@ -227,42 +242,51 @@ From the restriction probe (`probe/PocketProbe/`, `docs/TESTING.md`
 "Restriction probe"). Produce the full table from a saved file with
 `scripts/read-probe.sh <file> --markdown`.
 
-First file, 2026-11-17: probe 0.1.0, game 1.60.1 (70959), Gamepad UI on, in a
-town, no fight, automatic passes only (three logins). Not yet covered: a
-fight, a dungeon, a pass straight from a press, the Gamepad UI off, the
-vendor trials (no grey item, and the vendor did not repair) and the clean
-one-per-reload trials.
+Second file, 2026-11-17: probe 0.2.0, game 1.60.1 (70959), Gamepad UI on,
+open world. Covered: no fight (automatic and from a press), in a fight
+(automatic and from a press), a vendor, and the thirteen clean trials (each
+the first thing after a reload). Not covered: a dungeon, the Gamepad UI off,
+the game's sell-all-junk call (nothing was left to sell), a whisper arriving.
 
-| Action by an addon | Result |
-|---|---|
-| Open the chat box (`ChatFrameUtil.OpenChat`) | allowed once per login, but closing it again was blocked |
-| Open the chat box on a named chat frame; give the edit box focus; close the chat box | blocked ("Interface action failed"), sometimes forbidden (the pop-up) |
-| Set the chat type on the closed chat box | allowed |
-| Open and close the bags (`OpenAllBags` / `CloseAllBags`) | forbidden / blocked |
-| Show, hide and create our own windows; a window registered for Escape | allowed |
-| Create a button under the world map, the bag, the chat frame | allowed |
-| Move and resize the bag | allowed |
-| Take a controller button (override binding); mark a button for controller navigation | allowed |
-| Sort the bags | allowed |
-| Write the combined-bags setting | allowed |
-| Read Edit Mode layouts; set the active layout to the one already active | allowed |
-| Read position, facing, map, quest log and objectives, bag items, money, repair cost, unit names | readable |
+| Action by an addon | No fight | In a fight |
+|---|---|---|
+| Set the chat type on the closed chat box | allowed, no after-effects | allowed |
+| Open the chat box (`ChatFrameUtil.OpenChat`, with or without a chat frame); give the edit box focus | goes through, but see below | not tried |
+| Close the chat box (`ChatFrameUtil.DeactivateChat`) | blocked | not tried |
+| Open and close the bags, alone after a reload | allowed, no after-effects | not tried |
+| Set the active Edit Mode layout to the one already active, alone after a reload | allowed, no after-effects | not tried |
+| Show, hide and create our own windows; a window registered for Escape | allowed | allowed |
+| Create a button under the world map, the bag, the chat frame; re-attach it | allowed | allowed (re-attach) |
+| Resize the bag | allowed | allowed |
+| Take a controller button (override binding); mark a button for controller navigation | allowed | blocked |
+| Sort the bags | allowed | allowed |
+| Write the combined-bags setting | allowed | allowed |
+| Sell a grey item with `C_Container.UseContainerItem`, no press | allowed | not tried |
+| Repair with `RepairAllItems(false)`, no press | allowed | not tried |
+| Read position, facing, map, quest log and objectives, bag items, money, repair cost, Edit Mode layouts, unit names | readable | readable |
 
-Where the blocks come from: showing or focusing a Blizzard window that the
-controller navigation manages goes through
-`GamepadFrameControlsManagerMixin:FrameShown`, then
-`SmartNavigationMixin:ActivateBinding` (refuses any call with addon code
-behind it) and `SetFallThroughCatcherActive`, which ends in the protected
-`SetPreferredGamepadInteractTarget`.
+The chat box is the one thing that does lasting harm. In the clean trials,
+opening it from addon code looked allowed, but in the seconds after
+`chat.open`, `chat.openframe` and `chat.close` the game began refusing its
+own controller actions in the probe's name (`SetPreferredGamepadInteractTarget`,
+`ClearTarget`, `SpellStopCasting`, `SpellStopTargeting`, and its "Interface
+action failed" line), and kept doing so until the next reload. No other
+clean trial had any after-effect. In the first file (probe 0.1.0) the bag and
+focus trials were refused only because the chat trials had already run in the
+same session.
 
-The lasting effect, which matters more than the blocks themselves: after
-those trials the game kept forbidding its own controller actions in the
-probe's name for the rest of the session (`SetPreferredGamepadInteractTarget`,
-`InteractUnit`, `ClearTarget`, `SpellStopCasting`, `SpellStopTargeting`), so
-the interact and cancel buttons misbehave until a reload. Which single trial
-starts it is not yet known (the chat trials ran first in every pass); the
-clean trials of probe 0.2.0 are for that.
+Rules for the addon, from this:
 
-Rule for the addon, from this: with the Gamepad UI on, never open, focus or
-close a Blizzard window that takes controller focus (chat box, bags) from
-addon code. Set state and let the player open it.
+- With the Gamepad UI on, never open, focus or close the chat box from addon
+  code. Set the chat type and let the player open it (0.0.9 lends the A
+  button to the game's own OPENCHAT binding).
+- Controller buttons can only be taken or given back out of a fight.
+- Selling and repairing from addon code need no button press.
+
+Eighth device test, 2026-11-17 (Pocket Essentials 0.0.9, probe off, five
+sessions, about twenty fights): no error and no blocked action. Lending the A
+button to the game's OPENCHAT binding works for Say and Guild (a whisper is
+untried). After a message is sent the chat box stays selected until B is
+pressed; that is the game's behaviour and addon code must not try to change
+it. 0.1.0 keeps all of this: its prompt is the addon's own frame under
+`UIParent`, and "Chat text size" never touches an edit box.

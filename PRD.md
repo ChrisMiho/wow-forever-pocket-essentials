@@ -219,14 +219,14 @@ until its step in the test plan passes.
 | Piece | What exists | Status |
 |---|---|---|
 | Pocket Essentials addon (`addons/PocketEssentials`) | One addon holding everything below. Every feature is **off** on first install | Untested in game |
-| Settings window | Own window with one row per feature and a big on/off switch each; big buttons for each feature's choices; an Errors page; an "Icon key" page and a "Reload UI" button at the bottom (0.0.6); works by touch and (if the game allows it) by d-pad / A / B. Opens from the round button, the game's addon list button on the minimap, or `/pe` | Untested; icon key and Reload UI not yet tested on a device |
+| Settings window | Own window with one row per feature and a big on/off switch each; big buttons for each feature's choices; an Errors page; a "Reload UI" button at the bottom; the "Icon key" page, opened from the "Quest icons" block since 0.1.0; each feature's options fold away with "Hide options" (0.1.0, remembered); works by touch and (if the game allows it) by d-pad / A / B. Opens from the round button, the game's addon list button on the minimap, or `/pe` | Works on the device; folding and the moved Icon key button (0.1.0) untested |
 | Round "PE" button | Always on screen, left edge by default, position chosen from six preset spots. Opens settings; opens the chat picker instead when the chat feature is on. Holding it for half a second always opens settings. Smooth round art since 0.0.2 | Works (0.0.1); new art untested |
 | Quest icons | Objective icons on map and minimap from QuestieDB data, blue haze hidden. "Show icons for": Tracked quests (default; the quest tracker's quests plus the focused one), Focused quest, All quests. "Spots per objective" (All / 10 / 5 / 3, default 5; 0.0.6) limits icons per objective. Tapping an icon shows its text only | 0.0.1 ran without errors; too many icons and minimap haze fixed in 0.0.2; the spots limit is new in 0.0.6; all untested |
-| Quest arrow | On-screen arrow to the focused quest's nearest objective in the current zone, with distance and quest name. "Outside this zone / Head to <zone>" when elsewhere, "No quest focused" with none, "Turn around" when the objective is behind you. Pointed arrow art since 0.0.2. Since 0.0.6 the spot it points at always keeps its icon, even beyond the spots limit | 0.0.1 ran without errors; focus and new art untested; 0.0.6 change untested |
-| One big bag | Blizzard's own combined bag, a big Sort button, L3 sorts while the bag is open, three bag sizes | Untested |
-| Sell junk automatically | Sells every grey item at vendors | Untested |
-| Repair automatically | Repairs from your own money at vendors that can | Untested |
-| Big chat buttons | Picker with one big button per channel plus the last six whisperers; badge on the round button for unanswered whispers. With the Gamepad UI on (0.0.9) a tap sets where the chat goes and the player opens chat with the game's own button; with it off the tap opens the chat box | Picker and sending worked on the device (0.0.7); opening the box from the addon caused blocks; the 0.0.9 two-step is untested |
+| Quest arrow | On-screen arrow to the focused quest's nearest objective in the current zone, with distance and quest name. "Outside this zone / Head to <zone>" when elsewhere, "No quest focused" with none, "Turn around" when the objective is behind you. Pointed arrow art since 0.0.2. Since 0.0.6 the spot it points at always keeps its icon, even beyond the spots limit. Since 0.1.0 it keeps its spot across quest-log changes, needs a clearly nearer spot before it swaps, and leaves a spot it has reached alone for three minutes | Worked on the device with and without a focused quest (0.0.9); the 0.1.0 changes are untested |
+| Bag sorter (was "One big bag") | Blizzard's own combined bag, a big Sort tab, a stick click sorts while the bag is open (left stick, right stick, or no stick: "Sort key", 0.1.0), three bag sizes | Sort tab and left-stick sort worked on the device (0.0.9); the Sort key choice is untested |
+| Sell junk automatically | Sells every grey item at vendors | Worked on the device (0.0.9) |
+| Repair automatically | Repairs from your own money at vendors that can | Worked on the device (0.0.9) |
+| Big chat buttons | Picker with one big button per channel plus the last six whisperers; badge on the round button for unanswered whispers. With the Gamepad UI on (0.0.9) a tap sets where the chat goes and the player opens chat with the game's own button; with it off the tap opens the chat box | Say and Guild through "Press A to type" worked on the device (0.0.9); a whisper is untried. 0.1.0 adds the on-screen "Press A to type" prompt and "Chat text size" (Smaller / Bigger, the game's own setting); both untested |
 | Layout helper (experimental) | One-tap switch to Blizzard's Gamepad layout and back; a dormant path to install a ready-made handheld layout. **No nudge arrows** (see `docs/DECISIONS.md`) | Untested |
 | QuestieDB | Official Questie data addon, Forever build 1.1.1, shipped unmodified. Only the two quest features need it | Untested |
 | `scripts/build.sh` | Downloads QuestieDB (pinned checksum), checks the addon's file list, writes `dist/wow-forever-pocket-essentials.zip` (GitHub bundle) and `dist/PocketEssentials-<version>.zip` (CurseForge, addon only) | Runs on the Mac |
@@ -243,7 +243,7 @@ that say "Not needed" are skipped.
 | 1. Hide Blizzard's blue "haze" areas | `QuestIcons.lua` `SetWorldMapHaze`, `ZeroMinimapBlobs`, `ReapplyMinimapHaze` | Yes: hidden on the world map and the minimap (minimap re-hidden after loading screens and zone changes since 0.0.2); switching it off restores the map at once, but the minimap needs a reload |
 | 1. An arrow that points toward the current objective | `QuestArrow.lua` `Select`, `DrawArrow`, `Update`; `QuestData.lua` `GetTrackedQuest` | Partial: follows the quest you focus in the quest log; points only at objectives in the zone you are standing in; for a quest elsewhere it says "Outside this zone" and names the zone (see `docs/DECISIONS.md`) |
 | 2. One combined bag window instead of separate bags | `Bags.lua` `WantCombined`, `Setup` | Yes: uses Blizzard's own combined bag; with the Gamepad UI off, switching it on needs a reload |
-| 2. A way to sort it | `Bags.lua` `DoSort`, `CreateButtons` | Yes: a big Sort button, plus L3 while the bag is open |
+| 2. A way to sort it | `Bags.lua` `DoSort`, `CreateButtons` | Yes: a big Sort tab, plus a stick click while the bag is open (left, right or none, "Sort key") |
 | 3. Automatically sell junk (grey items) at a vendor | `Vendor.lua` `ScanJunk`, `SellStep` | Yes: sells every grey item worth money, except in bags you marked to ignore; no cap per visit |
 | 3. Optional automatic repair | `Vendor.lua` `RepairOnShow` | Yes: its own on/off switch, pays from your own money |
 | 4. A large icon that sits permanently on screen | `Hub.lua` `Create` | Yes: the round "PE" button, always shown; it is the same button that opens settings when chat is off |
@@ -316,13 +316,70 @@ confirmed for Pocket Essentials itself. 0.0.9 (untested): chat buttons no
 longer open the chat box with the Gamepad UI on. Still not probed: a fight,
 the vendor trials, the clean trials.
 
+**Seventh device test, 2026-11-17, Pocket Probe 0.2.0**
+(`docs/errorLogs/PocketProbe-1.lua`; table in `docs/ARCHITECTURE.md`): safe
+passes in town and in a fight (automatic and from a press), a vendor, and the
+thirteen clean trials. Findings: (1) the chat box is the only thing that does
+lasting harm: after an addon opens or closes it the game refuses its own
+controller actions until a reload; every other clean trial was clean. (2)
+Selling a grey item and repairing from addon code, with no button press, were
+both allowed, so sell junk and repair were not the cause of the pop-up in the
+fourth test. (3) In a fight everything tried was allowed except taking
+controller buttons and marking buttons for navigation. (4) Every value was
+readable, in and out of a fight. The owner had to type a chat message twice
+during the clean trials: after a reload the keyboard was already up (the
+probe had opened the chat box and its close was refused), the typed message
+was accepted, the box closed and reopened, and it had to be typed again.
+Normal chat on the device, with no addons (owner, same day): click the chat
+box, the game's small chat line appears empty, the keyboard comes up, type,
+send, and the message goes out in one go. The double typing is therefore
+put down to the probe's forced-open chat box, not confirmed. Next: device test of Pocket Essentials 0.0.9 (chat "Press A to type",
+sell junk, repair) with the debug log on.
+
+**Eighth device test, 2026-11-17 (0.0.9), probe off, all features:** "very
+successful" (owner). Working with no errors or pop-ups: chat buttons in Say
+and Guild (tap, press A, type, send), sell junk, repair, the Sort tab and
+stick sort, quest icons with the filter, the arrow with and without a focused
+quest. The log has no error or block from 0.0.9 across five sessions and
+about twenty fights: nine grey items sold for 2s 64c, a repair for 26c, Sort
+from the tab and the stick, Say and Guild through "Press A to type". A whisper has not been tried yet. Oddities: (1) after switching more
+features on and reloading, the chat box and keyboard were open when the
+interface came back. The debug log (`docs/realtest1/`) shows the A button
+was not lent at that reload and no chat tap in the minute before it, so the
+addon did not open it; the owner also sees the character pane open after
+every reload, and both probe files show it focused at login with Pocket
+Essentials off. Cause not known; to be checked with no addons loaded. (2)
+After sending a message the chat box stays selected until B is pressed.
+Requests from this test, all built in 0.1.0 (2026-11-17, one batch at the
+owner's request, spec `docs/superpowers/specs/2026-11-17-post-0.0.9-batch.md`),
+**none tested on the device yet**:
+- Arrow: follow the quest as its parts are completed, and when a quest has
+  several areas move on as the player runs around, not stay on the first.
+  Looking into it showed the arrow did re-pick the nearest spot and did drop
+  finished parts; what it lacked was any memory of spots already reached, so
+  in a camp it kept pointing at the spot underfoot. 0.1.0: a reached spot is
+  left alone for three minutes, the target is kept across quest-log changes,
+  another spot must be clearly nearer to take over, and the debug log names
+  the spot so the next log can show what it did.
+- Bags: "One big bag" renamed "Bag sorter"; "Sort key": left stick click
+  (L3), right stick click (R3), or the on-screen button only.
+- Chat: "Chat text size" (Smaller / Bigger) in the settings, using the game's
+  own chat font size setting.
+- Chat: "Press A to type" shown in big letters on screen while the A button
+  is lent.
+- Settings: each feature's options fold away ("Hide options" / "Show
+  options"), remembered between sessions.
+- Settings: the "Icon key" button moved into the "Quest icons" block.
+
+Next: device test of 0.1.0 with the debug log on (all six items, plus a
+whisper through the chat buttons).
+
 Upcoming from the fourth device test (2026-11-16), one at a time:
 - Bags: reach the Sort tab with the d-pad (Blizzard's controller navigation
   has helpers for addon buttons; needs a device test that item use is never
   blocked).
-- Bags: clearer settings wording (the game's controller mode already combines
-  the bags, so the feature is really "Bag sorting"), and a choice of sort
-  key: left stick, right stick or the button only.
+- Bags: clearer settings wording and a choice of sort key: built in 0.1.0
+  ("Bag sorter", "Sort key"), untested.
 - Bags: one plain box with items packed at the top (needs a bag window of our
   own; not planned yet).
 

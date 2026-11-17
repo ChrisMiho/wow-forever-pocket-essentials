@@ -406,7 +406,7 @@ local function BuildCoreSection(y, width)
             onClick = PE:Wrap("core", function() PE:OpenSettings("errors") end),
         },
     }
-    y = FlowButtons(items, x, y, innerWidth, M.button * 2)
+    y = FlowButtons(items, x, y, innerWidth, M.button * 3)
     return y + M.pad
 end
 

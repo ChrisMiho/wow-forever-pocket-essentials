@@ -443,3 +443,44 @@ and `QuestieDB` sit side by side.
 - Decide which of QuestieDB's two identical data files the client loads and
   drop the other (`QUESTIEDB_TOC=Forever scripts/build.sh` or `Camelot`
   builds with one), halving the zip.
+
+### 10. Version 0.1.0 (six changes from the 0.0.9 play test)
+
+Before starting: Settings > Errors, switch the **debug log** on. When
+finished: Settings > Errors > **Save log now** (it reloads), then send
+`WTF/Account/<account>/SavedVariables/PocketEssentials.lua`.
+
+1. Log in. Nothing should look different until you open the settings; no
+   error pop-up.
+2. Settings: every feature that is on and has options has a **Hide options**
+   button beside its ON switch. Tap one: its options fold away, the switch
+   still says ON, and the feature still works. Do the same with the d-pad and
+   A. Reload: what you folded is still folded. **Show options** brings them
+   back.
+3. Settings, **Quest icons** block: **Icon key** is the last button there (it
+   is gone from the bottom row). Tap it, then Back.
+4. Settings, **Big chat buttons** block: **Chat text size** shows a number
+   with **Smaller** and **Bigger**. Tap Bigger a few times and look at the
+   chat window; tap Smaller. Leave it at a size you can read, reload, and
+   check the size stayed (especially if you chose 30 or 34).
+5. Chat: tap the round button, tap **Say**. "Press A to type" should appear
+   in big letters in the middle of the screen with "Chat is set to Say" under
+   it. Press A: the chat box opens and the big text goes. Do it again and
+   wait: the text goes by itself after 12 seconds. Do it again and pull a
+   creature: the text goes when the fight starts.
+6. Chat, whisper: have someone whisper you (or whisper yourself from another
+   character), tap their name in the picker, press A, type, send. Watch for
+   any "blocked" message.
+7. Bags: the feature is now called **Bag sorter**. With **Sort key** on Left
+   stick click, open the bag and click the left stick: it sorts. Choose Right
+   stick click: the right stick sorts and the left stick does its normal job.
+   Choose Button only: neither stick sorts, the Sort tab still does. Close the
+   bag each time and check both sticks do their normal jobs.
+8. Quest arrow: focus a quest with several places to go (a "kill 10 of
+   these" quest with more than one camp is ideal). Walk to where the arrow
+   points until it says "Here", fight there, then walk away. The arrow should
+   now lead you on to another spot, not back to the one you just left. Stand
+   between two spots: it should not flip back and forth. Finish one part of
+   the quest: the arrow should move to a place for a part that is not
+   finished.
+9. Report each step yes / no with notes, anything odd, and the saved file.

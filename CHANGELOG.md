@@ -4,6 +4,62 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.0] - 2026-11-17
+
+Tenth test build, from the first long play test of 0.0.9 (five sessions and
+about twenty fights with no error and nothing blocked). Six requests from
+that test, built together. Not yet tested on a device.
+
+### Added
+
+- Big chat buttons: after you tap a chat button, "Press A to type" now shows
+  in big letters in the middle of the screen, with where the chat is going
+  under it ("Chat is set to Guild"). It goes when the chat box opens, after 12
+  seconds, or when a fight starts. The chat line is still printed too.
+- Chat text size: under "Big chat buttons" in the settings there is a "Chat
+  text size" row with Smaller and Bigger buttons. Each tap changes the game's
+  chat window text one step (12 up to 34), in every chat tab, using the game's
+  own setting, so it is remembered. If you tap during a fight it is applied
+  when the fight ends.
+- Bag sorter: a "Sort key" choice: Left stick click (as before), Right stick
+  click, or Button only (no stick is taken). The stick is still only used
+  while the bag is open.
+- Settings: a feature that is on and has options gets a "Hide options"
+  button next to its switch. Tap it to fold the options away so the list is
+  shorter; "Show options" brings them back. The feature stays on either way,
+  and what you folded is remembered. It works with the d-pad and A as well.
+
+### Changed
+
+- "One big bag" is now called "Bag sorter" (the game's controller mode
+  already shows one combined bag; what this feature adds is the sorting).
+  If you had it switched on, it is still on.
+- Quest arrow:
+  - It keeps pointing at the same spot when the quest's progress changes
+    (before, every kill made it start again).
+  - It only swaps to another spot when that one is clearly nearer (at least
+    a fifth nearer and 15 yards nearer), so it no longer flips between two
+    spots at a similar distance.
+  - After it has said "Here" and you walk away, that spot is left alone for
+    three minutes and the arrow leads you to the nearest spot you have not
+    been to, instead of pointing back at the place you just left. When you
+    have been to them all it starts again.
+  - When one part of a quest is finished, the arrow moves straight to a spot
+    for a part that is not.
+- The "Icon key" button has moved from the bottom of the settings into the
+  "Quest icons" block, next to the other quest settings.
+
+### Debug log
+
+- The time on each line now comes from one clock, so lines within the same
+  second are in order.
+- The arrow's line says which spot it points at (the objective's number and
+  the place on the map) and a new line is written each time the spot changes,
+  with the reason.
+- The "driver started / stopped" pair is no longer written on every quest-log
+  change while no quest is focused.
+- The long legend on the fight lines is written once per session.
+
 ## [0.0.9] - 2026-11-17
 
 Ninth test build, from the first Pocket Probe file sent from the device.
