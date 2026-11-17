@@ -18,6 +18,7 @@ local ADDON_NAME, PE = ...
 --   QD:GetPlayerPosition() -> uiMapID, x, y | nil
 --   QD:GetPlayerFacing() -> radians | nil
 --   QD:GetMapWorldSize(uiMapID) -> width, height | nil
+--   QD:MapToMap(fromMapID, x, y, toMapID) -> x2, y2 | nil   (a spot on one map as fractions of another)
 --   QD:SetTrackedQuest(questID|nil)       QD:GetTrackedQuest() -> questID | nil
 --   QD:GetWatchedQuests() -> array of questIDs (never nil; may be empty)
 --   QD:IsQuestInLog(questID) -> bool      QD:GetQuestTitle(questID) -> string | nil
@@ -64,7 +65,7 @@ local MAX_SOURCE_POINTS = 1500 -- one creature or object with more spawn points 
 local MAX_PINS = 300           -- most pins one objective may have; above it they are thinned evenly
 
 local type, pairs, ipairs, select, tostring, tonumber, pcall, xpcall = type, pairs, ipairs, select, tostring, tonumber, pcall, xpcall
-local floor = math.floor
+local floor, abs = math.floor, math.abs
 
 -- State ----------------------------------------------------------------------
 local frame                       -- private hidden frame; only has events while acquired
@@ -722,8 +723,11 @@ local function ScheduleRebuild()
     rebuildPending = After(REBUILD_DELAY, OnRebuildTimer)
 end
 
+local ForgetFailedConversions   -- set in the map conversion section below
+
 local function OnZoneTimer()
     zonePending = false
+    ForgetFailedConversions()       -- a map the game could not convert is tried again
     if PE.debugOn then PE:Debug("questData", "zone change noticed, map " .. PE.Plain((QD:GetPlayerPosition()))) end
     if userCount > 0 then Fire("zone") end
 end
@@ -938,4 +942,103 @@ function QD:GetMapWorldSize(uiMapID)
         sizeCache[uiMapID] = size
     end
     return size[1], size[2]
+end
+
+-- Public: one map's spot on another map ------------------------------------------
+-- C_Map.GetWorldPosFromMapPos(uiMapID, mapPos) -> continentID, worldPos turns a
+-- place on a zone map into a position on the whole continent, in yards. Two
+-- samples per map, (0,0) and (0.5,0.5), give that map's straight-line
+-- conversion; it is worked out once per map and kept. With the conversions of
+-- both maps, a spot on one map becomes fractions of the other (which may lie
+-- below 0 or above 1: the spot is outside that map's edges).
+--
+-- Which of the two continent numbers runs north-south is checked, not assumed:
+-- the north-south span must match the map's height and the east-west span its
+-- width, each within FIT (5 %). If they only fit the other way round the two
+-- are swapped; a map that fits neither way, or whose size cannot be read, is
+-- not used. That guards against an arrow that is confidently wrong.
+
+local FIT = 0.05
+local conversions = {}            -- [uiMapID] = { inst, u0, ku, v0, kv } | false (the game could not convert it)
+local sampleCorner, sampleMiddle  -- the two places asked for on every map, made once
+
+-- A position the game returned, as two plain numbers, or nil.
+local function ReadXY(pos)
+    if IsSecret(pos) or type(pos) ~= "table" then return nil end
+    local x, y
+    if type(pos.GetXY) == "function" then
+        x, y = pos:GetXY()
+    else
+        x, y = pos.x, pos.y
+    end
+    if IsSecret(x) or IsSecret(y) or type(x) ~= "number" or type(y) ~= "number" then return nil end
+    return x, y
+end
+
+local function Fits(span, size)
+    return abs(abs(span) - size) <= FIT * size
+end
+
+local function Sample(mapID, at)
+    local inst, pos = C_Map.GetWorldPosFromMapPos(mapID, at)
+    if IsSecret(inst) or type(inst) ~= "number" then return nil end
+    local a, b = ReadXY(pos)
+    if not a then return nil end
+    return inst, a, b
+end
+
+-- The conversion of one map, or false when it cannot be used.
+local function BuildConversion(mapID)
+    if not (C_Map and type(C_Map.GetWorldPosFromMapPos) == "function") then return false end
+    if not sampleCorner then
+        if type(CreateVector2D) == "function" then
+            sampleCorner, sampleMiddle = CreateVector2D(0, 0), CreateVector2D(0.5, 0.5)
+        else
+            sampleCorner, sampleMiddle = { x = 0, y = 0 }, { x = 0.5, y = 0.5 }
+        end
+    end
+    local width, height = QD:GetMapWorldSize(mapID)
+    if not width then return false end
+    local instA, uA, vA = Sample(mapID, sampleCorner)
+    local instB, uB, vB = Sample(mapID, sampleMiddle)
+    if not instA or instA ~= instB then return false end
+    -- u: the number that moves with the map's y (north-south); v: with its x (east-west).
+    local ku, kv = (uB - uA) * 2, (vB - vA) * 2
+    if Fits(ku, height) and Fits(kv, width) then
+        -- as expected
+    elseif Fits(ku, width) and Fits(kv, height) then
+        uA, vA, ku, kv = vA, uA, kv, ku     -- the game gives the two the other way round
+    else
+        return false
+    end
+    if ku == 0 or kv == 0 or ku ~= ku or kv ~= kv then return false end
+    return { inst = instA, u0 = uA, ku = ku, v0 = vA, kv = kv }
+end
+
+local function Conversion(mapID)
+    local t = conversions[mapID]
+    if t == nil then
+        local ok, result = pcall(BuildConversion, mapID)
+        t = ok and type(result) == "table" and result or false
+        conversions[mapID] = t
+    end
+    return t
+end
+
+function ForgetFailedConversions()
+    for mapID, t in pairs(conversions) do
+        if t == false then conversions[mapID] = nil end
+    end
+end
+
+-- x, y (fractions of fromMapID) as fractions of toMapID; nil when either map
+-- cannot be converted or the two are on different continents.
+function QD:MapToMap(fromMapID, x, y, toMapID)
+    if type(x) ~= "number" or type(y) ~= "number" or fromMapID == nil or toMapID == nil then return nil end
+    if fromMapID == toMapID then return x, y end
+    local theirs = Conversion(fromMapID)
+    if not theirs then return nil end
+    local mine = Conversion(toMapID)
+    if not mine or mine.inst ~= theirs.inst then return nil end
+    return (theirs.v0 + theirs.kv * x - mine.v0) / mine.kv, (theirs.u0 + theirs.ku * y - mine.u0) / mine.ku
 end

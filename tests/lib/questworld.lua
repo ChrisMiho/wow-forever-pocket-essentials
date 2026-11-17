@@ -38,10 +38,13 @@ end
 -- game's tracker; spec.pos = { x, y, facing, map }. Call before c:loadAddon() (T.new's setup).
 function W.setup(c, spec)
     local w = c.world
-    w.maps[W.HOME] = { name = "Elwynn Forest", width = W.WIDTH, height = W.HEIGHT }
-    w.maps[W.AWAY] = { name = "Duskwood", width = 2700, height = 1800 }
-    w.maps[W.OTHER] = { name = "Dun Morogh", width = 3000, height = 2000 }
-    w.maps[W.MULGORE] = { name = "Mulgore", width = W.MULGORE_WIDTH, height = W.MULGORE_HEIGHT }
+    -- continent, top, left: the continent and each map's north-west corner in continent yards
+    -- (C_Map.GetWorldPosFromMapPos in tests/lib/fakeclient.lua).
+    w.maps[W.HOME] = { name = "Elwynn Forest", width = W.WIDTH, height = W.HEIGHT, continent = 0, top = -7939, left = 1535 }
+    w.maps[W.AWAY] = { name = "Duskwood", width = 2700, height = 1800, continent = 0, top = -9716, left = 833 }
+    w.maps[W.OTHER] = { name = "Dun Morogh", width = 3000, height = 2000, continent = 0, top = -4487, left = 1802 }
+    w.maps[W.MULGORE] = { name = "Mulgore", width = W.MULGORE_WIDTH, height = W.MULGORE_HEIGHT,
+        continent = 1, top = -272, left = 2047 }
     local pos = spec.pos or {}
     w.player.map, w.player.x, w.player.y, w.player.facing = pos.map or W.HOME, pos.x or 0.45, pos.y or 0.62, pos.facing or 0
     local L = rawget(c.env, "LibQuestieDB")
