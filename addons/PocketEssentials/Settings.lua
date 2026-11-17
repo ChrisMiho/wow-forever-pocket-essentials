@@ -329,13 +329,9 @@ local function BuildModuleRow(mod, y, width, separator)
     else
         label, style = "OFF", "off"
     end
-    if hasOptions then
-        local fold = PlaceButton(folded and "Show options" or "Hide options",
-            width - toggleWidth - M.gap - foldWidth, y + (M.row - M.button) * 0.5, foldWidth, M.button, nil,
-            PE:Wrap("core", function() ToggleFold(key) end))
-        fold.peFoldKey = key
-        fold.peScrollTop, fold.peScrollBottom = y, y + rowHeight
-    end
+    -- The switch is placed (and so pooled) before the fold button: the buttons
+    -- after it come and go when it is tapped, and it must keep its own place so
+    -- the controller highlight stays on it.
     local toggle = PlaceButton(label, width - toggleWidth, y + (M.row - M.button) * 0.5, toggleWidth, M.button, style,
         PE:Wrap("core", function()
             if state == "blocked" then return end
@@ -343,6 +339,16 @@ local function BuildModuleRow(mod, y, width, separator)
         end))
     -- When the controller lands on the switch, bring the whole row into view.
     toggle.peScrollTop, toggle.peScrollBottom = y, y + rowHeight
+    if hasOptions then
+        local fold = PlaceButton(folded and "Show options" or "Hide options",
+            width - toggleWidth - M.gap - foldWidth, y + (M.row - M.button) * 0.5, foldWidth, M.button, nil,
+            PE:Wrap("core", function() ToggleFold(key) end))
+        fold.peFoldKey = key
+        fold.peScrollTop, fold.peScrollBottom = y, y + rowHeight
+        -- Reading order for the d-pad: the fold button, then the switch beside it.
+        local n = #navList
+        navList[n - 1], navList[n] = fold, toggle
+    end
 
     y = y + rowHeight + M.gap * 0.5
     if hasOptions and not folded then

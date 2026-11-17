@@ -807,24 +807,20 @@ local function NextTextSize(current, direction)
     return nil
 end
 
--- Runs when out of a fight (see ChangeTextSize).
-local function ApplyTextSize(direction)
+-- Sizes picked during a fight, waiting for it to end: the size the last tap
+-- will set. Taps in a fight step from here, so two taps are two steps.
+local pendingSize
+
+-- Sets one size on every chat window. Runs out of a fight only.
+local function ApplyTextSize(size)
+    local waited = pendingSize ~= nil
+    pendingSize = nil
+    if waited then PE:RefreshSettings() end -- the "(after the fight)" note goes away
     if not TextSizeAvailable() then
         if PE.debugOn then PE:Debug("chat", "text size: not available") end
         return
     end
-    local current = CurrentTextSize()
-    if not current then
-        if PE.debugOn then PE:Debug("chat", "text size: not available") end
-        return
-    end
-    local size = NextTextSize(current, direction)
-    if not size then
-        if PE.debugOn then
-            PE:Debug("chat", "text size " .. current .. ": already the " .. (direction > 0 and "biggest" or "smallest"))
-        end
-        return
-    end
+    local current = CurrentTextSize() or size
     local done = 0
     for i = 1, WindowCount() do
         local frame = _G["ChatFrame" .. i]
@@ -839,13 +835,32 @@ local function ApplyTextSize(direction)
 end
 
 local function ChangeTextSize(direction)
-    if PE.debugOn and PE:InCombat() then PE:Debug("chat", "text size change held for after the fight") end
-    PE:RunOutOfCombat("chat:fontsize", function() ApplyTextSize(direction) end)
+    local current = TextSizeAvailable() and CurrentTextSize()
+    if not current then
+        if PE.debugOn then PE:Debug("chat", "text size: not available") end
+        return
+    end
+    local base = pendingSize or current
+    local size = NextTextSize(base, direction)
+    if not size then
+        if PE.debugOn then
+            PE:Debug("chat", "text size " .. base .. ": already the " .. (direction > 0 and "biggest" or "smallest"))
+        end
+        return
+    end
+    if PE:InCombat() then
+        pendingSize = size
+        if PE.debugOn then PE:Debug("chat", "text size change held for after the fight") end
+    end
+    PE:RunOutOfCombat("chat:fontsize", function() ApplyTextSize(size) end)
 end
 
 local function TextSizeValue()
     local size = TextSizeAvailable() and CurrentTextSize()
-    if size then return tostring(size) end
+    if size then
+        if pendingSize and pendingSize ~= size then return pendingSize .. " (after the fight)" end
+        return tostring(size)
+    end
     return "Not available on this version of the game"
 end
 

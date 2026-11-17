@@ -353,4 +353,80 @@ test("icon key: folding Quest icons hides the Icon key button", function()
     eq(#shownButtons(c, "Icon key"), 1)
 end)
 
+-- The controller highlight stays on a feature's own ON / OFF switch after A switches it
+-- (the buttons after it come and go, so the highlight must not drift to another button).
+local function dpadTo(c, target)
+    local panel, nav = settingsPanel(c), rawget(c.env, NAV_NAME)
+    local n = 0
+    repeat
+        c:script(nav, "OnClick", "RIGHT", true)
+        c:script(nav, "OnClick", "RIGHT", false)
+        n = n + 1
+    until panel.peNavFocus == target or n > 80
+    check(panel.peNavFocus == target, "the d-pad never reached the button")
+end
+
+local function pressA(c)
+    local nav = rawget(c.env, NAV_NAME)
+    c:script(nav, "OnClick", "A", true)
+    c:script(nav, "OnClick", "A", false)
+    c:advance(0.5)
+end
+
+-- The switch of the n-th feature row: the 'n'-th button labelled ON or OFF (the debug switch is not on this page).
+local function switchOfRow(c, n)
+    local found = {}
+    walkAll(c, settingsPanel(c), function(w)
+        local l = c._state(w).type == "Button" and w:IsVisible() and T.labelOf(w)
+        if l == "ON" or l == "OFF" then found[#found + 1] = w end
+    end)
+    table.sort(found, function(a, b)
+        local _, ya = a:GetCenter()
+        local _, yb = b:GetCenter()
+        return ya > yb
+    end)
+    return found[n]
+end
+
+local function rowIndexOf(c, PE, key)
+    for i, m in ipairs(PE.moduleList) do if m.key == key then return i end end
+end
+
+test("fold: A on a switch keeps the highlight on that feature's switch, off to on and on to off", function()
+    local c, PE = T.new({ on = { "sellJunk" } })
+    PE:GetModule("sellJunk").options = { { label = "Extra", action = function() end } }
+    openSettings(c, PE)
+    local panel = settingsPanel(c)
+    local i = rowIndexOf(c, PE, "bags")
+    local sw = switchOfRow(c, i)
+    dpadTo(c, sw)
+    pressA(c)
+    check(PE:IsModuleEnabled("bags"), "A did not switch bags on")
+    check(panel.peNavFocus == switchOfRow(c, i), "off to on: the highlight left the switch")
+    eq(T.labelOf(panel.peNavFocus), "ON")
+    pressA(c)
+    check(not PE:IsModuleEnabled("bags"), "the second A did not switch bags off again")
+    check(PE:IsModuleEnabled("sellJunk"), "the second A switched another feature")
+    check(panel.peNavFocus == switchOfRow(c, i), "on to off: the highlight left the switch")
+    eq(T.labelOf(panel.peNavFocus), "OFF")
+end)
+
+test("fold: in a row with a fold button the d-pad goes to the fold button first, then the switch", function()
+    local c, PE = T.new({ on = { "bags" } })
+    openSettings(c, PE)
+    local panel, nav = settingsPanel(c), rawget(c.env, NAV_NAME)
+    local fold = shownButtons(c, "Hide options")[1]
+    local order = {}
+    for _ = 1, 40 do
+        c:script(nav, "OnClick", "RIGHT", true)
+        c:script(nav, "OnClick", "RIGHT", false)
+        local f = panel.peNavFocus
+        order[#order + 1] = f
+        if f == fold then break end
+    end
+    c:script(nav, "OnClick", "RIGHT", true)
+    c:script(nav, "OnClick", "RIGHT", false)
+    eq(T.labelOf(panel.peNavFocus), "ON", "the switch does not follow the fold button")
+end)
+
 return { known = KNOWN_FAILURES }
