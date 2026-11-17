@@ -253,7 +253,7 @@ that say "Not needed" are skipped.
 | 4. Tapping a channel or name opens the chat box set to that target | `Chat.lua` `TargetClicked`, `OpenChatTo` | Yes |
 | 4. The icon shows when there is an unanswered whisper | `Chat.lua` `UpdateBadge`, `OnWhisper`; `Hub.lua` `SetBadge` | Yes: a badge on the round button, plus a "Clear marks" button |
 | 5. A way to arrange the interface that does not depend on fiddly touch dragging | `Layout.lua` `DoGamepad`, `DoBack`, `DoInstall` | Partial: one-tap switch to Blizzard's Gamepad layout and back. No nudge arrows (not safe, see `docs/DECISIONS.md`) and no ready-made handheld layout is bundled yet |
-| 5. (same goal) Our own on-screen pieces | `Move.lua` `Open`, `Nudge`; each piece's layout | Yes (0.2.0, untested): the "Move things" panel moves the quest arrow, the chat prompt and the round button with big buttons or the d-pad, no dragging |
+| 5. (same goal) Our own on-screen pieces | `Move.lua` `Open`, `Register`, `GetOffset`; each piece's layout | Yes (0.2.0, untested): the "Move things" panel moves the quest arrow, the chat prompt and the round button with big buttons or the d-pad, no dragging |
 | 6. One touch-friendly place to turn each feature on or off, no typed commands | `Settings.lua` `PE:OpenSettings`, `BuildModuleRow`; `Hub.lua` `OnClick` | Yes: one row and big switch per feature, opened from the round button |
 
 Defaults: every feature is off so players can switch them on one at a time.

@@ -493,9 +493,9 @@ Debug log on first; save and send the file afterwards, as in step 10.
 
 1. Log in. Everything should sit exactly where it did in 0.1.0.
 2. Settings, bottom row: tap **Move things**. The settings close and a small
-   "Move things" panel opens in the bottom right corner, listing Round
-   button, and Quest arrow / Chat prompt if those features are on. A gold
-   outline shows where the selected piece is.
+   "Move things" panel opens in the bottom right corner, listing Quest arrow
+   and Chat prompt (if those features are on), then Round button. The first
+   one is selected, and a gold outline shows where it is.
 3. Pick **Quest arrow**. Tap **Left** once: the arrow and its outline move a
    tiny step. Hold **Left**: after a moment it keeps moving, then faster. Let
    go: it stops at once.
