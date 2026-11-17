@@ -217,17 +217,70 @@ local TYPE_KEY_SECONDS = 12
 local typeKeyOwner = CreateFrame("Frame", "PocketEssentialsChatKeyOwner", UIParent)
 local typeKeyArmed, typeKeySerial, openChatHooked = false, 0, false
 
+-- The "Press A to type" prompt: the addon's own display-only frame. It is
+-- shown when the A button is lent and hidden when it is given back, and
+-- nowhere else.
+local prompt
+local function PromptLayout()
+    if not prompt then return end
+    local UI = PE.UI
+    local pad = UI:Px(14)
+    local titleHeight = prompt.title:GetStringHeight() or UI:Px(24)
+    local fontHeight = prompt.font:GetStringHeight() or UI:Px(18)
+    local width = max(prompt.title:GetUnboundedStringWidth() or 0, prompt.font:GetUnboundedStringWidth() or 0)
+    width = max(width, UI:Px(240))
+    prompt:SetSize(width + pad * 2, titleHeight + fontHeight + pad * 3)
+    prompt:ClearAllPoints()
+    prompt:SetPoint("CENTER", UIParent, "CENTER", 0, UI:Px(110))
+    prompt.title:ClearAllPoints()
+    prompt.title:SetPoint("TOP", prompt, "TOP", 0, -pad)
+    prompt.title:SetWidth(width)
+    prompt.font:ClearAllPoints()
+    prompt.font:SetPoint("TOP", prompt.title, "BOTTOM", 0, -pad)
+    prompt.font:SetWidth(width)
+end
+
+local function PromptShow(name)
+    local UI = PE.UI
+    if not UI then return end
+    if not prompt then
+        prompt = CreateFrame("Frame", nil, UIParent)
+        prompt:SetFrameStrata("HIGH")
+        prompt:EnableMouse(false)
+        prompt.back = prompt:CreateTexture(nil, "BACKGROUND")
+        prompt.back:SetAllPoints(prompt)
+        prompt.back:SetColorTexture(0, 0, 0, 0.75)
+        prompt.title = UI:CreateText(prompt, "title")
+        prompt.title:SetJustifyH("CENTER")
+        prompt.font = UI:CreateText(prompt, "font")
+        prompt.font:SetJustifyH("CENTER")
+        UI:OnMetricsChanged(mod:Wrap(PromptLayout))
+    end
+    prompt.title:SetText("Press A to type")
+    prompt.font:SetText("Chat is set to " .. name)
+    PromptLayout()
+    prompt:Show()
+    if PE.debugOn then PE:Debug("chat", "prompt shown") end
+end
+
+local function PromptHide(why)
+    if not (prompt and prompt:IsShown()) then return end
+    prompt:Hide()
+    if PE.debugOn then PE:Debug("chat", "prompt hidden: " .. tostring(why)) end
+end
+
 -- Only out of a fight, or from PLAYER_REGEN_DISABLED (lockdown starts after it).
 local function TypeKeyDisarm(why)
     if not typeKeyArmed then return end
     typeKeyArmed = false
+    PromptHide(why)
     typeKeySerial = typeKeySerial + 1
     if ClearOverrideBindings then pcall(ClearOverrideBindings, typeKeyOwner) end
     if PE.debugOn then PE:Debug("chat", "A button given back: " .. tostring(why)) end
 end
 
--- Returns true if the A button now opens chat.
-local function TypeKeyArm()
+-- Returns true if the A button now opens chat. name says where the chat goes.
+local function TypeKeyArm(name)
     if not (SetOverrideBinding and ClearOverrideBindings) or PE:InCombat() then return false end
     if not openChatHooked and type(hooksecurefunc) == "function"
             and type(ChatFrameUtil) == "table" and type(ChatFrameUtil.OpenChat) == "function" then
@@ -239,6 +292,7 @@ local function TypeKeyArm()
     end
     if not pcall(SetOverrideBinding, typeKeyOwner, true, TYPE_KEY, "OPENCHAT") then return false end
     typeKeyArmed = true
+    mod:Safe(PromptShow, name)
     typeKeySerial = typeKeySerial + 1
     local serial = typeKeySerial
     mod:After(TYPE_KEY_SECONDS, function()
@@ -588,7 +642,7 @@ local function TargetClicked(btn)
     end
     if opened == "set" then
         local name = entry and "your whisper" or (type(target.label) == "string" and target.label or "that")
-        if TypeKeyArm() then
+        if TypeKeyArm(name) then
             mod:Print("Chat is set to " .. name .. ". Press A to type.")
         else
             mod:Print("Chat is set to " .. name .. ". Open chat to type your message.")

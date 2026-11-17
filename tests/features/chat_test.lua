@@ -401,6 +401,109 @@ test("chat: with the Gamepad UI on, the A button is lent to the game's open-chat
     eq(#c:problems(), 0, table.concat(c:problems(), " / "))
 end)
 
+-- Chat.lua TypeKeyArm / TypeKeyDisarm: the on-screen "Press A to type" prompt is tied to the lending.
+local function promptLines(c)
+    local lines, frame = {}, nil
+    for _, ch in ipairs(c._state(c.env.UIParent).children) do
+        local shown = false
+        for _, r in ipairs(c._state(ch).regions) do
+            local t = c._state(r).type == "FontString" and r:GetText()
+            if t == "Press A to type" then shown = true end
+        end
+        if shown then
+            frame = ch
+            for _, r in ipairs(c._state(ch).regions) do
+                if c._state(r).type == "FontString" then lines[#lines + 1] = r:GetText() end
+            end
+        end
+    end
+    return frame, lines
+end
+local function promptShown(c)
+    local f = promptLines(c)
+    return f ~= nil and f:IsShown()
+end
+local function tapLabel(c, PE, label)
+    openPicker(c, PE)
+    c:click(buttonLabelled(c, label))
+end
+
+test("chat: prompt: with the Gamepad UI on, a tap shows 'Press A to type' naming the target", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = true })
+    local PE = c.PE
+    check(not promptShown(c), "shown before any tap")
+    tapLabel(c, PE, "Say")
+    check(promptShown(c), "not shown after a tap")
+    local f, lines = promptLines(c)
+    eq(lines, { "Press A to type", "Chat is set to Say" })
+    eq(c._state(f).mouse, false)
+    eq(c._state(f).strata, "HIGH")
+    eq(#c:problems(), 0, table.concat(c:problems(), " / "))
+end)
+
+test("chat: prompt: a whisper prompt says 'your whisper', never the name", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = true })
+    local PE = c.PE
+    c:fire("CHAT_MSG_WHISPER", "hello", "Bobby-Realm", "", "", "Bobby-Realm", "", 0, 0, "", 0, 1, "guid")
+    openPicker(c, PE)
+    local btn
+    for _, b in ipairs(visibleButtons(c, panelOf(c))) do
+        if b.peChatEntry then btn = b break end
+    end
+    check(btn, "no whisper button")
+    c:click(btn)
+    local _, lines = promptLines(c)
+    eq(lines[2], "Chat is set to your whisper")
+end)
+
+test("chat: prompt: no prompt when the A button could not be lent (in a fight)", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = true })
+    local PE = c.PE
+    openPicker(c, PE)
+    c:enterCombat()
+    c:click(buttonLabelled(c, "Say"))
+    check(not promptShown(c), "shown although the button was not lent")
+    c:leaveCombat()
+end)
+
+test("chat: prompt: hidden when chat opens, after 12 seconds, when a fight starts, and on switch-off", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = true })
+    local PE = c.PE
+    tapLabel(c, PE, "Say")
+    check(promptShown(c))
+    c.env.ChatFrameUtil.OpenChat(nil)
+    check(not promptShown(c), "still shown after chat opened")
+    c.closeChat()
+    tapLabel(c, PE, "Say")
+    check(promptShown(c))
+    c:advance(13)
+    check(not promptShown(c), "still shown after 12 seconds")
+    tapLabel(c, PE, "Say")
+    check(promptShown(c))
+    c:enterCombat()
+    check(not promptShown(c), "still shown when a fight started")
+    c:leaveCombat()
+    tapLabel(c, PE, "Say")
+    check(promptShown(c))
+    PE:SetModuleEnabled("chat", false)
+    check(not promptShown(c), "still shown after switch-off")
+    eq(#c:problems(), 0, table.concat(c:problems(), " / "))
+end)
+
+test("chat: prompt: a second tap replaces the text and restarts the 12 seconds", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = true })
+    local PE = c.PE
+    tapLabel(c, PE, "Say")
+    c:advance(8)
+    tapLabel(c, PE, "Yell")
+    local _, lines = promptLines(c)
+    eq(lines[2], "Chat is set to Yell")
+    c:advance(8) -- 16 s after the first tap, 8 after the second
+    check(promptShown(c), "hidden by the first tap's timer")
+    c:advance(5)
+    check(not promptShown(c), "still shown 13 s after the second tap")
+end)
+
 -- Bindings cannot be changed in a fight: the type is set, the button is not lent.
 test("chat: with the Gamepad UI on, a tap during a fight lends no button and says to open chat", function()
     local c = T.new({ on = { "chat" }, gamepadUI = true })
