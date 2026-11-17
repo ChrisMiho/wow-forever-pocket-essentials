@@ -455,7 +455,8 @@ finished: Settings > Errors > **Save log now** (it reloads), then send
 2. Settings: every feature that is on and has options has a **Hide options**
    button beside its ON switch. Tap one: its options fold away, the switch
    still says ON, and the feature still works. Do the same with the d-pad and
-   A. Reload: what you folded is still folded. **Show options** brings them
+   A. Also press A on an ON / OFF switch twice: the highlight should stay on
+   that switch and the same feature should go off and back on. Reload: what you folded is still folded. **Show options** brings them
    back.
 3. Settings, **Quest icons** block: **Icon key** is the last button there (it
    is gone from the bottom row). Tap it, then Back.
@@ -469,8 +470,9 @@ finished: Settings > Errors > **Save log now** (it reloads), then send
    wait: the text goes by itself after 12 seconds. Do it again and pull a
    creature: the text goes when the fight starts.
 6. Chat, whisper: have someone whisper you (or whisper yourself from another
-   character), tap their name in the picker, press A, type, send. Watch for
-   any "blocked" message.
+   character), tap their name in the picker: the big text should read "Chat
+   is set to your whisper" (no name). Press A, type, send. Watch for any
+   "blocked" message.
 7. Bags: the feature is now called **Bag sorter**. With **Sort key** on Left
    stick click, open the bag and click the left stick: it sorts. Choose Right
    stick click: the right stick sorts and the left stick does its normal job.
