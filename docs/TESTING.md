@@ -362,7 +362,7 @@ and `QuestieDB` sit side by side.
   sensible; any stutter while moving.
 
 ### 4. Bags
-- Switch on **One big bag**. If a "Reload now" bar appears, tap it.
+- Switch on **Bag sorter**. If a "Reload now" bar appears, tap it.
 - Open your bags: one combined window, with a tall gold **Sort** tab
   against its left edge, below the round bag picture (the sort icon at the
   top, "Sort" written down the tab). Tap it: items should tidy up. Check it at
@@ -371,6 +371,8 @@ and `QuestieDB` sit side by side.
   to Show.
 - With the bag open, press L3 (click the left stick): it should sort. Close
   the bag: L3 should do its normal job again (auto-run).
+- Set **Sort key** to Right stick click: with the bag open R3 sorts and L3 does
+  not. Set it to Button only: neither stick sorts, the tab still does.
 - Try Bag size Large and Extra large.
 - **Use, move and equip a few items, in and out of combat.** Watch for any
   "interface action blocked" message; this is the main risk here.

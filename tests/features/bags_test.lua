@@ -1,4 +1,4 @@
--- Rules for "One big bag" (Bags.lua).
+-- Rules for "Bag sorter" (Bags.lua).
 -- Sources: Bags.lua's header and comments; docs/DECISIONS.md, part "Bags" of
 -- "Decisions made without the maintainer". Each test names its source in a comment.
 -- Fresh client and addon per test.
@@ -325,7 +325,7 @@ local function debugLines(c, key)
     return out
 end
 
--- Spec 2026-11-17-debug-log, row "One big bag": combined or not and why; Sort pressed.
+-- Spec 2026-11-17-debug-log, row "Bag sorter": combined or not and why; Sort pressed.
 test("debug log: switching the bags on and tapping Sort writes why and what was pressed", function()
     local c = newBags({ cvar = "1" })
     c.PE:SetDebug(true)
@@ -340,6 +340,128 @@ test("debug log: switching the bags on and tapping Sort writes why and what was 
         check(seen[want], "no line \"" .. want .. "\" in: " .. table.concat(lines, " / "))
     end
     eq(sorts(c), 1)
+end)
+
+---------------------------------------------------------------------------
+-- Bag sorter: name and sort key choice (spec 2026-11-17-post-0.0.9-batch, item 2)
+---------------------------------------------------------------------------
+
+local function textsOf(c)
+    local mod = c.PE:GetModule("bags")
+    local out = { mod.label, mod.desc }
+    local status = mod.status(mod)
+    if type(status) == "string" then out[#out + 1] = status
+    elseif type(status) == "table" then for _, l in ipairs(status) do out[#out + 1] = l end end
+    return out
+end
+
+test("bags: the feature is called Bag sorter and no text of it says One big bag", function()
+    for _, gamepad in ipairs({ true, false }) do
+        local c = newBags({ gamepadUI = gamepad })
+        local mod = c.PE:GetModule("bags")
+        eq(mod.label, "Bag sorter")
+        eq(mod.desc, "Sort your bags with a big button or a stick click.")
+        eq(mod.key, "bags")
+        for _, text in ipairs(textsOf(c)) do
+            check(not text:lower():find("big bag", 1, true), "old name in: " .. text)
+        end
+    end
+    local c = newBags({ cvar = "0" })
+    c:advance(1)
+    local status = c.PE:GetModule("bags").status(c.PE:GetModule("bags"))
+    check(not tostring(status):lower():find("one big bag", 1, true), "old name in status")
+end)
+
+test("bags: Sort key is an option with three choices, left stick click first", function()
+    local c = newBags()
+    local mod = c.PE:GetModule("bags")
+    local opt
+    for _, o in ipairs(mod.options) do if o.key == "sortKey" then opt = o end end
+    check(opt, "no sortKey option")
+    eq(opt.label, "Sort key")
+    local got = {}
+    for _, ch in ipairs(opt.choices) do got[#got + 1] = ch.value .. "=" .. ch.label end
+    eq(got, { "l3=Left stick click", "r3=Right stick click", "none=Button only" })
+    eq(mod.opts.sortKey, "l3")
+end)
+
+test("bags: each Sort key choice binds the right key on open and clears it on close, tab always there", function()
+    for value, want in pairs({ l3 = "PADLSTICK", r3 = "PADRSTICK", none = false }) do
+        local c = newBags({ setup = function(cc) end })
+        c.PE:GetModule("bags").opts.sortKey = value
+        c:openBag()
+        if want then
+            eq(bindings(c), { [want] = "PocketEssentialsBagSortKey" }, value)
+        else
+            eq(bindings(c), nil, value)
+        end
+        check(sortButton(c):IsVisible(), "tab missing for " .. value)
+        c:closeBag()
+        eq(bindings(c), nil, "still bound after close: " .. value)
+    end
+end)
+
+test("bags: changing Sort key with the bag open hands back the old stick and takes the new one", function()
+    local c = newBags()
+    c:openBag()
+    eq(bindings(c), { PADLSTICK = "PocketEssentialsBagSortKey" })
+    chooseOption(c, "sortKey", "r3")
+    eq(bindings(c), { PADRSTICK = "PocketEssentialsBagSortKey" })
+    chooseOption(c, "sortKey", "none")
+    eq(bindings(c), nil)
+    chooseOption(c, "sortKey", "l3")
+    eq(bindings(c), { PADLSTICK = "PocketEssentialsBagSortKey" })
+end)
+
+test("bags: changing Sort key in a fight waits for the fight to end", function()
+    local c = newBags()
+    c:openBag()
+    c:enterCombat()
+    chooseOption(c, "sortKey", "r3")
+    eq(bindings(c), nil, "bound in combat")
+    c:leaveCombat()
+    eq(bindings(c), { PADRSTICK = "PocketEssentialsBagSortKey" })
+end)
+
+test("bags: a 0.0.9 saved table has no sortKey and binds the left stick; an unknown value reads as left", function()
+    local c = newBags()
+    local mod = c.PE:GetModule("bags")
+    mod.opts.sortKey = nil
+    c:openBag()
+    eq(bindings(c), { PADLSTICK = "PocketEssentialsBagSortKey" })
+    c:closeBag()
+    mod.opts.sortKey = "bogus"
+    c:openBag()
+    eq(bindings(c), { PADLSTICK = "PocketEssentialsBagSortKey" })
+    -- OnLoad also repairs it.
+    mod.opts.sortKey = "bogus"
+    mod:OnLoad()
+    eq(mod.opts.sortKey, "l3")
+end)
+
+test("bags: switching the feature off hands the chosen stick back", function()
+    local c = newBags()
+    c.PE:GetModule("bags").opts.sortKey = "r3"
+    c:openBag()
+    eq(bindings(c), { PADRSTICK = "PocketEssentialsBagSortKey" })
+    c.PE:SetModuleEnabled("bags", false)
+    c:advance(0.5)
+    eq(bindings(c), nil)
+end)
+
+test("debug log: the sort key choice writes which stick was taken, given back, or none taken", function()
+    local c = newBags()
+    c.PE:SetDebug(true)
+    c:openBag()
+    chooseOption(c, "sortKey", "r3")
+    chooseOption(c, "sortKey", "none")
+    c:closeBag()
+    local seen = {}
+    for _, line in ipairs(debugLines(c, "bags")) do seen[line] = true end
+    for _, want in ipairs({ "left stick click taken for Sort (bag open)", "right stick click taken for Sort (bag open)",
+        "no stick taken: button only", "stick click given back to the game" }) do
+        check(seen[want], "no line \"" .. want .. "\"")
+    end
 end)
 
 return { known = KNOWN_FAILURES }

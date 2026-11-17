@@ -23,10 +23,10 @@ Quest objectives on your map, an arrow to follow, one bag that sorts itself, ven
 - An **arrow** to the nearest objective of the quest you focus in your quest log, with the distance. It tells you which zone to head to when the quest is elsewhere.
 - An **Icon key** page in the settings explains every icon.
 
-![One big bag](BAGS_URL)
+![Bag sorter](BAGS_URL)
 
 - All your bags in **one combined window**.
-- A **big Sort button**, and **L3** sorts while the bag is open.
+- A **big Sort button**, and a stick click (**L3**, **R3** or none, you choose) sorts while the bag is open.
 - Three sizes to fit your screen.
 
 ![Vendor chores, done](VENDOR_URL)

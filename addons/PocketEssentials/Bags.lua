@@ -1,6 +1,7 @@
--- Pocket Essentials: module "bags" (One big bag).
+-- Pocket Essentials: module "bags" (Bag sorter).
 -- Uses Blizzard's own combined bag window (ContainerFrameCombinedBags) and adds
--- a large Sort button, a left-stick-click shortcut and a size choice.
+-- a large Sort button, a stick-click shortcut (left, right or none: the "Sort
+-- key" choice) and a size choice.
 --
 -- Taint rules followed here (item use must never be blocked):
 --   * No field is ever written onto a Blizzard frame or table.
@@ -23,7 +24,9 @@ local FRAME_NAME = "ContainerFrameCombinedBags"
 local LAYOUT_FUNC = "UpdateContainerFrameAnchors"
 local CVAR = "combinedBags"
 local SORT_ATLAS = "bags-button-autosort-up" -- Blizzard's own sort button (ContainerFrame.xml)
-local SORT_KEY = "PADLSTICK" -- left stick click (Blizzard_SharedXML/Shared/GamepadConstants.lua)
+-- Stick clicks (Blizzard_SharedXML/Shared/GamepadConstants.lua). "none": no stick is taken.
+local SORT_KEYS = { l3 = "PADLSTICK", r3 = "PADRSTICK" }
+local SORT_KEY_LABELS = { l3 = "left stick click", r3 = "right stick click" }
 local KEY_BUTTON_NAME = "PocketEssentialsBagSortKey"
 local SIZE_FACTOR = { normal = 1, large = 1.25, xlarge = 1.5 }
 local RELOAD_REASON = "Reload to finish changing the bags."
@@ -35,7 +38,7 @@ local hooksDone = false
 local layoutHooked = false
 local metricsHooked = false
 local sortButton     -- the big button (child of UIParent, anchored to the bag)
-local keyButton      -- hidden named button the left stick click is pointed at
+local keyButton      -- hidden named button the chosen stick click is pointed at
 local logoutFrame
 local logoutWatching = false
 local lastSort = 0
@@ -185,7 +188,7 @@ local function WantCombined()
     local opts = Opts()
     if not opts then return end
     if IsGamepadStyle() then
-        -- Already one big bag. Only cancel a "switch back" left over from
+        -- Already the combined bag. Only cancel a "switch back" left over from
         -- switching the feature off earlier in this session.
         if opts.cvarWant ~= nil and opts.cvarWant ~= "1" then
             opts.cvarWant, opts.cvarTried = nil, nil
@@ -213,7 +216,7 @@ local function WantCombined()
         return
     end
     if opts.cvarWant ~= "1" and (opts.sawCombined or opts.userSeparate) then
-        -- It was one big bag while this feature was on and now it is not, and
+        -- It was the combined bag while this feature was on and now it is not, and
         -- not by our doing: the player changed it in Blizzard's bag menu.
         -- Respect that; do not queue the setting again.
         opts.sawCombined, opts.userSeparate = nil, true
@@ -294,7 +297,7 @@ local function OnSortKey(_, _, down)
 end
 
 ---------------------------------------------------------------------------
--- The Sort button and the left stick click
+-- The Sort button and the stick click
 ---------------------------------------------------------------------------
 
 -- The tab's width in UIParent units (also the room the bag size leaves for it).
@@ -368,17 +371,32 @@ local function SyncButton()
     end
 end
 
+-- The "Sort key" choice: "l3", "r3" or "none". Anything else reads as "l3".
+local function SortKeyChoice()
+    local opts = Opts()
+    local value = opts and opts.sortKey
+    if value == "none" or SORT_KEYS[value] then return value end
+    return "l3"
+end
+
 -- Only ever run through PE:RunOutOfCombat (bindings cannot change in combat).
 -- The key is never held during a fight: OnCombatStart gives it back.
 local function ApplyBinding()
     if not keyButton then return end
     if not (SetOverrideBindingClick and ClearOverrideBindings) then return end
+    -- Always hand back whatever was taken before, so a changed choice never
+    -- leaves the old stick taken.
+    ClearOverrideBindings(keyButton)
     if active and BagShown() then
-        SetOverrideBindingClick(keyButton, true, SORT_KEY, KEY_BUTTON_NAME, "LeftButton")
-        if PE.debugOn then PE:Debug("bags", "stick click taken for Sort (bag open)") end
-    else
-        ClearOverrideBindings(keyButton)
-        if PE.debugOn then PE:Debug("bags", "stick click given back to the game") end
+        local choice = SortKeyChoice()
+        if SORT_KEYS[choice] then
+            SetOverrideBindingClick(keyButton, true, SORT_KEYS[choice], KEY_BUTTON_NAME, "LeftButton")
+            if PE.debugOn then PE:Debug("bags", SORT_KEY_LABELS[choice] .. " taken for Sort (bag open)") end
+        elseif PE.debugOn then
+            PE:Debug("bags", "no stick taken: button only")
+        end
+    elseif PE.debugOn then
+        PE:Debug("bags", "stick click given back to the game")
     end
 end
 
@@ -387,7 +405,7 @@ local function SyncBinding()
 end
 
 -- PLAYER_REGEN_DISABLED: lockdown starts only after this event's handlers, so
--- the left stick click can still be handed back to the game (auto-run) here.
+-- the stick click can still be handed back to the game (auto-run) here.
 local function OnCombatStart()
     if not keyButton or not ClearOverrideBindings then return end
     if InCombatLockdown and InCombatLockdown() then return end
@@ -654,7 +672,7 @@ local function Status(self)
     if not gamepad then
         if current == nil then return "This client has no combined bag." end
         if current ~= "1" then
-            if opts and opts.cvarWant == "1" then return "Reload to switch to one big bag." end
+            if opts and opts.cvarWant == "1" then return "Reload to switch to the combined bag." end
             if not (opts and opts.cvarFailed) then
                 return "You switched back to separate bags in the game's bag menu."
             end
@@ -663,7 +681,13 @@ local function Status(self)
             return "Could not switch the bags for you. Open a bag, tap its picture and choose \"" .. item .. "\"."
         end
     end
-    local lines = { "Controller: click the left stick to sort while the bag is open." }
+    local lines = {}
+    local choice = SortKeyChoice()
+    if SORT_KEYS[choice] then
+        lines[1] = "Controller: click the " .. (choice == "l3" and "left" or "right") .. " stick to sort while the bag is open."
+    else
+        lines[1] = "Sort with the Sort button; no stick is taken."
+    end
     if opts and opts.showTab == false then
         lines[#lines + 1] = "The Sort button is hidden; show it again here if you need it."
     end
@@ -673,10 +697,10 @@ end
 
 mod = PE:RegisterModule({
     key = "bags",
-    label = "One big bag",
-    desc = "All your bags in one window, with a big Sort button.",
+    label = "Bag sorter",
+    desc = "Sort your bags with a big button or a stick click.",
     order = 30,
-    defaults = { size = "normal", showTab = true },
+    defaults = { size = "normal", showTab = true, sortKey = "l3" },
 
     options = {
         { key = "size", label = "Bag size",
@@ -691,6 +715,17 @@ mod = PE:RegisterModule({
                   PE:Debug("bags", "size choice: " .. tostring(opts and opts.size))
               end
               if active then SyncScale() end
+          end },
+        { key = "sortKey", label = "Sort key",
+          choices = {
+              { value = "l3", label = "Left stick click" },
+              { value = "r3", label = "Right stick click" },
+              { value = "none", label = "Button only" },
+          },
+          -- Hands the old stick back before the new one is taken (ApplyBinding).
+          OnChange = function()
+              if PE.debugOn then PE:Debug("bags", "sort key choice: " .. SortKeyChoice()) end
+              if active then SyncBinding() end
           end },
         { key = "showTab", label = "Sort button",
           choices = {
@@ -711,6 +746,7 @@ mod = PE:RegisterModule({
         if type(opts) ~= "table" then return end
         if not SIZE_FACTOR[opts.size] then opts.size = "normal" end
         if type(opts.showTab) ~= "boolean" then opts.showTab = true end
+        if opts.sortKey ~= "none" and not SORT_KEYS[opts.sortKey] then opts.sortKey = "l3" end
         ResolvePendingCVar()
     end,
 

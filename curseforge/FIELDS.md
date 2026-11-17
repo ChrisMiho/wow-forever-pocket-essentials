@@ -67,7 +67,7 @@ Real screenshots make the page much stronger. Take these in game and upload them
 
 - **Quest icons on the world map:** several coloured objective icons, no blue haze. Title: "Quest objectives on the map".
 - **Quest arrow:** the arrow on screen with its distance text. Title: "Follow the arrow".
-- **One big bag:** the combined bag with the big Sort button visible. Title: "One bag, one Sort button".
+- **Bag sorter:** the combined bag with the big Sort button visible. Title: "One bag, one Sort button".
 - **Chat picker:** the big channel and whisper buttons. Title: "Chat with big buttons".
 - **Settings window:** the feature list with the switches. Title: "Every feature has its own switch".
 - **Icon key page.** Title: "Icon key".
