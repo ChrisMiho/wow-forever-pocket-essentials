@@ -32,6 +32,7 @@ local drawnPage = "main"
 local built, buildFailed = false, false
 local drawing, drawQueued = false, false
 local lowest = 0   -- how far down the list the current redraw has placed things
+local refocusKey   -- feature whose fold button the controller highlight returns to after the next redraw
 
 ---------------------------------------------------------------------------
 -- Pools: widgets are reused on every redraw, never thrown away
@@ -115,6 +116,7 @@ local function ResetButton(btn)
     btn:SetSelected(false)
     btn:SetStyle("normal")
     btn:SetBadgeText(nil)
+    btn.peFoldKey = nil
     btn:ClearAllPoints()
 end
 
@@ -248,6 +250,29 @@ local function BuildOptions(mod, y, width)
     return y
 end
 
+-- The saved folds: { [feature key] = true }. Core.lua keeps this a table;
+-- the check here covers a table that was damaged while the game ran.
+local function FoldTable()
+    local ui = PE.db and PE.db.ui
+    if type(ui) ~= "table" then return {} end
+    if type(ui.folded) ~= "table" then ui.folded = {} end
+    return ui.folded
+end
+
+-- Fold or unfold one feature's options. A plain saved write: nothing else
+-- depends on it, so there is no metrics refresh, only a redraw.
+local function ToggleFold(key)
+    local folded = FoldTable()
+    local nowFolded = folded[key] ~= true
+    folded[key] = nowFolded and true or nil
+    if PE.debugOn then PE:Debug("settings", key .. (nowFolded and " folded" or " unfolded")) end
+    -- The redraw reuses buttons, so remember by feature where the controller
+    -- highlight was, and put it back on that feature's fold button.
+    local focus = panel and panel.peNavFocus
+    refocusKey = (focus and focus.peFoldKey == key) and key or nil
+    PE:RefreshSettings()
+end
+
 local function BuildModuleRow(mod, y, width, separator)
     if separator then
         y = y + PlaceLine(y, width) + M.gap
@@ -259,13 +284,19 @@ local function BuildModuleRow(mod, y, width, separator)
     local savedOn = PE:IsModuleSavedOn(key)
     local toggleWidth = M.button * 2.8
     local textX = M.gap
-    local textWidth = width - toggleWidth - textX - M.pad
+    local hasOptions = state == "on" and type(mod.options) == "table" and #mod.options > 0
+    local folded = hasOptions and FoldTable()[key] == true
+    -- "Hide options" / "Show options" sits left of the switch. 3.4 buttons
+    -- wide holds the longer label at the Large size (about 230 of the
+    -- roughly 780 units the text has beside the switch at 720p).
+    local foldWidth = hasOptions and M.button * 3.4 or 0
+    local textWidth = width - toggleWidth - textX - M.pad - (hasOptions and (foldWidth + M.gap) or 0)
 
     local title = Escape(mod.label)
     if mod.experimental then title = title .. "   |cffff9a33Experimental|r" end
     local ty = y + M.gap * 0.3
     ty = ty + PlaceText("font", title, textX, ty, textWidth) + M.gap * 0.3
-    if type(mod.desc) == "string" and mod.desc ~= "" then
+    if not folded and type(mod.desc) == "string" and mod.desc ~= "" then
         ty = ty + PlaceText("small", mod.desc, textX, ty, textWidth) + M.gap * 0.3
     end
     if type(mod.status) == "function" then
@@ -298,6 +329,13 @@ local function BuildModuleRow(mod, y, width, separator)
     else
         label, style = "OFF", "off"
     end
+    if hasOptions then
+        local fold = PlaceButton(folded and "Show options" or "Hide options",
+            width - toggleWidth - M.gap - foldWidth, y + (M.row - M.button) * 0.5, foldWidth, M.button, nil,
+            PE:Wrap("core", function() ToggleFold(key) end))
+        fold.peFoldKey = key
+        fold.peScrollTop, fold.peScrollBottom = y, y + rowHeight
+    end
     local toggle = PlaceButton(label, width - toggleWidth, y + (M.row - M.button) * 0.5, toggleWidth, M.button, style,
         PE:Wrap("core", function()
             if state == "blocked" then return end
@@ -307,7 +345,7 @@ local function BuildModuleRow(mod, y, width, separator)
     toggle.peScrollTop, toggle.peScrollBottom = y, y + rowHeight
 
     y = y + rowHeight + M.gap * 0.5
-    if state == "on" and type(mod.options) == "table" then
+    if hasOptions and not folded then
         y = BuildOptions(mod, y, width)
     end
     return y
@@ -610,6 +648,14 @@ local function DoRefresh()
         navList[#navList + 1] = area.downButton
     end
     navList[#navList + 1] = panel.closeButton
+    if refocusKey then
+        local wanted
+        for i = 1, #navList do
+            if navList[i].peFoldKey == refocusKey then wanted = navList[i] end
+        end
+        refocusKey = nil
+        if wanted and panel.peNavFocus then panel:NavSetFocus(wanted) end
+    end
     if page ~= drawnPage then
         -- A different page: if the controller highlight is in use, restart it at the top.
         drawnPage = page

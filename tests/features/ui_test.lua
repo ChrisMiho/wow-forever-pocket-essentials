@@ -109,4 +109,213 @@ test("hub: a short tap opens the chat picker, not the settings, when the chat fe
     c:assertClean("hub tap")
 end)
 
+---------------------------------------------------------------------------
+-- Spec 2026-11-17-post-0.0.9-batch, section 5: feature blocks fold away (Settings.lua BuildModuleRow).
+---------------------------------------------------------------------------
+
+local function walkAll(c, w, fn, seen)
+    seen = seen or {}
+    if seen[w] then return end
+    seen[w] = true
+    fn(w)
+    local st = c._state(w)
+    for _, ch in ipairs(st.children) do walkAll(c, ch, fn, seen) end
+    if st.scrollChild then walkAll(c, st.scrollChild, fn, seen) end
+end
+
+-- Visible buttons of the settings window with this label (the pool keeps hidden ones around).
+local function shownButtons(c, label)
+    local out = {}
+    walkAll(c, settingsPanel(c), function(w)
+        if c._state(w).type == "Button" and w:IsVisible() and T.labelOf(w) == label then out[#out + 1] = w end
+    end)
+    return out
+end
+
+local function shownText(c, text)
+    local found = false
+    walkAll(c, settingsPanel(c), function(w)
+        for _, r in ipairs(c._state(w).regions) do
+            local st = c._state(r)
+            if st.type == "FontString" and st.text == text and r:IsVisible() then found = true end
+        end
+    end)
+    return found
+end
+
+local function openSettings(c, PE)
+    PE:OpenSettings()
+    c:advance(0.2)
+end
+
+local function debugLinesOf(c, key)
+    local out = {}
+    local prefix = " " .. key .. ": "
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        local at = line:find(prefix, 1, true)
+        if at and at <= 14 then out[#out + 1] = line:sub(at + #prefix) end
+    end
+    return out
+end
+
+test("fold: a feature that is on with options shows Hide options; tapping folds it and keeps the switch ON", function()
+    local c, PE = T.new({ on = { "bags" } })
+    openSettings(c, PE)
+    eq(#shownButtons(c, "Hide options"), 1)
+    check(shownButtons(c, "Normal")[1], "the options are not drawn at first")
+    c:click(shownButtons(c, "Hide options")[1])
+    c:advance(0.5)
+    eq(#shownButtons(c, "Show options"), 1)
+    eq(#shownButtons(c, "Hide options"), 0)
+    eq(#shownButtons(c, "Normal"), 0, "the options are still drawn")
+    check(not shownText(c, "Bag size"), "the option label is still drawn")
+    check(PE:IsModuleEnabled("bags"), "folding switched the feature off")
+    eq(#shownButtons(c, "ON"), 1, "the switch no longer shows ON")
+    eq(PE.db.ui.folded.bags, true)
+    c:assertClean("fold")
+end)
+
+test("fold: the description line is hidden when folded and comes back when unfolded", function()
+    local c, PE = T.new({ on = { "bags" } })
+    local desc = PE:GetModule("bags").desc
+    check(type(desc) == "string" and desc ~= "", "bags has no description")
+    openSettings(c, PE)
+    check(shownText(c, desc), "no description at first")
+    c:click(shownButtons(c, "Hide options")[1])
+    c:advance(0.5)
+    check(not shownText(c, desc), "the description is still drawn when folded")
+    c:click(shownButtons(c, "Show options")[1])
+    c:advance(0.5)
+    check(shownText(c, desc), "the description did not come back")
+    check(shownButtons(c, "Normal")[1], "the options did not come back")
+    eq(PE.db.ui.folded.bags, nil, "unfold left the entry in the saved table")
+end)
+
+test("fold: a status line stays while folded", function()
+    local c, PE = T.new({ on = { "bags" } })
+    PE:GetModule("bags").status = function() return "Status stays" end
+    openSettings(c, PE)
+    c:click(shownButtons(c, "Hide options")[1])
+    c:advance(0.5)
+    check(shownText(c, "Status stays"), "the status line vanished")
+end)
+
+test("fold: the folded state is saved and still there after a reload", function()
+    local c, PE = T.new({ on = { "bags" } })
+    openSettings(c, PE)
+    c:click(shownButtons(c, "Hide options")[1])
+    c:advance(0.5)
+    local db = rawget(c.env, "PocketEssentialsDB")
+    local c2, PE2 = T.new({ saved = db })
+    openSettings(c2, PE2)
+    eq(#shownButtons(c2, "Show options"), 1)
+    eq(#shownButtons(c2, "Normal"), 0)
+end)
+
+test("fold: a feature that is off, or has no options, has no fold button", function()
+    local c, PE = T.new({})
+    openSettings(c, PE)
+    eq(#shownButtons(c, "Hide options"), 0)
+    eq(#shownButtons(c, "Show options"), 0)
+    local c2, PE2 = T.new({ on = { "sellJunk" } })
+    PE2:GetModule("sellJunk").options = nil
+    openSettings(c2, PE2)
+    eq(#shownButtons(c2, "Hide options"), 0)
+    local c3, PE3 = T.new({ on = { "sellJunk" } })
+    PE3:GetModule("sellJunk").options = {}
+    openSettings(c3, PE3)
+    eq(#shownButtons(c3, "Hide options"), 0)
+end)
+
+test("fold: a folded feature that is switched off shows no fold button and no options", function()
+    local c, PE = T.new({ on = { "bags" } })
+    openSettings(c, PE)
+    c:click(shownButtons(c, "Hide options")[1])
+    c:advance(0.5)
+    PE:SetModuleEnabled("bags", false)
+    c:advance(0.5)
+    eq(#shownButtons(c, "Show options"), 0)
+    eq(#shownButtons(c, "Normal"), 0)
+end)
+
+test("fold: a damaged saved folded value does no harm and is replaced by an empty table", function()
+    for _, bad in ipairs({ "yes", 5, true }) do
+        local c, PE = T.new({ on = { "bags" }, saved = { version = 1, enabled = { bags = true }, options = {}, ui = { size = "medium", hubPos = "LEFT", folded = bad }, errors = {} } })
+        eq(type(PE.db.ui.folded), "table")
+        openSettings(c, PE)
+        eq(#shownButtons(c, "Hide options"), 1)
+        c:click(shownButtons(c, "Hide options")[1])
+        c:advance(0.5)
+        eq(PE.db.ui.folded.bags, true)
+    end
+    -- A non-true entry inside the table does not fold anything.
+    local c, PE = T.new({ on = { "bags" }, saved = { version = 1, enabled = { bags = true }, options = {}, ui = { size = "medium", hubPos = "LEFT", folded = { bags = "yes" } }, errors = {} } })
+    openSettings(c, PE)
+    eq(#shownButtons(c, "Hide options"), 1)
+end)
+
+test("fold: the controller's d-pad reaches the fold button, A presses it, and the highlight stays on it", function()
+    local c, PE = T.new({ on = { "bags", "sellJunk" } })
+    openSettings(c, PE)
+    local panel = settingsPanel(c)
+    local nav = rawget(c.env, NAV_NAME)
+    local fold = shownButtons(c, "Hide options")[1]
+    local n = 0
+    repeat
+        c:script(nav, "OnClick", "RIGHT", true)
+        c:script(nav, "OnClick", "RIGHT", false)
+        n = n + 1
+    until panel.peNavFocus == fold or n > 60
+    check(panel.peNavFocus == fold, "the d-pad never reached the fold button")
+    c:script(nav, "OnClick", "A", true)
+    c:script(nav, "OnClick", "A", false)
+    c:advance(0.5)
+    eq(PE.db.ui.folded.bags, true)
+    local after = shownButtons(c, "Show options")[1]
+    check(after, "no Show options button after folding")
+    check(panel.peNavFocus == after, "the highlight left the fold button")
+    -- and again the other way
+    c:script(nav, "OnClick", "A", true)
+    c:script(nav, "OnClick", "A", false)
+    c:advance(0.5)
+    eq(PE.db.ui.folded.bags, nil)
+    check(panel.peNavFocus == shownButtons(c, "Hide options")[1], "the highlight left the fold button after unfolding")
+    c:assertClean("fold nav")
+end)
+
+test("fold: the highlight stays on the fold button of the same feature when two features have one", function()
+    local c, PE = T.new({ on = { "bags", "sellJunk" } })
+    PE:GetModule("sellJunk").options = { { label = "Extra", action = function() end } }
+    openSettings(c, PE)
+    local panel = settingsPanel(c)
+    local nav = rawget(c.env, NAV_NAME)
+    local folds = shownButtons(c, "Hide options")
+    eq(#folds, 2)
+    local target = folds[2]
+    local n = 0
+    repeat
+        c:script(nav, "OnClick", "RIGHT", true)
+        c:script(nav, "OnClick", "RIGHT", false)
+        n = n + 1
+    until panel.peNavFocus == target or n > 80
+    check(panel.peNavFocus == target, "could not reach the second fold button")
+    local key = target.peFoldKey
+    c:script(nav, "OnClick", "A", true)
+    c:script(nav, "OnClick", "A", false)
+    c:advance(0.5)
+    eq(panel.peNavFocus.peFoldKey, key, "the highlight moved to another feature's button")
+    eq(T.labelOf(panel.peNavFocus), "Show options")
+end)
+
+test("fold: a tap writes a debug line and does not redraw twice for a fold", function()
+    local c, PE = T.new({ on = { "bags" } })
+    PE:SetDebug(true)
+    openSettings(c, PE)
+    c:click(shownButtons(c, "Hide options")[1])
+    c:advance(0.5)
+    c:click(shownButtons(c, "Show options")[1])
+    c:advance(0.5)
+    eq(debugLinesOf(c, "settings"), { "bags folded", "bags unfolded" })
+end)
+
 return { known = KNOWN_FAILURES }
