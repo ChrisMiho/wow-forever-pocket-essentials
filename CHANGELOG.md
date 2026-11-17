@@ -4,6 +4,19 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-11-17
+
+Twelfth test build, from the debug log of the 0.1.0 play test (two sessions,
+57 fights, no error and nothing blocked). Nothing changes in how the game
+plays. Not yet tested on a device.
+
+### Debug log
+
+- Bag sorter no longer writes "stick click given back to the game" at every
+  fight when no stick was taken. A line is written only when a stick is
+  really taken or handed back, and "no stick taken: button only" once per
+  bag opening.
+
 ## [0.2.0] - 2026-11-17
 
 Eleventh test build, asked for during the play test of 0.1.0: a way to put

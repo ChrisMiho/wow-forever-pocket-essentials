@@ -381,6 +381,26 @@ end
 
 -- Only ever run through PE:RunOutOfCombat (bindings cannot change in combat).
 -- The key is never held during a fight: OnCombatStart gives it back.
+-- What the debug log last said about the stick: nil (nothing taken), "l3" or
+-- "r3" (that stick is taken), "none" (bag open, Button only). A line is only
+-- written when this changes, so fights with the bag closed write nothing.
+local stickState
+
+local function NoteStick(state)
+    if state == stickState then return end
+    local was = stickState
+    stickState = state
+    if not PE.debugOn then return end
+    if state == nil then
+        if was ~= "none" then PE:Debug("bags", "stick click given back to the game") end
+    elseif state == "none" then
+        if was then PE:Debug("bags", "stick click given back to the game") end
+        PE:Debug("bags", "no stick taken: button only")
+    else
+        PE:Debug("bags", SORT_KEY_LABELS[state] .. " taken for Sort (bag open)")
+    end
+end
+
 local function ApplyBinding()
     if not keyButton then return end
     if not (SetOverrideBindingClick and ClearOverrideBindings) then return end
@@ -391,12 +411,12 @@ local function ApplyBinding()
         local choice = SortKeyChoice()
         if SORT_KEYS[choice] then
             SetOverrideBindingClick(keyButton, true, SORT_KEYS[choice], KEY_BUTTON_NAME, "LeftButton")
-            if PE.debugOn then PE:Debug("bags", SORT_KEY_LABELS[choice] .. " taken for Sort (bag open)") end
-        elseif PE.debugOn then
-            PE:Debug("bags", "no stick taken: button only")
+            NoteStick(choice)
+        else
+            NoteStick("none")
         end
-    elseif PE.debugOn then
-        PE:Debug("bags", "stick click given back to the game")
+    else
+        NoteStick(nil)
     end
 end
 
@@ -410,6 +430,7 @@ local function OnCombatStart()
     if not keyButton or not ClearOverrideBindings then return end
     if InCombatLockdown and InCombatLockdown() then return end
     pcall(ClearOverrideBindings, keyButton)
+    if stickState ~= "none" then NoteStick(nil) end    -- Button only: nothing was taken, nothing to say
 end
 
 local function OnCombatEnd()

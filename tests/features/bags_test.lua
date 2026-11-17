@@ -464,4 +464,63 @@ test("debug log: the sort key choice writes which stick was taken, given back, o
     end
 end)
 
+-- Device log, 0.1.0: "stick click given back to the game" was written at every fight although
+-- no stick had been taken. A line is only written when something really changed hands.
+local function count(c, text)
+    local n = 0
+    for _, line in ipairs(debugLines(c, "bags")) do if line == text then n = n + 1 end end
+    return n
+end
+
+test("debug log: fights with the bag closed write no stick lines", function()
+    local c = newBags()
+    c.PE:SetDebug(true)
+    c:advance(0.5)
+    local before = #debugLines(c, "bags")
+    for _ = 1, 3 do
+        c:enterCombat()
+        c:advance(1)
+        c:leaveCombat()
+        c:advance(1)
+    end
+    eq(#debugLines(c, "bags") - before, 0, "lines written by three fights with nothing taken")
+    eq(count(c, "stick click given back to the game"), 0)
+end)
+
+test("debug log: a stick taken and handed back writes one line each, also across a fight", function()
+    local c = newBags()
+    c.PE:SetDebug(true)
+    c:openBag()
+    eq(count(c, "left stick click taken for Sort (bag open)"), 1)
+    c:enterCombat()                 -- handed back as the fight starts
+    c:advance(1)
+    eq(count(c, "stick click given back to the game"), 1)
+    eq(bindings(c), nil)
+    c:leaveCombat()                 -- the bag is still open: taken again
+    c:advance(1)
+    eq(count(c, "left stick click taken for Sort (bag open)"), 2)
+    c:closeBag()
+    c:advance(0.5)
+    eq(count(c, "stick click given back to the game"), 2)
+    c:closeBag()
+    c:enterCombat()
+    c:advance(1)
+    c:leaveCombat()
+    c:advance(1)
+    eq(count(c, "stick click given back to the game"), 2, "nothing was taken any more")
+end)
+
+test("debug log: Button only says so once per bag opening, not after every fight", function()
+    local c = newBags()
+    c.PE:GetModule("bags").opts.sortKey = "none"
+    c.PE:SetDebug(true)
+    c:openBag()
+    c:enterCombat()
+    c:advance(1)
+    c:leaveCombat()
+    c:advance(1)
+    eq(count(c, "no stick taken: button only"), 1)
+    eq(count(c, "stick click given back to the game"), 0)
+end)
+
 return { known = KNOWN_FAILURES }

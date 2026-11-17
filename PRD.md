@@ -399,7 +399,8 @@ turn-in when the last part was finished; time stamps in order. Not exercised
 in this log: any tap on a chat button (so the on-screen "Press A to type" and
 a whisper are still untested), the Icon key button, and all of 0.2.0. One
 piece of log noise found: "stick click given back to the game" is written at
-the start of every fight even when no stick was taken.
+the start of every fight even when no stick was taken (fixed in 0.2.1, which
+changes the log only).
 
 Upcoming from the fourth device test (2026-11-16), one at a time:
 - Bags: reach the Sort tab with the d-pad (Blizzard's controller navigation
