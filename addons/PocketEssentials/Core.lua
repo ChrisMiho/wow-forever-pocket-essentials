@@ -80,20 +80,43 @@ end
 local stampWall, stampTimer, stampLast
 local legendWritten = false -- the fight legend goes out once per session
 
+local stampBroken = false -- time() or date(fmt, ts) misbehaved: use the plain form this session
+
 local function ResetDebugSession()
     stampWall, stampTimer, stampLast = nil, nil, nil
     legendWritten = false
+    stampBroken = false
 end
 
-local function DebugStamp()
-    if not GetTime then return date("%H:%M:%S") .. ".000" end
-    local timer = GetTime()
-    if not stampWall then stampWall, stampTimer = time(), timer end
+-- The paired stamp; nil when time() or date() give anything unexpected.
+local function PairedStamp(timer)
+    if not stampWall then
+        local wall = time()
+        if type(wall) ~= "number" then return nil end
+        stampWall, stampTimer = wall, timer
+    end
     local stamp = stampWall + (timer - stampTimer)
     if stampLast and stamp < stampLast then stamp = stampLast end
-    stampLast = stamp
     local whole = math.floor(stamp)
-    return date("%H:%M:%S", whole) .. string.format(".%03d", math.floor((stamp - whole) * 1000))
+    local clock = date("%H:%M:%S", whole)
+    if type(clock) ~= "string" then return nil end
+    stampLast = stamp
+    return clock .. string.format(".%03d", math.floor((stamp - whole) * 1000))
+end
+
+-- Never raises: on any trouble it falls back to the clock plus the timer's
+-- milliseconds, and keeps to that for the rest of the session.
+local function DebugStamp()
+    local timer = GetTime and GetTime()
+    if type(timer) ~= "number" then timer = nil end
+    if timer and not stampBroken then
+        local ok, stamp = pcall(PairedStamp, timer)
+        if ok and stamp then return stamp end
+        stampBroken = true
+    end
+    local ok, clock = pcall(date, "%H:%M:%S")
+    if not ok or type(clock) ~= "string" then clock = "00:00:00" end
+    return clock .. string.format(".%03d", timer and math.floor((timer % 1) * 1000) or 0)
 end
 
 function PE:Debug(key, text)

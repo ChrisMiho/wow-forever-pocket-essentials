@@ -663,6 +663,34 @@ test("debug: stamps do not go backwards across second boundaries when the clocks
     check(stampMs(lines[#lines]) - stampMs(lines[1]) > 3500, "the stamps did not move with the timer")
 end)
 
+test("debug: a time() that returns nothing does not stop the log or raise errors", function()
+    local c, PE = T.new({})
+    rawset(c.env, "time", function() return nil end)
+    PE:SetDebug(true)
+    PE:Debug("probe", "one")
+    PE:Debug("probe", "two")
+    local lines = debugLines(c, "probe: ")
+    eq(#lines, 2)
+    for _, l in ipairs(lines) do check(l:find(LINE), "bad line format: " .. l) end
+    eq(c:problems(), {})
+end)
+
+test("debug: a date() that raises when given a time does not stop the log or raise errors", function()
+    local c, PE = T.new({})
+    local realDate = c.env.date
+    rawset(c.env, "date", function(fmt, t)
+        if t ~= nil then error("date: no second argument here") end
+        return realDate(fmt)
+    end)
+    PE:SetDebug(true)
+    PE:Debug("probe", "one")
+    PE:Debug("probe", "two")
+    local lines = debugLines(c, "probe: ")
+    eq(#lines, 2)
+    for _, l in ipairs(lines) do check(l:find(LINE), "bad line format: " .. l) end
+    eq(c:problems(), {})
+end)
+
 test("debug: the fight legend is written with the first restriction line of a session only", function()
     local db = saved()
     db.debug = { on = true, lines = {}, next = 1 }
