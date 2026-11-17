@@ -1,5 +1,6 @@
 #!/bin/bash
-# Offline tests: the fast API check (tests/api/), the debug log reader's tests (tests/readlog/), then the QuestieDB harness,
+# Offline tests: the fast API check (tests/api/), the debug log reader's tests (tests/readlog/), the restriction probe
+# reader's tests (tests/readprobe/) and the probe's own tests (tests/probe/, skipped when not there), then the QuestieDB harness,
 # which puts every quest in the pinned QuestieDB release through our QuestData.lua under WoW API stand-ins (tests/questiedb/),
 # then the whole-addon smoke test in the stand-in game client (tests/smoke/, tests/lib/fakeclient.lua),
 # and the rule tests for every feature (tests/features/; the quest ones need QuestieDB and are skipped without it).
@@ -34,6 +35,21 @@ luajit tests/api/extract.lua "$PWD" | luajit tests/api/fastcheck.lua "$PWD"
 # output, and that a saved file is loaded with nothing in reach. Needs no network.
 luajit tests/readlog/run.lua "$PWD"
 
+# The restriction probe's reader (scripts/read-probe.lua): the order of the
+# situations, the tables, what differs between two files, and that a saved file
+# is loaded with nothing in reach. Needs no network.
+luajit tests/readprobe/run.lua "$PWD"
+
+# The restriction probe itself (probe/PocketProbe, a separate addon for testing
+# that players never get) in the stand-in client. Called after the rule tests.
+probe_tests() {
+    if [ -f tests/probe/run.lua ]; then
+        luajit tests/probe/run.lua "$PWD"
+    else
+        echo "tests/probe/run.lua not found; probe tests skipped" >&2
+    fi
+}
+
 # Capture the status explicitly: under set -e a failed $(...) assignment would
 # abort before the handling below runs. Exit code 2 means the download failed
 # (offline): skip. Anything else (such as 3, a checksum mismatch) is a real problem.
@@ -45,6 +61,7 @@ if [ "$fetch_status" -eq 2 ] && [ "${PE_TEST_STRICT:-}" = "1" ]; then
 elif [ "$fetch_status" -eq 2 ]; then
     # The rule tests and smoke scenarios that need no QuestieDB still run.
     luajit tests/features/run.lua "$PWD"
+    probe_tests
     luajit tests/smoke/run.lua "$PWD"
     echo "could not download QuestieDB; QuestieDB tests skipped" >&2
     exit 0
@@ -60,6 +77,8 @@ unzip -q "$qdb_zip" -d "$work"
 # Rule tests: each feature's rules against the stand-in client. The quest ones
 # get the QuestieDB directory.
 luajit tests/features/run.lua "$PWD" "$work/QuestieDB"
+
+probe_tests
 
 luajit tests/questiedb/harness.lua "$work/QuestieDB" "$PWD" "$@"
 

@@ -804,10 +804,13 @@ scenarios[#scenarios + 1] = { name = "6 zip contents", run = function()
                 for line in l:lines() do
                     n = n + 1
                     check(not line:find("tests/", 1, true) and not line:find("scripts/", 1, true), name .. " contains " .. line)
+                    -- The restriction probe (probe/PocketProbe) is for testing only: players never get it.
+                    check(not line:lower():find("pocketprobe", 1, true) and not line:find("probe/", 1, true),
+                        name .. " contains a restriction probe file: " .. line)
                 end
                 l:close()
                 check(n > 0, "could not list " .. name)
-                notes[#notes + 1] = "zip contents: " .. name .. " (" .. version .. ", " .. n .. " files) has nothing from tests/ or scripts/"
+                notes[#notes + 1] = "zip contents: " .. name .. " (" .. version .. ", " .. n .. " files) has nothing from tests/, scripts/ or the probe"
             end
         end
     end

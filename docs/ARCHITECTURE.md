@@ -23,6 +23,10 @@ addons/PocketEssentials/
   Layout.lua      feature: layout helper (experimental)
   Icons/          three icon images from pfQuest/Shagu with their MIT notice,
                   plus our own arrow and circle (scripts/make_art.py --icons)
+
+probe/PocketProbe/       the restriction probe: a separate addon for testing only. It tries each action
+                         on the device and records whether the game allowed it. Built into
+                         dist/PocketProbe.zip; never in the zips players get (docs/TESTING.md)
 ```
 
 How the pieces protect each other:
@@ -216,3 +220,20 @@ removes a row from the table above: those are still unconfirmed.
 - Whether quests under a collapsed header in the quest log are still seen
   (if not, their icons vanish while collapsed).
 - How long QuestieDB takes to load on the handheld.
+
+### What the device allows (from the probe)
+
+Empty for now. The restriction probe (`probe/PocketProbe/`, see
+`docs/TESTING.md` "Restriction probe") tries each action on the device and
+records whether the game allowed it, in each situation: Gamepad UI on or off,
+in a fight or not, open world or dungeon, started by itself or from a tap.
+
+When the first probe file comes back from the device, the table goes here. It
+is produced by:
+
+```bash
+scripts/read-probe.sh path/to/PocketProbe.lua --markdown
+```
+
+Until then, what the game allows is known only from reading Blizzard's source
+and from the device tests recorded above.

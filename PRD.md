@@ -282,6 +282,27 @@ review against Blizzard's source (CHANGELOG 0.0.7, "Fixed"). The review could
 not prove the cause of the pop-up; the next device test, with the debug log
 on, should name it.
 
+**Fifth device test, 2026-11-17 (0.0.7), first debug log file**
+(`docs/errorLogs/PocketEssentials.lua`, read with `scripts/read-log.sh`):
+the log file route works on the device. One block recorded: "The game
+stopped a protected step of Blizzard's own interface" from `Chat.lua:219`
+(the call to `ChatFrameUtil.OpenChat`), Gamepad UI on, no fight by
+`InCombatLockdown`; the chat box still opened and the message was sent. The
+same tap after a reload was not blocked. The owner confirmed it happened in
+town, out of combat. Likely cause, not confirmed: with the Gamepad UI on,
+opening the chat box moves the controller's focus through
+`Blizzard_GamepadSmartNavigation/SmartNavigation.lua`, where about thirty
+functions (`SelectButton`, `SetActiveFrame`, `ActivateBinding`, ...) print
+this message whenever addon code is anywhere behind the call, fight or no
+fight (`EnsureIsSecure`). 0.0.8 (untested) does not fix it; it writes the
+game's own stack lines to the log so the next file names the function, and
+also asks the game's combat restriction before opening the chat box. The
+fix that cannot be blocked is to stop opening the chat box from the addon:
+the tap would only set who the chat goes to, and the player opens chat with
+the game's own button (owner's decision, not built). Quest data rebuilt 11
+quests into 345 icons in about 0.1 to 0.2 seconds at login. Sell junk and
+repair were not exercised in this log.
+
 Upcoming from the fourth device test (2026-11-16), one at a time:
 - Bags: reach the Sort tab with the d-pad (Blizzard's controller navigation
   has helpers for addon buttons; needs a device test that item use is never
@@ -329,6 +350,7 @@ quests not yet picked up.
 - `CHANGELOG.md` — release history
 - `LICENSE` — GPL-3.0
 - `addons/PocketEssentials/` — the addon, exactly as it should land in AddOns
+- `probe/PocketProbe/` — the restriction probe: a separate test-only addon that records what the game allows; built into `dist/PocketProbe.zip`, never in the player zips; read its saved file with `scripts/read-probe.sh` (`docs/TESTING.md`)
 - `scripts/build.sh` — builds the zip
 - `scripts/check.sh` — LuaJIT syntax check plus a comment-wording check
 - `scripts/test.sh` — runs the offline tests in `tests/`

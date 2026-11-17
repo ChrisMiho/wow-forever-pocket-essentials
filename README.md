@@ -81,6 +81,7 @@ scripts/test.sh    # offline tests: API check, QuestieDB, feature rules, smoke t
 scripts/audit-api.sh  # full check of game names against Blizzard's source (~45 s)
 scripts/build.sh   # dist/wow-forever-pocket-essentials.zip (GitHub bundle)
                    # dist/PocketEssentials-<version>.zip (CurseForge, addon only)
+                   # dist/PocketProbe.zip (probe/PocketProbe, a test-only addon that records what the game allows; never in the two zips above)
 ```
 
 The first test run downloads QuestieDB into `vendor/` (cached afterwards). The

@@ -491,11 +491,13 @@ local function TargetClicked(btn)
         PE:Debug("chat", "tapped: " .. (entry and "whisper"
             or (PE.Plain(target.chatType) .. (target.target ~= nil and (" " .. PE.Plain(target.target)) or ""))))
     end
-    if PE:InCombat() then
+    if PE:CombatRestricted() then
         -- With the Gamepad UI on, the chat box taking the controller's focus
         -- is a step the game refuses to addons during a fight
         -- (Blizzard_GamepadSharedUtility FrameControlsManager:FrameShown): it
-        -- prints "Interface action failed because of an AddOn".
+        -- prints "Interface action failed because of an AddOn". The game
+        -- decides "during a fight" by its combat restriction, which is asked
+        -- here as well as the usual lockdown.
         panel:Hide()
         if PE.debugOn then PE:Debug("chat", "refused: in a fight") end
         mod:Print("Not during a fight. Open chat the usual way, or try again afterwards.")

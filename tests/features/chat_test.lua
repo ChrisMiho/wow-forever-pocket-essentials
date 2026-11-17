@@ -334,6 +334,23 @@ test("chat: a tap during a fight does not open the chat box, and says so", funct
     c:leaveCombat()
 end)
 
+-- Chat.lua TargetClicked, Core.lua PE:CombatRestricted. 0.0.7 on the device: the block came with
+-- no fight going by InCombatLockdown. Blizzard's check is the "Combat" addon restriction
+-- (Blizzard_GamepadSmartNavigation/SecureHelper.lua IsSecureOrOutOfCombatRestriction).
+test("chat: a tap while the game's combat restriction is active opens nothing, even with no lockdown", function()
+    local c, PE = newChat()
+    openPicker(c, PE)
+    c.world.combatRestricted = true
+    c:click(buttonLabelled(c, "Say"))
+    c:advance(0.2)
+    eq(#chatCalls(c), 0, "the chat box was touched under the combat restriction")
+    c.world.combatRestricted = false
+    openPicker(c, PE)
+    c:click(buttonLabelled(c, "Say"))
+    c:advance(0.2)
+    check(#chatCalls(c) > 0, "the chat box did not open once the restriction was over")
+end)
+
 -- Chat.lua OpenChatTo: choose the box, open it with OpenChat(nil, frame), then set the
 -- type and call UpdateHeader; nothing typed into the box.
 test("chat: tapping Say opens the chat box set to Say", function()

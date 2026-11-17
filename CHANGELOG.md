@@ -4,6 +4,38 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.0.8] - 2026-11-17
+
+Eighth test build, from the first debug log sent from the device (0.0.7).
+Not yet tested on a device.
+
+The log showed one block: "The game stopped a protected step of Blizzard's
+own interface", from the line where Big chat buttons opens the chat box, with
+the Gamepad UI on, in town and out of combat (confirmed by the owner). The
+message was still sent. This build does not fix that block; it makes the next
+log name the exact step.
+
+### Added
+
+- Pocket Probe, a separate test addon (`probe/PocketProbe/`, its own
+  `PocketProbe.zip` on each GitHub release, never in the player zips and never
+  on CurseForge). It tries a list of addon actions by itself in each
+  situation (Gamepad UI, in and out of a fight, dungeons, vendors, straight
+  from a press) and saves whether the game allowed, blocked or forbade each
+  one, and which values it hides. `scripts/read-probe.sh` prints the saved
+  file as a table. Not for play.
+
+### Changed
+
+- Big chat buttons: the "not during a fight" rule now also asks the game's
+  own combat restriction, which is what Blizzard's controller code checks and
+  which can be on when the usual combat flag is not. This covers blocks during
+  a fight only; the block in the log happened out of combat.
+- Blocked-action report: with the debug log on, the game's own lines of the
+  call stack are written to the log, so the next file names the exact step
+  that refused. The report also says when the combat restriction was active.
+- Debug log: records each change of the game's addon restrictions.
+
 ## [0.0.7] - 2026-11-17
 
 Seventh test build, from the fourth device test. Not yet tested on a device.

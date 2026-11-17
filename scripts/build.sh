@@ -8,6 +8,10 @@
 #   QuestieDB         (downloaded unmodified from its official GitHub release,
 #                      cached in vendor/, not committed)
 #
+# When probe/PocketProbe is there it also builds dist/PocketProbe.zip: the
+# restriction probe, a separate addon for testing (docs/TESTING.md). It holds
+# the PocketProbe folder alone and is never part of the two zips above.
+#
 # QuestieDB ships its 18 MB data file twice under two names, because the game
 # calls itself "Camelot" internally and it is not confirmed which name the
 # client looks for. Both are kept by default. Once in-game testing shows which
@@ -72,6 +76,12 @@ if [ -e "$stage/QuestDots" ]; then
     exit 1
 fi
 
+# The restriction probe is for testing only. It must never reach players.
+if [ -e "$stage/PocketProbe" ] || [ -n "$(find "$stage" -iname '*PocketProbe*' -print -quit)" ]; then
+    echo "error: restriction probe files ended up in the bundle" >&2
+    exit 1
+fi
+
 case "$QUESTIEDB_TOC" in
     Forever) rm "$stage/QuestieDB/QuestieDB_Camelot.toc" ;;
     Camelot) rm "$stage/QuestieDB/QuestieDB_Forever.toc" ;;
@@ -105,3 +115,37 @@ rm -f "$cf_out"
 (cd "$stage" && zip -qr -X "$cf_out" PocketEssentials -x '*.DS_Store' '__MACOSX/*')
 
 echo "Built dist/PocketEssentials-$version.zip ($(du -h "$cf_out" | cut -f1)) for CurseForge"
+
+# Last look at the two zips players get: nothing of the restriction probe in either.
+for player_zip in "$out" "$cf_out"; do
+    if unzip -Z1 "$player_zip" | grep -i -q 'PocketProbe'; then
+        echo "error: $(basename "$player_zip") contains restriction probe files" >&2
+        exit 1
+    fi
+done
+
+# --- The restriction probe (testing only, its own zip) ----------------------------
+probe_dir=probe/PocketProbe
+probe_out="$PWD/dist/PocketProbe.zip"
+rm -f "$probe_out"
+if [ -f "$probe_dir/PocketProbe.toc" ]; then
+    probe_stage="$(mktemp -d)"
+    trap 'rm -rf "$stage" "$probe_stage"' EXIT
+    mkdir "$probe_stage/PocketProbe"
+    cp "$probe_dir/PocketProbe.toc" "$probe_stage/PocketProbe/"
+    # Only the files the TOC lists go in, and each must exist.
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
+        case "$line" in ''|'#'*) continue ;; esac
+        line="${line//\\//}"
+        if [ ! -f "$probe_dir/$line" ]; then
+            echo "error: PocketProbe.toc lists $line, which does not exist" >&2
+            exit 1
+        fi
+        mkdir -p "$probe_stage/PocketProbe/$(dirname "$line")"
+        cp "$probe_dir/$line" "$probe_stage/PocketProbe/$line"
+    done < "$probe_dir/PocketProbe.toc"
+    (cd "$probe_stage" && zip -qr -X "$probe_out" PocketProbe -x '*.DS_Store' '__MACOSX/*')
+
+    echo "Built dist/PocketProbe.zip ($(du -h "$probe_out" | cut -f1)), the restriction probe: for testing, not for players"
+fi

@@ -36,7 +36,7 @@ for w in ([[_G math table string os io type pcall xpcall pairs ipairs next selec
 -- Fields that look like methods but are plain data on a Blizzard frame.
 -- (enum values and QuestieDB library members; the last five are C_EditMode's, listed as namespace names below)
 local FIELD = {}
-for w in ("Account Character Gamepad Mkb NumValues Poor Preset Quest Get RequireContract GetLayouts ConvertStringToLayoutInfo SaveLayouts SetActiveLayout OnLayoutAdded"):gmatch("%S+") do FIELD[w] = true end
+for w in ("Account Character Combat Gamepad Mkb NumValues Poor Preset Quest Get RequireContract GetLayouts ConvertStringToLayoutInfo SaveLayouts SetActiveLayout OnLayoutAdded"):gmatch("%S+") do FIELD[w] = true end
 local STRMETHOD = {}   -- (lowercase ones are skipped anyway; kept for clarity)
 local OWN = {}
 for w in ([[PocketEssentials PocketEssentialsDB LibQuestieDB PocketEssentialsSettingsPanel

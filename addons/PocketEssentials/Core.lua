@@ -318,6 +318,23 @@ function PE:InCombat()
     return (InCombatLockdown and InCombatLockdown()) and true or false
 end
 
+-- Blizzard's controller navigation does not ask InCombatLockdown: it asks
+-- whether the "Combat" addon restriction is active
+-- (Blizzard_GamepadSmartNavigation/SecureHelper.lua), which can be so when
+-- lockdown is not (0.0.7 on the device: a block from opening the chat box
+-- with no fight going by InCombatLockdown). True if either says so.
+function PE:CombatRestricted()
+    if self:InCombat() then return true end
+    if not (C_RestrictedActions and C_RestrictedActions.IsAddOnRestrictionActive
+            and Enum and Enum.AddOnRestrictionType and Enum.AddOnRestrictionType.Combat ~= nil) then
+        return false
+    end
+    local ok, active = pcall(C_RestrictedActions.IsAddOnRestrictionActive, Enum.AddOnRestrictionType.Combat)
+    if not ok then return false end
+    if issecretvalue and issecretvalue(active) then return true end
+    return active and true or false
+end
+
 local combatOrder, combatFns = {}, {} -- pending RunOutOfCombat calls
 
 local function KeyOwner(key)
@@ -403,14 +420,19 @@ local function FrameUnregisterIfUnused(event)
     end
 end
 
--- The start of a fight is only listened for while the debug log is on.
+-- The start of a fight and changes of the game's addon restrictions are only
+-- listened for while the debug log is on.
 DebugWatchFights = function()
     if PE.debugOn then
         coreOwn.PLAYER_REGEN_DISABLED = true
         FrameRegister("PLAYER_REGEN_DISABLED")
+        coreOwn.ADDON_RESTRICTION_STATE_CHANGED = true
+        FrameRegister("ADDON_RESTRICTION_STATE_CHANGED")
     else
         coreOwn.PLAYER_REGEN_DISABLED = nil
         FrameUnregisterIfUnused("PLAYER_REGEN_DISABLED")
+        coreOwn.ADDON_RESTRICTION_STATE_CHANGED = nil
+        FrameUnregisterIfUnused("ADDON_RESTRICTION_STATE_CHANGED")
     end
 end
 
@@ -932,7 +954,7 @@ local function BlockStack()
     for line in text:gmatch("[^\r\n]+") do
         line = ShortPath(line:gsub("^%s+", "")):sub(1, 160)
         if line ~= "" then
-            if #top < 6 then top[#top + 1] = line end
+            if #top < 14 then top[#top + 1] = line end
             if line:find(ADDON_NAME, 1, true) and not line:find("Core.lua", 1, true) and #ours < 6 then
                 ours[#ours + 1] = line
                 if not first then
@@ -942,7 +964,10 @@ local function BlockStack()
             end
         end
     end
-    return table.concat(#ours > 0 and ours or top, "\n"), first, #ours > 0, text
+    if #ours == 0 then
+        for i = #top, 7, -1 do top[i] = nil end -- the Errors page gets six lines
+    end
+    return table.concat(#ours > 0 and ours or top, "\n"), first, #ours > 0, text, top
 end
 
 local function FeaturesOn()
@@ -956,8 +981,14 @@ end
 
 local function RecordBlock(kind, func)
     PE.blockedSerial = PE.blockedSerial + 1
-    local stack, from = BlockStack()
-    local inCombat = PE:InCombat() and ", in combat" or ""
+    local stack, from, _, _, top = BlockStack()
+    local inCombat = PE:InCombat() and ", in combat"
+        or (PE:CombatRestricted() and ", combat restriction active" or "")
+    if PE.debugOn and top then
+        -- The game's own lines between its message and ours: they say which
+        -- of its steps refused.
+        for i = 1, #top do PE:Debug("blocked", "  at " .. top[i]) end
+    end
     PE:LogError("blocked", "The game " .. kind .. " " .. func .. (from and (" (from " .. from .. ")") or "")
         .. inCombat .. ". Features on: " .. FeaturesOn() .. ".", stack)
     if not blockedAnnounced[func] then
@@ -1035,6 +1066,12 @@ local function OnEvent(_, event, ...)
         xpcall(FlushCombatQueue, coreHandler)
     elseif event == "PLAYER_REGEN_DISABLED" then
         if PE.debugOn then PE:Debug("core", "fight started") end
+    elseif event == "ADDON_RESTRICTION_STATE_CHANGED" then
+        if PE.debugOn then
+            local kind, state = ...
+            PE:Debug("core", "addon restriction " .. PE.Plain(kind) .. " is now " .. PE.Plain(state)
+                .. " (kinds: 0 combat, 1 encounter, 2 challenge, 3 PvP, 4 map, 5 chat; 0 off, 1 starting, 2 on)")
+        end
     elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
         xpcall(OnActionBlocked, coreHandler, event, ...)
     end

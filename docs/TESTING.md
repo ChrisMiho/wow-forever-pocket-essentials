@@ -9,8 +9,9 @@ These run on a computer, with no game. Their job is to catch plain mistakes
 before you spend time carrying a build to the handheld. They cannot tell you
 how anything looks or feels, and they do not replace the device test below.
 
-Nothing under `tests/` or `scripts/` goes into the addon. `scripts/build.sh`
-copies only `addons/PocketEssentials` and QuestieDB into the zips.
+Nothing under `tests/`, `scripts/` or `probe/` goes into the addon. `scripts/build.sh`
+copies only `addons/PocketEssentials` and QuestieDB into the zips players get, and
+stops if it finds a probe file in either.
 
 ### How to run them
 
@@ -66,6 +67,11 @@ publishes nothing and uses no secrets.
 6. **Debug log reader tests** (`tests/readlog/`). Checks that
    `scripts/read-log.sh` prints a wrapped log oldest line first, one block per
    session, and that the saved file it reads cannot reach files or the system.
+7. **Probe reader tests** (`tests/readprobe/`). The same for
+   `scripts/read-probe.sh`: the order of the columns, the tables, what differs
+   between two files, and that the saved file cannot reach files or the system.
+8. **Probe tests** (`tests/probe/`). Runs the restriction probe (see
+   "Restriction probe" below) in the stand-in client.
 
 The stand-in client (`tests/lib/fakeclient.lua`) is our own imitation of the
 game. It only knows what we believed about the game, and its frame methods and
@@ -106,6 +112,11 @@ The audit does not cover fields of tables the game returns, template names,
 font names or script-type names, and it checks methods by name, not per
 widget type.
 
+For other addon authors: the trials are general (chat box, vendor, bags,
+layout, hidden values), so the table describes the device and game build, not
+Pocket Essentials. The probe only counts blocks that name `PocketProbe`; to
+test another addon's own actions, add trials to `probe/PocketProbe/Trials.lua`.
+
 ## Debug log
 
 A device test can come back as one file instead of screenshots. The addon
@@ -140,6 +151,105 @@ Each line is `HH:MM:SS.mmm feature: what happened`. A session starts with a
 header line giving the addon version, game build, features on, Gamepad UI and
 screen size. The reader needs `luajit`; it only reads the file, with no access
 to files or the system from inside it.
+
+## Restriction probe
+
+**What it is.** The game refuses some actions when an addon asks for them, and
+which ones it refuses changes with the situation: Gamepad UI on or off, in a
+fight or not, in the open world or in a dungeon, and whether the action came
+straight from a tap. Until now we only knew this from reading Blizzard's
+source, and two device tests found blocks we had not predicted. The probe
+replaces guessing with a table: it tries each action on the device and writes
+down whether the game allowed it.
+
+**It is a separate addon, `PocketProbe`, and players never get it.** It lives
+in `probe/PocketProbe/`, not in Pocket Essentials. It is not in the bundle zip
+and never goes to CurseForge; the build stops if a probe file turns up in
+either of those zips. It only reports what the game does. It never tries to
+get round a block.
+
+**What it costs.** Almost nothing. The only trials that spend anything are
+the vendor ones: it sells your grey junk and repairs your gear. A "Vendor
+trials: on / off" switch under the Probe button turns those off.
+
+### Installing it
+
+1. On the computer, run `scripts/build.sh`. Next to the usual zips it writes
+   `dist/PocketProbe.zip`.
+2. Extract it into the game's AddOns folder, so `PocketProbe` sits next to
+   `PocketEssentials` and `QuestieDB`.
+3. **Switch Pocket Essentials' features off while probing** (round button,
+   every row OFF), or untick Pocket Essentials on the character-select AddOns
+   screen. That way each result belongs to the probe alone.
+4. Leave "Enable Gamepad UI" on in the game's settings, as you normally play.
+
+When you are done probing, delete the `PocketProbe` folder or untick it, and
+switch your features back on.
+
+### On the device
+
+A small "Probe" button sits at the top centre of the screen, with a line of
+text under it saying what it is doing. A pass is one run through all the
+trials; it takes a few seconds and ends with "pass done".
+
+1. With Pocket Essentials off and PocketProbe loaded, log in in a town. Wait
+   for "pass done".
+2. Tap **Probe** once.
+3. Pick a fight with something weak. Wait for "pass done", tap **Probe** once
+   during the fight, finish the fight and wait for "pass done" again.
+4. Open a vendor with a few grey items in your bags and damaged gear.
+5. Tap **Clean trials**, then **Next (reload)** until it says done (about ten
+   taps). Each tap reloads the interface and runs one trial as the first thing
+   after the reload.
+6. If a dungeon is handy, walk in and wait for "pass done".
+7. Tap **Save** (this reloads, which is when the game writes the file) and
+   send this file:
+   `World of Warcraft/_forever_/WTF/Account/<account>/SavedVariables/PocketProbe.lua`
+
+What you will see while it runs, all expected:
+
+- The chat box opening and closing by itself.
+- "Interface action failed because of an AddOn" in chat, at most once a
+  session.
+- A "blocked from an action" pop-up when a trial is forbidden. Tap **Ignore**
+  on the touchscreen; the controller cannot reach it.
+
+For the values it reads, the file holds only the kind of answer ("readable",
+"secret"), never the value itself, so it holds no names.
+
+### Reading the file on a computer
+
+```bash
+scripts/read-probe.sh path/to/PocketProbe.lua                   # the tables, then everything that was not allowed
+scripts/read-probe.sh path/to/PocketProbe.lua --markdown        # the tables, ready to paste into docs/ARCHITECTURE.md
+scripts/read-probe.sh path/to/PocketProbe.lua --details         # only what was not allowed, with function names and stack lines
+scripts/read-probe.sh path/to/PocketProbe.lua --log             # the probe's own activity log
+scripts/read-probe.sh path/to/PocketProbe.lua --diff newer.lua  # only what changed between two files (for example, after a game patch)
+```
+
+The output starts with a list of the situations the probe ran in, each given
+a short name (S1, S2, ...) and spelled out, for example "Gamepad UI on, no
+fight, open world, automatic". Then comes one table per area (chat box, bags,
+controller and so on): a row per trial, a column per situation.
+
+What a cell means:
+
+| Cell | Meaning |
+|---|---|
+| `allowed` | It ran and the expected thing happened. |
+| `no effect` | The game did not complain, but nothing happened. |
+| `blocked` | The game refused it with the "Interface action failed because of an AddOn" chat line. |
+| `forbidden` | The game refused it with the "blocked from an action" pop-up. |
+| `error` | It failed with an error message. |
+| `missing` | This game version does not have the function. |
+| `readable`, `secret`, `nil` | For values the probe only reads: the addon can see it, the game hides it, or there was nothing to read. |
+| `allowed / blocked` | Two passes in the same situation got different answers. Both are kept, so the difference shows. |
+| `-` | Not tried in that situation. |
+
+Under the tables, "Not allowed" lists every refusal with the game function's
+name, the game's message, whether it ran straight from a tap, and the game's
+own stack lines. Like the debug log reader, this needs `luajit` and only reads
+the file, with no access to files or the system from inside it.
 
 ## Device test plan
 

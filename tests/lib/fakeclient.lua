@@ -1083,6 +1083,8 @@ function Client.new(opts)
         EditModePresetLayouts = { Modern = 0, Classic = 1, Gamepad = 2 },
         EditModePresetLayoutsMeta = { MinValue = 0, MaxValue = 2, NumValues = 3 },
         InputDeviceInterfaceType = { Mkb = 0, Gamepad = 1 },
+        -- RestrictedActionsConstantsDocumentation.lua
+        AddOnRestrictionType = { Combat = 0, Encounter = 1, ChallengeMode = 2, PvPMatch = 3, Map = 4, Chat = 5 },
     }
     rawset(env, "Enum", Gated("Enum", Enum))
 
@@ -1254,6 +1256,14 @@ function Client.new(opts)
         -- world.layoutImport: the layout the game would read out of any string (nil: the string is refused).
         ConvertStringToLayoutInfo = function(text) return world.layoutImport and DeepCopy(world.layoutImport) or nil end,
     }, { SetActiveLayout = true, SaveLayouts = true, OnLayoutAdded = true })
+
+    -- world.combatRestricted: the game's "Combat" addon restriction, which Blizzard's controller
+    -- navigation asks instead of InCombatLockdown (RestrictedActionsDocumentation.lua).
+    Namespace("C_RestrictedActions", {
+        IsAddOnRestrictionActive = function(kind)
+            return kind == 0 and (world.combatRestricted or world.inCombat) and true or false
+        end,
+    })
 
     Namespace("C_InputInterfaceStyle", {
         GetCurrentStyle = function()
@@ -1531,8 +1541,8 @@ end
 -- Addon loading
 ---------------------------------------------------------------------------
 
-local function ReadToc(dir)
-    local f = assert(io.open(dir .. "/PocketEssentials.toc", "rb"), "fakeclient: no PocketEssentials.toc in " .. dir)
+local function ReadToc(dir, name)
+    local f = assert(io.open(dir .. "/" .. name .. ".toc", "rb"), "fakeclient: no " .. name .. ".toc in " .. dir)
     local files = {}
     for line in f:lines() do
         line = line:gsub("\r$", ""):gsub("%s+$", "")
@@ -1546,22 +1556,25 @@ end
 -- variables, then fires ADDON_LOADED, PLAYER_LOGIN and PLAYER_ENTERING_WORLD as
 -- the client does at login. A file that fails to load is recorded in c.errors
 -- and the rest still load (as in the game). Returns PE.
+-- opts.addonName loads another addon the same way (its <name>.toc from
+-- opts.addonDir, saved variables <name>DB): the restriction probe's tests use it.
 function Client:loadAddon()
     if self.PE then error("fakeclient: loadAddon() was already called on this client", 2) end
     local PE = {}
     self.PE = PE
-    for _, file in ipairs(ReadToc(self.addonDir)) do
+    local addonName = self.opts.addonName or "PocketEssentials"
+    for _, file in ipairs(ReadToc(self.addonDir, addonName)) do
         local path = self.addonDir .. "/" .. file
         local chunk, err = loadfile(path)
         if not chunk then
             self._record("loading " .. file, err)
         else
             setfenv(chunk, self.env)
-            self._protect("loading " .. file, chunk, "PocketEssentials", PE)
+            self._protect("loading " .. file, chunk, addonName, PE)
         end
     end
-    if self.opts.saved ~= nil then rawset(self.env, "PocketEssentialsDB", self.opts.saved) end
-    self:fire("ADDON_LOADED", "PocketEssentials", false)
+    if self.opts.saved ~= nil then rawset(self.env, addonName .. "DB", self.opts.saved) end
+    self:fire("ADDON_LOADED", addonName, false)
     self:fire("PLAYER_LOGIN")
     self:fire("PLAYER_ENTERING_WORLD", true, false)
     return PE
