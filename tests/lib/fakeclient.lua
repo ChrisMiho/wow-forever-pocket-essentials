@@ -70,7 +70,7 @@ local function list(s) local t = {} for w in s:gmatch("%S+") do t[#t + 1] = w en
 
 local M_OBJECT = list("GetParent IsForbidden")
 local M_SCRIPT_REGION = list([[Show Hide SetShown IsShown IsVisible GetWidth GetHeight GetCenter GetTop
-    GetBottom EnableMouse EnableMouseWheel SetMouseMotionEnabled SetScript GetScript HookScript IsProtected
+    GetBottom GetLeft GetRight EnableMouse EnableMouseWheel SetMouseMotionEnabled SetScript GetScript HookScript IsProtected
     SetPoint ClearAllPoints SetAllPoints SetSize SetWidth SetHeight GetPoint GetNumPoints]])
 local M_REGION = list("GetAlpha SetAlpha GetScale SetScale GetEffectiveScale SetVertexColor CreateAnimationGroup")
 local M_TEXTURE = list("SetColorTexture SetTexture SetAtlas SetRotation")
@@ -470,6 +470,14 @@ function Client.new(opts)
     function METHODS:GetBottom()
         local _, _, _, b = Rect(self)
         return b and b / EffScale(self) or nil
+    end
+    function METHODS:GetLeft()
+        local l = Rect(self)
+        return l and l / EffScale(self) or nil
+    end
+    function METHODS:GetRight()
+        local _, r = Rect(self)
+        return r and r / EffScale(self) or nil
     end
     function METHODS:EnableMouse(v) St(self).mouse = v and true or false end
     function METHODS:EnableMouseWheel(v) St(self).wheel = v and true or false end

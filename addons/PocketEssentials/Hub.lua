@@ -2,6 +2,8 @@
 -- One round button that is always on screen. A tap opens the chat panel when
 -- the chat feature is on, otherwise the settings. Holding it for a moment
 -- always opens the settings. Also the entry in the minimap's addon list.
+-- Its spot is one of the presets below, moved by the offset saved in "Move
+-- things" (Move.lua); choosing a preset clears that offset.
 local ADDON_NAME, PE = ...
 
 -- Called by the game's addon list button on the minimap as
@@ -39,6 +41,8 @@ Hub.POSITIONS = {
     { value = "BOTTOMLEFT", label = "Lower left" },
     { value = "BOTTOMRIGHT", label = "Lower right" },
 }
+
+local MOVE_KEY = "hub" -- its name in "Move things" (Move.lua)
 
 local COLOR_RING = { 1, 0.82, 0 }
 local COLOR_FILL = { 0.07, 0.07, 0.10 }
@@ -81,16 +85,11 @@ local function UpdateBadge()
     badge:Show()
 end
 
--- Size and place the button from the current settings.
-function Hub:Refresh()
-    if not button then return end
+-- Where the button goes: anchor point on UIParent, x, y and size (UI units),
+-- from the chosen position plus the offset saved by "Move things".
+local function Placement()
     local UI = PE.UI
-    local m = UI:Metrics()
-    local size = m.hub
-    button:SetSize(size, size)
-    ring:Layout(button, size)
-    fill:Layout(button, max(size - max(UI:Px(4), 2) * 2, 1))
-
+    local size = UI:Metrics().hub
     local key = PE.db and PE.db.ui and PE.db.ui.hubPos
     local pos = POSITIONS[key] or POSITIONS.LEFT
     local margin = UI:Px(10)
@@ -98,8 +97,21 @@ function Hub:Refresh()
     local x = pos.x * margin
     local y = pos.y * height
     if pos.point == "TOP" then y = -margin end
+    local Move, dx, dy = PE.Move, 0, 0
+    if Move and Move.GetOffset then dx, dy = Move:GetOffset(MOVE_KEY) end
+    return pos.point, x + dx, y + dy, size
+end
+
+-- Size and place the button from the current settings.
+function Hub:Refresh()
+    if not button then return end
+    local UI = PE.UI
+    local point, x, y, size = Placement()
+    button:SetSize(size, size)
+    ring:Layout(button, size)
+    fill:Layout(button, max(size - max(UI:Px(4), 2) * 2, 1))
     button:ClearAllPoints()
-    button:SetPoint(pos.point, UIParent, pos.point, x, y)
+    button:SetPoint(point, UIParent, point, x, y)
     UpdateBadge()
 end
 
@@ -178,3 +190,20 @@ function Hub:SetBadge(text)
 end
 
 if PE.OnCoreLogin then PE:OnCoreLogin(Create) end
+
+-- Movable from "Move things". Always listed; the box covers the whole button.
+if PE.Move and PE.Move.Register then
+    PE.Move:Register({
+        key = MOVE_KEY,
+        label = "Round button",
+        order = 30,
+        available = function() return true end,
+        apply = function() Hub:Refresh() end,
+        outline = function(box)
+            local point, x, y, size = Placement()
+            box:ClearAllPoints()
+            box:SetPoint(point, UIParent, point, x, y)
+            box:SetSize(size, size)
+        end,
+    })
+end

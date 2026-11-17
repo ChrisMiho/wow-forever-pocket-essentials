@@ -595,6 +595,7 @@ local function InitDB()
     if not SIZES[db.ui.size] then db.ui.size = "medium" end
     if type(db.ui.hubPos) ~= "string" then db.ui.hubPos = "LEFT" end
     if type(db.ui.folded) ~= "table" then db.ui.folded = {} end
+    if type(db.ui.moved) ~= "table" then db.ui.moved = {} end -- "Move things" offsets, by piece
     db.errors = MergeErrors(db.errors)
     PE.errors = db.errors
     local dbg = db.debug
@@ -623,7 +624,7 @@ local function EnsureDB()
     -- Last resort: settings work for this session but will not be saved.
     PE.db = {
         version = 1, enabled = {}, options = {},
-        ui = { size = "medium", hubPos = "LEFT", folded = {} },
+        ui = { size = "medium", hubPos = "LEFT", folded = {}, moved = {} },
         errors = PE.errors,
     }
     for _, mod in ipairs(PE.moduleList) do pcall(AttachOptions, mod) end
@@ -1182,9 +1183,13 @@ function PE:ToggleSettings() SettingsMissing() end
 function PE:RefreshSettings() end
 
 -- Size preset and hub position, shared by the panel and /pe reset.
+-- Choosing a hub position puts the round button exactly there: the offset
+-- saved by "Move things" is cleared.
 function PE:SetUISetting(key, value)
     EnsureDB()
     self.db.ui[key] = value
+    local Move = self.Move
+    if key == "hubPos" and Move and Move.ClearOffset then self:Safe("core", Move.ClearOffset, Move, "hub") end
     local UI, Hub = self.UI, self.Hub
     if key == "size" and UI and UI.Refresh then self:Safe("core", UI.Refresh, UI, true) end
     if Hub and Hub.Refresh then self:Safe("core", Hub.Refresh, Hub) end

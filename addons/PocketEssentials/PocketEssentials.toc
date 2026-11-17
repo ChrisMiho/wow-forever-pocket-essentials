@@ -12,6 +12,7 @@
 
 Core.lua
 UI.lua
+Move.lua
 Hub.lua
 Settings.lua
 QuestData.lua

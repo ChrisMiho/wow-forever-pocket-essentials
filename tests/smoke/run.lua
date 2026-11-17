@@ -62,6 +62,7 @@ local EXPECTED_MISSING = {
 -- feature is off, because they are hidden (a hidden frame does not tick).
 local HIDDEN_ONUPDATE_OK = {
     ["QuestArrow.lua"] = "the arrow's driver frame keeps its script and is hidden while off (QuestArrow.lua OnDisable)",
+    ["Move.lua"] = "the hold driver keeps its script and is shown only while an arrow button is held (Move.lua StartHold / StopHold)",
 }
 
 -- The core's own events, registered whatever is switched on.

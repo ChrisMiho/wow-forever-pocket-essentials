@@ -641,6 +641,7 @@ local navShown = {}  -- nav panels that are shown, most recently shown last
 local navOwner       -- the panel whose bindings are armed (at most one)
 local navDown = {}   -- [key] = true while we have seen that key go down
 local navButton, navEventsReady
+local navHoldBtn     -- the button whose peHold A started, until A comes up or the press is lost
 
 local function NavList(panel)
     local ok, list = xpcall(panel.peNavGet, Handler())
@@ -667,7 +668,22 @@ local function SameRow(a, b)
     return ya ~= nil and yb ~= nil and abs(ya - yb) < UI:Metrics().button * 0.4
 end
 
+-- A held button: one with a peHold table { start = fn, stop = fn } acts on A
+-- going down (start) and coming up (stop), and is not clicked on release.
+-- The press is also lost (stop) when the highlight leaves it, when the window
+-- hides and when the keys are given back. Other buttons are not affected.
+local function NavHoldStop()
+    local btn = navHoldBtn
+    if not btn then return end
+    navHoldBtn = nil
+    navDown.A = nil -- the release that follows belongs to this press: it clicks nothing
+    local hold = btn.peHold
+    if type(hold) == "table" and type(hold.stop) == "function" then xpcall(hold.stop, Handler(), btn) end
+    if btn.pePush then pcall(ButtonUp, btn) end
+end
+
 local function NavFocus(panel, btn, index)
+    if navHoldBtn and navHoldBtn ~= btn then NavHoldStop() end
     local old = panel.peNavFocus
     if old and old ~= btn and old.SetNavFocus then old:SetNavFocus(false) end
     panel.peNavFocus, panel.peNavIndex = btn, index
@@ -711,12 +727,26 @@ local function NavActivate(panel)
     if panel:IsShown() and panel.NavRefresh then panel:NavRefresh() end
 end
 
+-- A went down on the highlighted button: start it if it is a held button.
+local function NavHoldStart(panel)
+    local btn = panel.peNavFocus
+    local hold = btn and btn.peHold
+    if type(hold) ~= "table" or type(hold.start) ~= "function" then return end
+    if not IndexOf(NavList(panel), btn) or (btn.IsEnabled and not btn:IsEnabled()) then return end
+    navHoldBtn = btn
+    if btn.pePush then pcall(ButtonDown, btn) end
+    xpcall(hold.start, Handler(), btn)
+end
+
 local function NavPress(_, key, down)
     local panel = navOwner
     if not panel or not panel:IsShown() then return end
     if down ~= false then
+        -- A again while a held button is down (a repeated press): nothing new.
+        if key == "A" and navHoldBtn then return end
         navDown[key] = true
-        if key == "UP" then NavMove(panel, -1, true)
+        if key == "A" then NavHoldStart(panel)
+        elseif key == "UP" then NavMove(panel, -1, true)
         elseif key == "DOWN" then NavMove(panel, 1, true)
         elseif key == "LEFT" then NavMove(panel, -1, false)
         elseif key == "RIGHT" then NavMove(panel, 1, false)
@@ -725,6 +755,10 @@ local function NavPress(_, key, down)
     end
     -- A and B act on release, and only if we also saw the press: a release
     -- whose press went to the game (or to a Blizzard window) is not ours.
+    if key == "A" and navHoldBtn then
+        NavHoldStop()
+        return
+    end
     local sawPress = navDown[key]
     navDown[key] = nil
     if not sawPress then return end
@@ -737,6 +771,7 @@ end
 
 -- Only call out of combat, or from PLAYER_REGEN_DISABLED (lockdown starts after it).
 local function NavDisarm(panel)
+    NavHoldStop()
     for key in pairs(navDown) do navDown[key] = nil end
     if panel.peNavArmed then
         if ClearOverrideBindings then pcall(ClearOverrideBindings, panel) end
@@ -761,6 +796,7 @@ local function NavArm(panel)
             xpcall(NavPress, Handler(), self, key, down)
         end)
     end
+    NavHoldStop()
     for key in pairs(navDown) do navDown[key] = nil end
     pcall(ClearOverrideBindings, panel)
     for key, name in pairs(NAV_KEYS) do

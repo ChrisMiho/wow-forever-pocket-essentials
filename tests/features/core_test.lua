@@ -74,7 +74,7 @@ test("core: new default options are added to old saved options without overwriti
     eq(opts.spots, 5); eq(opts.cluster, 2); eq(opts.mini, true); eq(opts.hideHaze, true)  -- defaults added
     eq(PE:GetModule("chat").opts.whispers[1].name, "Ann")
     eq(PE:GetModule("bags").opts.size, "normal", "a feature with no saved options gets its defaults")
-    eq(PE.db.ui, { size = "medium", hubPos = "LEFT", folded = {} })
+    eq(PE.db.ui, { size = "medium", hubPos = "LEFT", folded = {}, moved = {} })
 end)
 
 ---------------------------------------------------------------------------
@@ -207,9 +207,9 @@ test("core: /pe reset restores the round button position and the button size", f
     PE:SetUISetting("hubPos", "RIGHT")
     check(hub:GetWidth() ~= widthMedium, "the large size did not change the round button")
     check(hub:GetPoint(1) ~= pointMedium, "the round button did not move")
-    eq(PE.db.ui, { size = "large", hubPos = "RIGHT", folded = {} })
+    eq(PE.db.ui, { size = "large", hubPos = "RIGHT", folded = {}, moved = {} })
     c.env.SlashCmdList.POCKETESSENTIALS("reset")
-    eq(PE.db.ui, { size = "medium", hubPos = "LEFT", folded = {} })
+    eq(PE.db.ui, { size = "medium", hubPos = "LEFT", folded = {}, moved = {} })
     eq(hub:GetWidth(), widthMedium)
     eq(hub:GetPoint(1), pointMedium)
     eq(T.chatLines(c), { "Button size and round button position were reset." })

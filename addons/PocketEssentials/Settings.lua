@@ -412,6 +412,13 @@ local function BuildCoreSection(y, width)
             onClick = PE:Wrap("core", function() PE:OpenSettings("errors") end),
         },
     }
+    -- Last in the row, so the buttons before it keep their places.
+    if PE.Move and PE.Move.Open then
+        items[#items + 1] = {
+            label = "Move things",
+            onClick = PE:Wrap("core", function() PE.Move:Open() end),
+        }
+    end
     y = FlowButtons(items, x, y, innerWidth, M.button * 3)
     return y + M.pad
 end

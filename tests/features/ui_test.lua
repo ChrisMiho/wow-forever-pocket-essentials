@@ -429,4 +429,49 @@ test("fold: in a row with a fold button the d-pad goes to the fold button first,
     eq(T.labelOf(panel.peNavFocus), "ON", "the switch does not follow the fold button")
 end)
 
+-- Spec 2026-11-17-move-things, "Hold with the controller": only a button with a peHold table
+-- acts on A going down; every other button still clicks once, on A's release.
+test("nav: an ordinary settings button does nothing on A down and clicks once on A up", function()
+    local c, PE = T.new({})
+    openSettings(c, PE)
+    local panel, nav = settingsPanel(c), rawget(c.env, NAV_NAME)
+    local sw = switchOfRow(c, rowIndexOf(c, PE, "bags"))
+    check(sw.peHold == nil, "a settings button has a hold hook")
+    local clicks = 0
+    local original = sw:GetScript("OnClick")
+    sw:SetScript("OnClick", function(...) clicks = clicks + 1; return original(...) end)
+    dpadTo(c, sw)
+    c:script(nav, "OnClick", "A", true)
+    c:advance(1)
+    eq(clicks, 0, "A down clicked")
+    check(not PE:IsModuleEnabled("bags"), "A down switched the feature")
+    c:script(nav, "OnClick", "A", false)
+    eq(clicks, 1, "A up did not click exactly once")
+    check(PE:IsModuleEnabled("bags"), "A up did not switch the feature")
+    c:advance(0.5)
+    c:assertClean("nav ordinary")
+end)
+
+-- The same hook in UI.lua on any panel: start on A down, stop on A up, no click on release.
+test("nav: a button with peHold gets start on A down and stop on A up, and no click", function()
+    local c, PE = T.new({})
+    openSettings(c, PE)
+    local panel, nav = settingsPanel(c), rawget(c.env, NAV_NAME)
+    local sw = switchOfRow(c, rowIndexOf(c, PE, "bags"))
+    local log = {}
+    sw.peHold = { start = function() log[#log + 1] = "start" end, stop = function() log[#log + 1] = "stop" end }
+    dpadTo(c, sw)
+    c:script(nav, "OnClick", "A", true)
+    eq(log, { "start" })
+    c:script(nav, "OnClick", "A", false)
+    eq(log, { "start", "stop" })
+    check(not PE:IsModuleEnabled("bags"), "the release clicked a hold button")
+    -- The press is lost when the window hides.
+    c:script(nav, "OnClick", "A", true)
+    PE:CloseSettings()
+    eq(log, { "start", "stop", "start", "stop" })
+    sw.peHold = nil
+    c:assertClean("nav hold hook")
+end)
+
 return { known = KNOWN_FAILURES }
