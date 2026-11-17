@@ -4,6 +4,34 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-11-17
+
+Thirteenth test build: the arrow can now point at a quest in another zone,
+and the Layout helper is gone. Not yet tested on a device.
+
+### Added
+
+- Quest arrow: a new choice, **"Quest in another zone"**.
+  - **Name the zone** (the default) is what you have today: "Outside this
+    zone / Head to Duskwood".
+  - **Point the way** shows a **light blue** arrow pointing straight at the
+    quest's nearest spot in the other zone, with the distance, and
+    "Duskwood - Morbent Fel" under it. When you enter the zone the arrow
+    turns gold and works as before.
+  - It is a straight line, not a route: it knows nothing about roads, boats
+    or mountains. The colour and the zone name are there to say so.
+  - It only points within the same continent. For another continent, or a
+    zone the game cannot place, the text stays as it is today.
+  - Changing the choice takes effect at once.
+
+### Removed
+
+- **Layout helper.** It was written before the first device test and never
+  tried in the game, and the game already switches to its Gamepad layout by
+  itself. Placing things without dragging is what "Move things" does. If you
+  had it switched on, nothing happens: the row is simply gone, and your
+  game's layout is left as it is.
+
 ## [0.2.1] - 2026-11-17
 
 Twelfth test build, from the debug log of the 0.1.0 play test (two sessions,

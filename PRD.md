@@ -105,6 +105,10 @@ Chatting is hard on a handheld because targets are too small to tap.
   addons no safe way to add one; see `docs/DECISIONS.md`).
 - Icons for quests not yet picked up (dropped 2026-11-15: the addon stays
   focused on quests you have accepted).
+- Switching the game's Edit Mode layouts, and a bundled handheld layout
+  (dropped 2026-11-17 with the Layout helper, 0.3.0: never tested, the game
+  switches to its Gamepad layout by itself, and "Move things" places our own
+  pieces).
 
 ## What would make this a failure
 
@@ -222,12 +226,11 @@ until its step in the test plan passes.
 | Settings window | Own window with one row per feature and a big on/off switch each; big buttons for each feature's choices; an Errors page; a "Reload UI" button at the bottom; the "Icon key" page, opened from the "Quest icons" block since 0.1.0; each feature's options fold away with "Hide options" (0.1.0, remembered); works by touch and (if the game allows it) by d-pad / A / B. Opens from the round button, the game's addon list button on the minimap, or `/pe` | Works on the device; folding and the moved Icon key button (0.1.0) untested |
 | Round "PE" button | Always on screen, left edge by default, position chosen from six preset spots. Opens settings; opens the chat picker instead when the chat feature is on. Holding it for half a second always opens settings. Smooth round art since 0.0.2 | Works (0.0.1); new art untested |
 | Quest icons | Objective icons on map and minimap from QuestieDB data, blue haze hidden. "Show icons for": Tracked quests (default; the quest tracker's quests plus the focused one), Focused quest, All quests. "Spots per objective" (All / 10 / 5 / 3, default 5; 0.0.6) limits icons per objective. Tapping an icon shows its text only | 0.0.1 ran without errors; too many icons and minimap haze fixed in 0.0.2; the spots limit is new in 0.0.6; all untested |
-| Quest arrow | On-screen arrow to the focused quest's nearest objective in the current zone, with distance and quest name. "Outside this zone / Head to <zone>" when elsewhere, "No quest focused" with none, "Turn around" when the objective is behind you. Pointed arrow art since 0.0.2. Since 0.0.6 the spot it points at always keeps its icon, even beyond the spots limit. Since 0.1.0 it keeps its spot across quest-log changes, needs a clearly nearer spot before it swaps, and leaves a spot it has reached alone for three minutes | Worked on the device with and without a focused quest (0.0.9); the 0.1.0 changes are untested |
+| Quest arrow | On-screen arrow to the focused quest's nearest objective in the current zone, with distance and quest name. "Outside this zone / Head to <zone>" when elsewhere, "No quest focused" with none, "Turn around" when the objective is behind you. Pointed arrow art since 0.0.2. Since 0.0.6 the spot it points at always keeps its icon, even beyond the spots limit. Since 0.1.0 it keeps its spot across quest-log changes, needs a clearly nearer spot before it swaps, and leaves a spot it has reached alone for three minutes | Worked on the device with and without a focused quest (0.0.9); the 0.1.0 changes worked in the 0.1.0 log. Since 0.3.0 a choice, "Quest in another zone": name the zone (default) or point straight at the quest's nearest spot there with a light blue arrow, same continent only (untested) |
 | Bag sorter (was "One big bag") | Blizzard's own combined bag, a big Sort tab, a stick click sorts while the bag is open (left stick, right stick, or no stick: "Sort key", 0.1.0), three bag sizes | Sort tab and left-stick sort worked on the device (0.0.9); the Sort key choice is untested |
 | Sell junk automatically | Sells every grey item at vendors | Worked on the device (0.0.9) |
 | Repair automatically | Repairs from your own money at vendors that can | Worked on the device (0.0.9) |
 | Big chat buttons | Picker with one big button per channel plus the last six whisperers; badge on the round button for unanswered whispers. With the Gamepad UI on (0.0.9) a tap sets where the chat goes and the player opens chat with the game's own button; with it off the tap opens the chat box | Say and Guild through "Press A to type" worked on the device (0.0.9); a whisper is untried. 0.1.0 adds the on-screen "Press A to type" prompt and "Chat text size" (Smaller / Bigger, the game's own setting); both untested |
-| Layout helper (experimental) | One-tap switch to Blizzard's Gamepad layout and back; a dormant path to install a ready-made handheld layout. **No nudge arrows** (see `docs/DECISIONS.md`) | Untested |
 | QuestieDB | Official Questie data addon, Forever build 1.1.1, shipped unmodified. Only the two quest features need it | Untested |
 | Move things (0.2.0) | A small panel, opened from the settings' bottom row, that nudges the quest arrow, the "Press A to type" text and the round button with Up / Down / Left / Right buttons (press = 2 pixels, hold = repeat and speed up), by touch or d-pad / A / B. Saved as an offset from each piece's preset. Does not use the game's Edit Mode | Untested |
 | `scripts/build.sh` | Downloads QuestieDB (pinned checksum), checks the addon's file list, writes `dist/wow-forever-pocket-essentials.zip` (GitHub bundle) and `dist/PocketEssentials-<version>.zip` (CurseForge, addon only) | Runs on the Mac |
@@ -242,7 +245,7 @@ that say "Not needed" are skipped.
 |---|---|---|
 | 1. Icons on the world map and minimap for kill, loot, interact and turn-in objectives | `QuestIcons.lua` `RefreshWorldMap`, `UpdateMinimap`, `RebuildFilter`; `QuestData.lua` `KIND_LABEL` | Yes: kill, loot, interact and turn-in each get their own icon on both the map and the minimap; "Explore" objectives get a fifth kind. Shown for the tracked quests by default. Since 0.0.6 each objective shows at most "Spots per objective" icons (5 by default) per zone, spread over its area; the rest are hidden, not deleted (untested) |
 | 1. Hide Blizzard's blue "haze" areas | `QuestIcons.lua` `SetWorldMapHaze`, `ZeroMinimapBlobs`, `ReapplyMinimapHaze` | Yes: hidden on the world map and the minimap (minimap re-hidden after loading screens and zone changes since 0.0.2); switching it off restores the map at once, but the minimap needs a reload |
-| 1. An arrow that points toward the current objective | `QuestArrow.lua` `Select`, `DrawArrow`, `Update`; `QuestData.lua` `GetTrackedQuest` | Partial: follows the quest you focus in the quest log; points only at objectives in the zone you are standing in; for a quest elsewhere it says "Outside this zone" and names the zone (see `docs/DECISIONS.md`) |
+| 1. An arrow that points toward the current objective | `QuestArrow.lua` `Select`, `DrawArrow`, `Update`; `QuestData.lua` `GetTrackedQuest` | Partial: follows the quest you focus in the quest log; points only at objectives in the zone you are standing in; for a quest elsewhere it says "Outside this zone" and names the zone, or, with "Quest in another zone" set to "Point the way" (0.3.0, untested, off by default), points at it in a straight line on the same continent (see `docs/DECISIONS.md`) |
 | 2. One combined bag window instead of separate bags | `Bags.lua` `WantCombined`, `Setup` | Yes: uses Blizzard's own combined bag; with the Gamepad UI off, switching it on needs a reload |
 | 2. A way to sort it | `Bags.lua` `DoSort`, `CreateButtons` | Yes: a big Sort tab, plus a stick click while the bag is open (left, right or none, "Sort key") |
 | 3. Automatically sell junk (grey items) at a vendor | `Vendor.lua` `ScanJunk`, `SellStep` | Yes: sells every grey item worth money, except in bags you marked to ignore; no cap per visit |
@@ -252,8 +255,7 @@ that say "Not needed" are skipped.
 | 4. Private messages as a short list of big name buttons, most recent first | `Chat.lua` `Touch`, `GatherTargets`, `DoRefresh` | Yes: the last six whisperers, newest first. Battle.net whispers are not listed |
 | 4. Tapping a channel or name opens the chat box set to that target | `Chat.lua` `TargetClicked`, `OpenChatTo` | Yes |
 | 4. The icon shows when there is an unanswered whisper | `Chat.lua` `UpdateBadge`, `OnWhisper`; `Hub.lua` `SetBadge` | Yes: a badge on the round button, plus a "Clear marks" button |
-| 5. A way to arrange the interface that does not depend on fiddly touch dragging | `Layout.lua` `DoGamepad`, `DoBack`, `DoInstall` | Partial: one-tap switch to Blizzard's Gamepad layout and back. No nudge arrows (not safe, see `docs/DECISIONS.md`) and no ready-made handheld layout is bundled yet |
-| 5. (same goal) Our own on-screen pieces | `Move.lua` `Open`, `Register`, `GetOffset`; each piece's layout | Yes (0.2.0, untested): the "Move things" panel moves the quest arrow, the chat prompt and the round button with big buttons or the d-pad, no dragging |
+| 5. A way to arrange the interface that does not depend on fiddly touch dragging | `Move.lua` `Open`, `Register`, `GetOffset`; each piece's layout | Yes (0.2.0, untested): the "Move things" panel moves the quest arrow, the chat prompt and the round button with big buttons or the d-pad, no dragging |
 | 6. One touch-friendly place to turn each feature on or off, no typed commands | `Settings.lua` `PE:OpenSettings`, `BuildModuleRow`; `Hub.lua` `OnClick` | Yes: one row and big switch per feature, opened from the round button |
 
 Defaults: every feature is off so players can switch them on one at a time.
@@ -271,7 +273,8 @@ Rules 1 and 2 apply: one phase at a time, one item at a time.
    the icon key, the Reload UI button, and 0.0.5's two arrow-text changes
    (`docs/TESTING.md` steps 1 to 3). Then the features that have never run in
    the game, one step at a time: bags (step 4), sell junk (5), repair (6),
-   chat (7), layout helper (8), and the wrap-up (9).
+   chat (7), and the wrap-up (9). (Step 8, the layout helper, was removed in
+   0.3.0.)
 2. **Performance and user-experience polish.** Fix what the tests show, and
    flip each feature's default to on once it passes.
 3. **First CurseForge upload.** Use `curseforge/FIELDS.md`.
@@ -402,6 +405,17 @@ piece of log noise found: "stick click given back to the game" is written at
 the start of every fight even when no stick was taken (fixed in 0.2.1, which
 changes the log only).
 
+**0.3.0 (2026-11-17, untested), built while the owner was away** at their
+instruction (spec `docs/superpowers/specs/2026-11-17-arrow-other-zones-and-layout-removal.md`):
+- The Layout helper is removed (the owner asked for it to go if it was out of
+  scope; it was never tested and "Move things" replaced its purpose).
+- The quest arrow can point into another zone: "Quest in another zone" >
+  "Point the way", off by default. A light blue arrow, a straight line, same
+  continent only. The device test must show the direction is right
+  (`docs/TESTING.md` step 12) before it becomes the default.
+
+Next: device test of 0.2.0 (Move things) and 0.3.0 with the debug log on.
+
 Upcoming from the fourth device test (2026-11-16), one at a time:
 - Bags: reach the Sort tab with the d-pad (Blizzard's controller navigation
   has helpers for addon buttons; needs a device test that item use is never
@@ -419,13 +433,9 @@ Open questions from the device tests (not yet known to be ours):
 
 Everything still to be built, in rough order of how much it is wanted.
 
-- The quest arrow across zones (removed after review because it could show a
-  confidently wrong direction). **Wanted by the maintainer (2026-11-15)**; until
-  then the arrow says "Outside this zone" and names the zone. Next step when picked up: study how open-source
-  addons route an arrow across zones (Questie, GPL-3.0 like us; TomTom) and
-  spec a lightweight version of our own, crediting any borrowed code.
-- UI arrangement: a bundled handheld layout (needs one exported from the
-  device first; see `docs/TESTING.md` step 9). Revisit in roadmap phase 2.
+- Routes for the quest arrow (roads, boats, flight paths) and pointing at
+  another continent. Not planned: 0.3.0 points in a straight line within the
+  continent, and only if the owner's device test shows the direction is right.
 - A solid background for the quest log's pop-up menu (2026-11-15): the menu on
   a quest (Track, Focus, Share, Abandon) is drawn with no background and is
   hard to read (second device test, finding 4). Confirmed to be the default

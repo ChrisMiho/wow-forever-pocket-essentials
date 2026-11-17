@@ -421,25 +421,12 @@ and `QuestieDB` sit side by side.
   game blocked Pocket Essentials from using …" in chat and note what you had
   just tapped. Screenshot it and Settings > Errors.
 
-### 8. Layout (experimental)
-- Switch on **Layout helper**. Read the status under the row: it names the
-  layout in use and says "No handheld layout saved yet".
-- With "Enable Gamepad UI" on in the game's settings, tap "Use Blizzard's
-  Gamepad layout", then "Reload now". The screen should rearrange to
-  Blizzard's gamepad arrangement. "Go back to my previous layout" (then
-  reload) should undo it.
-- Report: did it switch; did Go back work; any blocked message afterwards in
-  combat; whether the game had already switched layouts by itself when the
-  Gamepad UI was turned on (in which case this button adds little).
+### 8. Layout (removed)
+The Layout helper was removed in 0.3.0 (never tested, and "Move things" does
+the placing). Nothing to test; the number is kept so later steps keep theirs.
 
 ### 9. After all of the above
 - Flip the default to on for each feature that passed.
-- **Export a handheld layout** so it can be bundled: open Edit Mode in the
-  control style you play in, arrange and Save under a name, open the Layout
-  drop-down, choose Share → Copy To Clipboard, paste the long line into a
-  note outside the game and send it. (Button names are from the retail game
-  and may differ slightly; whether Android receives the game's clipboard is
-  untested.) It goes into `Layout.lua` at `BUNDLED_LAYOUT`.
 - Decide which of QuestieDB's two identical data files the client loads and
   drop the other (`QUESTIEDB_TOC=Forever scripts/build.sh` or `Camelot`
   builds with one), halving the zip.
@@ -516,3 +503,28 @@ Debug log on first; save and send the file afterwards, as in step 10.
 11. Start a fight with the panel open: it closes. During a fight, **Move
     things** says it cannot open.
 12. Report each step yes / no with notes, anything odd, and the saved file.
+
+### 12. Version 0.3.0: the arrow into other zones; Layout helper gone
+
+Debug log on first; save and send the file afterwards, as in step 10.
+
+1. Log in. The settings no longer have a **Layout helper** row, and nothing
+   complains in chat about it.
+2. Focus a quest whose places are all in a neighbouring zone. The arrow's
+   place still reads "Outside this zone / Head to <zone>", as before.
+3. Settings > Quest arrow > **Quest in another zone**: choose **Point the
+   way**. At once a **light blue** arrow shows, with a distance in yards and
+   "<zone> - <quest name>" under it.
+4. Check the direction. Open the world map, note which way the quest's zone
+   lies from you (up is north), close the map and face north (the minimap's
+   arrow points up). The blue arrow should point the same way as on the map.
+   Turn in a full circle: it should keep pointing at the same place, and say
+   "Turn around" when the place is behind you.
+5. Travel there. The distance should fall. On entering the zone the arrow
+   turns gold, the zone name goes from the text, and it behaves as before
+   (including "Here" at the spot).
+6. Focus a quest on the other continent: text only ("Outside this zone").
+7. Choose **Name the zone** again: the text comes back at once.
+8. Report each step yes / no with notes. Step 4 is the one that matters most:
+   if the arrow pointed the wrong way, say which way it pointed and which way
+   the zone really was, and leave the choice on "Name the zone".

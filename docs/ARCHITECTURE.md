@@ -21,7 +21,6 @@ addons/PocketEssentials/
   Bags.lua        feature: bag sorter (key `bags`; called "One big bag" before 0.1.0)
   Vendor.lua      features: sell junk, repair (two switches)
   Chat.lua        feature: big chat buttons
-  Layout.lua      feature: layout helper (experimental)
   Icons/          three icon images from pfQuest/Shagu with their MIT notice,
                   plus our own arrow and circle (scripts/make_art.py --icons)
 
@@ -144,12 +143,10 @@ so that being wrong cannot raise an error; the worst case is listed.
 | `GetChannelList`, `IsInGroup`, `IsInRaid` (source use only) | Chat | A channel button missing from the picker |
 | Whether values set on the chat box by an addon stay "clean" for the game's secure commands. By the source, attributes (`SetChatType`, `SetTellTarget`, `SetChannelTarget`) carry no taint, but `ChatFrameUtil.OpenChat` called by an addon writes `ACTIVE_CHAT_EDIT_BOX` / `LAST_ACTIVE_CHAT_EDIT_BOX` tainted, and with the Gamepad UI on the chat frame's controller prompts are then set up by tainted code (`FloatingChatFrame.lua` `FocusGamepad`) | Chat | A typed `/cast` or `/target` right after using the picker is refused, or a controller focus change in combat is blocked and blamed on us, until a reload. If the device shows this: stop calling `OpenChat`, only set the box's target and let the player open chat |
 | Blizzard's controller navigation hooks `CreateFrame` (`Blizzard_GamepadSmartNavigation/SmartNavigation.lua:260`); a frame of ours created in combat under a Blizzard panel that has controller focus makes it print "Interface action failed" | Quest icons (map icons are created as needed under the world map) | The chat message once, in combat with the map open; the blocked-action report names our line |
-| Whether `C_EditMode.SetActiveLayout` / `OnLayoutAdded` called by an addon "taints" Edit Mode | Layout | Possible "action blocked" in combat until reload; the panel asks for a reload after every switch for this reason |
-| `Enum.EditModePresetLayoutsMeta.NumValues`; English text of the "Enable Gamepad UI" setting | Layout | A status line reads slightly differently |
-| Blizzard forces the Modern layout whenever the Gamepad UI is switched off (`Blizzard_Gamepad/Core.lua:102-106`: the gamepad shutdown handler calls `C_EditMode.SetActiveLayout` with Modern) | Layout | "Go back to my previous layout" can be undone by the game when the Gamepad UI is turned off |
 | `SetChatWindowSize` (called inside the game's `FCF_SetChatWindowFontSize`, no source to read): whether sizes above the game's own list (30, 34) are kept across a reload, and whether a chat window that is not in use accepts a size | Chat text size | The size falls back after a reload, or one window keeps its old size (each window's call is guarded on its own) |
 | Whether calling `FCF_SetChatWindowFontSize` from addon code with the Gamepad UI on has an after-effect. By the source it only sets fonts and saves the size: no protected call, no edit box. Applied only out of a fight | Chat text size | A block report in the next debug log names it |
 | `NUM_CHAT_WINDOWS` (defined in `Blizzard_DeprecatedChatInfo`, which this client may not load) | Chat text size | None: falls back to 10 windows |
+| Whether `C_Map.GetWorldPosFromMapPos` gives a straight-line conversion on every zone map of this client (documented; the addon checks each map's result against the map's size and refuses a map that does not fit) | Quest arrow, "Quest in another zone" set to "Point the way" | The light blue arrow points the wrong way into another zone. The choice is off by default; switched off, the zone is named as before |
 | `PADRSTICK` taken as an override binding while the bag is open (the key name is in `GamepadConstants.lua`; only `PADLSTICK` has run on the device) | Bag sorter, "Right stick click" | The right stick keeps its normal job; the Sort tab still works |
 | `date("%H:%M:%S", time)` with a time argument (Blizzard's source only shows `date("*t", time)`; it is standard Lua) | Debug log time stamps | The stamp falls back to the old form (seconds and milliseconds from two clocks); guarded so a log line can never raise an error |
 | Whether the controller's A release always reaches our navigation button during a long hold, whether A repeats while held, and whether a finger sliding off a button still sends its release | Move things, hold to repeat | A hold keeps moving until the 8-second stop or the screen edge (if the game also repeats A while it is held, until the button is let go or the edge); a single press still nudges |
@@ -206,6 +203,8 @@ removes a row from the table above: those are still unconfirmed.
   `OnLayoutAdded`, `ConvertStringToLayoutInfo` exist with no protected flag.
   Layouts carry an `interfaceStyle`; a layout of the other style cannot be
   chosen. Five saved layouts per type at most.
+  The addon has not used Edit Mode since 0.3.0 (the Layout helper was
+  removed); only the restriction probe still tries a layout switch.
 - QuestieDB has an official Forever build:
   <https://github.com/Questie/QuestieDB/releases>. Version 1.1.1 is the
   version we ship (Forever zip SHA-256

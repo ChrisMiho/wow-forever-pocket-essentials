@@ -106,7 +106,7 @@ safer option. Any of them can be reversed.
   typing a slash command into it, which writes less into the game's chat
   code.
 
-**Layout**
+**Layout** (the Layout helper was removed in 0.3.0; kept for the record)
 - No nudge helper (see "left out").
 - The Gamepad layout button refuses unless "Enable Gamepad UI" is on,
   because that layout hides the normal action bars otherwise.
@@ -131,6 +131,31 @@ Made without the owner:
 - The icon key includes Explore.
 - "Icon key" and "Reload UI" sit in the bottom section next to "Errors".
 
+## Batch of 2026-11-17 (0.3.0)
+
+Asked for by the owner: remove the Layout helper ("the controller schema
+thing") if it is out of scope, and keep building lightweight features while
+they are away.
+
+Made without the owner:
+- The Layout helper counts as out of scope: never tested, the game switches
+  to its Gamepad layout by itself, and "Move things" covers placing our own
+  pieces. The bundled handheld layout goes with it (now a non-goal).
+- Saved leftovers of the Layout helper are ignored, not cleaned.
+- The next feature is the arrow into other zones (top of "Parked ideas",
+  marked wanted by the owner).
+- It is a choice, "Quest in another zone", and starts on "Name the zone"
+  (today's text), because the direction has not been checked on the device.
+- Straight line only, same continent only. No routes, boats or flight paths.
+- A light blue arrow, and the zone's name in front of the quest's, so it
+  cannot be mistaken for the ordinary gold arrow.
+- No "Here" and no setting aside for a spot in another zone.
+- A map is only used when the game's conversion fits the map's known size
+  within 5 %; otherwise the text stays. This is the guard against the
+  confidently wrong arrow that got the first version removed.
+- The test stand-in keeps four Edit Mode names for the restriction probe's
+  tests; they are checked against the probe's file in the API audit.
+
 ## What was left out, and why
 
 - **Edit Mode nudge helper: not shipped, and why.** We wanted big on-screen
@@ -150,7 +175,8 @@ Made without the owner:
   Grid and Snap tick boxes. If a keyboard with arrow keys is available (or
   the d-pad can be mapped to arrow keys outside the game), the game's own
   nudge works: tap an item, then arrows move it 1 step and Shift+arrows 10.
-- **A ready-made handheld layout.** The code to install one exists, but no
+- **A ready-made handheld layout.** (Dropped with the Layout helper in 0.3.0;
+  now a non-goal.) The code to install one existed, but no
   layout is bundled: the player has to arrange the screen on the device and
   export it first (steps in `docs/TESTING.md`, step 9). Until then the panel says
   "No handheld layout saved yet".
@@ -184,7 +210,8 @@ Made without the owner:
   owner on 2026-11-15 to keep the addon focused on accepted quests. The hard
   part would have been correctness (quest chains, reputation and profession
   quests), not speed.
-- **Arrow across zones.** The arrow only points at objectives in the zone you
+- **Arrow across zones.** (Built in 0.3.0 as a choice that is off by default;
+  see "Batch of 2026-11-17 (0.3.0)".) The arrow only points at objectives in the zone you
   are in. If the focused quest is elsewhere it says "Outside this zone"
   rather than guessing a direction. Pointing across zone borders was written,
   then removed after review because it could show a confidently wrong arrow.
