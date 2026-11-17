@@ -584,6 +584,118 @@ test("move: the debug log has the lines of the spec, one per press, never per re
     })
 end)
 
+-- Fix round 1: a hold that Move.lua stops on its own must not leave the
+-- navigation waiting for a release that never comes.
+test("move: after the 8-second stop with no A release, a fresh A press nudges once", function()
+    local c, PE = T.new({})
+    PE:SetUISetting("hubPos", "TOP")
+    openMove(c, PE)
+    local panel = movePanel(c)
+    dpadTo(c, panel, button(c, "Down"))
+    c:script(nav(c), "OnClick", "A", true)
+    c:advance(9) -- the release never arrives
+    local at = savedHub(PE).y
+    c:script(nav(c), "OnClick", "A", true)
+    eq(savedHub(PE).y, at - 2, "the next A down was swallowed")
+    c:script(nav(c), "OnClick", "A", false)
+    eq(savedHub(PE).y, at - 2, "the next A up nudged again")
+    c:advance(1)
+    eq(savedHub(PE).y, at - 2, "the fresh press kept moving after release")
+    check(panel:IsShown(), "the panel closed")
+    c:assertClean("after safety stop")
+end)
+
+test("move: after a controller hold stops at the screen edge, a fresh A press works", function()
+    local c, PE = T.new({})
+    openMove(c, PE)
+    local panel = movePanel(c)
+    dpadTo(c, panel, button(c, "Left"))
+    c:script(nav(c), "OnClick", "A", true)
+    c:advance(2) -- reaches the edge and stops, A still down
+    eq(savedHub(PE), { x = -10, y = 0 })
+    -- A late release of that press clicks nothing.
+    c:script(nav(c), "OnClick", "A", false)
+    eq(savedHub(PE), { x = -10, y = 0 })
+    check(panel:IsShown(), "the late release closed the panel")
+    dpadTo(c, panel, button(c, "Right"))
+    c:script(nav(c), "OnClick", "A", true)
+    c:script(nav(c), "OnClick", "A", false)
+    eq(savedHub(PE), { x = -8, y = 0 }, "the fresh press did not nudge once")
+    c:assertClean("after edge stop")
+end)
+
+test("move: a first step refused at the edge leaves no hold behind", function()
+    local c, PE = T.new({ saved = { version = 1, enabled = {}, options = {}, ui = { size = "medium", hubPos = "LEFT", moved = { hub = { x = -10, y = 0 } } }, errors = {} } })
+    openMove(c, PE)
+    local left = button(c, "Left")
+    c:script(left, "OnMouseDown", "LeftButton")
+    c.stats.addonOnUpdate = 0
+    c:advance(1)
+    eq(c.stats.addonOnUpdate, 0, "the driver runs for a refused press")
+    c:script(left, "OnMouseUp", "LeftButton")
+    c:script(left, "OnClick", "LeftButton", false)
+    eq(savedHub(PE), { x = -10, y = 0 })
+    -- The controller: A down on Left is refused; the release and a fresh press behave.
+    local panel = movePanel(c)
+    dpadTo(c, panel, left)
+    c:script(nav(c), "OnClick", "A", true)
+    c:script(nav(c), "OnClick", "A", false)
+    dpadTo(c, panel, button(c, "Right"))
+    c:script(nav(c), "OnClick", "A", true)
+    c:script(nav(c), "OnClick", "A", false)
+    eq(savedHub(PE), { x = -8, y = 0 })
+    c:assertClean("refused first step")
+end)
+
+test("move: a piece whose outline fails cannot be moved, with one debug line", function()
+    for _, kind in ipairs({ "error", "no position" }) do
+        local c, PE = T.new({})
+        PE:SetDebug(true)
+        local applied = 0
+        PE.Move:Register({ key = "broken", label = "Broken piece", order = 1,
+            apply = function() applied = applied + 1 end,
+            outline = function(box)
+                if kind == "error" then error("outline broke") end
+                box:ClearAllPoints()
+                box:SetSize(20, 20)
+            end })
+        openMove(c, PE)
+        check(button(c, "Broken piece").peSelected, "the broken piece is not selected")
+        c:click(button(c, "Right"))
+        c:script(button(c, "Up"), "OnMouseDown", "LeftButton")
+        c:advance(1)
+        c:script(button(c, "Up"), "OnMouseUp", "LeftButton")
+        eq(PE.db.ui.moved.broken, nil, kind .. ": a step was taken")
+        eq(applied, 0, kind .. ": apply() was called")
+        local n = 0
+        for _, line in ipairs(debugLines(c, "move")) do
+            if line == "broken could not be checked against the screen edge" then n = n + 1 end
+        end
+        eq(n, 2, kind .. ": not one debug line per press")
+    end
+end)
+
+test("move: a fight starting during a controller hold stops it and closes the panel", function()
+    local c, PE = T.new({})
+    openMove(c, PE)
+    local panel = movePanel(c)
+    dpadTo(c, panel, button(c, "Right"))
+    c:script(nav(c), "OnClick", "A", true)
+    c:advance(0.6)
+    c:enterCombat()
+    check(not panel:IsShown(), "the panel stayed open in the fight")
+    local stopped = savedHub(PE).x
+    check(stopped > 2, "the hold did not move before the fight")
+    c:advance(2)
+    eq(savedHub(PE).x, stopped, "it kept moving in the fight")
+    c:script(nav(c), "OnClick", "A", false)
+    eq(savedHub(PE).x, stopped)
+    c.stats.addonOnUpdate = 0
+    c:advance(1)
+    eq(c.stats.addonOnUpdate, 0, "the driver ticks in the fight")
+    c:assertClean("fight during A hold")
+end)
+
 test("move: the Close button closes the panel", function()
     local c, PE = T.new({})
     PE:SetDebug(true)

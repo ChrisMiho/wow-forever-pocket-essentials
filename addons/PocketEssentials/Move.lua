@@ -60,7 +60,7 @@ local closeWhy
 local holding = false
 local holdDX, holdDY = 0, 0
 local held, nextAt = 0, 0
-local pressMoved, edgeLogged = false, false
+local pressMoved, edgeLogged, checkLogged = false, false, false
 
 local function Debug(text)
     if PE.debugOn then PE:Debug("move", text) end
@@ -248,14 +248,27 @@ local function Step(pixels)
     if not piece then return false end
     local key = piece.key
     local ox, oy = ReadPixels(key)
+    local moved = MovedTable(false)
+    local hadEntry = moved and moved[key] ~= nil
     local before = Overflow() or 0
     WritePixels(key, min(max(ox + holdDX * pixels, -LIMIT), LIMIT), min(max(oy + holdDY * pixels, -LIMIT), LIMIT))
-    PlaceOutline()
-    local after = Overflow()
+    local placed = PlaceOutline()
+    local after = placed and Overflow()
+    if not after then
+        -- The box could not be placed, so the step cannot be checked
+        -- against the screen edge: not taken.
+        if hadEntry then WritePixels(key, ox, oy) else MovedTable(true)[key] = nil end
+        PlaceOutline()
+        if not checkLogged then
+            checkLogged = true
+            Debug(key .. " could not be checked against the screen edge")
+        end
+        return false
+    end
     -- Off the screen: not taken, unless it brings back a piece that was
     -- already partly off (after a change of screen size).
-    if after and after > TINY and after >= before - TINY then
-        WritePixels(key, ox, oy)
+    if after > TINY and after >= before - TINY then
+        if hadEntry then WritePixels(key, ox, oy) else MovedTable(true)[key] = nil end
         PlaceOutline()
         if not edgeLogged then
             edgeLogged = true
@@ -270,10 +283,13 @@ local function Step(pixels)
     return true
 end
 
-local function StopHold(why)
+-- byItself: the hold ended here, not by a release (the 8-second stop, the
+-- screen edge): the controller navigation forgets its press too.
+local function StopHold(why, byItself)
     if not holding then return end
     holding = false
     if driver then driver:Hide() end
+    if byItself and UI and UI.NavHoldEnded then UI:NavHoldEnded() end
     if why == "safety" then Debug("hold stopped after 8 s") end
     if pressMoved and selected then
         local x, y = ReadPixels(selected.key)
@@ -286,10 +302,12 @@ local function StartHold(dx, dy)
     if not (panel and panel:IsShown() and selected) then return end
     holdDX, holdDY = dx, dy
     held, nextAt = 0, HOLD_DELAY
-    pressMoved, edgeLogged = false, false
+    pressMoved, edgeLogged, checkLogged = false, false, false
     holding = true
     if Step(STEP) then
         driver:Show()
+    else
+        StopHold(nil, true) -- refused at once: no hold is left behind
     end
 end
 
@@ -300,7 +318,7 @@ local function DriverUpdate(_, elapsed)
     end
     held = held + (type(elapsed) == "number" and elapsed or 0)
     if held + TINY >= SAFETY_STOP then
-        StopHold("safety")
+        StopHold("safety", true)
         return
     end
     -- At most a few steps in one frame, so a long stall does not jump.
@@ -309,7 +327,7 @@ local function DriverUpdate(_, elapsed)
         steps = steps + 1
         nextAt = nextAt + REPEAT
         if not Step(held + TINY >= BIG_AFTER and BIG_STEP or STEP) then
-            StopHold()
+            StopHold(nil, true)
             return
         end
     end

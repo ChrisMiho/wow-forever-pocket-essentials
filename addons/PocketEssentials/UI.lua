@@ -682,6 +682,17 @@ local function NavHoldStop()
     if btn.pePush then pcall(ButtonUp, btn) end
 end
 
+-- For a held button's owner that stopped the hold by itself (a safety stop,
+-- the screen edge): forget the press, so the next A press is a fresh one and
+-- a late release of this one clicks nothing. stop is not called again.
+function UI:NavHoldEnded()
+    local btn = navHoldBtn
+    if not btn then return end
+    navHoldBtn = nil
+    navDown.A = nil
+    if btn.pePush then pcall(ButtonUp, btn) end
+end
+
 local function NavFocus(panel, btn, index)
     if navHoldBtn and navHoldBtn ~= btn then NavHoldStop() end
     local old = panel.peNavFocus
