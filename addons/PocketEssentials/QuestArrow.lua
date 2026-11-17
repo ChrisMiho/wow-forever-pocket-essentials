@@ -503,6 +503,8 @@ end
 local function Paint(look)
     S.painted = look
     local c = (look == "here" and COLOR_HERE) or (look == "far" and COLOR_FAR) or COLOR_ARROW
+    -- "Turn around" takes the same colour, so another zone still reads as light blue.
+    if S.turnText and look ~= "here" then S.turnText:SetTextColor(c[1], c[2], c[3], 1) end
     if S.arrow then
         S.arrow:SetVertexColor(c[1], c[2], c[3], 1)
         return

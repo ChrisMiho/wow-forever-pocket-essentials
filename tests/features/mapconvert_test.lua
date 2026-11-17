@@ -135,4 +135,25 @@ test("map convert: each map is asked twice, once", function()
     eq(calls(c) - before, 4, "calls to C_Map.GetWorldPosFromMapPos")
 end)
 
+-- Review of 0.3.0: the device test must be able to say why a zone was refused.
+test("debug log: a map that cannot be converted is written once, with the reason; a good one with its continent", function()
+    local c, PE = newClient(function(c) c.world.maps[QW.AWAY].continent = nil end)
+    PE:SetDebug(true)
+    local QD = PE.QuestData
+    QD:MapToMap(QW.AWAY, 0.5, 0.5, QW.HOME)
+    QD:MapToMap(QW.AWAY, 0.4, 0.4, QW.HOME)
+    QD:MapToMap(QW.OTHER, 0.5, 0.5, QW.HOME)
+    QD:MapToMap(QW.OTHER, 0.4, 0.4, QW.HOME)
+    local function lines(text)
+        local n = 0
+        for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+            if line:find(text, 1, true) then n = n + 1 end
+        end
+        return n
+    end
+    eq(lines("map " .. QW.AWAY .. " cannot be converted: the game gave no position"), 1)
+    eq(lines("map " .. QW.HOME .. " converts: continent 0"), 1)
+    c:assertClean("conversion debug lines")
+end)
+
 return { known = KNOWN_FAILURES }

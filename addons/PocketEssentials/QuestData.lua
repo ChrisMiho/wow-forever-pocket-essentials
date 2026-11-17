@@ -988,9 +988,9 @@ local function Sample(mapID, at)
     return inst, a, b
 end
 
--- The conversion of one map, or false when it cannot be used.
+-- The conversion of one map, or false and why it cannot be used (for the debug log).
 local function BuildConversion(mapID)
-    if not (C_Map and type(C_Map.GetWorldPosFromMapPos) == "function") then return false end
+    if not (C_Map and type(C_Map.GetWorldPosFromMapPos) == "function") then return false, "the game has no conversion call" end
     if not sampleCorner then
         if type(CreateVector2D) == "function" then
             sampleCorner, sampleMiddle = CreateVector2D(0, 0), CreateVector2D(0.5, 0.5)
@@ -999,10 +999,11 @@ local function BuildConversion(mapID)
         end
     end
     local width, height = QD:GetMapWorldSize(mapID)
-    if not width then return false end
+    if not width then return false, "the map's size cannot be read" end
     local instA, uA, vA = Sample(mapID, sampleCorner)
     local instB, uB, vB = Sample(mapID, sampleMiddle)
-    if not instA or instA ~= instB then return false end
+    if not instA or not instB then return false, "the game gave no position" end
+    if instA ~= instB then return false, "two continents for one map (" .. instA .. " and " .. instB .. ")" end
     -- u: the number that moves with the map's y (north-south); v: with its x (east-west).
     local ku, kv = (uB - uA) * 2, (vB - vA) * 2
     if Fits(ku, height) and Fits(kv, width) then
@@ -1010,18 +1011,28 @@ local function BuildConversion(mapID)
     elseif Fits(ku, width) and Fits(kv, height) then
         uA, vA, ku, kv = vA, uA, kv, ku     -- the game gives the two the other way round
     else
-        return false
+        return false, string.format("spans %.0f and %.0f do not fit the map's %.0f by %.0f yards (continent %d)",
+            ku, kv, width, height, instA)
     end
-    if ku == 0 or kv == 0 or ku ~= ku or kv ~= kv then return false end
+    if ku == 0 or kv == 0 or ku ~= ku or kv ~= kv then return false, "a span of zero" end
     return { inst = instA, u0 = uA, ku = ku, v0 = vA, kv = kv }
 end
 
 local function Conversion(mapID)
     local t = conversions[mapID]
     if t == nil then
-        local ok, result = pcall(BuildConversion, mapID)
+        local ok, result, why = pcall(BuildConversion, mapID)
         t = ok and type(result) == "table" and result or false
         conversions[mapID] = t
+        -- Once per map until the next zone change (failures are forgotten then).
+        if PE.debugOn then
+            if t then
+                PE:Debug("questData", "map " .. PE.Plain(mapID) .. " converts: continent " .. t.inst)
+            else
+                PE:Debug("questData", "map " .. PE.Plain(mapID) .. " cannot be converted: "
+                    .. (ok and type(why) == "string" and why or "the game's call failed"))
+            end
+        end
     end
     return t
 end

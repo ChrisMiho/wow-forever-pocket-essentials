@@ -514,7 +514,9 @@ Debug log on first; save and send the file afterwards, as in step 10.
    place still reads "Outside this zone / Head to <zone>", as before.
 3. Settings > Quest arrow > **Quest in another zone**: choose **Point the
    way**. At once a **light blue** arrow shows, with a distance in yards and
-   "<zone> - <quest name>" under it.
+   "<zone> - <quest name>" under it. If the text stays instead, nothing is
+   broken: the addon's safety check refused that zone. The debug log says why
+   ("map ... cannot be converted: ..."), so send it.
 4. Check the direction. Open the world map, note which way the quest's zone
    lies from you (up is north), close the map and face north (the minimap's
    arrow points up). The blue arrow should point the same way as on the map.
