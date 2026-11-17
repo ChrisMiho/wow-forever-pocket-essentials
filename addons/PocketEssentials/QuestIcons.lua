@@ -1139,6 +1139,8 @@ mod = PE:RegisterModule({
         { key = "spots", label = "Spots per objective",
           choices = { { value = 0, label = "All" }, { value = 10, label = "10" }, { value = 5, label = "5" }, { value = 3, label = "3" } },
           OnChange = OptionChanged("spots") },
+        -- Opens the Icon key page of the settings (Back returns to the main list).
+        { label = "Icon key", action = function() PE:OpenSettings("key") end },
     },
     status = Status,
     OnEnable = OnEnable,

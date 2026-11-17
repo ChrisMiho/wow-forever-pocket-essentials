@@ -298,7 +298,7 @@ and `QuestieDB` sit side by side.
   blue outline; the bottom face button (A) presses the outlined button; the
   right face button (B) closes the window. After closing, check the d-pad
   and A/B do their normal jobs again.
-- 0.0.6: at the bottom of the main page, tap **Icon key**: a page opens with
+- 0.0.6: in the **Quest icons** options (switch it on first), tap **Icon key**: a page opens with
   five rows (Kill, Loot, Use, Explore, Turn in), each with its icon in its
   real colour and what it means. The icons should look like the ones on the
   map. Tap Back to return.

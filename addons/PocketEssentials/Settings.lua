@@ -396,10 +396,6 @@ local function BuildCoreSection(y, width)
     local count = #PE.errors
     items = {
         {
-            label = "Icon key",
-            onClick = PE:Wrap("core", function() PE:OpenSettings("key") end),
-        },
-        {
             label = "Reload UI",
             -- Called straight from the tap, in case reloading needs a real button press.
             onClick = function() PE:ReloadNow() end,
@@ -410,7 +406,7 @@ local function BuildCoreSection(y, width)
             onClick = PE:Wrap("core", function() PE:OpenSettings("errors") end),
         },
     }
-    y = FlowButtons(items, x, y, innerWidth, M.button * 3)
+    y = FlowButtons(items, x, y, innerWidth, M.button * 2)
     return y + M.pad
 end
 
