@@ -4,7 +4,7 @@ local ADDON_NAME, PE = ...
 -- nearest objective of the quest you focused in the game's quest log, with
 -- the distance and the quest name under it.
 --
--- Which objective (only pins on the map you are on are ever pointed at):
+-- Which objective (a spot on the map you are on always wins over one elsewhere):
 --   * A quest is focused (QuestData:GetTrackedQuest) and has known places on
 --     this map: its nearest pin, chosen again once a second while you move,
 --     with these rules:
@@ -24,9 +24,18 @@ local ADDON_NAME, PE = ...
 --         is cleared and the nearest is taken again (so a quest with one spot
 --         keeps pointing at it). The list is cleared when the focused quest or
 --         the map changes, and when the feature goes off.
---   * Its places are all on other maps: no arrow; the text reads "Outside
---     this zone" over "Head to <zone>" (the zone with most of its places;
---     the quest's name if the zone name cannot be read).
+--   * Its places are all on other maps, and "Quest in another zone" is "Point
+--     the way": a light blue arrow (COLOR_FAR) to the nearest of them in a
+--     straight line, among the maps of your continent (QuestData:MapToMap
+--     gives each spot's place on your map, which may be beyond its edges).
+--     Same keep rule as above; never "Here" and nothing set aside, so it
+--     always shows yards. The line under it reads "<zone> - <title>". On
+--     entering that zone the spot is on your map and the rule above takes over.
+--   * Its places are all on other maps and the choice is "Name the zone" (the
+--     default), or no spot can be converted (another continent, or the game
+--     gives no conversion): no arrow; the text reads "Outside this zone" over
+--     "Head to <zone>" (the zone with most of its places; the quest's name if
+--     the zone name cannot be read).
 --   * It has no known place at all: no arrow; "No known location".
 --   * No quest focused: no arrow; the text asks you to focus one.
 --
@@ -50,7 +59,8 @@ local ADDON_NAME, PE = ...
 --
 -- The arrow is one picture (Icons/arrow, pointing up) turned with
 -- Texture:SetRotation, which turns counter-clockwise for positive radians, so
--- it gets `rel` as it is. It is tinted gold, or green for "Here". If this
+-- it gets `rel` as it is. It is tinted gold, green for "Here", or light blue
+-- for a spot in another zone. If this
 -- client's textures cannot be turned, the arrow is drawn instead as three
 -- thick solid-colour lines (plus a dark outline) whose end points are
 -- computed here.
@@ -96,10 +106,11 @@ local POSITIONS = {
     right = { "CENTER", "CENTER", 230,  60 },
 }
 local BOX_PX = { normal = 76, large = 112 }
-local DEFAULTS = { position = "top", size = "normal" }
+local DEFAULTS = { position = "top", size = "normal", otherZones = "name" }
 
 local COLOR_ARROW = { 1, 0.82, 0 }
 local COLOR_HERE = { 0.35, 1, 0.45 }
+local COLOR_FAR = { 0.55, 0.80, 1.00 }  -- a spot in another zone
 local ARROW_TEXTURE = "Interface\\AddOns\\PocketEssentials\\Icons\\arrow"
 
 -- Fallback drawing: the arrow pointing up, as fractions of half its length: x1, y1, x2, y2.
@@ -128,6 +139,7 @@ local S = {
     turn = false,                       -- "Turn around" is showing instead of the arrow
     arrow = nil,                        -- the arrow picture, when it can be turned (else `lines` are used)
     pinMap = nil,                       -- the map the target (S.pin) is on
+    far = false,                        -- the target is on another map (S.tx, S.ty: its place on this map)
     aside = {},                         -- spots set aside after being reached: [PosKey] = GetTime() they come back
     asideQuest = nil, asideMap = nil,   -- the quest and map the set-aside spots belong to
     dbgArrow = false,                   -- debug log: the last "driver" line said an arrow is showing
@@ -337,19 +349,66 @@ local function PointingText(tracked, pin, playerMap, choices, skipped)
         .. " on map " .. playerMap .. " (nearest of " .. choices .. ", " .. skipped .. " set aside)"
 end
 
+-- The nearest spot of the focused quest on another map of this continent, in
+-- yards on the player's map (width, height). Returns pin, its map, its place on
+-- the player's map (x, y); or nil and why ("another continent" or "no conversion").
+local function PickFar(byMap, playerMap, px, py, width, height, old, oldMap)
+    local best, bestMap, bestX, bestY, bestD2 = nil, nil, nil, nil, huge
+    local keep, keepMap, keepX, keepY, keepD2
+    local why
+    for mapID, pins in pairs(byMap) do
+        if mapID ~= playerMap and type(pins) == "table" then
+            local oldHere = old and mapID == oldMap
+            for i = 1, #pins do
+                local pin = pins[i]
+                local x, y = QD:MapToMap(mapID, pin.x, pin.y, playerMap)    -- or nil, why
+                if x then
+                    local dx, dy = (x - px) * width, (y - py) * height
+                    local d2 = dx * dx + dy * dy
+                    if d2 < bestD2 then best, bestMap, bestX, bestY, bestD2 = pin, mapID, x, y, d2 end
+                    if oldHere and pin.x == old.x and pin.y == old.y and pin.obj == old.obj then
+                        keep, keepMap, keepX, keepY, keepD2 = pin, mapID, x, y, d2
+                    end
+                elseif why ~= "another continent" then
+                    why = type(y) == "string" and y or "no conversion"
+                end
+            end
+        end
+    end
+    if not best then return nil, why or "no conversion" end
+    if old then
+        if not keep then
+            if PE.debugOn then PE:Debug(KEY, "spot changed: objective finished or spot gone") end
+        elseif keep ~= best then
+            local near, far = sqrt(bestD2), sqrt(keepD2)
+            if near <= far * KEEP_RATIO and far - near >= KEEP_YARDS then
+                if PE.debugOn then
+                    PE:Debug(KEY, "spot changed: another is nearer (" .. floor(near + 0.5) .. " yd against "
+                        .. floor(far + 0.5) .. " yd)")
+                end
+            else
+                best, bestMap, bestX, bestY = keep, keepMap, keepX, keepY
+            end
+        end
+    end
+    return best, bestMap, bestX, bestY
+end
+
 local function Select(playerMap, px, py)
     S.selectDue = false
     S.sinceSelect = 0
     S.selX, S.selY = px, py
     S.map = playerMap
 
-    -- The target before this pick, if it is a spot of this quest on this map.
-    local old = S.pin
+    -- The target before this pick, if it is a spot of this quest (on this map,
+    -- or on another map while pointing across zones).
+    local old, oldMap, wasFar = S.pin, S.pinMap, S.far
     local tracked = S.tracked
-    if old and (old.questID ~= tracked or S.pinMap ~= playerMap) then old = nil end
+    if old and (old.questID ~= tracked or (oldMap ~= playerMap and not wasFar)) then old = nil end
     RefreshAside(tracked, playerMap)
 
     local pin = nil
+    local farMap, farX, farY, farTitle = nil, nil, nil, nil
     if not tracked then
         SetMessage("No quest focused", "Focus one in your quest log")
         if PE.debugOn then DebugState("text only: no quest focused") end
@@ -362,7 +421,7 @@ local function Select(playerMap, px, py)
             local width, height = QD:GetMapWorldSize(playerMap)
             local choices, skipped
             if width then
-                pin, choices, skipped = Pick(pins, px, py, width, height, old)
+                pin, choices, skipped = Pick(pins, px, py, width, height, oldMap == playerMap and old or nil)
                 S.width, S.height = width, height
             end
             if PE.debugOn then
@@ -373,9 +432,40 @@ local function Select(playerMap, px, py)
             local title = QD:GetQuestTitle(tracked)
             if type(title) ~= "string" or title == "" then title = "Quest" end
             if type(byMap) == "table" and HasPlaces(byMap) then
-                local zone = ZoneName(BusiestMap(byMap))
-                SetMessage("Outside this zone", zone and Shorten("Head to " .. zone) or Shorten(title))
-                if PE.debugOn then DebugState("text only: quest " .. tracked .. " has no spot on map " .. playerMap) end
+                local why
+                if Opt("otherZones") == "point" then
+                    local width, height = QD:GetMapWorldSize(playerMap)
+                    if width then
+                        local found, mapOrWhy, x, y = PickFar(byMap, playerMap, px, py, width, height,
+                            wasFar and old or nil, oldMap)
+                        if found then
+                            pin, farMap, farX, farY = found, mapOrWhy, x, y
+                            S.width, S.height = width, height
+                        else
+                            why = mapOrWhy
+                        end
+                    else
+                        why = "no conversion"
+                    end
+                end
+                if pin then
+                    S.msgBig = nil
+                    local zone = ZoneName(farMap)
+                    farTitle = zone and Shorten(zone .. " - " .. TitleFor(pin)) or TitleFor(pin)
+                    if PE.debugOn then
+                        local what = pin.obj and (" objective " .. pin.obj) or (pin.kind == "turnin" and " turn-in" or "")
+                        DebugState("pointing across zones at quest " .. tracked .. what .. " spot "
+                            .. format("%.1f,%.1f", pin.x * 100, pin.y * 100) .. " on map " .. farMap
+                            .. " from map " .. playerMap)
+                    end
+                else
+                    local zone = ZoneName(BusiestMap(byMap))
+                    SetMessage("Outside this zone", zone and Shorten("Head to " .. zone) or Shorten(title))
+                    if PE.debugOn then
+                        DebugState("text only: quest " .. tracked .. " has no spot on map " .. playerMap
+                            .. (why and (", " .. why) or ""))
+                    end
+                end
             else
                 SetMessage("No known location", Shorten(title))
                 if PE.debugOn then DebugState("text only: quest " .. tracked .. " has no known location") end
@@ -383,17 +473,24 @@ local function Select(playerMap, px, py)
         end
     end
 
+    local far = farMap ~= nil
     S.pin = pin
-    S.pinMap = pin and playerMap or nil
+    S.pinMap = pin and (farMap or playerMap) or nil
+    S.far = far
     PublishPin(pin)
     if pin then
-        S.tx, S.ty = pin.x, pin.y
+        if far then
+            S.tx, S.ty = farX, farY
+        else
+            S.tx, S.ty = pin.x, pin.y
+        end
         S.force = true
-        -- The same spot rebuilt as a new table keeps "Here" and the distance shown.
-        if not (old and pin.x == old.x and pin.y == old.y and pin.obj == old.obj) then
+        -- The same spot rebuilt as a new table keeps "Here" and the distance shown
+        -- (not when it changes between this map and another one).
+        if not (old and far == wasFar and pin.x == old.x and pin.y == old.y and pin.obj == old.obj) then
             S.here = false
             S.distCode = nil
-            SetTitle(TitleFor(pin))
+            SetTitle(far and farTitle or TitleFor(pin))
         end
     end
 end
@@ -402,9 +499,10 @@ end
 -- Drawing
 ---------------------------------------------------------------------------
 
-local function Paint(here)
-    S.painted = here
-    local c = here and COLOR_HERE or COLOR_ARROW
+-- look: "here", "far" or "arrow".
+local function Paint(look)
+    S.painted = look
+    local c = (look == "here" and COLOR_HERE) or (look == "far" and COLOR_FAR) or COLOR_ARROW
     if S.arrow then
         S.arrow:SetVertexColor(c[1], c[2], c[3], 1)
         return
@@ -449,7 +547,9 @@ end
 
 local function ShowDistance(dist)
     local here = S.here
-    if here then
+    if S.far then
+        here = false                    -- a spot in another zone: always yards, never set aside
+    elseif here then
         if dist > HERE_LEAVE then here = false end
     elseif dist < HERE_ENTER then
         here = true
@@ -470,7 +570,8 @@ local function ShowDistance(dist)
     else
         code = floor(dist / 10 + 0.5) * 10
     end
-    if here ~= S.painted then Paint(here) end
+    local look = here and "here" or (S.far and "far" or "arrow")
+    if look ~= S.painted then Paint(look) end
     if code == S.distCode then return end
     S.distCode = code
     S.distText:SetText(here and "Here" or (code .. " yd"))
@@ -830,7 +931,7 @@ mod = PE:RegisterModule({
     desc = "Points to your focused quest. Focus a quest from the quest log.",
     order = 20,
     requiresQuestieDB = true,
-    defaults = { position = DEFAULTS.position, size = DEFAULTS.size },
+    defaults = { position = DEFAULTS.position, size = DEFAULTS.size, otherZones = DEFAULTS.otherZones },
 
     options = {
         { key = "position", label = "Arrow position",
@@ -853,6 +954,14 @@ mod = PE:RegisterModule({
               { value = "large", label = "Large" },
           },
           OnChange = function() Relayout() end },
+        { key = "otherZones", label = "Quest in another zone",
+          choices = {
+              { value = "name", label = "Name the zone" },
+              { value = "point", label = "Point the way" },
+          },
+          OnChange = function()
+              if S.ready then Evaluate() end    -- choose again at once, no reload
+          end },
     },
 
     status = function(self)
@@ -895,6 +1004,7 @@ mod = PE:RegisterModule({
         self:RegisterEvent("ZONE_CHANGED_NEW_AREA", OnWorldEvent)
         S.tracked = QD:GetTrackedQuest()
         S.pin, S.pinMap, S.map, S.title, S.msgBig = nil, nil, nil, nil, nil
+        S.far = false
         S.titleText:SetText("")
         S.distText:SetText("")
         S.distCode, S.here = nil, false
@@ -919,6 +1029,7 @@ mod = PE:RegisterModule({
         end
         S.acquired = false
         S.pin, S.pinMap, S.map, S.tracked, S.msgBig = nil, nil, nil, nil, nil
+        S.far = false
         S.why, S.failReason = nil, nil
         wipe(S.aside)
         S.asideQuest, S.asideMap = nil, nil

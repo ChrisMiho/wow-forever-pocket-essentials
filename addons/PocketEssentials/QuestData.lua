@@ -18,7 +18,8 @@ local ADDON_NAME, PE = ...
 --   QD:GetPlayerPosition() -> uiMapID, x, y | nil
 --   QD:GetPlayerFacing() -> radians | nil
 --   QD:GetMapWorldSize(uiMapID) -> width, height | nil
---   QD:MapToMap(fromMapID, x, y, toMapID) -> x2, y2 | nil   (a spot on one map as fractions of another)
+--   QD:MapToMap(fromMapID, x, y, toMapID) -> x2, y2 | nil, why   (a spot on one map as fractions of another;
+--     why is "another continent" or "no conversion")
 --   QD:SetTrackedQuest(questID|nil)       QD:GetTrackedQuest() -> questID | nil
 --   QD:GetWatchedQuests() -> array of questIDs (never nil; may be empty)
 --   QD:IsQuestInLog(questID) -> bool      QD:GetQuestTitle(questID) -> string | nil
@@ -1031,14 +1032,17 @@ function ForgetFailedConversions()
     end
 end
 
--- x, y (fractions of fromMapID) as fractions of toMapID; nil when either map
--- cannot be converted or the two are on different continents.
+-- x, y (fractions of fromMapID) as fractions of toMapID. nil and the reason
+-- when either map cannot be converted ("no conversion") or the two are on
+-- different continents ("another continent").
 function QD:MapToMap(fromMapID, x, y, toMapID)
-    if type(x) ~= "number" or type(y) ~= "number" or fromMapID == nil or toMapID == nil then return nil end
+    if type(x) ~= "number" or type(y) ~= "number" or fromMapID == nil or toMapID == nil then
+        return nil, "no conversion"
+    end
     if fromMapID == toMapID then return x, y end
     local theirs = Conversion(fromMapID)
-    if not theirs then return nil end
-    local mine = Conversion(toMapID)
-    if not mine or mine.inst ~= theirs.inst then return nil end
+    local mine = theirs and Conversion(toMapID)
+    if not mine then return nil, "no conversion" end
+    if mine.inst ~= theirs.inst then return nil, "another continent" end
     return (theirs.v0 + theirs.kv * x - mine.v0) / mine.kv, (theirs.u0 + theirs.ku * y - mine.u0) / mine.ku
 end

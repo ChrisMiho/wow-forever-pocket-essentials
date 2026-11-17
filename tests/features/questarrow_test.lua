@@ -68,6 +68,15 @@ local function placeAt(c, x, y, facing, seconds)
     c:advance(seconds or 0.3)
 end
 
+-- Sets one of the arrow's options as the settings window does (the value, then its OnChange).
+local function chooseOption(PE, key, value)
+    local mod = PE:GetModule("questArrow")
+    mod.opts[key] = value
+    for _, opt in ipairs(mod.options) do
+        if opt.key == key then PE:Safe(mod.key, opt.OnChange, mod, value) end
+    end
+end
+
 -- The single spot of quest 6, and a position 0.03 of the map (69 yards) south of it.
 local function onePin(c, PE) return PE.QuestData:GetPinsForQuest(QW.ONE)[QW.HOME][1] end
 local function focusOne() return { focus = QW.ONE } end
@@ -184,13 +193,7 @@ end)
 -- QuestArrow.lua POSITIONS and BOX_PX (pixels on a 720p screen; PE.UI:Px converts).
 test("quest arrow: the five positions and two sizes put the block where QuestArrow.lua says", function()
     local c, PE = newArrow(focusOne())
-    local mod = PE:GetModule("questArrow")
-    local function choose(key, value)
-        mod.opts[key] = value
-        for _, opt in ipairs(mod.options) do
-            if opt.key == key then PE:Safe(mod.key, opt.OnChange, mod, value) end
-        end
-    end
+    local function choose(key, value) chooseOption(PE, key, value) end
     local Px = function(n) return PE.UI:Px(n) end
     local expected = {
         top = { "TOP", 0, -40 }, upper = { "CENTER", 0, 150 }, lower = { "CENTER", 0, -140 },
@@ -749,6 +752,251 @@ test("quest arrow: move: stays clean", function()
     nudge(c, "Down")
     c:advance(1.2)
     eq(#c:problems(), 0, table.concat(c:problems(), " / "))
+end)
+
+---------------------------------------------------------------------------
+-- Other zones (docs/superpowers/specs/2026-11-17-arrow-other-zones-and-layout-removal.md section 2)
+-- Quest 55 "Morbent Fel" has one spot, in Duskwood; the player stands in Elwynn Forest.
+---------------------------------------------------------------------------
+
+local FAR = { 0.55, 0.80, 1.00 }
+local GOLD = { 1, 0.82, 0 }
+
+-- The focused quest in another zone and "Quest in another zone" set to "Point the way".
+-- spec.change(c) runs after the maps are set up and before the addon loads; spec.debug switches the
+-- debug log on before the choice is made.
+local function newFar(spec)
+    spec = spec or {}
+    local change = spec.change
+    local c, PE = T.new({ quest = true, on = { "questArrow" }, setup = function(c)
+        QW.setup(c, { quests = { { id = QW.MANY }, { id = QW.ONE }, { id = QW.ELSEWHERE } },
+            focus = spec.focus or QW.ELSEWHERE, pos = spec.pos })
+        if change then change(c) end
+    end })
+    c:advance(1.2)
+    QW.check(c, PE)
+    if spec.debug then PE:SetDebug(true) end
+    chooseOption(PE, "otherZones", "point")
+    c:advance(1.2)
+    return c, PE
+end
+
+local function farPin(PE) return PE.QuestData:GetPinsForQuest(QW.ELSEWHERE)[QW.AWAY][1] end
+
+-- Where a spot of one map is on the continent, worked out here from the stand-in maps' corners.
+local function onContinent(c, map, x, y)
+    local m = c.world.maps[map]
+    return m.top - y * m.height, m.left - x * m.width       -- north, west
+end
+
+local function colourIs(c, want)
+    local col = parts(c).arrow().vertexColor
+    return col ~= nil and math.abs(col[1] - want[1]) < 1e-6 and math.abs(col[2] - want[2]) < 1e-6
+        and math.abs(col[3] - want[3]) < 1e-6
+end
+
+local function colourText(c)
+    local col = parts(c).arrow().vertexColor
+    return col and (col[1] .. "," .. col[2] .. "," .. col[3]) or "none"
+end
+
+-- Spec section 2: "Name the zone" (default, today's behaviour).
+test("quest arrow: other zones: off by default, the text stays", function()
+    local c, PE = newArrow({ focus = QW.ELSEWHERE })
+    eq(parts(c).distText(), "Outside this zone")
+    eq(#c:callsTo("C_Map.GetWorldPosFromMapPos"), 0, "calls to C_Map.GetWorldPosFromMapPos")
+end)
+
+-- Spec section 2: "a light blue arrow points straight at the nearest spot of that quest in the other zone,
+-- with the distance, and the line under it reads 'Duskwood - Morbent Fel'"; "The spot pointed at is
+-- published to the quest icons as today".
+test("quest arrow: other zones: Point the way shows a light blue arrow, yards and '<zone> - <title>'", function()
+    local c, PE = newFar()
+    local a = parts(c)
+    check(a.box.frame:IsShown(), "no arrow shown")
+    check(colourIs(c, FAR), "arrow colour " .. colourText(c))
+    local pin = farPin(PE)
+    local p = c.world.player
+    local n1, w1 = onContinent(c, QW.HOME, p.x, p.y)
+    local n2, w2 = onContinent(c, QW.AWAY, pin.x, pin.y)
+    local yards = math.sqrt((n1 - n2) ^ 2 + (w1 - w2) ^ 2)
+    check(yards > 300, "test setup: the spot is only " .. yards .. " yards away")
+    local text = a.distText()
+    check(text:match("^%d+ yd$"), "distance text " .. text)
+    eq(text, (math.floor(yards / 10 + 0.5) * 10) .. " yd")
+    eq(a.titleText(), "Duskwood - Morbent Fel")
+    check(rawequal(published(PE), pin), "the published pin is not the Duskwood spot")
+    c:assertClean("far")
+end)
+
+-- Spec section 2: "Target: the nearest spot, in a straight line, among all the focused quest's spots on
+-- other maps of the player's continent." Quest 33 from Duskwood: spots in Elwynn Forest and Dun Morogh.
+test("quest arrow: other zones: points at the nearest spot among the other maps", function()
+    local c, PE = newFar({ focus = QW.MANY, pos = { map = QW.AWAY, x = 0.5, y = 0.2 } })
+    local p = c.world.player
+    local n1, w1 = onContinent(c, QW.AWAY, p.x, p.y)
+    local best, bestD, maps = nil, nil, 0
+    for map, pins in pairs(PE.QuestData:GetPinsForQuest(QW.MANY)) do
+        maps = maps + 1
+        for _, pin in ipairs(pins) do
+            local n2, w2 = onContinent(c, map, pin.x, pin.y)
+            local d = (n1 - n2) ^ 2 + (w1 - w2) ^ 2
+            if not bestD or d < bestD then best, bestD = pin, d end
+        end
+    end
+    check(maps >= 2, "test setup: quest 33 has spots on only one map")
+    check(rawequal(published(PE), best), "not pointing at the nearest spot")
+    check(colourIs(c, FAR), "arrow colour " .. colourText(c))
+    eq(parts(c).titleText(), "Elwynn Forest - Wolves Across the Border")
+    c:assertClean("nearest far")
+end)
+
+-- Spec section 2: '"Turn around" works as today.' The player stands due north of the spot.
+test("quest arrow: other zones: the arrow turns toward the spot", function()
+    local c, PE = newFar()
+    local pin = farPin(PE)
+    local _, west = onContinent(c, QW.AWAY, pin.x, pin.y)
+    local home = c.world.maps[QW.HOME]
+    local x = (home.left - west) / home.width              -- same east-west line as the spot
+    check(x > 0 and x < 1, "test setup: no place in Elwynn Forest due north of the spot")
+    placeAt(c, x, 0.9, 0, 1.5)                              -- facing north, the spot is behind
+    check(turnShown(c), "no Turn around with the spot behind")
+    placeAt(c, x, 0.9, math.pi, 1.5)                        -- facing south, the spot is ahead
+    check(not turnShown(c), "Turn around facing the spot")
+    local r = parts(c).arrow().rotation or 0
+    local off = math.abs(((r + math.pi) % (2 * math.pi)) - math.pi)
+    check(off < rad(30), "the arrow is turned " .. math.deg(off) .. " degrees off straight ahead")
+end)
+
+-- Spec section 2: "No 'Here' and no setting aside for an other-zone target: it always shows yards."
+test("quest arrow: other zones: no Here and nothing set aside", function()
+    local c0, PE0 = newFar()                                -- where the spot is on Duskwood's map
+    local pin0 = farPin(PE0)
+    local sx, sy = pin0.x, pin0.y
+    local c, PE = newFar({ debug = true, change = function(c)
+        -- Duskwood's corner moved so that the spot is 5 yards north of the player.
+        local p, d = c.world.player, c.world.maps[QW.AWAY]
+        local north, west = onContinent(c, QW.HOME, p.x, p.y)
+        d.top = north + 5 + sy * d.height
+        d.left = west + sx * d.width
+    end })
+    local pin = farPin(PE)
+    eq(parts(c).distText(), "5 yd")
+    check(colourIs(c, FAR), "arrow colour " .. colourText(c))
+    local p = c.world.player
+    placeAt(c, p.x, p.y + 30 / QW.HEIGHT, nil, 1.5)          -- walk 30 yards south, then back
+    placeAt(c, p.x, p.y - 30 / QW.HEIGHT, nil, 1.5)
+    eq(parts(c).distText(), "5 yd")
+    check(rawequal(published(PE), pin), "the spot is no longer pointed at")
+    eq(#logLines(c, "set aside"), 0, "set-aside lines")
+    eq(#logLines(c, "arrived at the spot"), 0, "Here lines")
+    c:assertClean("near")
+end)
+
+-- Spec section 2 "When it does not point": "the spot's zone is on another continent".
+test("quest arrow: other zones: another continent keeps the text", function()
+    local c, PE = newFar({ change = function(c) c.world.maps[QW.AWAY].continent = 1 end })
+    local a = parts(c)
+    eq(a.distText(), "Outside this zone")
+    eq(a.titleText(), "Head to Duskwood")
+    check(not a.box.frame:IsShown(), "an arrow is shown")
+    eq(published(PE), nil)
+end)
+
+-- Spec section 2 "When it does not point": "the game gives no conversion for either map".
+test("quest arrow: other zones: no conversion keeps the text and logs no error", function()
+    local c, PE = newFar({ change = function(c) c.world.maps[QW.AWAY].continent = nil end })
+    local a = parts(c)
+    eq(a.distText(), "Outside this zone")
+    eq(a.titleText(), "Head to Duskwood")
+    eq(published(PE), nil)
+    c:assertClean("no conversion")
+end)
+
+-- Spec section 2: "On entering the zone the arrow turns gold and behaves exactly as it does now."
+test("quest arrow: other zones: walking into the zone gives the gold arrow, the plain title and Here", function()
+    local c, PE = newFar()
+    local pin = farPin(PE)
+    local p = c.world.player
+    p.map, p.x, p.y = QW.AWAY, pin.x, pin.y + 0.02
+    c:fire("ZONE_CHANGED_NEW_AREA")
+    c:advance(1.5)
+    check(colourIs(c, GOLD), "arrow colour " .. colourText(c))
+    eq(parts(c).titleText(), "Morbent Fel")
+    eq(parts(c).distText(), "35 yd")                        -- 0.02 * 1800 = 36 yards
+    placeAt(c, pin.x, pin.y, nil, 1.5)
+    eq(parts(c).distText(), "Here")
+    check(colourIs(c, { 0.35, 1, 0.45 }), "Here colour " .. colourText(c))
+end)
+
+-- Spec section 2: "A spot on the player's own map always wins".
+test("quest arrow: other zones: a spot on this map always wins", function()
+    local c, PE = newFar({ focus = QW.MANY })              -- spots in Elwynn Forest and on map 1426
+    check(colourIs(c, GOLD), "arrow colour " .. colourText(c))
+    local pin = published(PE)
+    check(pin, "nothing published")
+    local found = false
+    for _, p in ipairs(PE.QuestData:GetPinsForQuest(QW.MANY)[QW.HOME]) do
+        if rawequal(p, pin) then found = true end
+    end
+    check(found, "the published pin is not on this map")
+    eq(parts(c).titleText(), "Wolves Across the Border")
+end)
+
+-- Spec section 2: "Changing the setting takes effect at once, no reload"; the header: the driver stops
+-- while there is nothing to point at.
+test("quest arrow: other zones: switching back to Name the zone restores the text at once and stops the driver", function()
+    local c, PE = newFar()
+    check(parts(c).driver.frame:IsVisible(), "test setup: the driver is not running")
+    chooseOption(PE, "otherZones", "name")
+    c:advance(0.1)
+    local a = parts(c)
+    eq(a.distText(), "Outside this zone")
+    eq(a.titleText(), "Head to Duskwood")
+    check(not a.box.frame:IsShown(), "the arrow is still shown")
+    check(not a.driver.frame:IsVisible(), "the driver is still running")
+    eq(published(PE), nil)
+    chooseOption(PE, "otherZones", "point")                  -- and on again, also at once
+    c:advance(0.1)
+    check(parts(c).box.frame:IsShown(), "the arrow did not come back")
+    check(colourIs(c, FAR), "arrow colour " .. colourText(c))
+end)
+
+-- CLAUDE.md "Nothing ticks while its feature is off".
+test("quest arrow: other zones: nothing of ours ticks once the feature is off", function()
+    local c, PE = newFar()
+    PE:SetModuleEnabled("questArrow", false)
+    c:advance(0.5)
+    local a = parts(c)
+    check(not a.driver.frame:IsVisible(), "the driver is visible")
+    check(not a.display.frame:IsVisible(), "the arrow is on screen")
+    local ticks = c.stats.addonOnUpdate
+    c:advance(3)
+    eq(c.stats.addonOnUpdate, ticks)
+    eq(published(PE), nil)
+    c:assertClean("off")
+end)
+
+-- Spec section 2 "Debug log": 'one line per change of state, "pointing across zones at quest N ... spot X,Y
+-- on map M from map P"; when the choice is on but it cannot point, the existing "text only" line ends
+-- with the reason'.
+test("debug log: other zones: one 'pointing across zones' line per change; 'another continent' named when it cannot point", function()
+    local c, PE = newFar({ debug = true })
+    local pin = farPin(PE)
+    local p = c.world.player
+    placeAt(c, p.x + 0.001, p.y, 0.5, 1.5)                 -- moving and turning: the same state
+    placeAt(c, p.x + 0.001, p.y + 0.001, 1, 1.5)
+    local lines = logLines(c, "questArrow: pointing across zones at quest " .. QW.ELSEWHERE .. " ")
+    eq(#lines, 1, "pointing across zones lines")
+    local spot = string.format("spot %.1f,%.1f on map %d from map %d", pin.x * 100, pin.y * 100, QW.AWAY, QW.HOME)
+    check(lines[1]:find(spot, 1, true), "line: " .. lines[1] .. " (wanted " .. spot .. ")")
+
+    local c2 = newFar({ debug = true, change = function(c) c.world.maps[QW.AWAY].continent = 1 end })
+    eq(#logLines(c2, "questArrow: text only: quest " .. QW.ELSEWHERE .. " has no spot on map " .. QW.HOME
+        .. ", another continent"), 1)
+    local c3 = newFar({ debug = true, change = function(c) c.world.maps[QW.AWAY].continent = nil end })
+    eq(#logLines(c3, "questArrow: text only: quest " .. QW.ELSEWHERE .. " has no spot on map " .. QW.HOME
+        .. ", no conversion"), 1)
 end)
 
 return { known = KNOWN_FAILURES }
