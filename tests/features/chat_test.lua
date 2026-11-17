@@ -504,6 +504,38 @@ test("chat: prompt: a second tap replaces the text and restarts the 12 seconds",
     check(not promptShown(c), "still shown 13 s after the second tap")
 end)
 
+test("chat: prompt: with the Gamepad UI off, a tap shows no prompt", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = false })
+    local PE = c.PE
+    tapLabel(c, PE, "Say")
+    check(not promptShown(c), "prompt shown with the Gamepad UI off")
+    eq(#c:problems(), 0, table.concat(c:problems(), " / "))
+end)
+
+test("chat: prompt: its parent is UIParent", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = true })
+    local PE = c.PE
+    tapLabel(c, PE, "Say")
+    local f = promptLines(c)
+    check(f ~= nil, "no prompt frame")
+    check(f:GetParent() == c.env.UIParent, "parent is not UIParent")
+end)
+
+test("chat: prompt: no frame made by Chat.lua has an OnUpdate script", function()
+    local c = T.new({ on = { "chat" }, gamepadUI = true })
+    local PE = c.PE
+    local owner = rawget(c.env, "PocketEssentialsChatKeyOwner")
+    tapLabel(c, PE, "Say")
+    local f = promptLines(c)
+    check(f ~= nil, "no prompt frame")
+    check(f:GetScript("OnUpdate") == nil, "prompt has OnUpdate while up")
+    check(owner:GetScript("OnUpdate") == nil, "key owner has OnUpdate while up")
+    c:advance(13)
+    check(not promptShown(c), "prompt still up")
+    check(f:GetScript("OnUpdate") == nil, "prompt has OnUpdate after hiding")
+    check(owner:GetScript("OnUpdate") == nil, "key owner has OnUpdate after hiding")
+end)
+
 -- Bindings cannot be changed in a fight: the type is set, the button is not lent.
 test("chat: with the Gamepad UI on, a tap during a fight lends no button and says to open chat", function()
     local c = T.new({ on = { "chat" }, gamepadUI = true })
