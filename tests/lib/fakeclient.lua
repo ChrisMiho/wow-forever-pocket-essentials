@@ -1125,9 +1125,8 @@ function Client.new(opts)
         { layoutIndex = 1, layoutName = "Classic", layoutType = 0, interfaceStyle = 0, systems = { {} } },
         { layoutIndex = 2, layoutName = "Gamepad", layoutType = 0, interfaceStyle = 1, systems = { {} } },
     }
-    local presetManager = {}
-    BlizzMethod(presetManager, "GetCopyOfPresetLayouts", function() return DeepCopy(PRESETS) end)
-    rawset(env, "EditModePresetLayoutManager", presetManager)
+    -- (The preset manager frame went with the Layout helper in 0.3.0; the list
+    -- stays for C_EditMode.SetActiveLayout, which the restriction probe tries.)
 
     -- ChatFrameUtil (Blizzard_ChatFrameBase/Shared/ChatFrameUtil.lua): the
     -- classic chat style always picks DEFAULT_CHAT_FRAME.editBox.

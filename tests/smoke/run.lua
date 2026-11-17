@@ -76,7 +76,7 @@ local CORE_EVENTS = {
     DISPLAY_SIZE_CHANGED = "UI.lua: resizes everything",
 }
 
-local FEATURES = { "questIcons", "questArrow", "bags", "sellJunk", "repair", "chat", "layout" }
+local FEATURES = { "questIcons", "questArrow", "bags", "sellJunk", "repair", "chat" }
 local QUEST_FEATURES = { questIcons = true, questArrow = true }
 
 ---------------------------------------------------------------------------
@@ -533,8 +533,8 @@ local function everythingOn(c, PE, hasQDB)
     c:advance(0.2)
     c:assertClean("settings pages")
 
-    -- The player turns on the Gamepad UI (so the layout helper's Gamepad button
-    -- does not refuse); the client says so with this event.
+    -- The player turns on the Gamepad UI (chat and bags depend on it); the client
+    -- says so with this event.
     c.world.gamepadUI = true
     c:fire("INPUT_DEVICE_INTERFACE_TRANSITION", 1, 0)
     c:advance(1.5)
@@ -551,11 +551,7 @@ local function everythingOn(c, PE, hasQDB)
     PE:CloseSettings()
     c:advance(0.2)
     if os.getenv("SMOKE_VERBOSE") then print("  option presses: " .. presses) end
-    check(presses >= (hasQDB and 3 * 30 or 3 * 12), "only " .. presses .. " option buttons were pressed")
-    -- Layout: with the Gamepad UI on, "Use Blizzard's Gamepad layout" switches
-    check(#c:callsTo("C_EditMode.SetActiveLayout") >= 1, "the Gamepad layout button never switched the layout")
-    check(c.world.layouts.activeLayout == 3, "the layout in use is " .. tostring(c.world.layouts.activeLayout)
-        .. ", expected 3 (Blizzard's Gamepad preset)")
+    check(presses >= (hasQDB and 3 * 72 or 3 * 35), "only " .. presses .. " option buttons were pressed")
     c:assertClean("pressing every option")
 
     local states = moduleStates(PE)

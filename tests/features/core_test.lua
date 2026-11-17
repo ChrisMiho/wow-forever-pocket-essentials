@@ -11,7 +11,7 @@ local test, eq, check = T.test, T.eq, T.check
 local KNOWN_FAILURES = {
 }
 
-local FEATURES = { "questIcons", "questArrow", "bags", "sellJunk", "repair", "chat", "layout" }
+local FEATURES = { "questIcons", "questArrow", "bags", "sellJunk", "repair", "chat" }
 
 local function saved(enabled, options)
     return { version = 1, enabled = enabled or {}, options = options or {}, ui = { size = "medium", hubPos = "LEFT" }, errors = {} }
@@ -52,13 +52,23 @@ end)
 
 -- Core.lua Login line 714: `PE.db.enabled[mod.key] == true`.
 test("core: only a saved true switches a feature on", function()
-    local c, PE = T.new({ saved = saved({ sellJunk = true, repair = "true", chat = 1, bags = false, layout = {} }) })
+    local c, PE = T.new({ saved = saved({ sellJunk = true, repair = "true", chat = 1, bags = false, questArrow = {} }) })
     check(PE:IsModuleEnabled("sellJunk"), "sellJunk saved as true is not on")
     check(not PE:IsModuleEnabled("repair"), "repair saved as the text \"true\" is on")
     check(not PE:IsModuleEnabled("chat"), "chat saved as 1 is on")
     check(not PE:IsModuleEnabled("bags"), "bags saved as false is on")
-    check(not PE:IsModuleEnabled("layout"), "layout saved as a table is on")
+    check(not PE:IsModuleEnabled("questArrow"), "questArrow saved as a table is on")
     c:assertClean("login")
+end)
+
+-- 0.3.0 removed the Layout helper; a 0.2.1 save that still has "layout" on must not break anything.
+test("core: a saved Layout helper from 0.2.1 is ignored: no module, no row, no error", function()
+    local c, PE = T.new({ saved = saved({ layout = true, sellJunk = true }) })
+    eq(PE:GetModule("layout"), nil)
+    check(PE:IsModuleEnabled("sellJunk"), "sell junk did not come back on")
+    PE:OpenSettings()
+    c:advance(0.2)
+    c:assertClean("0.2.1 saved layout")
 end)
 
 -- Core.lua AttachOptions lines 314-328: a default is added only where the key is nil.

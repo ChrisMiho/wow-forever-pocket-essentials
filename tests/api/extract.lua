@@ -34,9 +34,9 @@ for w in ([[_G math table string os io type pcall xpcall pairs ipairs next selec
     tonumber setmetatable getmetatable rawget rawset rawequal error assert unpack coroutine
     bit require]]):gmatch("%S+") do STD[w] = true end
 -- Fields that look like methods but are plain data on a Blizzard frame.
--- (enum values and QuestieDB library members; the last five are C_EditMode's, listed as namespace names below)
+-- (enum values and QuestieDB library members)
 local FIELD = {}
-for w in ("Account Character Combat Gamepad Mkb NumValues Poor Preset Quest Get RequireContract GetLayouts ConvertStringToLayoutInfo SaveLayouts SetActiveLayout OnLayoutAdded"):gmatch("%S+") do FIELD[w] = true end
+for w in ("Account Character Combat Gamepad Mkb NumValues Poor Preset Quest Get RequireContract"):gmatch("%S+") do FIELD[w] = true end
 local STRMETHOD = {}   -- (lowercase ones are skipped anyway; kept for clarity)
 local OWN = {}
 for w in ([[PocketEssentials PocketEssentialsDB LibQuestieDB PocketEssentialsSettingsPanel
@@ -62,9 +62,12 @@ local INDIRECT = {
     -- Real widget methods whose names the addon also defines on its own objects.
     { "method", "SetShown", "Chat.lua", ":SetShown(" },
     { "method", "IsEnabled", "UI.lua", "btn:IsEnabled()" },
-    { "namespace", "C_EditMode.ConvertStringToLayoutInfo", "Layout.lua", "api.ConvertStringToLayoutInfo" },
-    { "namespace", "C_EditMode.SaveLayouts", "Layout.lua", "api.SaveLayouts" },
-    { "namespace", "C_EditMode.OnLayoutAdded", "Layout.lua", "api.OnLayoutAdded" },
+    -- The addon no longer uses these (the Layout helper went in 0.3.0); the stand-in client offers
+    -- them only for the restriction probe's tests, so they are checked against the probe's file.
+    { "method", "IsEditModeActive", "../../probe/PocketProbe/Trials.lua", "IsEditModeActive" },
+    { "frame", "EditModeManagerFrame", "../../probe/PocketProbe/Trials.lua", "EditModeManagerFrame" },
+    { "namespace", "C_EditMode.GetLayouts", "../../probe/PocketProbe/Trials.lua", "C_EditMode.GetLayouts" },
+    { "namespace", "C_EditMode.SetActiveLayout", "../../probe/PocketProbe/Trials.lua", "C_EditMode.SetActiveLayout" },
     { "cvar",   "combinedBags", "Bags.lua", '"combinedBags"' },
 }
 -- Event names held as table keys rather than strings.
@@ -181,8 +184,8 @@ local function isP(t, v) return t and t.t == "p" and t.v == v end
 for _, f in ipairs(files) do
     local toks = parsed[f]
     local eventTable = EVENT_TABLES[f]
-    local alias = {}   -- local api = C_EditMode  ->  alias.api = "C_EditMode"
-    local enumAlias = {}   -- local types = ... Enum.EditModeLayoutType  ->  "Enum.EditModeLayoutType" (kept for the file)
+    local alias = {}   -- local api = C_Foo  ->  alias.api = "C_Foo"
+    local enumAlias = {}   -- local types = ... Enum.Foo  ->  "Enum.Foo" (kept for the file)
     for i, t in ipairs(toks) do
         local nx, n2, pv = toks[i + 1], toks[i + 2], toks[i - 1]
         if isName(pv, "local") and t.t == "name" and isP(nx, "=") then

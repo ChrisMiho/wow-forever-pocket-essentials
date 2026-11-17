@@ -21,4 +21,3 @@ QuestArrow.lua
 Bags.lua
 Vendor.lua
 Chat.lua
-Layout.lua

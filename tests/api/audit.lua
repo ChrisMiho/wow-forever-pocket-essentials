@@ -130,7 +130,7 @@ for file in listing:gmatch("[^\n]+") do
         for vname, etype in src:gmatch('{ Name = "([^"]+)", Type = "([^"]+)", EnumValue') do
             docEnumVal["Enum." .. etype .. "." .. vname] = docEnumVal["Enum." .. etype .. "." .. vname] or path
         end
-        -- constants: Name = "EditModeConsts", Type = "Constants", Values = { { Name = "X", ... Value = } }
+        -- constants: Name = "SomeConsts", Type = "Constants", Values = { { Name = "X", ... Value = } }
         for cname, bodyStart in src:gmatch('Name = "([^"]+)",%s*Type = "Constants",()') do
             local body = src:sub(bodyStart):match("^(.-)\n\t\t},\n") or src:sub(bodyStart, bodyStart + 4000)
             for vname in body:gmatch('{ Name = "([^"]+)", Type = "[^"]+", Value') do
