@@ -388,6 +388,19 @@ the owner: so far so good, the folding settings are "great". Requests so far:
 - Chat options should be more configurable than two buttons (a small
   refinement; the owner will say what once they have played more). Not built.
 
+Log from that test (`docs/real2/`, 0.1.0 only, two sessions, about an hour,
+57 fights): no error and no blocked action. Seen working in the log: folding
+four feature blocks; chat text size 18 to 16 and back, on all ten chat
+windows; Sort key set to the right stick, taken while the bag was open and
+sorting from it; the arrow keeping its spot through quest-log changes,
+setting a reached spot aside and leading on to the next one (quests 748 and
+761), swapping only to a clearly nearer spot, and going straight to the
+turn-in when the last part was finished; time stamps in order. Not exercised
+in this log: any tap on a chat button (so the on-screen "Press A to type" and
+a whisper are still untested), the Icon key button, and all of 0.2.0. One
+piece of log noise found: "stick click given back to the game" is written at
+the start of every fight even when no stick was taken.
+
 Upcoming from the fourth device test (2026-11-16), one at a time:
 - Bags: reach the Sort tab with the d-pad (Blizzard's controller navigation
   has helpers for addon buttons; needs a device test that item use is never
