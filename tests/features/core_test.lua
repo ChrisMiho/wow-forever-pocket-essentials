@@ -637,6 +637,57 @@ test("debug: switching a feature on or off, and a failed start, each write a lin
 end)
 
 -- Spec table, Core: "fight started / ended; work held back for after a fight and when it ran".
+-- Spec 7: seconds and milliseconds come from one clock, so stamps never go backwards even
+-- when the wall clock and the game timer have unaligned fractions (a real log read
+-- 16:02:45.760 then 16:02:45.686).
+local function stampMs(line)
+    local h, m, s, ms = line:match("^(%d%d):(%d%d):(%d%d)%.(%d%d%d) ")
+    return ((tonumber(h) * 60 + tonumber(m)) * 60 + tonumber(s)) * 1000 + tonumber(ms)
+end
+
+test("debug: stamps do not go backwards across second boundaries when the clocks are offset", function()
+    local c, PE = T.new({})
+    c.wallOffset = -0.3
+    c.now = 1000.55
+    PE:SetDebug(true)
+    for _ = 1, 40 do
+        PE:Debug("probe", "tick")
+        c:advance(0.1)
+    end
+    local lines = debugOf(c).lines
+    check(#lines >= 41, "lines missing: " .. #lines)
+    for i = 2, #lines do
+        check(stampMs(lines[i]) >= stampMs(lines[i - 1]),
+            "stamp went back: " .. lines[i - 1] .. " then " .. lines[i])
+    end
+    check(stampMs(lines[#lines]) - stampMs(lines[1]) > 3500, "the stamps did not move with the timer")
+end)
+
+test("debug: the fight legend is written with the first restriction line of a session only", function()
+    local db = saved()
+    db.debug = { on = true, lines = {}, next = 1 }
+    local c, PE = T.new({ saved = db })
+    c:fire("ADDON_RESTRICTION_STATE_CHANGED", 0, 1)
+    c:fire("ADDON_RESTRICTION_STATE_CHANGED", 0, 2)
+    local got = debugLines(c, "addon restriction")
+    eq(#got, 2)
+    check(got[1]:find("(kinds: 0 combat", 1, true), "first line has no legend: " .. got[1])
+    check(not got[2]:find("kinds", 1, true), "second line repeats the legend: " .. got[2])
+    check(got[2]:find("addon restriction 0 is now 2", 1, true), "second line text: " .. got[2])
+    -- switching the log off and on starts a new session
+    PE:SetDebug(false)
+    PE:SetDebug(true)
+    c:fire("ADDON_RESTRICTION_STATE_CHANGED", 0, 0)
+    got = debugLines(c, "addon restriction")
+    check(got[3]:find("(kinds: 0 combat", 1, true), "no legend after switching on again: " .. got[3])
+    -- a reload is a new session
+    local db2 = rawget(c.env, "PocketEssentialsDB")
+    local c2 = T.new({ saved = db2 })
+    c2:fire("ADDON_RESTRICTION_STATE_CHANGED", 1, 1)
+    got = debugLines(c2, "addon restriction 1 is now 1")
+    check(got[1]:find("(kinds: 0 combat", 1, true), "no legend in a new session: " .. tostring(got[1]))
+end)
+
 -- CLAUDE.md "Nothing ticks while its feature is off": the start of a fight is only listened
 -- for while the log is on (Core.lua DebugWatchFights).
 test("debug: fights are written only while on, and PLAYER_REGEN_DISABLED is not listened for while off", function()

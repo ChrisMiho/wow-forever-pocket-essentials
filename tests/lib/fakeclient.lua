@@ -1429,7 +1429,9 @@ function Client.new(opts)
         return world.player.facing
     end)
     Global("GetTime", function() return c.now end)
-    Global("time", function() return 1763200000 + floor(c.now) end)
+    -- time() counts whole seconds on its own clock: c.wallOffset (default 0) shifts its
+    -- second boundaries against GetTime(), as in the game where the two are not aligned.
+    Global("time", function() return 1763200000 + floor(c.now + (c.wallOffset or 0)) end)
     Global("date", function(fmt, t) return os.date(fmt, t) end)
     -- debugstack([start[, count1[, count2]]]): the top count1 lines (default 12) and the
     -- bottom count2 (default 10), "..." between when lines are left out, as in the game.

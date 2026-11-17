@@ -74,11 +74,32 @@ local function DebugWrite(text)
     store.next = i % DEBUG_CAP + 1
 end
 
+-- One clock for a whole session: the wall clock (time()) is read once and paired
+-- with the game timer (GetTime()); every stamp is that pair's start plus the
+-- timer's progress, so seconds and milliseconds agree and never run backwards.
+local stampWall, stampTimer, stampLast
+local legendWritten = false -- the fight legend goes out once per session
+
+local function ResetDebugSession()
+    stampWall, stampTimer, stampLast = nil, nil, nil
+    legendWritten = false
+end
+
+local function DebugStamp()
+    if not GetTime then return date("%H:%M:%S") .. ".000" end
+    local timer = GetTime()
+    if not stampWall then stampWall, stampTimer = time(), timer end
+    local stamp = stampWall + (timer - stampTimer)
+    if stampLast and stamp < stampLast then stamp = stampLast end
+    stampLast = stamp
+    local whole = math.floor(stamp)
+    return date("%H:%M:%S", whole) .. string.format(".%03d", math.floor((stamp - whole) * 1000))
+end
+
 function PE:Debug(key, text)
     if not PE.debugOn or not debugStore then return end
     if issecretvalue and issecretvalue(text) then text = "<secret>" end
-    local ms = GetTime and math.floor((GetTime() % 1) * 1000) or 0
-    local line = date("%H:%M:%S") .. string.format(".%03d ", ms) .. tostring(key) .. ": " .. tostring(text)
+    local line = DebugStamp() .. " " .. tostring(key) .. ": " .. tostring(text)
     if #line > DEBUG_LINE_MAX then line = line:sub(1, DEBUG_LINE_MAX) end
     DebugWrite(line)
 end
@@ -127,6 +148,7 @@ local DebugWatchFights -- set below, once the event frame exists
 
 -- Called when the saved settings are loaded and at login.
 local function DebugSessionStart()
+    ResetDebugSession()
     if not PE.debugOn then return end
     PE:Debug("core", "---- session ---- " .. DebugHeader())
 end
@@ -140,6 +162,7 @@ function PE:SetDebug(on)
     PE.debugOn = on
     DebugWatchFights()
     if on then
+        ResetDebugSession()
         PE:Debug("core", "---- debug log switched on ---- " .. DebugHeader())
     end
     self:RefreshSettings()
@@ -1081,8 +1104,12 @@ local function OnEvent(_, event, ...)
     elseif event == "ADDON_RESTRICTION_STATE_CHANGED" then
         if PE.debugOn then
             local kind, state = ...
-            PE:Debug("core", "addon restriction " .. PE.Plain(kind) .. " is now " .. PE.Plain(state)
-                .. " (kinds: 0 combat, 1 encounter, 2 challenge, 3 PvP, 4 map, 5 chat; 0 off, 1 starting, 2 on)")
+            local legend = ""
+            if not legendWritten then
+                legendWritten = true
+                legend = " (kinds: 0 combat, 1 encounter, 2 challenge, 3 PvP, 4 map, 5 chat; 0 off, 1 starting, 2 on)"
+            end
+            PE:Debug("core", "addon restriction " .. PE.Plain(kind) .. " is now " .. PE.Plain(state) .. legend)
         end
     elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
         xpcall(OnActionBlocked, coreHandler, event, ...)
