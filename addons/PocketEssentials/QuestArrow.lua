@@ -13,8 +13,9 @@ local ADDON_NAME, PE = ...
 --         happens after every kill).
 --       - If the target is gone (its objective finished), the nearest spot
 --         left is taken at once.
---       - Otherwise another spot only takes over when it is at least
---         KEEP_RATIO of the way nearer and KEEP_YARDS nearer, so two spots at
+--       - Otherwise another spot only takes over when it is under KEEP_RATIO
+--         (80 %) of the target's distance, that is at least 20 % nearer, and
+--         also at least KEEP_YARDS (15 yards) nearer, so two spots at
 --         a similar distance do not swap back and forth; and never while the
 --         arrow reads "Here".
 --       - A spot where the arrow read "Here" is set aside for ASIDE_SECONDS
@@ -281,6 +282,9 @@ end
 local function RefreshAside(tracked, playerMap)
     local aside = S.aside
     if tracked ~= S.asideQuest or playerMap ~= S.asideMap then
+        if PE.debugOn and next(aside) ~= nil then
+            PE:Debug(KEY, "set-aside spots forgotten: " .. (tracked ~= S.asideQuest and "quest changed" or "map changed"))
+        end
         S.asideQuest, S.asideMap = tracked, playerMap
         wipe(aside)
         return
@@ -883,7 +887,7 @@ mod = PE:RegisterModule({
     -- Also runs after a half-finished OnEnable, so every step checks first.
     OnDisable = function(self)
         S.ready = false
-        if PE.debugOn and S.running then PE:Debug(KEY, "driver stopped: feature off") end
+        if PE.debugOn and S.dbgArrow then PE:Debug(KEY, "driver stopped: feature off") end     -- pairs with "driver started"
         S.running = false
         S.dbgState, S.dbgArrow = nil, false
         if S.driver then S.driver:Hide() end

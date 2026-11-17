@@ -533,6 +533,7 @@ test("quest arrow: changing the focused quest clears the set-aside spots", funct
     local north = A.y - 20 / MH
     placeAt(c, A.x, north, nil, 2.5)
     check(isAt(published(PE), S2), "test setup: A was not set aside")
+    PE:SetDebug(true)
     c.world.questLog.focus = nil
     c:fire("SUPER_TRACKING_CHANGED")
     c:advance(1.2)
@@ -540,6 +541,54 @@ test("quest arrow: changing the focused quest clears the set-aside spots", funct
     c:fire("SUPER_TRACKING_CHANGED")
     c:advance(1.2)
     check(isAt(published(PE), A), "the set-aside spot was not forgotten: " .. where(published(PE)))
+    eq(#logLines(c, "questArrow: set-aside spots forgotten: quest changed"), 1)
+end)
+
+-- Spec 4 Design: "The list is cleared when ... the map changes".
+test("quest arrow: changing the map clears the set-aside spots", function()
+    local c, PE = newCamps(A.x, A.y)
+    PE:SetDebug(true)
+    local north = A.y - 20 / MH
+    placeAt(c, A.x, north, nil, 2.5)
+    check(isAt(published(PE), S2), "test setup: A was not set aside")
+    c.world.player.map = QW.HOME                     -- into Elwynn Forest (no spot of quest 745 there)
+    c:fire("ZONE_CHANGED_NEW_AREA")
+    c:advance(1.2)
+    eq(published(PE), nil, "test setup: still pointing on another map")
+    c.world.player.map = QW.MULGORE
+    c:fire("ZONE_CHANGED_NEW_AREA")
+    c:advance(1.2)
+    check(isAt(published(PE), A), "the set-aside spot was not forgotten: " .. where(published(PE)))
+    eq(#logLines(c, "questArrow: set-aside spots forgotten: map changed"), 1)
+end)
+
+-- Spec 4 Design: "The list is cleared when ... the feature goes off".
+test("quest arrow: switching the arrow off and on clears the set-aside spots", function()
+    local c, PE = newCamps(A.x, A.y)
+    local north = A.y - 20 / MH
+    placeAt(c, A.x, north, nil, 2.5)
+    check(isAt(published(PE), S2), "test setup: A was not set aside")
+    PE:SetModuleEnabled("questArrow", false)
+    c:advance(0.5)
+    PE:SetModuleEnabled("questArrow", true)
+    c:advance(1.2)
+    check(isAt(published(PE), A), "the set-aside spot was not forgotten: " .. where(published(PE)))
+end)
+
+-- Spec 4 "Arrow debug log": "driver stopped: feature off" only pairs with a "driver started" line.
+test("debug log: switching the arrow off writes driver stopped only after a driver started line", function()
+    local c, PE = newArrow({ nofocus = true })
+    PE:SetDebug(true)
+    PE:SetModuleEnabled("questArrow", false)
+    c:advance(0.5)
+    eq(logLines(c, "questArrow: driver"), {}, "text only, then off")
+    local c2, PE2 = newArrow()
+    PE2:SetDebug(true)
+    c2:advance(0.5)
+    PE2:SetModuleEnabled("questArrow", false)
+    c2:advance(0.5)
+    eq(#logLines(c2, "questArrow: driver started"), 1)
+    eq(#logLines(c2, "questArrow: driver stopped: feature off"), 1)
 end)
 
 -- Spec 4 "Arrow debug log": the pointing line names objective and spot, and is written on each change.
