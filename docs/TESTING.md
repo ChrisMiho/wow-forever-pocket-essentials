@@ -558,3 +558,47 @@ note the chat size before starting.
     line and are easy to hit at the Small, Medium and Large button sizes.
     Send the saved `PocketEssentials.lua` file, and say whether any
     "Interface action failed" or "action blocked" message appeared.
+
+#### 13b. Menu background
+
+Install the 0.4.0 zip, log in, open the Pocket Essentials settings and turn
+the debug log on (Errors page).
+
+1. Open the quest log and open the menu on a quest (the Y button). Confirm
+   it still looks broken (text with no background). This shows the switch
+   really starts off.
+2. In the settings, switch on **Menu background**. No reload should be
+   asked for.
+3. Open the quest log and open the menu on a quest again. Is there now a
+   dark panel behind Track / Focus / Share / Abandon? Is all the text on the
+   panel, with nothing sticking out? Is the "A Select / B Close" bar still
+   there? Take a screenshot here.
+4. Move up and down the menu. Does the highlight still follow?
+5. Choose **Track Quest** (or Untrack). Did it work, and did the panel
+   vanish together with the menu?
+6. Open the menu again and choose **Focus**. Does the quest arrow pick up
+   the quest? Panel gone?
+7. Open the menu again and choose **Share in Chat**. Does the quest link
+   land in the chat box as before?
+8. Open the menu again and press **B**. Menu and panel both gone?
+9. Open the menu and, while it is open, close the whole map. Is any dark box
+   left on the screen? (If one is, say whether it goes away the next time
+   you open any menu.)
+10. On a quest you do not need: open the menu, choose **Abandon Quest**, and
+    confirm. Did the usual "abandon?" question appear and work?
+11. Open the menu on a zone heading in the quest log (the "track all" menu).
+    Does it have the panel too?
+12. If you can, with touch or a mouse: right click your own portrait or a
+    chat tab. Does that menu have a panel? Does any menu look worse than
+    before (a dark box around a menu that already had a background)?
+13. Start a fight with something easy, and during the fight open the quest
+    log and the quest menu. Panel there? Does the chat say "Interface action
+    failed because of an AddOn" at any point in this whole test?
+14. Switch **Menu background** off. Open the quest menu once more. It should
+    look as it did in step 1.
+15. Log out, and send the saved `PocketEssentials.lua` file plus the
+    screenshot from step 3.
+
+Report for each step: yes / no / what you saw. The saved file's `menuBg`
+lines say which way the addon heard about the menu and whether the game's
+own background picture is missing on this client.

@@ -8,6 +8,18 @@ All notable changes to this project are recorded here. The format follows
 
 Fifteenth test build, in progress. Not yet tested on a device.
 
+### Added
+
+- **Menu background**, a new switch, off by default. With it on, a plain
+  dark panel with a thin grey edge sits behind the game's pop-up menus while
+  they are open, so the text is easy to read. The menu it is meant for is
+  the one on a quest in the quest log (Track / Focus / Share / Abandon),
+  which on this client is drawn with no background. The panel is only a
+  picture behind the menu: the menu's entries are not touched, it never
+  takes a tap, and it goes away when the menu closes. No reload is needed
+  to turn it on or off. With the debug log on, the log also says whether
+  the game's own menu background picture is missing on this client.
+
 ### Changed
 
 - **Chat text size** is now one small stepper: **Smaller**, the size as a

@@ -76,7 +76,7 @@ local CORE_EVENTS = {
     DISPLAY_SIZE_CHANGED = "UI.lua: resizes everything",
 }
 
-local FEATURES = { "questIcons", "questArrow", "bags", "sellJunk", "repair", "chat" }
+local FEATURES = { "questIcons", "questArrow", "bags", "sellJunk", "repair", "chat", "menuBg" }
 local QUEST_FEATURES = { questIcons = true, questArrow = true }
 
 ---------------------------------------------------------------------------

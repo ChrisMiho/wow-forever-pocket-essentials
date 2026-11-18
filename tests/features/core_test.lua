@@ -11,7 +11,7 @@ local test, eq, check = T.test, T.eq, T.check
 local KNOWN_FAILURES = {
 }
 
-local FEATURES = { "questIcons", "questArrow", "bags", "sellJunk", "repair", "chat" }
+local FEATURES = { "questIcons", "questArrow", "bags", "sellJunk", "repair", "chat", "menuBg" }
 
 local function saved(enabled, options)
     return { version = 1, enabled = enabled or {}, options = options or {}, ui = { size = "medium", hubPos = "LEFT" }, errors = {} }

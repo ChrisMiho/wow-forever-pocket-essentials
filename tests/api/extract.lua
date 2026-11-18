@@ -68,6 +68,10 @@ local INDIRECT = {
     { "frame", "EditModeManagerFrame", "../../probe/PocketProbe/Trials.lua", "EditModeManagerFrame" },
     { "namespace", "C_EditMode.GetLayouts", "../../probe/PocketProbe/Trials.lua", "C_EditMode.GetLayouts" },
     { "namespace", "C_EditMode.SetActiveLayout", "../../probe/PocketProbe/Trials.lua", "C_EditMode.SetActiveLayout" },
+    -- Menu background: the quest menu's function is hooked by its name in a string, and
+    -- GetManager is a function on Blizzard's plain "Menu" table (only C_ namespaces are picked up).
+    { "global", "QuestMapLogTitleButton_CreateContextMenu", "MenuBackground.lua", "QuestMapLogTitleButton_CreateContextMenu" },
+    { "namespace", "Menu.GetManager", "MenuBackground.lua", "Menu.GetManager" },
     { "cvar",   "combinedBags", "Bags.lua", '"combinedBags"' },
 }
 -- Event names held as table keys rather than strings.

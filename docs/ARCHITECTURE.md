@@ -21,6 +21,7 @@ addons/PocketEssentials/
   Bags.lua        feature: bag sorter (key `bags`; called "One big bag" before 0.1.0)
   Vendor.lua      features: sell junk, repair (two switches)
   Chat.lua        feature: big chat buttons
+  MenuBackground.lua  feature: menu background (key `menuBg`): a dark panel of ours behind the game's pop-up menus
   Icons/          three icon images from pfQuest/Shagu with their MIT notice,
                   plus our own arrow and circle (scripts/make_art.py --icons)
 
@@ -158,6 +159,12 @@ so that being wrong cannot raise an error; the worst case is listed.
 | Whether the controller's A release always reaches our navigation button during a long hold, whether A repeats while held, and whether a finger sliding off a button still sends its release | Move things, hold to repeat | A hold keeps moving until the 8-second stop or the screen edge (if the game also repeats A while it is held, until the button is let go or the edge); a single press still nudges |
 | `GetLeft` / `GetRight` / `GetTop` / `GetBottom` read straight after `SetPoint` giving the new rectangle | Move things, the screen-edge rule and the panel's corner hop | A piece can be nudged partly off the screen, or the panel does not hop; Reset recovers |
 | Whether a moved piece near a screen edge is covered by one of the game's own frames | Move things | The piece is hard to see there; move it or Reset |
+| The `EventRegistry` events `MenuProxy.OnShow`, `MenuProxy.OnHide`, `MenuProxy.OnClose` fire on this client with the menu frame as their argument (seen in `Blizzard_Menu/Menu.lua:1755`, `:1848`, `:1852`; event names are plain strings, so the audit cannot check them) | Menu background | No panel on most menus; the quest menu still gets one through the fallback; the debug log says which |
+| `Menu.GetManager():GetOpenMenu()` returns the open menu's frame (`Menu.lua:2667`, `:2712`; found by the audit, behaviour untested) | Menu background, fallback only | The fallback finds nothing; one debug line; no panel |
+| `QuestMapLogTitleButton_CreateContextMenu` is the function that opens the quest menu and is called by its global name (`QuestMapFrame.lua:2367`, `:2501`; `Blizzard_WorldMap.lua:921`) | Menu background, fallback only | The fallback never runs; the main path is not affected |
+| A frame of ours with no parent, in the menu's layer and one level lower, is drawn directly behind the menu (the menu template flattens its layers and has controller glow frames at fixed levels) | Menu background | The panel is invisible or over the text; the feature is switched off again |
+| Whether our parentless frame is in the same window as the menu (menus call `SetWindow`; ours stays in the default one and never calls it) | Menu background | Logged as shown but not visible |
+| The atlas `common-dropdown-bg` is missing from this client (the suspected cause of menus with no background) | Explanation only; one debug line reports it | None for the feature |
 | `debugstack` argument form; whether `C_UI.Reload` needs a real press (it is only ever called from one; see "Verified" for what the source shows) | Core | Shorter error details |
 
 Checks that run offline (see `docs/TESTING.md`): `scripts/check.sh` compiles

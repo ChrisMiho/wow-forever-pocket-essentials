@@ -79,7 +79,7 @@ local M_FONT_INSTANCE = list("SetFont GetFont SetFontObject SetTextColor SetShad
 local M_FONTSTRING = list("SetText GetText SetWordWrap SetMaxLines GetStringHeight GetUnboundedStringWidth SetRotation")
 local M_FRAME = list([[GetAlpha SetAlpha GetScale SetScale GetEffectiveScale CreateTexture CreateFontString CreateLine
     CreateAnimationGroup RegisterEvent UnregisterEvent UnregisterAllEvents IsEventRegistered SetFrameStrata
-    SetFrameLevel GetFrameLevel SetClampedToScreen SetHitRectInsets Raise]])
+    GetFrameStrata SetFrameLevel GetFrameLevel SetClampedToScreen SetHitRectInsets Raise]])
 local M_BUTTON = list("RegisterForClicks IsEnabled SetText GetText")
 local M_SCROLLFRAME = list("SetScrollChild SetVerticalScroll")
 local M_EDITBOX = list("SetText GetText IsEnabled SetFont GetFont SetFontObject SetTextColor")
@@ -217,6 +217,9 @@ function Client.new(opts)
         bagProtected = false,
         spellTargeting = false,      -- a spell is waiting for a target (the cursor)
         repairMode = false,          -- the vendor's repair cursor is up
+        openMenu = nil,              -- the open root pop-up menu's frame (Menu.GetManager():GetOpenMenu())
+        questMenu = nil,             -- c:openMenu options for the quest log's menu ({ silent = true }: no announcement)
+        menuArt = false,             -- true: the atlas "common-dropdown-bg" exists
     }
     c.world = world
 
@@ -737,6 +740,8 @@ function Client.new(opts)
         if not STRATA[s] then error("SetFrameStrata(): unknown strata '" .. tostring(s) .. "'", 2) end
         St(self).strata = s
     end
+    -- A frame that was never given a layer reports the default one.
+    function METHODS:GetFrameStrata() return St(self).strata or "MEDIUM" end
     function METHODS:SetFrameLevel(n) CheckNumber(n, "SetFrameLevel()"); St(self).level = floor(n) end
     function METHODS:GetFrameLevel() return St(self).level end
     function METHODS:SetClampedToScreen(v) St(self).clamped = v and true or false end
@@ -1155,6 +1160,91 @@ function Client.new(opts)
     end
 
     -----------------------------------------------------------------------
+    -- Pop-up menus (Blizzard_Menu) and the EventRegistry they announce through
+    -----------------------------------------------------------------------
+    -- EventRegistry (Blizzard_SharedXMLBase/GlobalCallbackRegistry.lua:1, CallbackRegistry.lua:112-240):
+    -- one callback per owner per event, called as func(owner, ...).
+    local registry = {}          -- [event] = { { owner =, func = }, ... } in registration order
+    if snap.global.EventRegistry then
+        local reg = {}
+        if allowedMethod.RegisterCallback then
+            function reg.RegisterCallback(self, event, func, owner)
+                if type(event) ~= "string" then error("CallbackRegistryMixin::RegisterCallback 'event' requires string type.", 2) end
+                if type(func) ~= "function" then error("CallbackRegistryMixin::RegisterCallback 'func' requires function type.", 2) end
+                if type(owner) == "number" then error("CallbackRegistryMixin:RegisterCallback 'owner' as number is reserved internally.", 2) end
+                if owner == nil then owner = {} end
+                Log("EventRegistry.RegisterCallback", event)
+                local list = registry[event] or {}
+                registry[event] = list
+                for _, e in ipairs(list) do
+                    if e.owner == owner then e.func = func return owner end
+                end
+                list[#list + 1] = { owner = owner, func = func }
+                return owner
+            end
+        end
+        if allowedMethod.UnregisterCallback then
+            function reg.UnregisterCallback(self, event, owner)
+                if type(event) ~= "string" then error("CallbackRegistryMixin:UnregisterCallback 'event' requires string type.", 2) end
+                if owner == nil then error("CallbackRegistryMixin:UnregisterCallback 'owner' is required.", 2) end
+                Log("EventRegistry.UnregisterCallback", event)
+                local list = registry[event] or {}
+                for i = #list, 1, -1 do
+                    if list[i].owner == owner then table.remove(list, i) end
+                end
+            end
+        end
+        rawset(env, "EventRegistry", reg)
+    end
+    -- What the game does when it triggers a registry event. An error in a
+    -- callback goes to the client's error list and the rest still run.
+    c.triggerRegistry = function(_, event, ...)
+        local list = {}
+        for i, e in ipairs(registry[event] or {}) do list[i] = e end
+        for _, e in ipairs(list) do Protect("EventRegistry " .. event, e.func, e.owner, ...) end
+    end
+    c.registryCount = function(_, event) return #(registry[event] or {}) end
+
+    -- A menu frame as MenuManagerMixin:AcquireMenu makes it (Menu.lua:2182-2283): no parent,
+    -- layer FULLSCREEN_DIALOG, level owner + 500 + menu level; shown, then announced with
+    -- "MenuProxy.OnShow" (Menu.lua:1848). opts: w, h, x, y (TOPLEFT on UIParent), strata, level,
+    -- root = false (a side menu: not the manager's open menu), silent = true (a client that
+    -- never announces), forbidden = true, breakStrata = true (GetFrameStrata raises).
+    -- Every Set*, Clear*, Hook*, Show and Hide called on it afterwards lands in c.calls as "Menu:<name>".
+    c.openMenu = function(_, o)
+        o = o or {}
+        local menu = Blizz("Frame", nil, nil)
+        local st = W[menu]
+        st.width, st.height = o.w or 200, o.h or 120
+        st.points = { { point = "TOPLEFT", rel = UIParent, relPoint = "TOPLEFT", x = o.x or 300, y = o.y or -200 } }
+        st.strata, st.level = o.strata or "FULLSCREEN_DIALOG", o.level or 503
+        st.shown = true
+        if o.forbidden then rawset(menu, "IsForbidden", function() return true end) end
+        if o.breakStrata then rawset(menu, "GetFrameStrata", function() error("GetFrameStrata: broken for this test", 2) end) end
+        LogBlizzardMutations(menu, "Menu")
+        if o.root ~= false then world.openMenu = menu end
+        if not o.silent then c:triggerRegistry("MenuProxy.OnShow", menu) end
+        return menu
+    end
+    -- "MenuProxy.OnClose" (Menu.lua:1755), the frame hidden, then "MenuProxy.OnHide" (Menu.lua:1852).
+    -- opts.noClose / opts.noHide leave an announcement out.
+    c.closeMenu = function(_, menu, o)
+        o = o or {}
+        if not o.noClose then c:triggerRegistry("MenuProxy.OnClose", menu, 1) end
+        W[menu].shown = false
+        if not o.noHide then c:triggerRegistry("MenuProxy.OnHide", menu) end
+        if world.openMenu == menu then world.openMenu = nil end
+    end
+    -- Menu.GetManager():GetOpenMenu() (Menu.lua:2712, :2667): the open root menu's frame.
+    if snap.global.Menu then
+        local manager = {}
+        if allowedMethod.GetOpenMenu then manager.GetOpenMenu = function() return world.openMenu end end
+        local menuTable = {}
+        if snap.namespace["Menu.GetManager"] then menuTable.GetManager = function() return manager end end
+        rawset(env, "Menu", menuTable)
+    end
+
+    -----------------------------------------------------------------------
     -- Timers and clock
     -----------------------------------------------------------------------
     local timers, timerSeq = {}, 0
@@ -1263,6 +1353,7 @@ function Client.new(opts)
     -- TextureUtilsDocumentation.lua: an AtlasInfo table, or nothing for an unknown atlas.
     Namespace("C_Texture", { GetAtlasInfo = function(atlas)
         if atlas == "bags-button-autosort-up" then return { width = 28, height = 26 } end
+        if atlas == "common-dropdown-bg" and world.menuArt then return { width = 32, height = 32 } end
     end })
 
     local function NumPresets() return #PRESETS end
@@ -1510,6 +1601,15 @@ function Client.new(opts)
         bag:ClearAllPoints()
         bag:SetPoint("BOTTOMRIGHT", bag:GetParent(), "BOTTOMRIGHT", 4 / scale, 85 / scale)
     end)
+    -- The quest log's menu (Blizzard_UIPanels_Game/Mainline/QuestMapFrame.lua:2367): opens a
+    -- menu with world.questMenu as its c:openMenu options.
+    if snap.global.QuestMapLogTitleButton_CreateContextMenu then
+        Global("QuestMapLogTitleButton_CreateContextMenu", function(button, parent)
+            local o = {}
+            for k, v in pairs(world.questMenu or {}) do o[k] = v end
+            c.lastQuestMenu = c:openMenu(o)
+        end)
+    end
     -- ChatFrameUtil.lua (Shared): prints INTERFACE_ACTION_BLOCKED once, then turns itself off.
     Global("DisplayInterfaceActionBlockedMessage", function()
         c.chat[#c.chat + 1] = "Interface action failed because of an AddOn"
@@ -1820,6 +1920,16 @@ function Client:closeMerchant()
     self.world.merchant.open = false
     self.env.MerchantFrame:Hide()
     self:fire("MERCHANT_CLOSED")
+end
+
+-- The quest log's menu, opened the way the game does (by the global name, so a
+-- hook on it runs). Returns the menu frame.
+function Client:openQuestMenu()
+    local fn = rawget(self.env, "QuestMapLogTitleButton_CreateContextMenu")
+    if type(fn) ~= "function" then error("fakeclient: c:openQuestMenu(): this client has no quest menu function", 2) end
+    self.lastQuestMenu = nil
+    self._protect("QuestMapLogTitleButton_CreateContextMenu", fn, { questID = 1 })
+    return self.lastQuestMenu
 end
 
 function Client:enterCombat()
