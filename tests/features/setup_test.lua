@@ -1095,11 +1095,13 @@ end
 local function buttonsAfter(c, top, label)
     local at = textRegion(c, top, label)
     if not at then return nil end
-    local _, _, _, labelBottom = c._rect(at.region)
+    -- Since 0.6.0 the heading may sit on its buttons' line (left of them), so
+    -- "after" is every button whose middle is not above the heading's top.
+    local _, _, labelTop = c._rect(at.region)
     local out = {}
     for _, b in ipairs(shownButtons(c, top)) do
-        local l, _, t = c._rect(b)
-        if b:GetParent() == at.parent and t <= labelBottom + 0.01 then out[#out + 1] = { b = b, l = l, t = t } end
+        local l, _, t, bottom = c._rect(b)
+        if b:GetParent() == at.parent and (t + bottom) / 2 <= labelTop + 0.01 then out[#out + 1] = { b = b, l = l, t = t } end
     end
     table.sort(out, function(x, y)
         if math.abs(x.t - y.t) > 0.01 then return x.t > y.t end
@@ -1109,8 +1111,28 @@ local function buttonsAfter(c, top, label)
     return out
 end
 
+-- The value a choices row shows: its get, or the saved value of its key.
+local function currentOf(mod, opt)
+    if type(opt.get) == "function" then return opt.get(mod) end
+    return mod.opts[opt.key]
+end
+
+-- The one button of a toggle row (0.6.0): it reads "label: choice"; nil when not drawn.
+local function toggleButton(c, top, opt)
+    for _, b in ipairs(shownButtons(c, top)) do
+        local text = T.labelOf(b)
+        if text and text:sub(1, #opt.label + 2) == opt.label .. ": " then return b end
+    end
+    return nil
+end
+
 -- The buttons of one choices row, in the order of its choices; nil when the row is not drawn.
+-- A toggle row has one button, so this is a list of that one.
 local function choiceButtons(c, top, opt)
+    if opt.toggle then
+        local b = toggleButton(c, top, opt)
+        return b and { b } or nil
+    end
     local after = buttonsAfter(c, top, opt.label)
     if not after then return nil end
     local out = {}
@@ -1125,12 +1147,21 @@ end
 
 -- Checks that `top` draws (shown = true) or does not draw one option row of a feature.
 local function checkOption(c, top, mod, opt, shown, where)
-    if type(opt.choices) == "table" then
+    if opt.toggle then
+        local b = toggleButton(c, top, opt)
+        eq(b ~= nil, shown, where .. ": toggle \"" .. opt.label .. "\" drawn")
+        if shown then
+            local current = currentOf(mod, opt)
+            local choice = current == opt.choices[2].value and opt.choices[2] or opt.choices[1]
+            eq(T.labelOf(b), opt.label .. ": " .. tostring(choice.label), where .. ": toggle label")
+            eq(b.peStyle, current == true and "on" or "off", where .. ": toggle style")
+        end
+    elseif type(opt.choices) == "table" then
         local buttons = choiceButtons(c, top, opt)
         eq(buttons ~= nil, shown, where .. ": \"" .. opt.label .. "\" drawn")
         if shown then
             for i, choice in ipairs(opt.choices) do
-                eq(buttons[i].peSelected == true, mod.opts[opt.key] == choice.value,
+                eq(buttons[i].peSelected == true, currentOf(mod, opt) == choice.value,
                     where .. ": \"" .. opt.label .. "\" / " .. tostring(choice.label) .. " marked")
             end
         end
@@ -1205,6 +1236,7 @@ test("options: off, a feature shows only its rows marked always; switched on, al
             for _, opt in ipairs(mod.options) do
                 checkOption(c, guide(c), mod, opt, true, key .. " on")
                 local first = type(opt.action) == "function" and shownButtons(c, guide(c), opt.label)[1]
+                    or opt.toggle and toggleButton(c, guide(c), opt)
                     or textRegion(c, guide(c), opt.label).region
                 local _, _, top = c._rect(first)
                 check(top < switchBottom, key .. ": \"" .. opt.label .. "\" is not under the switch")
@@ -1297,41 +1329,56 @@ test("options: a choice pressed in the guide is saved, runs the same OnChange an
                         if original then return original(...) end
                     end
                     local where = mod.key .. " / " .. opt.label
-                    -- two choices that are not the saved one (or the only other one, twice over)
-                    local others = {}
-                    for i, choice in ipairs(opt.choices) do
-                        if choice.value ~= mod.opts[opt.key] then others[#others + 1] = i end
-                    end
-                    local first, second = others[1], others[2]
-                    if not second then
-                        for i, choice in ipairs(opt.choices) do
-                            if choice.value == mod.opts[opt.key] then second = i end
+                    -- The value a press on this row should save, and the button to press.
+                    -- A toggle has one button that flips; otherwise a choice that is
+                    -- not the saved one (or the only other one, twice over).
+                    local function pick(top, nth)
+                        local current = currentOf(mod, opt)
+                        if opt.toggle then
+                            local value = opt.choices[1].value -- not "and ... or": the other value may be false
+                            if current == opt.choices[1].value then value = opt.choices[2].value end
+                            return toggleButton(c, top, opt), value
                         end
+                        local others = {}
+                        for i, choice in ipairs(opt.choices) do
+                            if choice.value ~= current then others[#others + 1] = i end
+                        end
+                        local i = others[nth] or others[1]
+                        return choiceButtons(c, top, opt)[i], opt.choices[i].value, i
+                    end
+                    local function marked(top, i)
+                        if opt.toggle then return true end -- checkOption reads the toggle's label
+                        return choiceButtons(c, top, opt)[i].peSelected == true
                     end
 
                     -- in the guide
                     goToFeature(c, PE, mod.key)
-                    c:click(choiceButtons(c, guide(c), opt)[first])
+                    local btn, value, index = pick(guide(c), 1)
+                    c:click(btn)
                     c:advance(0.1)
-                    eq(mod.opts[opt.key], opt.choices[first].value, where .. ": saved after the press in the guide")
-                    eq(PE.db.options[mod.key][opt.key], opt.choices[first].value, where .. ": in the saved table")
+                    eq(currentOf(mod, opt), value, where .. ": saved after the press in the guide")
+                    if opt.key ~= nil then
+                        eq(PE.db.options[mod.key][opt.key], value, where .. ": in the saved table")
+                    end
                     eq(#calls, 1, where .. ": OnChange calls after the press in the guide")
-                    check(calls[1][1] == mod and calls[1][2] == opt.choices[first].value, where .. ": OnChange got other arguments")
-                    check(choiceButtons(c, guide(c), opt)[first].peSelected == true, where .. ": not marked in the guide")
+                    check(calls[1][1] == mod and calls[1][2] == value, where .. ": OnChange got other arguments")
+                    check(marked(guide(c), index), where .. ": not marked in the guide")
+                    checkOption(c, guide(c), mod, opt, true, where .. ", guide after the press")
                     PE:OpenSettings()
                     c:advance(0.2)
                     checkOption(c, settingsPanel(c), mod, opt, true, where .. ", settings after the guide")
 
                     -- in the settings
-                    c:click(choiceButtons(c, settingsPanel(c), opt)[second])
+                    btn, value, index = pick(settingsPanel(c), 2)
+                    c:click(btn)
                     c:advance(0.2)
-                    eq(mod.opts[opt.key], opt.choices[second].value, where .. ": saved after the press in the settings")
+                    eq(currentOf(mod, opt), value, where .. ": saved after the press in the settings")
                     eq(#calls, 2, where .. ": OnChange calls after the press in the settings")
-                    check(calls[2][1] == mod and calls[2][2] == opt.choices[second].value, where .. ": OnChange got other arguments")
+                    check(calls[2][1] == mod and calls[2][2] == value, where .. ": OnChange got other arguments")
                     goToFeature(c, PE, mod.key)
                     check(not settingsPanel(c):IsShown(), "the settings stayed open under the guide")
                     checkOption(c, guide(c), mod, opt, true, where .. ", guide after the settings")
-                    check(choiceButtons(c, guide(c), opt)[second].peSelected == true, where .. ": not marked in the guide")
+                    check(marked(guide(c), index), where .. ": not marked in the guide")
                     opt.OnChange = original
                     pressed = pressed + 1
                 end
@@ -1522,11 +1569,13 @@ test("options: switching a feature on with A keeps the highlight on the switch, 
         press(c, "RIGHT")
         check(panel.peNavFocus == b, "step " .. i .. " from the switch is " .. T.labelOf(panel.peNavFocus) .. ", expected " .. T.labelOf(b))
     end
-    -- A on a choice: saved, and the highlight stays on it
+    -- A on the last control (a toggle since 0.6.0): it flips, and the highlight stays on it
     local last = want[#want]
+    local before = T.labelOf(last)
     press(c, "A")
     c:advance(0.1)
-    check(panel.peNavFocus == last and last.peSelected == true, "the highlight left the choice, or it is not marked")
+    check(panel.peNavFocus == last, "the highlight left the control")
+    check(T.labelOf(last) ~= before or last.peSelected == true, "A did not change the control")
     -- DOWN moves a line at a time, so a few presses cross the whole list
     press(c, "UP")
     check(panel.peNavFocus ~= last, "UP did not leave the line")

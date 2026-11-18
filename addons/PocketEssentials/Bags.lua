@@ -1405,7 +1405,7 @@ local function Status(self)
         lines[1] = "Sort with the Sort button; no stick is taken."
     end
     if opts and opts.showTab == false then
-        lines[#lines + 1] = "The Sort button is hidden; show it again here if you need it."
+        lines[#lines + 1] = "The Sort button is hidden; pick a way with \"Button\" in How to sort to bring it back."
     end
     if DpadWanted() and gamepad then
         if NavApi() then
@@ -1421,6 +1421,22 @@ local function Status(self)
     if clamped then lines[#lines + 1] = "The bag is as big as the screen allows." end
     return lines
 end
+
+-- "How to sort": each way, and the two saved values it stands for.
+local HOW_TO_SORT = {
+    { value = "l3", label = "Button + left stick" },
+    { value = "r3", label = "Button + right stick" },
+    { value = "none", label = "Button only" },
+    { value = "l3only", label = "Left stick only" },
+    { value = "r3only", label = "Right stick only" },
+}
+local HOW_TO_SORT_WAYS = {
+    l3 = { sortKey = "l3", showTab = true },
+    r3 = { sortKey = "r3", showTab = true },
+    none = { sortKey = "none", showTab = true },
+    l3only = { sortKey = "l3", showTab = false },
+    r3only = { sortKey = "r3", showTab = false },
+}
 
 mod = PE:RegisterModule({
     key = "bags",
@@ -1443,26 +1459,30 @@ mod = PE:RegisterModule({
               end
               if active then SyncScale() end
           end },
-        { key = "sortKey", label = "Sort key",
-          choices = {
-              { value = "l3", label = "Left stick click" },
-              { value = "r3", label = "Right stick click" },
-              { value = "none", label = "Button only" },
-          },
-          -- Hands the old stick back before the new one is taken (ApplyBinding).
+        -- One choice for the two saved values `sortKey` and `showTab` (0.6.0),
+        -- so there is always a way to sort: no "Button only" with the button hidden.
+        { label = "How to sort",
+          choices = HOW_TO_SORT,
+          get = function()
+              local key = SortKeyChoice()
+              if TabWanted() then return key end
+              if key == "none" then return "none" end -- repaired at load; reads as Button only
+              return key .. "only"
+          end,
+          set = function(self, value)
+              local way = HOW_TO_SORT_WAYS[value]
+              if not way then return end
+              self.opts.sortKey, self.opts.showTab = way.sortKey, way.showTab
+          end,
+          -- Hands the old stick back before the new one is taken (ApplyBinding);
+          -- the bag may now grow into the tab's space, or make room for it.
           OnChange = function()
-              if PE.debugOn then PE:Debug("bags", "sort key choice: " .. SortKeyChoice()) end
-              if active then SyncBinding() end
-          end },
-        { key = "showTab", label = "Sort button",
-          choices = {
-              { value = true, label = "Show" },
-              { value = false, label = "Hide" },
-          },
-          -- The bag may now grow into the tab's space, or make room for it.
-          OnChange = function()
-              if PE.debugOn then PE:Debug("bags", TabWanted() and "Sort tab choice: show" or "Sort tab choice: hide") end
+              if PE.debugOn then
+                  PE:Debug("bags", "sort key choice: " .. SortKeyChoice())
+                  PE:Debug("bags", TabWanted() and "Sort tab choice: show" or "Sort tab choice: hide")
+              end
               if active then
+                  SyncBinding()
                   SyncScale()
                   SyncConfirm()
                   RefreshSortJump()
@@ -1471,7 +1491,7 @@ mod = PE:RegisterModule({
         -- Its own choice, off until it has passed a device test: it is the one
         -- part of this feature that has a value stored on Blizzard's item
         -- buttons (by Blizzard's own setter).
-        { key = "dpad", label = "D-pad to Sort",
+        { key = "dpad", label = "D-pad to Sort", toggle = true,
           choices = {
               { value = false, label = "Off" },
               { value = true, label = "On" },
@@ -1484,7 +1504,7 @@ mod = PE:RegisterModule({
           end },
         -- Its own choice, off until it has passed a device test: it moves the
         -- bag's own buttons (their places only).
-        { key = "iconRow", label = "Bag icons",
+        { key = "iconRow", label = "Bag icons", toggle = true,
           choices = {
               { value = false, label = "In the grid" },
               { value = true, label = "One row at the top" },
@@ -1509,6 +1529,8 @@ mod = PE:RegisterModule({
         if not SIZE_FACTOR[opts.size] then opts.size = "normal" end
         if type(opts.showTab) ~= "boolean" then opts.showTab = true end
         if opts.sortKey ~= "none" and not SORT_KEYS[opts.sortKey] then opts.sortKey = "l3" end
+        -- "Button only" with the button hidden left no way to sort (before 0.6.0).
+        if opts.sortKey == "none" and opts.showTab == false then opts.showTab = true end
         if type(opts.dpad) ~= "boolean" then opts.dpad = false end
         if type(opts.iconRow) ~= "boolean" then opts.iconRow = false end
         ResolvePendingCVar()

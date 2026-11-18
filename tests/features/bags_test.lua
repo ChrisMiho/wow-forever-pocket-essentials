@@ -74,13 +74,21 @@ test("bags: the Sort tab is a tall, narrow tab", function()
         "tab not tall and narrow: " .. btn:GetWidth() .. " x " .. btn:GetHeight())
 end)
 
+-- Sets one saved value and runs the OnChange of the row that holds it.
+-- sortKey and showTab are held by the one "How to sort" row since 0.6.0.
 local function chooseOption(c, key, value)
     local mod = c.PE:GetModule("bags")
     mod.opts[key] = value
     for _, opt in ipairs(mod.options) do
-        if opt.key == key then opt.OnChange(mod, value) end
+        if opt.key == key or (opt.label == "How to sort" and (key == "sortKey" or key == "showTab")) then
+            opt.OnChange(mod, value)
+        end
     end
     c:advance(0.5)
+end
+
+local function howToSort(mod)
+    for _, o in ipairs(mod.options) do if o.label == "How to sort" then return o end end
 end
 
 -- Spec 2026-11-16-vertical-sort-tab, "Sort button" choice: shown by default; hidden, the stick
@@ -372,17 +380,75 @@ test("bags: the feature is called Bag sorter and no text of it says One big bag"
     check(not tostring(status):lower():find("one big bag", 1, true), "old name in status")
 end)
 
-test("bags: Sort key is an option with three choices, left stick click first", function()
+-- Spec 2026-11-18-tidier-settings, part 4: "Sort key" and "Sort button" are one row.
+test("bags: How to sort is one option with five ways, Button + left stick first, and no Sort key or Sort button rows", function()
     local c = newBags()
     local mod = c.PE:GetModule("bags")
-    local opt
-    for _, o in ipairs(mod.options) do if o.key == "sortKey" then opt = o end end
-    check(opt, "no sortKey option")
-    eq(opt.label, "Sort key")
+    local opt = howToSort(mod)
+    check(opt, "no How to sort option")
     local got = {}
     for _, ch in ipairs(opt.choices) do got[#got + 1] = ch.value .. "=" .. ch.label end
-    eq(got, { "l3=Left stick click", "r3=Right stick click", "none=Button only" })
-    eq(mod.opts.sortKey, "l3")
+    eq(got, { "l3=Button + left stick", "r3=Button + right stick", "none=Button only",
+        "l3only=Left stick only", "r3only=Right stick only" })
+    for _, o in ipairs(mod.options) do
+        check(o.key ~= "sortKey" and o.key ~= "showTab", "a row of its own for " .. tostring(o.key))
+    end
+    eq(opt.get(mod), "l3", "the default")
+end)
+
+test("bags: each How to sort way saves its stick and its button, and reads back as itself", function()
+    local want = {
+        l3 = { "l3", true }, r3 = { "r3", true }, none = { "none", true },
+        l3only = { "l3", false }, r3only = { "r3", false },
+    }
+    local c = newBags()
+    local mod = c.PE:GetModule("bags")
+    local opt = howToSort(mod)
+    for value, saved in pairs(want) do
+        opt.set(mod, value)
+        eq({ mod.opts.sortKey, mod.opts.showTab }, saved, value)
+        eq(opt.get(mod), value, value .. " read back")
+    end
+    opt.set(mod, "r3only")
+    opt.set(mod, "nonsense")
+    eq({ mod.opts.sortKey, mod.opts.showTab }, { "r3", false }, "an unknown way changed something")
+end)
+
+test("bags: an old save with Button only and the button hidden gets the button back at load", function()
+    local c = newBags()
+    local mod = c.PE:GetModule("bags")
+    mod.opts.sortKey, mod.opts.showTab = "none", false
+    mod:OnLoad()
+    eq({ mod.opts.sortKey, mod.opts.showTab }, { "none", true })
+    eq(howToSort(mod).get(mod), "none")
+    -- left alone when a stick still sorts
+    mod.opts.sortKey, mod.opts.showTab = "r3", false
+    mod:OnLoad()
+    eq(mod.opts.showTab, false)
+end)
+
+test("bags: How to sort with the bag open moves the stick and hides or shows the tab in one press", function()
+    local c = newBags()
+    local mod = c.PE:GetModule("bags")
+    local opt = howToSort(mod)
+    c:openBag()
+    local tab = sortButton(c)
+    for _, step in ipairs({ { "r3only", "PADRSTICK", false }, { "none", nil, true }, { "l3only", "PADLSTICK", false },
+        { "l3", "PADLSTICK", true } }) do
+        opt.set(mod, step[1])
+        opt.OnChange(mod, step[1])
+        c:advance(0.5)
+        eq(bindings(c), step[2] and { [step[2]] = "PocketEssentialsBagSortKey" } or nil, step[1] .. ": stick")
+        eq(tab:IsVisible(), step[3], step[1] .. ": tab")
+    end
+    c:assertClean("how to sort")
+end)
+
+test("bags: D-pad to Sort and Bag icons are one-tap toggles", function()
+    local c = newBags()
+    for _, o in ipairs(c.PE:GetModule("bags").options) do
+        if o.key == "dpad" or o.key == "iconRow" then eq(o.toggle, true, o.key) end
+    end
 end)
 
 test("bags: each Sort key choice binds the right key on open and clears it on close, tab always there", function()

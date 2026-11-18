@@ -900,3 +900,48 @@ What the answers decide:
   loading screen, dying and losing control of the character all close every
   window of this kind; that is the game's rule, and the guide comes back at
   the next login).
+
+### 14. Version 0.6.0: tidier settings
+
+Fewer buttons in the settings and the setup guide. Install the 0.6.0 zip and
+log in; your choices from before should all still be as you left them. Keep
+the debug log on (settings, Errors page).
+
+1. Open the settings (hold the round button) with **Quest icons** and **Bag
+   sorter** on. Each row's name should now be on the same line as its
+   buttons, to their left (for example "Icon size  Small  Medium  Large").
+   A row with many buttons ("Arrow position", "How to sort", "Round button
+   position") may keep its name above, as before. Nothing should overlap or
+   be cut off.
+2. Under **Quest icons**: "Map icons" and "Minimap icons" are gone; there is
+   one row **Icons on** with **Map and minimap**, **Map only** and
+   **Minimap only**. The one you had before should be gold.
+3. Tap **Map only**: the quest icons should leave the minimap and stay on the
+   world map. Tap **Minimap only**: the other way round. Tap **Map and
+   minimap** to finish.
+4. **Hide blue haze** is now one button that reads **Hide blue haze: On**
+   (green). Tap it: it should read **Off** (grey), and the settings should
+   ask for a reload, as before. Tap it again: **On**, and the reload request
+   goes away.
+5. Under **Bag sorter**: "Sort key" and "Sort button" are gone; there is one
+   row **How to sort**. The one matching your old setting should be gold
+   (out of the box: **Button + left stick**).
+6. Open your bag. Tap **Right stick only**: the Sort tab beside the bag
+   should go, and clicking the right stick should sort. Tap **Button only**:
+   the tab comes back and no stick sorts. Tap **Button + left stick** to
+   finish.
+7. **D-pad to Sort** and **Bag icons** are now one button each, side by
+   side: **D-pad to Sort: Off** and **Bag icons: In the grid**. Tap each:
+   they should change to **On** (green) and **One row at the top** (green),
+   and the bag should change as it did before. Tap again to go back.
+8. Reload (the **Reload UI** button). Everything you changed should still
+   be the way you left it.
+9. Use only the d-pad in the settings: the blue outline should reach every
+   button, including the toggles, in reading order (left to right, then
+   down).
+10. Try each button size (**Button size**) and tell us whether any row
+    looks crowded or wrong at Small, Medium or Large.
+11. Open the **Setup guide** (bottom of the settings) and walk to the Quest
+    icons and Bags screens: they should look the same as the settings.
+12. Tell us: is it easier to read than 0.5.0, and is any toggle unclear
+    about what it does? Send the saved `PocketEssentials.lua` file.

@@ -136,14 +136,14 @@ local function layoutOf(c, top)
     walk(c, top, function(w)
         local st = c._state(w)
         if st.type == "Button" and w:IsVisible() then
-            local l, _, t = c._rect(w)
-            buttons[#buttons + 1] = { w = w, left = l or 0, top = t or 0, label = labelOf(c, w) }
+            local l, _, t, bottom = c._rect(w)
+            buttons[#buttons + 1] = { w = w, left = l or 0, top = t or 0, bottom = bottom or t or 0, label = labelOf(c, w) }
         end
         for _, r in ipairs(st.regions) do
             local rs = c._state(r)
             if rs.type == "FontString" and rs.text and rs.text ~= "" and r:IsVisible() then
                 local _, _, t = c._rect(r)
-                if t then texts[#texts + 1] = { top = t, text = rs.text, owner = w } end
+                if t then texts[#texts + 1] = { top = t, text = rs.text, owner = w, onButton = st.type == "Button" } end
             end
         end
     end)
@@ -153,8 +153,13 @@ local function layoutOf(c, top)
     end)
     for _, b in ipairs(buttons) do
         local best, gap = "", math.huge
+        -- The nearest heading above the button, or (since 0.6.0) the heading
+        -- on the button's own line, left of it: a text that starts above the
+        -- button's bottom edge, the closest to the button's top. Button labels
+        -- are not headings.
         for _, t in ipairs(texts) do
-            if t.owner ~= b.w and t.top >= b.top - 1 and t.top - b.top < gap then best, gap = t.text, t.top - b.top end
+            local d = math.abs(t.top - b.top)
+            if not t.onButton and t.top >= b.bottom and d < gap then best, gap = t.text, d end
         end
         b.ctx = best
     end
@@ -616,8 +621,10 @@ local function everythingOn(c, PE, hasQDB)
         check(not guideShown(c), "Close did not close the setup guide")
     end
     check(PE.db.setup == "skipped", "walking the setup guide and pressing Close changed the saved answer")
-    -- The counts at 0.4.0 are 220 with QuestieDB and 144 without (SMOKE_VERBOSE=1 prints them).
-    check(presses >= (hasQDB and 3 * 72 or 3 * 47), "only " .. presses .. " option buttons were pressed")
+    -- The counts at 0.6.0 are 205 with QuestieDB and 138 without (SMOKE_VERBOSE=1 prints them):
+    -- fewer buttons (toggles, one "Icons on", one "How to sort"), and the chat
+    -- text size buttons are no longer counted again for each size they show.
+    check(presses >= (hasQDB and 205 or 138), "only " .. presses .. " option buttons were pressed")
     c:assertClean("pressing every option")
 
     local states = moduleStates(PE)

@@ -426,6 +426,16 @@ connect, and a list of crossings is more than the addon should carry for now
 (`docs/DECISIONS.md`, "Rollback of 2026-11-17"). The Layout helper stays
 removed.
 
+**0.6.0 (2026-11-18, untested):** the owner on the settings: "we've got some individual buttons that drive the answer to certain settings, could those be consolidated into a more slique experience that removes visual clutter and streamlines settings?"
+Approved four of five proposals: two-sided choices become one-tap toggles
+(Hide blue haze, D-pad to Sort, Bag icons); "Map icons" and "Minimap icons"
+become one "Icons on" choice; "Sort key" and "Sort button" become one "How
+to sort" choice that always leaves a way to sort; headings sit beside their
+buttons where they fit. Not taken: merging "Merge nearby icons" and "Spots
+per objective". The owner has more Quest icons ideas to bring after testing.
+Spec `docs/superpowers/specs/2026-11-18-tidier-settings.md`; device steps
+`docs/TESTING.md` 14.
+
 **0.5.0 (2026-11-18, untested):** the owner on the setup guide: "the other thing i was expecting is that the setup screens didnt expose the same options i see in the settings menu, can we enhance the flow to expose those, so people are setting things up and configuring, not just turning things on?"
 The guide now shows each feature's options under its switch, drawn by the
 same code as the settings (one "list drawer", two windows), so labels,

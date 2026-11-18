@@ -486,4 +486,134 @@ test("nav: a button with peHold gets start on A down and stop on A up, and no cl
     c:assertClean("nav hold hook")
 end)
 
+---------------------------------------------------------------------------
+-- Tidier option rows (spec 2026-11-18-tidier-settings): toggles, rows with
+-- get / set, and the heading beside its buttons. Drawn on "Sell junk", which
+-- has no options of its own.
+---------------------------------------------------------------------------
+
+-- The visible text region of the settings window that reads exactly `text`.
+local function textRegionOf(c, text)
+    local found
+    walkAll(c, settingsPanel(c), function(w)
+        if c._state(w).type ~= "Button" then
+            for _, r in ipairs(c._state(w).regions) do
+                local st = c._state(r)
+                if st.type == "FontString" and st.text == text and r:IsVisible() then found = found or r end
+            end
+        end
+    end)
+    return found
+end
+
+local ON_OFF_TEST = { { value = true, label = "On" }, { value = false, label = "Off" } }
+
+local function withOptions(options, opts)
+    local c, PE = T.new({ on = { "sellJunk" } })
+    local mod = PE:GetModule("sellJunk")
+    mod.options = options
+    mod.opts = mod.opts or {}
+    for k, v in pairs(opts or {}) do mod.opts[k] = v end
+    openSettings(c, PE)
+    return c, PE, mod
+end
+
+test("options: a toggle is one button reading label: choice, green for true, and a tap flips it and runs OnChange", function()
+    local calls = {}
+    local c, PE, mod = withOptions({
+        { key = "first", label = "First", toggle = true, choices = ON_OFF_TEST,
+          OnChange = function(m, v) calls[#calls + 1] = v end },
+        { key = "second", label = "Second", toggle = true,
+          choices = { { value = false, label = "In" }, { value = true, label = "Out" } } },
+    }, { first = true, second = false })
+    local first, second = shownButtons(c, "First: On")[1], shownButtons(c, "Second: In")[1]
+    check(first and second, "the toggles are not drawn as one button each")
+    eq(first.peStyle, "on")
+    eq(second.peStyle, "off")
+    eq(#shownButtons(c, "On") + #shownButtons(c, "Off") + #shownButtons(c, "In") + #shownButtons(c, "Out"), 0,
+        "a choice is still drawn as a button of its own")
+    check(not textRegionOf(c, "First") and not textRegionOf(c, "Second"), "a toggle has a heading line")
+    local _, _, top1 = c._rect(first)
+    local _, _, top2 = c._rect(second)
+    check(math.abs(top1 - top2) < 0.01, "two toggles in a row are not on one line")
+    c:click(first)
+    c:advance(0.2)
+    eq(mod.opts.first, false)
+    eq(calls, { false })
+    check(shownButtons(c, "First: Off")[1], "the toggle does not read the new choice")
+    eq(shownButtons(c, "First: Off")[1].peStyle, "off")
+    c:assertClean("toggle")
+end)
+
+test("options: a toggle with a damaged saved value reads as its first choice and a tap saves the second", function()
+    local c, PE, mod = withOptions({
+        { key = "first", label = "First", toggle = true, choices = ON_OFF_TEST },
+    }, { first = "yes" })
+    local b = shownButtons(c, "First: On")[1]
+    check(b, "not drawn as the first choice")
+    c:click(b)
+    c:advance(0.2)
+    eq(mod.opts.first, false)
+    check(shownButtons(c, "First: Off")[1], "the tap did not change what the toggle says")
+    c:assertClean("damaged toggle")
+end)
+
+test("options: a row with get and set marks what get returns, and a tap goes through set", function()
+    local c, PE, mod = withOptions({
+        { label = "Pair", choices = { { value = "a", label = "Alpha" }, { value = "b", label = "Beta" } },
+          get = function(m) return m.opts.x end,
+          set = function(m, v) m.opts.x = v; m.opts.y = v .. "!" end },
+    }, { x = "a" })
+    eq(shownButtons(c, "Alpha")[1].peSelected, true)
+    eq(shownButtons(c, "Beta")[1].peSelected, false)
+    c:click(shownButtons(c, "Beta")[1])
+    c:advance(0.2)
+    eq({ mod.opts.x, mod.opts.y }, { "b", "b!" })
+    eq(shownButtons(c, "Beta")[1].peSelected, true)
+    c:assertClean("get and set")
+end)
+
+test("options: get returning nothing marks no button, and a set that fails is recorded and saves nothing", function()
+    local c, PE, mod = withOptions({
+        { label = "Pair", choices = { { value = "a", label = "Alpha" }, { value = "b", label = "Beta" } },
+          get = function() return nil end,
+          set = function() error("broken set") end,
+          OnChange = function() error("OnChange ran after a failed set") end },
+    })
+    eq(shownButtons(c, "Alpha")[1].peSelected, false)
+    eq(shownButtons(c, "Beta")[1].peSelected, false)
+    c:click(shownButtons(c, "Alpha")[1])
+    c:advance(0.2)
+    local msgs = {}
+    for _, e in ipairs(PE.errors) do msgs[#msgs + 1] = tostring(e.msg) end
+    local joined = table.concat(msgs, "\n")
+    check(joined:find("broken set", 1, true), "the failed set is not recorded")
+    check(not joined:find("OnChange ran", 1, true), "OnChange ran after a failed set")
+end)
+
+test("options: a heading sits on its buttons' line when they fit, and above them when they do not", function()
+    local many = {}
+    for i = 1, 14 do many[i] = { value = i, label = "Choice number " .. i } end
+    for _, size in ipairs({ "small", "medium", "large" }) do
+        local c, PE = T.new({ on = { "sellJunk" } })
+        PE:SetUISetting("size", size)
+        local mod = PE:GetModule("sellJunk")
+        mod.options = {
+            { key = "few", label = "Few", choices = { { value = 1, label = "One" }, { value = 2, label = "Two" } } },
+            { key = "many", label = "Many", choices = many },
+        }
+        openSettings(c, PE)
+        local few, one = textRegionOf(c, "Few"), shownButtons(c, "One")[1]
+        local fl, _, ft, fb = c._rect(few)
+        local bl, _, bt, bb = c._rect(one)
+        check(ft <= bt + 0.01 and fb >= bb - 0.01, size .. ": \"Few\" is not on its buttons' line")
+        check(fl < bl, size .. ": \"Few\" is not left of its buttons")
+        local manyText, first = textRegionOf(c, "Many"), shownButtons(c, "Choice number 1")[1]
+        local _, _, _, mb = c._rect(manyText)
+        local _, _, ct = c._rect(first)
+        check(mb >= ct - 0.01, size .. ": \"Many\" is not above its buttons, which wrap")
+        c:assertClean("headings at " .. size)
+    end
+end)
+
 return { known = KNOWN_FAILURES }

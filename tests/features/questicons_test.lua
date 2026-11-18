@@ -594,4 +594,54 @@ test("debug log: the world map and the minimap write their lines, by map number"
     c:assertClean("icon lines")
 end)
 
+---------------------------------------------------------------------------
+-- "Icons on" (spec 2026-11-18-tidier-settings, part 2)
+---------------------------------------------------------------------------
+
+local function iconsOnRow(PE)
+    for _, o in ipairs(PE:GetModule("questIcons").options) do if o.label == "Icons on" then return o end end
+end
+
+test("quest icons: Icons on is one row for map and minimap, with no Map icons or Minimap icons rows", function()
+    local c, PE = newIcons()
+    local mod, opt = PE:GetModule("questIcons"), iconsOnRow(PE)
+    check(opt, "no Icons on row")
+    local got = {}
+    for _, ch in ipairs(opt.choices) do got[#got + 1] = ch.value .. "=" .. ch.label end
+    eq(got, { "both=Map and minimap", "map=Map only", "mini=Minimap only" })
+    for _, o in ipairs(mod.options) do
+        check(o.key ~= "map" and o.key ~= "mini", "a row of its own for " .. tostring(o.key))
+        if o.key == "hideHaze" then eq(o.toggle, true, "Hide blue haze is not a toggle") end
+    end
+    eq(opt.get(mod), "both", "the default")
+end)
+
+test("quest icons: each Icons on choice saves map and mini, and both off marks none", function()
+    local c, PE = newIcons()
+    local mod, opt = PE:GetModule("questIcons"), iconsOnRow(PE)
+    for value, want in pairs({ both = { true, true }, map = { true, false }, mini = { false, true } }) do
+        opt.set(mod, value)
+        eq({ mod.opts.map, mod.opts.mini }, want, value)
+        eq(opt.get(mod), value, value .. " read back")
+    end
+    mod.opts.map, mod.opts.mini = false, false
+    eq(opt.get(mod), nil, "both off")
+end)
+
+test("quest icons: Map only takes the icons off the minimap, and Map and minimap puts them back", function()
+    local c, PE = newIcons()
+    local mod, opt = PE:GetModule("questIcons"), iconsOnRow(PE)
+    local before = #iconsOn(c, c.minimap)
+    check(before > 0, "no minimap icons to start with (the test's premise)")
+    opt.set(mod, "map")
+    opt.OnChange(mod, "map")
+    c:advance(0.5)
+    eq(#iconsOn(c, c.minimap), 0)
+    opt.set(mod, "both")
+    opt.OnChange(mod, "both")
+    c:advance(0.5)
+    eq(#iconsOn(c, c.minimap), before)
+    c:assertClean("icons on")
+end)
+
 return { known = KNOWN_FAILURES }

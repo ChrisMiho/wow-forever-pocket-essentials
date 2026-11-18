@@ -1127,9 +1127,28 @@ mod = PE:RegisterModule({
           choices = { { value = "tracked", label = "Tracked quests" }, { value = "focus", label = "Focused quest" },
                       { value = "all", label = "All quests" } },
           OnChange = OptionChanged("show") },
-        { key = "map", label = "Map icons", choices = ON_OFF, OnChange = OptionChanged("map") },
-        { key = "mini", label = "Minimap icons", choices = ON_OFF, OnChange = OptionChanged("mini") },
-        { key = "hideHaze", label = "Hide blue haze", choices = ON_OFF, OnChange = OptionChanged("hideHaze") },
+        -- One choice for the two saved switches `map` and `mini` (0.6.0). Both
+        -- off (only from /qd or an old file) marks no button.
+        { label = "Icons on",
+          choices = { { value = "both", label = "Map and minimap" }, { value = "map", label = "Map only" },
+                      { value = "mini", label = "Minimap only" } },
+          get = function(m)
+              local o = m.opts
+              if type(o) ~= "table" then return nil end
+              if o.map ~= false and o.mini ~= false then return "both" end
+              if o.map ~= false then return "map" end
+              if o.mini ~= false then return "mini" end
+              return nil
+          end,
+          set = function(m, value)
+              m.opts.map = value ~= "mini"
+              m.opts.mini = value ~= "map"
+          end,
+          OnChange = function()
+              ApplyOption("map")
+              ApplyOption("mini")
+          end },
+        { key = "hideHaze", label = "Hide blue haze", choices = ON_OFF, toggle = true, OnChange = OptionChanged("hideHaze") },
         { key = "size", label = "Icon size",
           choices = { { value = "small", label = "Small" }, { value = "medium", label = "Medium" }, { value = "large", label = "Large" } },
           OnChange = OptionChanged("size") },

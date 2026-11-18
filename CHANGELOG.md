@@ -4,6 +4,39 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-11-18
+
+Eighteenth test build. From the owner: fewer buttons and less clutter in the
+settings. Spec `docs/superpowers/specs/2026-11-18-tidier-settings.md`. Not yet
+tested on a device. Your saved choices carry over as they are.
+
+### Changed
+
+- **One-tap toggles.** A choice with only two sides is now one button that
+  says what it is set to, and a tap flips it: **Hide blue haze: On**,
+  **D-pad to Sort: Off**, **Bag icons: In the grid**. Green means on.
+  Toggles next to each other share a line, with no heading above them.
+- **Quest icons: "Icons on"** replaces the separate "Map icons" and "Minimap
+  icons" rows: **Map and minimap** / **Map only** / **Minimap only**.
+  (`/qd map` and `/qd mini` still work.)
+- **Bag sorter: "How to sort"** replaces "Sort key" and "Sort button":
+  **Button + left stick** / **Button + right stick** / **Button only** /
+  **Left stick only** / **Right stick only**. You can no longer end up with
+  no way to sort (before, "Button only" with the button hidden did that; such
+  a saved setting gets the button back).
+- **Headings beside their buttons.** A row's name now sits on the same line
+  as its buttons, to their left, when they fit, so each row takes about half
+  the height. A row with too many buttons for one line keeps its name above,
+  as before. The same goes for "Button size" and "Round button position".
+- The setup guide shows all of this the same way (it draws options with the
+  same code).
+
+### Fixed
+
+- Nothing shipped was affected, but the offline tests found and fixed two
+  slips in the new code before release: a saved `false` read as "nothing
+  chosen", and a toggle whose other side is `false` would not flip.
+
 ## [0.5.0] - 2026-11-18
 
 Seventeenth test build. From the owner's first look at the setup guide: it

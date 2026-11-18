@@ -220,12 +220,129 @@ function Drawer:OptionsShown(mod)
     return hasOptions, onlyAlways
 end
 
+-- How far the list has got: what Rewind needs to take back a part just drawn.
+function Drawer:Mark()
+    local used = {}
+    for name, pool in pairs(self.pools) do used[name] = pool.used end
+    return { used = used, nav = #self.navList, lowest = self.lowest }
+end
+
+-- Takes back everything drawn since Mark: the widgets go back to their pools
+-- (hidden by End unless the redraw uses them again) and leave the d-pad list.
+function Drawer:Rewind(mark)
+    for name, pool in pairs(self.pools) do
+        if mark.used[name] then pool.used = mark.used[name] end
+    end
+    for i = #self.navList, mark.nav + 1, -1 do self.navList[i] = nil end
+    self.lowest = mark.lowest
+end
+
+-- The width a text takes in the small font, on one line.
+function Drawer:Measure(text)
+    -- One hidden text per window, made on the first measure, used only to measure.
+    if self.measure == nil then
+        local ok, made = pcall(UI.CreateText, UI, self.child, "small")
+        self.measure = ok and made or false
+        if self.measure then self.measure:Hide() end
+    end
+    local fontString = self.measure
+    local width
+    if fontString then
+        fontString:SetText(text)
+        local ok, got = pcall(fontString.GetUnboundedStringWidth, fontString)
+        if ok and type(got) == "number" and got > 0 then width = got end
+    end
+    return width or #text * M.smallFontSize * 0.55
+end
+
+-- The heading column of a group of rows: wide enough for the widest heading,
+-- and never more than 40% of the row. 0 when there is no heading.
+function Drawer:LabelColumn(texts, innerWidth)
+    local widest = 0
+    for i = 1, #texts do widest = max(widest, self:Measure(texts[i])) end
+    if widest <= 0 then return 0 end
+    return min(widest + M.gap * 1.5, innerWidth * 0.4)
+end
+
+-- A heading and its run of buttons. With a heading column the heading goes on
+-- the buttons' line, left of them, when the buttons fit on one line beside it
+-- and the heading fits its column; otherwise the heading goes above them, as
+-- before. Returns the new y (the bottom of the row).
+function Drawer:LabeledRow(text, items, x, y, innerWidth, labelWidth)
+    if text ~= "" and labelWidth and labelWidth > 0 and self:Measure(text) <= labelWidth - M.gap then
+        local mark = self:Mark()
+        local bottom = self:Flow(items, x + labelWidth, y, innerWidth - labelWidth)
+        if bottom <= y + M.button + 0.01 then
+            local fontString = self:Acquire("small")
+            fontString:ClearAllPoints()
+            fontString:SetJustifyH("LEFT")
+            local height = SetText(fontString, "small", text, labelWidth - M.gap, COLOR.option)
+            local top = y + max((M.button - height) * 0.5, 0)
+            fontString:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -top)
+            if top + height > self.lowest then self.lowest = top + height end
+            return max(bottom, top + height)
+        end
+        self:Rewind(mark)
+    end
+    if text ~= "" then
+        y = y + self:Text("small", text, x, y, innerWidth, COLOR.option) + M.gap * 0.4
+    end
+    return self:Flow(items, x, y, innerWidth)
+end
+
+-- The saved value a choices row shows: its `get`, or mod.opts[key].
+local function CurrentChoice(mod, opt)
+    if type(opt.get) == "function" then
+        local ok, value = PE:Safe(mod.key, opt.get, mod)
+        if ok then return value end
+        return nil
+    end
+    if type(mod.opts) ~= "table" then return nil end
+    return mod.opts[opt.key] -- may be false: not "and ... or nil"
+end
+
+-- A choices row can be drawn: a list of choices and where to save them.
+local function IsChoiceRow(opt)
+    return type(opt.choices) == "table"
+        and (opt.key ~= nil or (type(opt.get) == "function" and type(opt.set) == "function"))
+end
+
+local function IsToggleRow(opt)
+    return opt.toggle == true and IsChoiceRow(opt) and #opt.choices == 2
+        and type(opt.choices[1]) == "table" and type(opt.choices[2]) == "table"
+end
+
+-- The tap on a choice: save it (through `set`, or as mod.opts[key]), run
+-- OnChange, redraw.
+local function ChooseHandler(mod, opt, value, refresh)
+    return PE:Wrap("core", function()
+        if type(mod.opts) ~= "table" then return end
+        if type(opt.set) == "function" then
+            if not PE:Safe(mod.key, opt.set, mod, value) then
+                refresh()
+                return
+            end
+        else
+            mod.opts[opt.key] = value
+        end
+        if type(opt.OnChange) == "function" then PE:Safe(mod.key, opt.OnChange, mod, value) end
+        refresh()
+    end)
+end
+
 -- Option rows: the list `options` of a feature, drawn under its switch while
 -- the feature is on. A row with `always = true` is also drawn while the
 -- feature is not on (it must not need the feature). Each row is a table of
 -- one of these kinds:
 --   choices: { key, label, choices = { { value, label }, ... }, OnChange }
 --            a row of buttons; the tapped one is saved as mod.opts[key].
+--            Instead of key, a row may have get = function(mod) -> value and
+--            set = function(mod, value), when one choice stands for more
+--            than one saved value. With toggle = true and two choices, it is
+--            one button "label: choice" that flips to the other choice;
+--            toggles that follow each other share a line. A toggle showing
+--            the value true is green, otherwise grey.
+--            The heading goes beside the buttons when they fit (LabeledRow).
 --   action:  { label, action = function(mod) }
 --            one wide button that runs the action.
 --   buttons: { label, value = function(mod) -> text, buttons = { { label,
@@ -244,13 +361,59 @@ function Drawer:Options(mod, y, width, onlyAlways)
     local x = M.pad * 2
     local innerWidth = width - x - M.gap
     local refresh = self.refresh
+
+    -- The headings of this feature's rows, for one shared heading column.
+    local rows, headings = {}, {}
     for _, opt in ipairs(mod.options) do
         if type(opt) == "table" and (not onlyAlways or opt.always == true) then
-            if type(opt.choices) == "table" and opt.key ~= nil then
-                if type(opt.label) == "string" and opt.label ~= "" then
-                    y = y + self:Text("small", opt.label, x, y, innerWidth, COLOR.option) + M.gap * 0.4
+            local text
+            if IsToggleRow(opt) or type(opt.action) == "function" then
+                text = nil
+            elseif IsChoiceRow(opt) then
+                text = type(opt.label) == "string" and opt.label or ""
+            elseif type(opt.buttons) == "table" or type(opt.buttons) == "function" then
+                text = type(opt.label) == "string" and opt.label or ""
+                if type(opt.value) == "function" then
+                    local ok, shown = pcall(opt.value, mod)
+                    if ok and shown ~= nil then text = (text ~= "" and (text .. ": ") or "") .. tostring(shown) end
                 end
-                local current = type(mod.opts) == "table" and mod.opts[opt.key]
+            end
+            rows[#rows + 1] = { opt = opt, text = text }
+            if text and text ~= "" then headings[#headings + 1] = text end
+        end
+    end
+    local labelWidth = self:LabelColumn(headings, innerWidth)
+
+    -- Toggles waiting to be drawn together on one line.
+    local toggles = {}
+    local function FlushToggles()
+        if #toggles == 0 then return end
+        y = self:Flow(toggles, x, y, innerWidth) + M.gap
+        toggles = {}
+    end
+
+    for _, row in ipairs(rows) do
+        local opt = row.opt
+        if not IsToggleRow(opt) then FlushToggles() end
+        do
+            if IsToggleRow(opt) then
+                local current = CurrentChoice(mod, opt)
+                local first, second = opt.choices[1], opt.choices[2]
+                local shown = (current == second.value) and second or first
+                -- The other side from the one shown, so a tap always changes what
+                -- the button says (a damaged value shows as the first choice).
+                -- Not "and ... or": the value may be false.
+                local nextValue = second.value
+                if shown == second then nextValue = first.value end
+                local label = tostring(shown.label ~= nil and shown.label or shown.value)
+                if type(opt.label) == "string" and opt.label ~= "" then label = opt.label .. ": " .. label end
+                toggles[#toggles + 1] = {
+                    label = label,
+                    style = (current == true) and "on" or "off",
+                    onClick = ChooseHandler(mod, opt, nextValue, refresh),
+                }
+            elseif IsChoiceRow(opt) then
+                local current = CurrentChoice(mod, opt)
                 local items = {}
                 for _, choice in ipairs(opt.choices) do
                     if type(choice) == "table" then
@@ -258,16 +421,11 @@ function Drawer:Options(mod, y, width, onlyAlways)
                         items[#items + 1] = {
                             label = tostring(choice.label ~= nil and choice.label or value),
                             selected = (current == value),
-                            onClick = PE:Wrap("core", function()
-                                if type(mod.opts) ~= "table" then return end
-                                mod.opts[opt.key] = value
-                                if type(opt.OnChange) == "function" then PE:Safe(mod.key, opt.OnChange, mod, value) end
-                                refresh()
-                            end),
+                            onClick = ChooseHandler(mod, opt, value, refresh),
                         }
                     end
                 end
-                y = self:Flow(items, x, y, innerWidth) + M.gap
+                y = self:LabeledRow(row.text, items, x, y, innerWidth, labelWidth) + M.gap
             elseif type(opt.action) == "function" then
                 local items = { {
                     label = (type(opt.label) == "string" and opt.label ~= "") and opt.label or "Do it",
@@ -278,14 +436,7 @@ function Drawer:Options(mod, y, width, onlyAlways)
                 } }
                 y = self:Flow(items, x, y, innerWidth, M.button * 4) + M.gap
             elseif type(opt.buttons) == "table" or type(opt.buttons) == "function" then
-                local text = type(opt.label) == "string" and opt.label or ""
-                if type(opt.value) == "function" then
-                    local ok, shown = pcall(opt.value, mod)
-                    if ok and shown ~= nil then text = (text ~= "" and (text .. ": ") or "") .. tostring(shown) end
-                end
-                if text ~= "" then
-                    y = y + self:Text("small", text, x, y, innerWidth, COLOR.option) + M.gap * 0.4
-                end
+                local text = row.text or ""
                 local buttons = opt.buttons
                 if type(buttons) == "function" then
                     local ok, got = pcall(buttons, mod)
@@ -307,10 +458,15 @@ function Drawer:Options(mod, y, width, onlyAlways)
                         }
                     end
                 end
-                if #items > 0 then y = self:Flow(items, x, y, innerWidth) + M.gap end
+                if #items > 0 then
+                    y = self:LabeledRow(text, items, x, y, innerWidth, labelWidth) + M.gap
+                elseif text ~= "" then
+                    y = y + self:Text("small", text, x, y, innerWidth, COLOR.option) + M.gap * 0.4
+                end
             end
         end
     end
+    FlushToggles()
     return y
 end
 
@@ -353,8 +509,10 @@ function Drawer:CoreChoices(y, width)
     local x = M.pad * 2
     local innerWidth = width - x - M.gap
     local ui = PE.db and PE.db.ui or {}
+    local positions = PE.Hub and PE.Hub.POSITIONS
+    local labelWidth = self:LabelColumn(type(positions) == "table" and { "Button size", "Round button position" }
+        or { "Button size" }, innerWidth)
 
-    y = y + self:Text("small", "Button size", x, y, innerWidth, COLOR.option) + M.gap * 0.4
     local items = {}
     for i, choice in ipairs(SIZE_CHOICES) do
         local value = choice.value
@@ -364,11 +522,9 @@ function Drawer:CoreChoices(y, width)
             onClick = PE:Wrap("core", function() PE:SetUISetting("size", value) end),
         }
     end
-    y = self:Flow(items, x, y, innerWidth) + M.gap
+    y = self:LabeledRow("Button size", items, x, y, innerWidth, labelWidth) + M.gap
 
-    local positions = PE.Hub and PE.Hub.POSITIONS
     if type(positions) == "table" then
-        y = y + self:Text("small", "Round button position", x, y, innerWidth, COLOR.option) + M.gap * 0.4
         items = {}
         for i, choice in ipairs(positions) do
             local value = choice.value
@@ -378,7 +534,7 @@ function Drawer:CoreChoices(y, width)
                 onClick = PE:Wrap("core", function() PE:SetUISetting("hubPos", value) end),
             }
         end
-        y = self:Flow(items, x, y, innerWidth) + M.gap
+        y = self:LabeledRow("Round button position", items, x, y, innerWidth, labelWidth) + M.gap
     end
     return y
 end
