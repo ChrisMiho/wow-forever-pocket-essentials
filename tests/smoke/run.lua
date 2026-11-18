@@ -658,7 +658,7 @@ scenarios[#scenarios + 1] = { name = "1 first install", run = function()
     c:advance(2)
     check(guideShown(c), "the setup guide did not open by itself at first install")
     local screens = walkGuide(c, "first install")
-    check(screens == 7, "the setup guide has " .. screens .. " screens at first install, expected 7")
+    check(screens == 9, "the setup guide has " .. screens .. " screens at first install, expected 9")
     local nothingOn = false
     for _, t in ipairs(visibleTexts(c, guideOf(c))) do
         if t:find("Nothing is switched on yet", 1, true) then nothingOn = true end

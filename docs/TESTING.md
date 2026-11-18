@@ -528,8 +528,8 @@ Five parts, in the order they are best tried. Each can be done on its own
 day; report after each one.
 
 - **13e. Setup guide** comes first in practice, because it opens by itself
-  at the first login with 0.4.0. Do its steps 1 to 6 then, and the rest of
-  13e whenever you like.
+  at the first login on a fresh install. Its steps were rewritten for 0.5.0
+  (the guide now carries each feature's choices).
 - **13a. Chat text size**: the stepper in the settings.
 - **13b. Menu background**: the dark panel behind the quest log's menu.
 - **13c. D-pad to Sort**: reaching the Sort tab with the d-pad.
@@ -798,70 +798,94 @@ What the answers decide:
 
 #### 13e. Setup guide
 
-Since 0.4.1 the guide has no **Up** / **Down** buttons on a screen that fits.
-If a screen is too long for the window they appear on the right; say on which
-screen and at which button size you see them.
+Rewritten for 0.5.0. The guide now has nine screens, one per feature that has
+choices, and each feature's choices are in the guide under its switch: the
+same ones as in the settings. It has no **Up** / **Down** buttons on a screen
+that fits; when a screen gets too long (a feature with many choices switched
+on, or the Large button size) they appear on the right.
 
-What this is: a window of seven screens that explains each feature and lets
-you switch on the ones you want. It opens by itself once after you install
-0.4.0, because you have never pressed Finish or Skip in it. Your switches
-stay as they are; the guide only shows them.
+It opens by itself once after a fresh install. If you already pressed Finish
+or Skip in 0.4.x it will not: open it from the settings (hold the round
+button, scroll to the bottom, **Setup guide**) and start at step 2.
 
-Install the 0.4.0 zip and log in. (The debug log you turned on earlier stays
-on; if it is off, turn it on from the Errors page after step 6 and carry on.)
+Install the 0.5.0 zip and log in. Keep the debug log on (settings, Errors
+page).
 
-1. Wait a couple of seconds after the loading screen. A window "Pocket
-   Essentials - Setup guide (1 of 7)" should open by itself. If you are
-   attacked while logging in, it should wait and open when the fight ends.
+1. Fresh install only: wait a couple of seconds after the loading screen. A
+   window "Pocket Essentials - Setup guide (1 of 9)" should open by itself.
 2. Read the Welcome screen. Without touching the screen, press the d-pad
    down: a blue outline should appear on a button. Move to **Start** and
    press A.
-3. On "Quests" there are three switches: Quest icons, Quest arrow and Menu
-   background. Each should show what you already have (ON if you had it on
-   before the update). Tap one switch with your finger: it should flip at
-   once. Flip it back with the d-pad and A; the blue outline should stay on
-   the switch.
-4. Press **Next** with A several times. The blue outline should stay on
-   Next, so A alone walks through Bags, Vendors, Chat, and "The round button
-   and moving things". Check each text reads correctly and nothing is cut
-   off or overlapping. If a screen is taller than the window, the Up / Down
-   buttons at the right should scroll it, and moving the outline to a switch
-   should bring that switch into view.
-5. Press **Back** once and **Next** again. Back should not be on the first
-   screen; Skip should not be on the last.
-6. On the last screen, "All set", check the "Switched on:" and "Still off:"
-   lines match what you really have on. Press **Finish** (green). The window
-   closes.
-7. Open the settings (round button, or hold it if the chat window opens).
-   Check the features you switched in the guide show the same ON / OFF
-   there.
-8. Scroll to the bottom of the settings. Tap **Setup guide** (after "Move
-   things"). The settings should close and the guide open at screen 1.
-9. Press B. The guide should close. No chat line is expected this time (you
-   already pressed Finish in step 6).
-10. Reload (Settings > Reload UI) or log out and in. The guide should
-    **not** open by itself any more.
-11. Open the guide again from the settings, go to screen 3, and pull a
-    monster (or get attacked). The guide should disappear at once, and come
-    back at screen 3 when the fight ends. Then press Skip.
-12. Try to open the guide from the settings during a fight (touch): it
-    should not open, and chat should say it cannot be opened during a fight.
-13. With the guide open, switch **Big chat buttons** on, press Finish, then
-    tap the round button: the chat window should open (so the switch really
-    took effect).
-14. Try the guide once at the **Large** button size (Settings > Button
-    size): the Quests and Chat screens are the longest. Say whether
-    scrolling them was comfortable.
-15. Optional, on a second account or after deleting
+3. Screen 2, "Quest icons". With the switch OFF there should be nothing under
+   it but the text. Tap the switch: it should read ON and, at once, the
+   choices should appear under it: "Show icons for", "Map icons", "Minimap
+   icons", "Hide blue haze", "Icon size", "Merge nearby icons", "Spots per
+   objective" and an **Icon key** button. The screen is now too long, so
+   **Up** and **Down** should appear on the right.
+4. Still on that screen, use only the d-pad: move down through the choices.
+   The list should scroll by itself so the blue outline is always in view.
+   Press A on **Focused quest**: it should turn gold, and the outline should
+   stay on it.
+5. Tap **Down** and **Up** with your finger: the list should page.
+6. Press **Next**. Screen 3, "Quest arrow": switch it on. "Arrow position"
+   (five buttons) and "Arrow size" should appear. Pick **Left**; if you have
+   a focused quest, the arrow on screen should move at once.
+7. Screen 4, "Menu background": one switch, nothing under it.
+8. Screen 5, "Bags": switch **Bag sorter** on. Five rows should appear: "Bag
+   size", "Sort key", "Sort button", "D-pad to Sort", "Bag icons". Pick
+   **Extra large** and **One row at the top**, then open your bag behind the
+   guide (or after it): it should already be that way.
+9. Screen 6, "Vendors": two switches (Sell junk, Repair), nothing under
+   them.
+10. Screen 7, "Chat": with **Big chat buttons** OFF you should still see
+    **Chat text size** with **Smaller**, a number and **Bigger**. Tap
+    **Bigger**: the chat text should grow and the number go up one step.
+11. Screen 8, "The round button and moving things": text only, no switches
+    and no choices (button size and the round button's position are still
+    only in the settings).
+12. Screen 9, "All set": the "Switched on:" and "Still off:" lines should
+    match what you did. Press **Finish** (green). The window closes.
+13. **Same value in the settings.** Open the settings (hold the round
+    button). Under **Quest icons**, "Show icons for" should have **Focused
+    quest** in gold; under **Bag sorter**, **Extra large** and **One row at
+    the top**; the chat text size number should be the one you left.
+14. **Same value in the guide.** In the settings, change two of them: under
+    **Bag sorter** pick **Normal**, and under **Quest arrow** pick **Top**.
+    Then tap **Setup guide** at the bottom of the settings and walk to the
+    Bags and Quest arrow screens: **Normal** and **Top** should be the gold
+    ones there.
+15. In the settings, tap **Hide options** on Bag sorter, then open the guide
+    again: the Bags screen should still show all five rows (the guide has no
+    hiding).
+16. On the Bags screen switch **Bag sorter** off: the five rows should go at
+    once and, if **Up** / **Down** were showing, they should go too. Switch
+    it on again with the d-pad and A: the rows come back and the blue outline
+    stays on the switch.
+17. On the Quest icons screen tap **Icon key**. The guide should close and
+    the settings' Icon key page open. Tap **Back** there, then **Setup
+    guide** to return.
+18. Press **Back** and **Next** a few times with A: the outline should stay
+    on the same bottom button. Back should not be on the first screen; Skip
+    should not be on the last.
+19. Open the guide, go to screen 5, and pull a monster. The guide should
+    disappear at once and come back at screen 5 when the fight ends, with the
+    choices as you left them.
+20. Try each button size once (Settings > Button size) and walk the guide
+    with every feature on. Tell us on which screens, at which size, **Up** / **Down**
+    show, and whether any text or button is cut off or overlapping.
+21. Optional, on a second account or after deleting
     `WTF/Account/<account>/SavedVariables/PocketEssentials.lua` with the
     game closed: log in. Everything should be off, the guide should open by
     itself, and pressing B should close it with a chat line saying it will
-    show again next time. Log out and in: it shows again. Press Skip: next
-    login it stays away.
-16. Tell us: was the text clear, was any screen too long, did the d-pad ever
-    stop moving the blue outline (especially right after login), and did the
-    guide ever close by itself. Send the saved `PocketEssentials.lua` file.
-    (`scripts/read-log.sh <file> --grep "setup"` shows the guide's lines.)
+    show again next time. Press Skip: next login it stays away.
+22. Tell us: were the choices where you expected them, was any screen too
+    long to be comfortable, did the d-pad ever stop moving the blue outline,
+    and did the guide ever close by itself. Send the saved
+    `PocketEssentials.lua` file. (`scripts/read-log.sh <file> --grep "setup"`
+    shows the guide's lines.)
+
+Without QuestieDB the two quest screens show a dimmed OFF switch with the
+amber reason and no choices, as the settings do.
 
 What the answers decide:
 
@@ -870,6 +894,8 @@ What the answers decide:
   after the guide opened. The wait before it opens gets longer, or the guide
   takes the keys a second time.
 - A screen is too long to read comfortably: its text gets shorter.
+- A value differs between the guide and the settings: that is a bug in the
+  shared drawing code; say which choice and in which order you pressed.
 - The guide closed by itself outside a fight: say what you were doing (a
   loading screen, dying and losing control of the character all close every
   window of this kind; that is the game's rule, and the guide comes back at

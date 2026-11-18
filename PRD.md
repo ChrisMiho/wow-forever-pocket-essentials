@@ -233,7 +233,7 @@ until its step in the test plan passes.
 | Repair automatically | Repairs from your own money at vendors that can | Worked on the device (0.0.9) |
 | Big chat buttons | Picker with one big button per channel plus the last six whisperers; badge on the round button for unanswered whispers. With the Gamepad UI on (0.0.9) a tap sets where the chat goes and the player opens chat with the game's own button; with it off the tap opens the chat box | Say and Guild through "Press A to type" worked on the device (0.0.9); a whisper is untried. 0.1.0 adds the on-screen "Press A to type" prompt and "Chat text size" (the game's own setting); the size changed on all chat windows in the 0.1.0 log, the prompt is untested. Since 0.4.0 "Chat text size" is one stepper (Smaller, the size, Bigger; 12 to 34) shown whether the feature is on or off: untested |
 | Menu background (0.4.0) | Its own switch. A plain dark panel of ours behind the game's pop-up menus while they are open; made for the menu on a quest in the quest log, which the game draws with no background. The menu itself is not touched | Untested |
-| Setup guide (0.4.0) | A window of seven screens (Welcome, Quests, Bags, Vendors, Chat, the round button and moving things, All set) that explains each feature and carries its switch, the same switch as in the settings. Opens by itself once per account, a moment after the first loading screen, until Finish or Skip is pressed; never in a fight. Reopened from the settings' bottom row ("Setup guide") or `/pe setup`. Touch and d-pad / A / B | Untested |
+| Setup guide (0.4.0, options in it since 0.5.0) | A window of nine screens (Welcome, Quest icons, Quest arrow, Menu background, Bags, Vendors, Chat, the round button and moving things, All set) that explains each feature and carries its switch and, under the switch, its options, both the same as in the settings and drawn by the same code. Opens by itself once per account, a moment after the first loading screen, until Finish or Skip is pressed; never in a fight. Reopened from the settings' bottom row ("Setup guide") or `/pe setup`. Touch and d-pad / A / B | Untested |
 | QuestieDB | Official Questie data addon, Forever build 1.1.1, shipped unmodified. Only the two quest features need it | Untested |
 | Move things (0.2.0) | A small panel, opened from the settings' bottom row, that nudges the quest arrow, the "Press A to type" text and the round button with Up / Down / Left / Right buttons (press = 2 pixels, hold = repeat and speed up), by touch or d-pad / A / B. Saved as an offset from each piece's preset. Does not use the game's Edit Mode | Untested |
 | `scripts/build.sh` | Downloads QuestieDB (pinned checksum), checks the addon's file list, writes `dist/wow-forever-pocket-essentials.zip` (GitHub bundle) and `dist/PocketEssentials-<version>.zip` (CurseForge, addon only) | Runs on the Mac |
@@ -426,6 +426,15 @@ connect, and a list of crossings is more than the addon should carry for now
 (`docs/DECISIONS.md`, "Rollback of 2026-11-17"). The Layout helper stays
 removed.
 
+**0.5.0 (2026-11-18, untested):** the owner on the setup guide: "the other thing i was expecting is that the setup screens didnt expose the same options i see in the settings menu, can we enhance the flow to expose those, so people are setting things up and configuring, not just turning things on?"
+The guide now shows each feature's options under its switch, drawn by the
+same code as the settings (one "list drawer", two windows), so labels,
+buttons and saved values are the same in both. The screens went from seven
+to nine, one per feature that has options. Button size and Round button
+position are not in the guide: they belong to no feature and stay on the
+list of ideas below until the owner says yes. Device steps:
+`docs/TESTING.md` 13e, rewritten.
+
 **0.4.1 (2026-11-18):** the owner's first look at 0.4.0 on the device: "initial
 testing went well, ui and everything had no issues, the setup screen was
 nice". One fix asked for: the guide's Up and Down buttons on the right are
@@ -490,7 +499,9 @@ Everything still to be built, in rough order of how much it is wanted.
   every slot button; wait for the device test of "Bag icons" first.
 - The setup guide could also offer the button size and the round button's
   position, a picture per feature, and come back when a later version adds a
-  feature. Proposed in the 0.4.0 spec, not asked for.
+  feature. Proposed in the 0.4.0 spec, not asked for. (Since 0.5.0 the first
+  is a few lines: the settings' two rows are drawn by the shared list
+  drawer, `CoreChoices`.)
 - Owner has more ideas; add them here as one line each, then spec before
   building.
 

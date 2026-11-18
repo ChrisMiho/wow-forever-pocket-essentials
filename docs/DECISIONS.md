@@ -226,7 +226,9 @@ Made without the owner:
   in the text and left to the settings; the guide has switches only. The
   settings window's option rows are drawn by code that belongs to that window
   (its own pools and layout), so showing them in the guide would have meant a
-  second copy of that code.
+  second copy of that code. (Replaced on 2026-11-18, see "2026-11-18
+  (0.5.0)" below: the code was made shareable and the guide shows the
+  options.)
 - Setup guide: when the answer is already saved, no timer is started at
   login at all (the plan read the saved answer only when the timer fired).
   The answer is still read a second time when the timer fires.
@@ -250,6 +252,44 @@ Made without the owner:
 - Offline tests: the test helper marks setup as skipped in the saved settings
   it hands to the addon, unless a test asks for a first run, so that the
   roughly 400 other tests do not get a window opening by itself.
+
+## 2026-11-18 (0.5.0)
+
+Said by the owner on 2026-11-18, after trying the setup guide on the device:
+"the other thing i was expecting is that the setup screens didnt expose the same options i see in the settings menu, can we enhance the flow to expose those, so people are setting things up and configuring, not just turning things on?"
+
+- The guide shows each feature's options under its switch. There is one
+  implementation of option drawing, the "list drawer" in `Settings.lua`
+  (`PE:NewListDrawer`); the settings window and the guide each make one.
+  Nothing was copied.
+
+Made without the owner:
+- One screen per feature that has options (Quest icons, Quest arrow, Bag
+  sorter, Big chat buttons); Sell junk and Repair, which have none, keep
+  their shared Vendors screen. Nine screens.
+- **Menu background has a screen of its own.** The earlier ruling put it on
+  the Quests screen, which no longer exists. Sharing the Quest arrow screen
+  was tried on paper and dropped: at the Large button size the arrow's
+  options already fill that screen, and the owner asked for fewer Up / Down
+  buttons, not more.
+- No "Hide options" buttons in the guide, and a fold saved in the settings
+  does not hide anything in the guide.
+- **Button size** and **Round button position** are not in the guide. They
+  are in the settings and the owner's words could be read to cover them, but
+  they belong to no feature, and the 0.4.0 spec lists exactly this as
+  "proposed, needs the maintainer's yes" (PRD rule 4). The round-button
+  screen still says where they are. To ask the owner.
+- **Icon key** in the guide does what it does in the settings: it opens the
+  settings' Icon key page. Only one Pocket Essentials window is open at a
+  time, so the guide closes (with the usual "closed, will show again" chat
+  line if neither Finish nor Skip was ever pressed). Leaving the button out
+  of the guide would have broken "the same options"; making the guide come
+  back afterwards was not asked for.
+- The guide now also shows a feature's blue status line where the settings
+  show one, by the same code.
+- Texts were shortened where a control now says it. "You can change all of
+  this later in the settings" is said on the welcome and the last screen
+  only.
 
 ## What was left out, and why
 

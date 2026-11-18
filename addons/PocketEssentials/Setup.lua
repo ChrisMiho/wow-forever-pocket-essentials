@@ -12,6 +12,11 @@
 -- PE:GetModuleSwitch and write through PE:SetModuleEnabled. This file never
 -- writes the saved on/off table itself.
 --
+-- Under each switch are that feature's options, drawn by the same code that
+-- draws them in the settings window (the list drawer in Settings.lua,
+-- PE:NewListDrawer). So both windows show the same labels and controls, a
+-- press takes the same path, and a value set in one shows in the other.
+--
 -- Nothing is built until the guide is first opened. It has no per-frame code.
 -- While open it listens for one thing (a fight starting, which hides it);
 -- while closed it listens for nothing, except the single "fight ended" wait
@@ -22,7 +27,7 @@ local Setup = {}
 PE.Setup = Setup
 
 local type, tostring, ipairs, pcall = type, tostring, ipairs, pcall
-local max, min, ceil, floor = math.max, math.min, math.ceil, math.floor
+local max, min = math.max, math.min
 
 local PANEL_NAME = "PocketEssentialsSetupPanel" -- the prefix matters: our windows close each other by it
 local TITLE = "Pocket Essentials - Setup guide"
@@ -45,36 +50,48 @@ local TEXT_NOTHING_ON = "Nothing is switched on yet. That is fine: you can do it
 --   A screen that has a rows table but no row left is skipped.
 --   A screen with no rows table (welcome, layout) is always shown.
 --   id "finish" is drawn by its own function (the summary).
--- Rows are for features with a switch. A setting that is a choice (sizes,
--- positions) is named in the text and left to the settings window.
+-- A row draws the feature's switch and, under it, the feature's options as
+-- the settings window draws them. The options are not listed here: they come
+-- from the feature itself. A feature with options gets a screen to itself,
+-- because its options make the screen long; features without options share
+-- a screen where they belong together.
 ---------------------------------------------------------------------------
 
 local SCREENS = {
     { id = "welcome", title = "Welcome to Pocket Essentials",
       text = "Pocket Essentials adds a few helpers for playing on a handheld. Every helper starts switched off. "
-          .. "The next screens explain each one in a few lines and let you switch on the ones you want."
+          .. "The next screens take them one at a time. Switch on the ones you want; a helper's choices appear "
+          .. "under its switch once it is on, so you can set it up there and then."
           .. "\n\nUse the touch screen, or the d-pad to move the blue highlight, A to press and B to close."
-          .. "\n\nNothing here is final. Every switch is also in the settings, and you can open this guide again from there." },
+          .. "\n\nNothing here is final. You can change all of this later in the settings, and open this guide "
+          .. "again from there." },
 
-    { id = "quests", title = "Quests",
+    { id = "questIcons", title = "Quest icons",
       text = "Quest icons and Quest arrow show where to go for the quests in your quest log. They get their "
-          .. "locations from the QuestieDB addon, which comes with Pocket Essentials. Menu background makes the "
-          .. "quest log's menu easier to read.",
+          .. "locations from the QuestieDB addon, which comes with Pocket Essentials.",
       rows = {
           { key = "questIcons",
             text = "Puts an icon on the world map and the minimap at each place where a quest objective is: "
-                .. "something to kill, loot, use or hand in. It also hides the game's blue quest areas. To start "
-                .. "with it shows your tracked quests and up to five spots for each objective. Tap an icon on the "
-                .. "map to read what it is." },
+                .. "something to kill, loot, use or hand in. Tap an icon on the map to read what it is." },
+      } },
+
+    { id = "questArrow", title = "Quest arrow",
+      text = "The arrow works on the quest you have focused. To focus a quest, open the quest log, select the "
+          .. "quest and choose Focus in its menu.",
+      rows = {
           { key = "questArrow",
-            text = "Shows an arrow on screen that points to the nearest objective of the quest you have focused, "
-                .. "with the distance and the quest's name. To focus a quest, open the quest log, select the "
-                .. "quest and choose Focus in its menu. If the quest is in another zone, it names the zone to "
+            text = "Shows an arrow on screen that points to the nearest objective of your focused quest, with "
+                .. "the distance and the quest's name. If the quest is in another zone, it names the zone to "
                 .. "head to instead of pointing." },
+      } },
+
+    { id = "menuBg", title = "Menu background",
+      text = "The menu on a quest in the quest log (Track, Focus, Share, Abandon) is drawn by this game with no "
+          .. "background, which makes it hard to read.",
+      rows = {
           { key = "menuBg",
             text = "Puts a plain dark panel behind the game's pop-up menus while they are open, so the text is "
-                .. "easy to read. It is meant for the menu on a quest in the quest log (Track, Focus, Share, "
-                .. "Abandon), which this game draws with no background. It does not need QuestieDB." },
+                .. "easy to read. It does not need QuestieDB." },
       } },
 
     { id = "bags", title = "Bags",
@@ -82,13 +99,12 @@ local SCREENS = {
           .. "you an easy way to tidy it.",
       rows = {
           { key = "bags",
-            text = "Adds a big Sort button to the bag window. You can also click the left stick while the bag is "
-                .. "open to sort. In the settings you can pick the right stick or no stick, and make the bag "
-                .. "window larger."
-                .. "\n\nTwo more choices are under Bag sorter in the settings, once it is on. Both start off. "
-                .. "\"D-pad to Sort\": press Left from the bag's first column to reach the Sort button, then A "
-                .. "should press it (this is new and untested; if A does nothing, tap it). \"Bag icons\": \"One row at the top\" puts the pictures of your equipped bags side by "
-                .. "side above your items, not in among them."
+            text = "Adds a big Sort button to the bag window. A click on a stick can sort too, while the bag is "
+                .. "open."
+                .. "\n\n\"D-pad to Sort\": press Left from the bag's first column to reach the Sort button, then A "
+                .. "should press it (this is new and untested; if A does nothing, tap it). \"Bag icons\": \"One "
+                .. "row at the top\" puts the pictures of your equipped bags side by side above your items, not "
+                .. "in among them."
                 .. "\n\nIf you play without the controller style, the game needs a reload to join the bags into "
                 .. "one window. The last screen of this guide offers it." },
       } },
@@ -114,11 +130,8 @@ local SCREENS = {
                 .. "place you can talk (Say, Party, Guild, General, Trade and so on) and for the last six people "
                 .. "who whispered you. Tap one, then press A when \"Press A to type\" appears: the game's chat "
                 .. "box opens, already set to that channel or person. A red number on the round button counts "
-                .. "whispers you have not answered."
-                .. "\n\nWith this on, hold the round button for a moment to open the settings, or use the "
-                .. "Settings button in the chat window."
-                .. "\n\nChat text size is in the settings, under Big chat buttons: Smaller and Bigger change the "
-                .. "size of the text in every chat window. It works whether this switch is on or off." },
+                .. "whispers you have not answered. With this on, hold the round button to open the settings."
+                .. "\n\nChat text size is for every chat window. It works whether this switch is on or off." },
       } },
 
     { id = "layout", title = "The round button and moving things",
@@ -137,8 +150,6 @@ local SCREENS = {
 }
 
 local COLOR = {
-    font = { 1, 1, 1 },
-    small = { 0.84, 0.84, 0.84 },
     title = { 1, 0.82, 0 },
     warn = { 1, 0.60, 0.20 },
 }
@@ -146,11 +157,10 @@ local COLOR = {
 local UI           -- PE.UI, set when the window is built
 local M            -- current metrics
 local panel, area
+local list         -- the list drawer of this window (PE:NewListDrawer in Settings.lua)
 local backButton, skipButton, nextButton, reloadButton
 local built, buildFailed = false, false
 local drawing, drawQueued = false, false
-local texts = {}   -- [kind] = { list = { font strings }, used = n }: reused on every draw
-local lines = { list = {}, used = 0 }
 local switches = {} -- one switch button per row place on a screen, reused, so the highlight stays on it
 local navList = {}  -- tappable buttons in reading order, rebuilt on every draw
 local shown = {}    -- the screens of this opening: { { screen =, rows = { ... } }, ... }
@@ -216,36 +226,8 @@ local function Escape(text)
     return (tostring(text):gsub("|", "||"))
 end
 
-local function TextHeight(fontString, kind, text, width)
-    local size = (kind == "small" and M.smallFontSize) or (kind == "title" and M.fontSize * 1.12) or M.fontSize
-    local ok, height = pcall(fontString.GetStringHeight, fontString)
-    if ok and type(height) == "number" and height >= size * 0.8 then return height end
-    -- The game could not measure it yet: estimate from the text length.
-    local perLine = max(floor(width / (size * 0.5)), 1)
-    local count = 0
-    for line in (text .. "\n"):gmatch("(.-)\n") do
-        count = count + max(ceil(#line / perLine), 1)
-    end
-    return max(count, 1) * size * 1.2
-end
-
 local function PlaceText(kind, text, x, y, width, color)
-    local pool = texts[kind]
-    pool.used = pool.used + 1
-    local fontString = pool.list[pool.used]
-    if not fontString then
-        fontString = UI:CreateText(area.child, kind)
-        pool.list[pool.used] = fontString
-    end
-    text = text == nil and "" or tostring(text)
-    fontString:ClearAllPoints()
-    fontString:SetPoint("TOPLEFT", area.child, "TOPLEFT", x, -y)
-    fontString:SetWidth(max(width, 10))
-    fontString:SetText(text)
-    local c = color or COLOR[kind] or COLOR.font
-    fontString:SetTextColor(c[1], c[2], c[3], 1)
-    fontString:Show()
-    return TextHeight(fontString, kind, text, width)
+    return list:Text(kind, text, x, y, width, color)
 end
 
 -- Paragraphs ("\n\n" between them), one under the other. Returns the new y.
@@ -259,18 +241,7 @@ local function PlaceParagraphs(kind, text, x, y, width, color)
 end
 
 local function PlaceLine(y, width)
-    lines.used = lines.used + 1
-    local line = lines.list[lines.used]
-    if not line then
-        line = area.child:CreateTexture(nil, "ARTWORK")
-        line:SetColorTexture(0.30, 0.30, 0.34, 1)
-        lines.list[lines.used] = line
-    end
-    line:ClearAllPoints()
-    line:SetPoint("TOPLEFT", area.child, "TOPLEFT", 0, -y)
-    line:SetSize(max(width, 1), M.border)
-    line:Show()
-    return M.border
+    return list:Line(y, width)
 end
 
 ---------------------------------------------------------------------------
@@ -308,7 +279,9 @@ end
 ---------------------------------------------------------------------------
 
 -- Heading, lead text, then one block per feature: name left, switch right,
--- the explanation under the name. Returns the total height.
+-- the explanation under the name, and under that the feature's options, by
+-- the settings window's own rule (all of them while the feature is on, only
+-- the ones marked `always` while it is not). Returns the total height.
 local function DrawScreen(entry, width)
     local screen = entry.screen
     local x = M.gap
@@ -322,15 +295,11 @@ local function DrawScreen(entry, width)
         local mod = PE:GetModule(row.key)
         if mod then
             y = y + PlaceLine(y, width) + M.gap
-            local label, style, state, detail = PE:GetModuleSwitch(row.key)
+            local label, style = PE:GetModuleSwitch(row.key)
             local ty = y + M.gap * 0.3
             ty = ty + PlaceText("font", row.title or Escape(mod.label), x, ty, textWidth, COLOR.title) + M.gap * 0.3
             ty = PlaceParagraphs("small", row.text, x, ty, textWidth)
-            if state == "blocked" then
-                ty = ty + PlaceText("small", detail or "This cannot be switched on right now.", x, ty, textWidth, COLOR.warn) + M.gap * 0.3
-            elseif state == "failed" then
-                ty = ty + PlaceText("small", "Switched on, but it hit a problem. See Errors in the settings.", x, ty, textWidth, COLOR.warn) + M.gap * 0.3
-            end
+            ty = list:Status(mod, x, ty, textWidth, "Switched on, but it hit a problem. See Errors in the settings.")
             local rowHeight = max(M.row, ty - y)
 
             local btn = SwitchButton(place)
@@ -345,6 +314,8 @@ local function DrawScreen(entry, width)
             btn:Show()
             navList[#navList + 1] = btn
             y = y + rowHeight + M.gap * 0.5
+            local hasOptions, onlyAlways = list:OptionsShown(mod)
+            if hasOptions then y = list:Options(mod, y, width, onlyAlways) end
         end
     end
     return y + M.pad
@@ -361,8 +332,8 @@ local function DrawFinish(entry, width)
 
     local on, off = {}, {}
     for _, mod in ipairs(PE.moduleList) do
-        local list = PE:IsModuleEnabled(mod.key) and on or off
-        list[#list + 1] = Escape(mod.label)
+        local into = PE:IsModuleEnabled(mod.key) and on or off
+        into[#into + 1] = Escape(mod.label)
     end
     if #on > 0 then
         y = y + PlaceText("font", "Switched on: " .. table.concat(on, ", ") .. ".", x, y, inner) + M.gap
@@ -377,12 +348,12 @@ local function DrawFinish(entry, width)
     local reasons = PE.reloadReasons
     if type(reasons) == "table" and #reasons > 0 then
         local buttonWidth = M.button * 4.5
-        local list = {}
+        local why = {}
         for i = 1, min(#reasons, 2) do
-            list[i] = Escape(reasons[i].label) .. ": " .. Escape(reasons[i].reason)
+            why[i] = Escape(reasons[i].label) .. ": " .. Escape(reasons[i].reason)
         end
         y = y + PlaceLine(y, width) + M.gap
-        local textHeight = PlaceText("small", table.concat(list, "\n"), x, y, inner - buttonWidth - M.gap, COLOR.warn)
+        local textHeight = PlaceText("small", table.concat(why, "\n"), x, y, inner - buttonWidth - M.gap, COLOR.warn)
         local rowHeight = max(M.button, textHeight)
         reloadButton:ClearAllPoints()
         reloadButton:SetSize(buttonWidth, M.button)
@@ -420,9 +391,6 @@ end
 
 local function DoDraw()
     M = UI:Metrics()
-    for i = #navList, 1, -1 do navList[i] = nil end
-    for _, pool in pairs(texts) do pool.used = 0 end
-    lines.used = 0
 
     local count = #shown
     if index > count then index = count end
@@ -442,8 +410,7 @@ local function DoDraw()
     -- turns out too long is drawn again, narrower, with Up and Down.
     for pass = 1, 2 do
         for i = #navList, 1, -1 do navList[i] = nil end
-        for _, pool in pairs(texts) do pool.used = 0 end
-        lines.used = 0
+        list:Begin()
         area:Layout(panel.contentWidth, areaHeight, pass == 1)
         reloadButton:Hide()
         for i = rowCount + 1, #switches do
@@ -455,10 +422,7 @@ local function DoDraw()
         if not ok or type(total) ~= "number" then total = area.viewHeight end
         if total <= area.viewHeight + 0.5 then break end
     end
-    for _, pool in pairs(texts) do
-        for i = pool.used + 1, #pool.list do pool.list[i]:Hide() end
-    end
-    for i = lines.used + 1, #lines.list do lines.list[i]:Hide() end
+    list:End()
     area:SetContentHeight(total)
 
     -- Reading order for the d-pad: what is in the list, the paging buttons
@@ -630,9 +594,7 @@ local function Build()
     panel = UI:CreatePanel(PANEL_NAME, TITLE, width, height)
     panel.closeButton:SetScript("OnClick", PE:Wrap("core", function() Setup:Close("Close") end))
     area = UI:CreateScrollArea(panel.content)
-    texts.title = { list = {}, used = 0 }
-    texts.font = { list = {}, used = 0 }
-    texts.small = { list = {}, used = 0 }
+    list = PE:NewListDrawer({ child = area.child, navList = navList })
 
     backButton = UI:CreateButton(panel.content, "Back")
     backButton:SetScript("OnClick", PE:Wrap("core", function() Go(-1) end))

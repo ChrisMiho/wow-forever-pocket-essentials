@@ -4,6 +4,43 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-11-18
+
+Seventeenth test build. From the owner's first look at the setup guide: it
+only had the ON / OFF switches, and the choices of each feature were left to
+the settings. Now you set each feature up in the guide itself. Not yet tested
+on a device.
+
+### Changed
+
+- **Setup guide: each feature's options are in the guide**, under its switch,
+  exactly as the settings window shows them: the same labels, the same
+  buttons, the same saved values. Switch a feature on and its choices appear
+  under it at once (for example Quest icons: which quests, map and minimap
+  icons, icon size; Bag sorter: bag size, sort key, "D-pad to Sort", "Bag
+  icons"). **Chat text size** (Smaller, the number, Bigger) is on the Chat
+  screen whether "Big chat buttons" is on or off. A choice made in the guide
+  shows in the settings, and the other way round. There are no "Hide
+  options" buttons in the guide: the options are simply there.
+- **Setup guide: one screen per feature**, nine screens where there were
+  seven: Welcome, Quest icons, Quest arrow, Menu background, Bags, Vendors
+  (Sell junk and Repair, which have no options, share one), Chat, "The round
+  button and moving things", and All set. The texts are shorter where the
+  buttons now speak for themselves.
+- A screen that becomes too long when a feature is switched on gets the
+  **Up** and **Down** buttons on the right, as in 0.4.1; a screen that fits
+  still has none. The d-pad reaches every button and scrolls to it.
+- If a choice needs a reload, the last screen offers it, as it already did
+  for a switch.
+- **Icon key** (under Quest icons) opens the settings' Icon key page from the
+  guide too, which closes the guide. Open the guide again from the settings.
+
+### Internal
+
+- The settings window and the setup guide draw options with one piece of
+  code (the "list drawer" in `Settings.lua`), not two copies. The settings
+  window looks and behaves as before.
+
 ## [0.4.1] - 2026-11-18
 
 Sixteenth test build. From the owner's first look at 0.4.0 on the device: the

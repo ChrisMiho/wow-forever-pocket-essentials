@@ -14,8 +14,8 @@ addons/PocketEssentials/
   UI.lua          sizes for touch, big buttons, windows, controller navigation
   Move.lua        "Move things": saved offsets for our on-screen pieces, the small panel that nudges them
   Hub.lua         the round button and the minimap addon-list entry
-  Settings.lua    the settings window and Errors page
-  Setup.lua       the setup guide: screens that explain each feature with its switch (no switch of its own)
+  Settings.lua    the settings window and Errors page; the list drawer both windows draw options with
+  Setup.lua       the setup guide: screens that explain each feature with its switch and options (no switch of its own)
   QuestData.lua   reads QuestieDB + the quest log into objective locations (shared, no switch of its own)
   QuestIcons.lua  feature: quest icons        (also keeps /qd working)
   QuestArrow.lua  feature: quest arrow
@@ -64,7 +64,14 @@ How the pieces protect each other:
   and a screen whose rows are all missing is left out. Its switches read
   `PE:GetModuleSwitch(key)` and write through `PE:SetModuleEnabled`, the same
   two calls the settings window uses, so the two cannot disagree; it never
-  writes the saved on/off table itself. The only thing it saves is
+  writes the saved on/off table itself. Since 0.5.0 a feature's options are
+  drawn under its switch by the list drawer of `Settings.lua`
+  (`PE:NewListDrawer({ child, navList })`: pools of reused widgets, `Text`,
+  `Line`, `Button`, `Flow`, `OptionsShown`, `Options`, `Status`,
+  `CoreChoices`). The settings window makes one drawer and the guide makes
+  another, so there is one implementation of option rows and both windows
+  save through the same closures. (`CoreChoices`, "Button size" and "Round
+  button position", is used by the settings only.) The only thing it saves is
   `PocketEssentialsDB.setup`: `"finished"`, `"skipped"`, or nothing (never
   answered; any other value reads as nothing). It opens by itself from one
   1.5-second timer after the first `PLAYER_ENTERING_WORLD` of a login, and
@@ -124,8 +131,9 @@ How the pieces protect each other:
    code is needed unless it has `options`. For the setup guide, add one row
    `{ key = "myFeature", text = "..." }` to the fitting screen in `SCREENS`
    at the top of `Setup.lua`: a few plain sentences about what the player
-   will see. A choice inside a feature gets a sentence in that feature's
-   text, not a row.
+   will see. A feature with `options` gets a screen of its own, because the
+   options are drawn under its switch by themselves (nothing to add for
+   them); a sentence in the text is only for a choice that needs explaining.
 6. Inside a feature use the module methods: `mod:RegisterEvent(event, fn)`
    (dropped automatically on switch-off), `mod:After(seconds, fn)` (cancelled
    on switch-off), `mod:Safe(fn, ...)`, `mod:Wrap(fn)`, `mod:RequestReload`.

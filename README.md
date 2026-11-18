@@ -6,7 +6,7 @@ A small, lightweight addon suite that makes WoW Forever comfortable to play on
 a handheld, with touch and a controller together: big buttons, no tiny
 targets, no typed commands.
 
-> **Status: In progress: version 0.4.0 is a test build. Quest icons, the quest arrow, the bag sorter, sell junk, repair and the chat buttons have run on a device (0.0.9 and 0.1.0). Everything added since has not: Move things, the setup guide, Menu background, the two new bag choices and the chat text size stepper.**
+> **Status: In progress: version 0.5.0 is a test build. Quest icons, the quest arrow, the bag sorter, sell junk, repair and the chat buttons have run on a device (0.0.9 and 0.1.0). Everything added since has not: Move things, the setup guide, Menu background, the two new bag choices and the chat text size stepper.**
 > Treat every feature as unproven until it has been tested in the game.
 
 ## Who it's for
@@ -19,7 +19,8 @@ Droid Deck.
 
 Every feature has its own on/off switch and starts switched off. The first
 time you log in, a short **setup guide** explains each one in a few lines and
-lets you switch on the ones you want.
+lets you switch on the ones you want and set them up, with each feature's
+choices right under its switch.
 
 | Feature | What it does |
 |---------|--------------|
@@ -30,7 +31,7 @@ lets you switch on the ones you want.
 | Repair automatically | Repairs from your own money |
 | Big chat buttons | The round button opens a picker: one big button per channel and per recent whisperer. A badge shows unanswered whispers. "Chat text size" (Smaller / Bigger) is in the settings and works with the feature on or off |
 | Menu background | A plain dark panel behind the game's pop-up menus, such as the menu on a quest in the quest log, so the text is easy to read |
-| Setup guide | Not a switch: seven short screens that explain the features above, each with its switch. Opens by itself once; open it again from the settings ("Setup guide") |
+| Setup guide | Not a switch: nine short screens that explain the features above, each with its switch and, under it, the same choices as in the settings. Opens by itself once; open it again from the settings ("Setup guide") |
 
 ## Install
 
@@ -75,8 +76,9 @@ load."). Everything else keeps working.
 - **Type `/pe`**, or use the addon-list button on the minimap, as other ways
   to open them.
 - **Setup guide:** the "Setup guide" button in the bottom row of the settings
-  (or `/pe setup`) opens the guide again at any time. Its switches are the
-  same switches as in the settings. Use the touch screen, or the d-pad to
+  (or `/pe setup`) opens the guide again at any time. Its switches and
+  choices are the same ones as in the settings: change one in either place
+  and the other shows it. Use the touch screen, or the d-pad to
   move the blue highlight, A to press and B to close.
 - **Reload UI button:** at the bottom of the settings, so a reload never
   needs a typed command.
