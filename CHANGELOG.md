@@ -4,6 +4,24 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-11-17
+
+Fifteenth test build, in progress. Not yet tested on a device.
+
+### Changed
+
+- **Chat text size** is now one small stepper: **Smaller**, the size as a
+  number, **Bigger**. One press moves one step through the game's own sizes
+  (12, 14, 16, 18, 20, 24, 27) and then on to 30 and 34. The number is the
+  size the game is using right now, so it also follows a change made from
+  the game's own chat tab menu. The buttons stop at the ends.
+- The **Chat text size** row is now shown whether "Big chat buttons" is ON
+  or OFF; it never needed that feature. Because of this the "Big chat
+  buttons" block has a "Hide options" button even while it is off.
+- As before, every chat window gets the same size, and a press during a
+  fight is held and applied when the fight ends (the row then says, for
+  example, "Chat text size: 20 (after the fight)").
+
 ## [0.3.1] - 2026-11-17
 
 Fourteenth test build: the arrow's "Quest in another zone" choice from 0.3.0

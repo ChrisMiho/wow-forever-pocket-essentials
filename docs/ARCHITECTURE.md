@@ -84,10 +84,16 @@ How the pieces protect each other:
      or `{label, action = function}`, with an optional `OnChange`; or a row
      of buttons with a value text, `{label, value = function(mod) -> text,
      buttons = {{label, action = function(mod)}, ...}}` (0.1.0, used by "Chat
-     text size"; `buttons` may also be a function returning the list).
+     text size"; `buttons` may also be a function returning the list). An
+     entry `{text = ...}` in that list is drawn as a short text at that place
+     instead of a button (0.4.0: the number between "Smaller" and "Bigger").
+     Any row may carry `always = true`: it is then also drawn while the
+     feature is not on, so it must not need the feature (0.4.0, "Chat text
+     size").
    - A feature that is on and has `options` gets a "Hide options" / "Show
      options" button in its row; the choice is saved in
-     `PocketEssentialsDB.ui.folded[key]` (0.1.0).
+     `PocketEssentialsDB.ui.folded[key]` (0.1.0). A feature that is not on
+     gets one only when it has a row marked `always` (0.4.0).
    - Lifecycle: `OnLoad(mod)` once at login, before anything is enabled;
      `OnEnable(mod)` when switched on, and at login if saved on;
      `OnDisable(mod)` when switched off. An error in `OnEnable` marks the
@@ -146,6 +152,7 @@ so that being wrong cannot raise an error; the worst case is listed.
 | `SetChatWindowSize` (called inside the game's `FCF_SetChatWindowFontSize`, no source to read): whether sizes above the game's own list (30, 34) are kept across a reload, and whether a chat window that is not in use accepts a size | Chat text size | The size falls back after a reload, or one window keeps its old size (each window's call is guarded on its own) |
 | Whether calling `FCF_SetChatWindowFontSize` from addon code with the Gamepad UI on has an after-effect. By the source it only sets fonts and saves the size: no protected call, no edit box. Applied only out of a fight | Chat text size | A block report in the next debug log names it |
 | `NUM_CHAT_WINDOWS` (defined in `Blizzard_DeprecatedChatInfo`, which this client may not load) | Chat text size | None: falls back to 10 windows |
+| `CHAT_FONT_HEIGHTS` (FloatingChatFrame.lua:33, found by the audit; read only, copied each time the row is drawn or tapped): whether this client fills it | Chat text size | None: falls back to our own copy 12, 14, 16, 18, 20, 24, 27, and the debug log says so on a tap |
 | `PADRSTICK` taken as an override binding while the bag is open (the key name is in `GamepadConstants.lua`; only `PADLSTICK` has run on the device) | Bag sorter, "Right stick click" | The right stick keeps its normal job; the Sort tab still works |
 | `date("%H:%M:%S", time)` with a time argument (Blizzard's source only shows `date("*t", time)`; it is standard Lua) | Debug log time stamps | The stamp falls back to the old form (seconds and milliseconds from two clocks); guarded so a log line can never raise an error |
 | Whether the controller's A release always reaches our navigation button during a long hold, whether A repeats while held, and whether a finger sliding off a button still sends its release | Move things, hold to repeat | A hold keeps moving until the 8-second stop or the screen edge (if the game also repeats A while it is held, until the button is let go or the edge); a single press still nudges |

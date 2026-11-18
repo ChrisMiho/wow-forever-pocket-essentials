@@ -515,3 +515,46 @@ so there is nothing new to try on the arrow.
 3. Focus a quest whose places are all in another zone: the arrow's place
    reads "Outside this zone / Head to <zone>", as before.
 4. Report each step yes / no with notes, and send the saved file.
+
+### 13. Version 0.4.0
+
+#### 13a. Chat text size
+
+Install the 0.4.0 zip, turn the debug log on (settings, Errors page), and
+note the chat size before starting.
+
+1. Open the settings (hold the round "PE" button). With **Big chat buttons**
+   OFF, find its block. Under it you should see **Chat text size** and, on
+   the next line, **Smaller**, a number, **Bigger**. The number is the chat's
+   size right now (18 unless you changed it).
+2. Tap **Bigger** once. The chat text on screen should grow at once and the
+   number should go up one step (18 becomes 20).
+3. Tap **Smaller** twice. The number should go 18, then 16, and the chat
+   should shrink each time.
+4. Move to **Bigger** with the d-pad and press A. Same result as a tap. The
+   highlight should stay on the button after the press.
+5. Tap **Bigger** until it stops. The numbers should run 20, 24, 27, 30, 34
+   and then stay at 34. Tap **Smaller** until it stops: it should end at 12.
+6. Set it to 20 and close the settings. Open the game's own menu on the chat
+   tab, go to Font Size: the ticked entry should be 20.
+7. In that game menu pick 14. Open our settings again: the number should
+   say 14.
+8. If you have a second chat tab (Combat Log counts): look at it after a
+   press; it should be the same size as the main chat.
+9. Set it to 16, then use **Reload UI**. The chat should still be 16 and the
+   number should say 16. Log out fully and back in: still 16. Do the same
+   once with 30 (this one may not survive; tell me either way).
+10. Start a fight, open the settings and tap **Bigger**. The line should say
+    "Chat text size: <the next size> (after the fight)" and the chat should
+    not change yet (the number between the buttons stays as it was). When
+    the fight ends the chat should change by itself and the note should go.
+11. Tap **Hide options** in the "Big chat buttons" block: the stepper should
+    fold away; **Show options** brings it back. Switch **Big chat buttons**
+    ON: the row should still be there and work, and fold the same way.
+12. Check the other blocks still look right with the d-pad: each ON / OFF
+    switch can be reached, and features that are off (other than Big chat
+    buttons) have no "Hide options" button.
+13. Set the size you actually want. Say whether the three pieces fit on one
+    line and are easy to hit at the Small, Medium and Large button sizes.
+    Send the saved `PocketEssentials.lua` file, and say whether any
+    "Interface action failed" or "action blocked" message appeared.

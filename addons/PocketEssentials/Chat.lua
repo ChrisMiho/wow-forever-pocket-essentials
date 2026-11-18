@@ -775,15 +775,55 @@ end
 -- The game's own function FCF_SetChatWindowFontSize(nil, chatFrame, size)
 -- (Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua) sets the font of
 -- one chat window and tells the game to remember the size. By Blizzard's
--- source it makes no protected call and never touches the chat box. It is
--- called for every chat window so all tabs match, and only out of a fight.
--- Nothing is saved here: the game keeps the size, and nothing is changed
--- until one of the two buttons in the settings is tapped.
+-- source it makes no protected call and never touches the chat box. The
+-- game's chat tab menu (Font Size) does one window; here it is called for
+-- every chat window so all tabs match, and only out of a fight.
+-- The settings row is a stepper: Smaller, the size the game is using, Bigger.
+-- The steps are the game's own list, read when the row is drawn or tapped,
+-- then two larger sizes. Nothing is saved here: the game keeps the size, and
+-- nothing is changed until one of the two buttons is tapped. The row is
+-- drawn whether "Big chat buttons" is on or off.
 ---------------------------------------------------------------------------
 
--- The game's own list (CHAT_FONT_HEIGHTS: 12 to 27) and two larger sizes.
--- Our own copy: the game's list is never written to.
-local TEXT_SIZES = { 12, 14, 16, 18, 20, 24, 27, 30, 34 }
+-- Our copy of the game's list (CHAT_FONT_HEIGHTS, FloatingChatFrame.lua:33),
+-- used when the game's list is missing, and two larger sizes of our own.
+local FALLBACK_SIZES = { 12, 14, 16, 18, 20, 24, 27 }
+local EXTRA_SIZES = { 30, 34 }
+
+-- The game's sizes as a new sorted list of whole numbers, and whether they
+-- came from the game. The game's table is only read, never kept or written.
+local function GameSizes()
+    local out = {}
+    local source = CHAT_FONT_HEIGHTS
+    if type(source) == "table" then
+        local seen = {}
+        for i = 1, #source do
+            local n = source[i]
+            if type(n) == "number" and n > 0 then
+                n = floor(n + 0.5)
+                if n > 0 and not seen[n] then
+                    seen[n] = true
+                    out[#out + 1] = n
+                end
+            end
+        end
+        table.sort(out)
+    end
+    if #out > 0 then return out, true end
+    for i = 1, #FALLBACK_SIZES do out[i] = FALLBACK_SIZES[i] end
+    return out, false
+end
+
+-- Every step of the stepper: the game's sizes, then ours that are larger.
+local function StepSizes()
+    local list, fromGame = GameSizes()
+    local last = list[#list]
+    for i = 1, #EXTRA_SIZES do
+        if EXTRA_SIZES[i] > last then list[#list + 1] = EXTRA_SIZES[i] end
+    end
+    return list, fromGame
+end
+
 local FALLBACK_WINDOWS = 10 -- Constants.ChatFrameConstants.MaxChatWindows
 
 local function WindowCount()
@@ -812,15 +852,15 @@ local function CurrentTextSize()
     return nil
 end
 
--- The next listed size in a direction (1 bigger, -1 smaller), or nil at the end.
-local function NextTextSize(current, direction)
+-- The next size of a list in a direction (1 bigger, -1 smaller), or nil at the end.
+local function NextTextSize(sizes, current, direction)
     if direction > 0 then
-        for i = 1, #TEXT_SIZES do
-            if TEXT_SIZES[i] > current then return TEXT_SIZES[i] end
+        for i = 1, #sizes do
+            if sizes[i] > current then return sizes[i] end
         end
     else
-        for i = #TEXT_SIZES, 1, -1 do
-            if TEXT_SIZES[i] < current then return TEXT_SIZES[i] end
+        for i = #sizes, 1, -1 do
+            if sizes[i] < current then return sizes[i] end
         end
     end
     return nil
@@ -853,18 +893,10 @@ local function ApplyTextSize(size)
     end
 end
 
-local function ChangeTextSize(direction)
-    local current = TextSizeAvailable() and CurrentTextSize()
-    if not current then
+-- The one way in: sets a size now, or holds it until the fight ends.
+local function SetTextSize(size)
+    if not TextSizeAvailable() then
         if PE.debugOn then PE:Debug("chat", "text size: not available") end
-        return
-    end
-    local base = pendingSize or current
-    local size = NextTextSize(base, direction)
-    if not size then
-        if PE.debugOn then
-            PE:Debug("chat", "text size " .. base .. ": already the " .. (direction > 0 and "biggest" or "smallest"))
-        end
         return
     end
     if PE:InCombat() then
@@ -874,19 +906,45 @@ local function ChangeTextSize(direction)
     PE:RunOutOfCombat("chat:fontsize", function() ApplyTextSize(size) end)
 end
 
+local function ChangeTextSize(direction)
+    local current = TextSizeAvailable() and CurrentTextSize()
+    if not current then
+        if PE.debugOn then PE:Debug("chat", "text size: not available") end
+        return
+    end
+    local sizes, fromGame = StepSizes()
+    if not fromGame and PE.debugOn then
+        PE:Debug("chat", "text size: the game's size list is missing, using our own")
+    end
+    local base = pendingSize or current
+    local size = NextTextSize(sizes, base, direction)
+    if not size then
+        if PE.debugOn then
+            PE:Debug("chat", "text size " .. base .. ": already the " .. (direction > 0 and "biggest" or "smallest"))
+        end
+        return
+    end
+    SetTextSize(size)
+end
+
+-- The text after the row's label: nothing while the stepper shows the size,
+-- the waiting size during a fight, or why there is no stepper.
 local function TextSizeValue()
     local size = TextSizeAvailable() and CurrentTextSize()
     if size then
         if pendingSize and pendingSize ~= size then return pendingSize .. " (after the fight)" end
-        return tostring(size)
+        return nil
     end
     return "Not available on this version of the game"
 end
 
+-- The stepper: Smaller, the size the game is using right now, Bigger.
 local function TextSizeButtons()
-    if not (TextSizeAvailable() and CurrentTextSize()) then return {} end
+    local size = TextSizeAvailable() and CurrentTextSize()
+    if not size then return {} end
     return {
         { label = "Smaller", action = function() ChangeTextSize(-1) end },
+        { text = tostring(size) },
         { label = "Bigger", action = function() ChangeTextSize(1) end },
     }
 end
@@ -903,7 +961,7 @@ mod = PE:RegisterModule({
     defaults = { whispers = {} },
 
     options = {
-        { label = "Chat text size", value = TextSizeValue, buttons = TextSizeButtons },
+        { label = "Chat text size", value = TextSizeValue, buttons = TextSizeButtons, always = true },
     },
 
     OnEnable = function(self)

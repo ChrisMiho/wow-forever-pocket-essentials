@@ -30,6 +30,7 @@ event	ZONE_CHANGED_INDOORS	Blizzard_APIDocumentationGenerated/MapDocumentation.l
 event	ZONE_CHANGED_NEW_AREA	Blizzard_APIDocumentationGenerated/MapDocumentation.lua documented
 frame	BACKPACK_CONTAINER	Blizzard_FrameXMLBase/Constants.lua used
 frame	BAG_COMMAND_CONVERT_TO_COMBINED	Blizzard_UIPanels_Game/Mainline/ContainerFrame.lua used
+frame	CHAT_FONT_HEIGHTS	Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua used
 frame	ChatFrameUtil	Blizzard_ChatFrameBase/Shared/ChatFrameUtil.lua used
 frame	ContainerFrameCombinedBags	Blizzard_UIPanels_Game/Mainline/ContainerFrame.xml used
 frame	DEFAULT_CHAT_FRAME	Blizzard_ChatFrameBase/Shared/ChatFrameUtil.lua used

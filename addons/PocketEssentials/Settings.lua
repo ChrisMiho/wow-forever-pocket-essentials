@@ -98,6 +98,7 @@ end
 local function PlaceText(kind, text, x, y, width, color)
     local fontString = Acquire(pools[kind])
     fontString:ClearAllPoints()
+    fontString:SetJustifyH("LEFT") -- a reused one may have been a centred text between buttons
     fontString:SetPoint("TOPLEFT", area.child, "TOPLEFT", x, -y)
     local height = SetText(fontString, kind, text, width, color)
     if y + height > lowest then lowest = y + height end
@@ -136,26 +137,45 @@ local function PlaceButton(text, x, y, width, height, style, onClick)
 end
 
 -- A run of buttons sized to their labels, wrapping onto new lines.
--- items: { { label =, selected =, style =, onClick = }, ... }. Returns the new y.
+-- items: { { label =, selected =, style =, onClick = }, ... }. An item
+-- { text = } is not a button: it is a short centred text in the run (the
+-- number between "Smaller" and "Bigger"). Returns the new y.
 local function FlowButtons(items, x0, y, maxWidth, minWidth)
     local x, height = x0, M.button
     for i = 1, #items do
         local item = items[i]
-        local btn = Acquire(pools.button)
-        ResetButton(btn)
-        btn:SetLabel(item.label)
-        btn:SetHeight(height)
-        local width = btn:FitWidth(minWidth or M.button * 2.2, maxWidth)
-        if x > x0 and x + width > x0 + maxWidth then
-            x = x0
-            y = y + height + M.gap
+        local width
+        if item.text ~= nil then
+            local text = tostring(item.text)
+            -- A fixed width for short texts, so the button after it stays put
+            -- when the number changes.
+            width = min(max(M.button * 1.6, #text * M.fontSize * 0.6 + M.pad), maxWidth)
+            if x > x0 and x + width > x0 + maxWidth then
+                x = x0
+                y = y + height + M.gap
+            end
+            local fontString = Acquire(pools.font)
+            fontString:ClearAllPoints()
+            fontString:SetJustifyH("CENTER")
+            local textHeight = SetText(fontString, "font", text, width)
+            fontString:SetPoint("TOPLEFT", area.child, "TOPLEFT", x, -(y + max((height - textHeight) * 0.5, 0)))
+        else
+            local btn = Acquire(pools.button)
+            ResetButton(btn)
+            btn:SetLabel(item.label)
+            btn:SetHeight(height)
+            width = btn:FitWidth(minWidth or M.button * 2.2, maxWidth)
+            if x > x0 and x + width > x0 + maxWidth then
+                x = x0
+                y = y + height + M.gap
+            end
+            btn:SetPoint("TOPLEFT", area.child, "TOPLEFT", x, -y)
+            if item.style then btn:SetStyle(item.style) end
+            btn:SetSelected(item.selected)
+            btn:SetScript("OnClick", item.onClick)
+            btn.peScrollTop, btn.peScrollBottom = y, y + height
+            navList[#navList + 1] = btn
         end
-        btn:SetPoint("TOPLEFT", area.child, "TOPLEFT", x, -y)
-        if item.style then btn:SetStyle(item.style) end
-        btn:SetSelected(item.selected)
-        btn:SetScript("OnClick", item.onClick)
-        btn.peScrollTop, btn.peScrollBottom = y, y + height
-        navList[#navList + 1] = btn
         if y + height > lowest then lowest = y + height end
         x = x + width + M.gap
     end
@@ -174,7 +194,9 @@ local function ChooseOption(mod, opt, value)
 end
 
 -- Option rows: the list `options` of a feature, drawn under its switch while
--- the feature is on. Each row is a table of one of these kinds:
+-- the feature is on. A row with `always = true` is also drawn while the
+-- feature is not on (it must not need the feature). Each row is a table of
+-- one of these kinds:
 --   choices: { key, label, choices = { { value, label }, ... }, OnChange }
 --            a row of buttons; the tapped one is saved as mod.opts[key].
 --   action:  { label, action = function(mod) }
@@ -185,12 +207,14 @@ end
 --            row of buttons. `buttons` may also be a function(mod) that
 --            returns that list (an empty list draws no buttons). Each tap
 --            runs its action, then the window is drawn again, so the value
---            text is read again.
-local function BuildOptions(mod, y, width)
+--            text is read again. An entry { text = } in the list is drawn
+--            as a short text at that place in the row instead of a button.
+-- onlyAlways: draw only the rows marked `always`.
+local function BuildOptions(mod, y, width, onlyAlways)
     local x = M.pad * 2
     local innerWidth = width - x - M.gap
     for _, opt in ipairs(mod.options) do
-        if type(opt) == "table" then
+        if type(opt) == "table" and (not onlyAlways or opt.always == true) then
             if type(opt.choices) == "table" and opt.key ~= nil then
                 if type(opt.label) == "string" and opt.label ~= "" then
                     y = y + PlaceText("small", opt.label, x, y, innerWidth, COLOR.option) + M.gap * 0.4
@@ -233,7 +257,9 @@ local function BuildOptions(mod, y, width)
                 end
                 local items = {}
                 for _, b in ipairs(type(list) == "table" and list or {}) do
-                    if type(b) == "table" and type(b.action) == "function" then
+                    if type(b) == "table" and b.text ~= nil and b.action == nil then
+                        items[#items + 1] = { text = tostring(b.text) }
+                    elseif type(b) == "table" and type(b.action) == "function" then
                         items[#items + 1] = {
                             label = tostring(b.label ~= nil and b.label or "Do it"),
                             onClick = PE:Wrap("core", function()
@@ -284,7 +310,19 @@ local function BuildModuleRow(mod, y, width, separator)
     local savedOn = PE:IsModuleSavedOn(key)
     local toggleWidth = M.button * 2.8
     local textX = M.gap
-    local hasOptions = state == "on" and type(mod.options) == "table" and #mod.options > 0
+    -- Options are drawn while the feature is on; a feature that is not on
+    -- still shows its rows marked `always`.
+    local onlyAlways = state ~= "on"
+    local hasOptions = false
+    if type(mod.options) == "table" then
+        if not onlyAlways then
+            hasOptions = #mod.options > 0
+        else
+            for _, opt in ipairs(mod.options) do
+                if type(opt) == "table" and opt.always == true then hasOptions = true end
+            end
+        end
+    end
     local folded = hasOptions and FoldTable()[key] == true
     -- "Hide options" / "Show options" sits left of the switch. 3.4 buttons
     -- wide holds the longer label at the Large size (about 230 of the
@@ -352,7 +390,7 @@ local function BuildModuleRow(mod, y, width, separator)
 
     y = y + rowHeight + M.gap * 0.5
     if hasOptions and not folded then
-        y = BuildOptions(mod, y, width)
+        y = BuildOptions(mod, y, width, onlyAlways)
     end
     return y
 end

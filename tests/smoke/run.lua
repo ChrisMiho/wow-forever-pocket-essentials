@@ -551,7 +551,9 @@ local function everythingOn(c, PE, hasQDB)
     PE:CloseSettings()
     c:advance(0.2)
     if os.getenv("SMOKE_VERBOSE") then print("  option presses: " .. presses) end
-    check(presses >= (hasQDB and 3 * 72 or 3 * 35), "only " .. presses .. " option buttons were pressed")
+    -- Lowered by 7 a size in 0.4.0: "Chat text size" no longer has its number
+    -- in the label, so Smaller and Bigger count once each, not once per size shown.
+    check(presses >= (hasQDB and 3 * 65 or 3 * 28), "only " .. presses .. " option buttons were pressed")
     c:assertClean("pressing every option")
 
     local states = moduleStates(PE)

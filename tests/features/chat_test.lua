@@ -764,6 +764,39 @@ end
 
 local function mainSize(c) return (select(2, c.chatFrame:GetFont())) end
 
+-- A shown settings button with that label, without opening or redrawing anything.
+local function shownButton(c, label)
+    local found
+    walk(c, settingsOf(c), function(w)
+        local st = c._state(w)
+        if not found and st.type == "Button" and st.shown and T.labelOf(w) == label then found = w end
+    end)
+    return found
+end
+
+-- The stepper's number: the one shown text that sits between "Smaller" and
+-- "Bigger" on their line (spec 2026-11-17-0.4.0, Rulings). nil when there is none.
+local function stepperText(c)
+    local smaller, bigger = shownButton(c, "Smaller"), shownButton(c, "Bigger")
+    if not (smaller and bigger) then return nil end
+    local _, sr, st, sb = c._rect(smaller)
+    local bl = c._rect(bigger)
+    local found, count = nil, 0
+    walk(c, settingsOf(c), function(w)
+        for _, r in ipairs(c._state(w).regions) do
+            local rs = c._state(r)
+            if rs.type == "FontString" and rs.shown and rs.text and rs.text ~= "" then
+                local l, rr, t = c._rect(r)
+                if l and rr and t and l >= sr - 0.01 and rr <= bl + 0.01 and t <= st + 0.01 and t >= sb - 0.01 then
+                    found, count = rs.text, count + 1
+                end
+            end
+        end
+    end)
+    if count ~= 1 then return nil end
+    return found
+end
+
 -- Spec 3 "Behaviour": each tap moves one step and every chat window gets the same size.
 test("chat size: Bigger moves one step and all ten chat windows follow", function()
     local c, PE = newChat()
@@ -773,7 +806,7 @@ test("chat size: Bigger moves one step and all ten chat windows follow", functio
     eq(c.chatSizes[1], 20)
     eq(c.chatSizes[10], 20)
     eq(#sizeCalls(c), 10)
-    check(hasText(c, "Chat text size: 20"), "the row does not show the new size: " .. table.concat(settingsTexts(c), " | "))
+    eq(stepperText(c), "20", "the row does not show the new size: " .. table.concat(settingsTexts(c), " | "))
 end)
 
 test("chat size: Smaller moves one step down", function()
@@ -874,7 +907,8 @@ end)
 test("chat size: in a fight the value text shows the size that is waiting; afterwards just the size", function()
     local c, PE = newChat()
     local bigger = settingsButton(c, PE, "Bigger")
-    check(hasText(c, "Chat text size: 18"))
+    check(hasText(c, "Chat text size"))
+    eq(stepperText(c), "18")
     c:enterCombat()
     c:click(bigger)
     c:advance(0.5)
@@ -884,7 +918,9 @@ test("chat size: in a fight the value text shows the size that is waiting; after
     check(hasText(c, "Chat text size: 24 (after the fight)"), table.concat(settingsTexts(c), " | "))
     c:leaveCombat()
     c:advance(0.5)
-    check(hasText(c, "Chat text size: 24"), table.concat(settingsTexts(c), " | "))
+    check(hasText(c, "Chat text size"), table.concat(settingsTexts(c), " | "))
+    check(not hasText(c, "Chat text size: 24 (after the fight)"), "the waiting note stayed")
+    eq(stepperText(c), "24")
 end)
 
 test("chat size: taps in a fight stop at the end of the list", function()
@@ -941,18 +977,186 @@ test("chat size: the edit box is not touched and the game's own size list stays 
     c:assertClean("chat size")
 end)
 
--- Spec 3: the row shows the current size and the two buttons.
-test("chat size: the row in the chat block shows the label, the size and both buttons", function()
+-- Spec 0.4.0 Rulings: one stepper, "Chat text size", then Smaller, the size, Bigger.
+test("chat size: the row in the chat block shows the label, Smaller, the size and Bigger, in that order", function()
     local c, PE = newChat()
     check(settingsButton(c, PE, "Smaller") and settingsButton(c, PE, "Bigger"), "buttons missing")
-    check(hasText(c, "Chat text size: 18"), "no size text: " .. table.concat(settingsTexts(c), " | "))
+    check(hasText(c, "Chat text size"), "no label: " .. table.concat(settingsTexts(c), " | "))
+    eq(stepperText(c), "18", "no number between the buttons: " .. table.concat(settingsTexts(c), " | "))
+    local sl, sr, st = c._rect(shownButton(c, "Smaller"))
+    local bl, _, bt = c._rect(shownButton(c, "Bigger"))
+    check(sl < sr and sr < bl, "Smaller is not left of Bigger")
+    check(math.abs(st - bt) < 0.01, "the two buttons are not on one line")
 end)
 
-test("chat size: the row is not drawn while the chat feature is off", function()
+-- Rulings: "not a button per size".
+test("chat size: there is no button per size, only Smaller and Bigger", function()
+    local c, PE = newChat()
+    for _, n in ipairs({ 12, 14, 16, 18, 20, 24, 27, 30, 34 }) do
+        check(not settingsButton(c, PE, tostring(n)), "a button labelled " .. n)
+    end
+end)
+
+-- Rulings: one press moves one step through the whole list, both ways, and the number follows.
+test("chat size: the number steps through the full list both ways and stops at the ends", function()
+    local c, PE = newChat()
+    setAllTo(c, 12)
+    PE:OpenSettings()
+    c:advance(0.2)
+    local seen = { stepperText(c) }
+    for _ = 1, 10 do
+        c:click(shownButton(c, "Bigger"))
+        c:advance(0.2)
+        seen[#seen + 1] = stepperText(c)
+    end
+    eq(seen, { "12", "14", "16", "18", "20", "24", "27", "30", "34", "34", "34" })
+    eq(#sizeCalls(c), 80, "a tap at the top still called the game")
+    seen = {}
+    for _ = 1, 10 do
+        c:click(shownButton(c, "Smaller"))
+        c:advance(0.2)
+        seen[#seen + 1] = stepperText(c)
+    end
+    eq(seen, { "30", "27", "24", "20", "18", "16", "14", "12", "12", "12" })
+    eq(#sizeCalls(c), 160, "a tap at the bottom still called the game")
+    c:assertClean("chat size stepper")
+end)
+
+-- Rulings: "The number shown is the size the game is using, read from the game."
+test("chat size: the number is read from the game, not from anything the addon keeps", function()
+    local c, PE = newChat()
+    c:click(settingsButton(c, PE, "Bigger"))
+    c:advance(0.2)
+    eq(stepperText(c), "20")
+    local before = #sizeCalls(c)
+    setAllTo(c, 14) -- the game's own tab menu, behind the addon's back
+    PE:CloseSettings()
+    PE:OpenSettings()
+    c:advance(0.2)
+    eq(stepperText(c), "14")
+    eq(#sizeCalls(c), before, "drawing the row called the game")
+end)
+
+-- Rulings: a size that is not in the list is shown as it is and steps to its neighbour.
+test("chat size: a size that is not in the list is shown, and one press goes to the neighbour that way", function()
+    for _, case in ipairs({ { 19, "Bigger", "20" }, { 19, "Smaller", "18" }, { 22, "Bigger", "24" }, { 40, "Smaller", "34" } }) do
+        local c, PE = newChat()
+        setAllTo(c, case[1])
+        PE:OpenSettings()
+        c:advance(0.2)
+        eq(stepperText(c), tostring(case[1]))
+        c:click(shownButton(c, case[2]))
+        c:advance(0.2)
+        eq(stepperText(c), case[3], case[1] .. " " .. case[2])
+        eq(mainSize(c), tonumber(case[3]))
+    end
+end)
+
+-- Spec 1 rule 6 and the Rulings: in a fight the number stays the game's size; the label has the waiting size.
+test("chat size: in a fight the number stays the game's size until the change is applied", function()
+    local c, PE = newChat()
+    local bigger = settingsButton(c, PE, "Bigger")
+    c:enterCombat()
+    c:click(bigger)
+    c:advance(0.2)
+    eq(stepperText(c), "18")
+    check(hasText(c, "Chat text size: 20 (after the fight)"), table.concat(settingsTexts(c), " | "))
+    c:leaveCombat()
+    c:advance(0.5)
+    eq(stepperText(c), "20")
+end)
+
+-- Spec 1 rule 1: the steps come from the game's list when it is there; the list is never written to.
+test("chat size: the steps follow the game's list when it differs, then 30 and 34", function()
+    local c, PE = newChat(function(cc) rawset(cc.env, "CHAT_FONT_HEIGHTS", { 22, 10, 15.2, 15, "x", -3 }) end)
+    setAllTo(c, 10)
+    local seen = {}
+    for _ = 1, 5 do
+        c:click(settingsButton(c, PE, "Bigger"))
+        seen[#seen + 1] = mainSize(c)
+    end
+    eq(seen, { 15, 22, 30, 34, 34 })
+    eq(rawget(c.env, "CHAT_FONT_HEIGHTS"), { 22, 10, 15.2, 15, "x", -3 })
+end)
+
+test("chat size: a game list that already goes past 30 gets only the larger extra size", function()
+    local c, PE = newChat(function(cc) rawset(cc.env, "CHAT_FONT_HEIGHTS", { 12, 32 }) end)
+    setAllTo(c, 12)
+    local seen = {}
+    for _ = 1, 3 do
+        c:click(settingsButton(c, PE, "Bigger"))
+        seen[#seen + 1] = mainSize(c)
+    end
+    eq(seen, { 32, 34, 34 })
+end)
+
+-- Spec 1 rule 1 and "Debug log lines": a missing or damaged list falls back to the seven known sizes.
+test("chat size: without the game's list the known sizes are used, and the log says so", function()
+    local empty = {}
+    for name, value in pairs({ missing = false, text = "12,14", empty = empty, junk = { "a", 0 } }) do
+        local c, PE = newChat(function(cc) rawset(cc.env, "CHAT_FONT_HEIGHTS", value or nil) end)
+        setAllTo(c, 12)
+        local seen = {}
+        for _ = 1, 9 do
+            c:click(settingsButton(c, PE, "Bigger"))
+            seen[#seen + 1] = mainSize(c)
+        end
+        eq(seen, { 14, 16, 18, 20, 24, 27, 30, 34, 34 }, name)
+        PE:SetDebug(true)
+        c:click(settingsButton(c, PE, "Smaller"))
+        eq(debugLines(c, "chat"), { "text size: the game's size list is missing, using our own",
+            "text size 34 -> 30 (10 windows)" }, name)
+    end
+end)
+
+-- Spec 1 "What the player sees": the row is shown whether "Big chat buttons" is on or off
+-- (this reverses the 0.1.0 rule that hid it while the feature was off).
+test("chat size: the row is drawn and works while the chat feature is off", function()
     local c, PE = T.new({})
     PE:OpenSettings()
     c:advance(0.2)
-    check(not hasText(c, "Chat text size: 18"), "drawn with the feature off")
+    check(hasText(c, "Chat text size"), "not drawn with the feature off: " .. table.concat(settingsTexts(c), " | "))
+    eq(stepperText(c), "18")
+    c:click(shownButton(c, "Smaller"))
+    c:advance(0.2)
+    eq(stepperText(c), "16")
+    eq(#sizeCalls(c), 10)
+    for i, f in ipairs(c.chatWindows) do eq(select(2, f:GetFont()), 16, "window " .. i) end
+    for _, rec in ipairs(c:frames()) do
+        if rec.addonFile then
+            check(not rec.events.CHAT_MSG_WHISPER and not rec.events.CHAT_MSG_WHISPER_INFORM,
+                rec.addonFile .. " listens for whispers with chat off")
+        end
+    end
+    eq(PE:GetModuleState("chat") == "on", false, "the tap switched the feature on")
+    c:assertClean("chat size with the feature off")
+end)
+
+-- Spec 1 rule 7: nothing on login, nothing saved, with the feature off.
+test("chat size: with the feature off nothing is saved and nothing is called until a tap", function()
+    local c, PE = T.new({})
+    PE:OpenSettings()
+    c:advance(0.2)
+    eq(#sizeCalls(c), 0)
+    c:click(shownButton(c, "Bigger"))
+    local saved = rawget(c.env, "PocketEssentialsDB").options.chat
+    for key in pairs(type(saved) == "table" and saved or {}) do
+        eq(key, "whispers", "the chat feature saved something besides its whisper list")
+    end
+end)
+
+test("chat size: a tap in a fight with the feature off is held and applied when the fight ends", function()
+    local c, PE = T.new({})
+    PE:OpenSettings()
+    c:advance(0.2)
+    local bigger = shownButton(c, "Bigger")
+    c:enterCombat()
+    c:click(bigger)
+    eq(#sizeCalls(c), 0, "the game was called during the fight")
+    c:leaveCombat()
+    c:advance(0.5)
+    eq(mainSize(c), 20)
+    eq(#sizeCalls(c), 10)
 end)
 
 -- Spec 3: "If the function or the main chat window is missing, the row says 'Not available...'".
@@ -1001,6 +1205,72 @@ test("settings: an option row with a value and buttons draws the text and runs e
     c:click(one)
     c:advance(0.5)
     check(hasText(c, "Test row: n = 1"), "not redrawn: " .. table.concat(settingsTexts(c), " | "))
+end)
+
+-- Settings.lua: an entry { text = } in a buttons row is a text at that place, not a button.
+test("settings: a text entry in a buttons row is drawn between the buttons and read again after a press", function()
+    local c, PE = T.new({ on = { "bags" } })
+    local mod = PE:GetModule("bags")
+    local n = 7
+    mod.options[#mod.options + 1] = { label = "Test row", buttons = function()
+        return { { label = "Smaller", action = function() n = n - 1 end }, { text = "n" .. n },
+            { label = "Bigger", action = function() n = n + 1 end } }
+    end }
+    PE:OpenSettings()
+    c:advance(0.2)
+    check(hasText(c, "Test row"), table.concat(settingsTexts(c), " | "))
+    eq(stepperText(c), "n7")
+    check(not shownButton(c, "n7"), "the text was drawn as a button")
+    c:click(shownButton(c, "Bigger"))
+    c:advance(0.2)
+    eq(stepperText(c), "n8")
+    c:assertClean("settings text entry")
+end)
+
+-- Settings.lua: `always = true` on an option row.
+test("settings: an option row marked always is drawn with its feature off, others are not", function()
+    local c, PE = T.new({})
+    local mod = PE:GetModule("bags")
+    local taps = 0
+    mod.options[#mod.options + 1] = { label = "Plain row", value = function() return "x" end,
+        buttons = { { label = "Plain tap", action = function() end } } }
+    mod.options[#mod.options + 1] = { label = "Always row", value = function() return "y" end, always = true,
+        buttons = { { label = "Always tap", action = function() taps = taps + 1 end } } }
+    PE:OpenSettings()
+    c:advance(0.2)
+    check(hasText(c, "Always row: y"), table.concat(settingsTexts(c), " | "))
+    check(not hasText(c, "Plain row: x"), "a row without the mark was drawn with the feature off")
+    check(not shownButton(c, "Plain tap"), "a button without the mark was drawn with the feature off")
+    c:click(shownButton(c, "Always tap"))
+    eq(taps, 1)
+    -- With the feature on, both are drawn.
+    PE:SetModuleEnabled("bags", true)
+    c:advance(0.2)
+    check(hasText(c, "Always row: y") and hasText(c, "Plain row: x"), table.concat(settingsTexts(c), " | "))
+end)
+
+test("settings: a feature that is off with an always row has a fold button that hides and shows the row", function()
+    local c, PE = T.new({})
+    PE:OpenSettings()
+    c:advance(0.2)
+    local hide = shownButton(c, "Hide options")
+    check(hide, "no fold button for the chat block with the feature off")
+    c:click(hide)
+    c:advance(0.2)
+    check(not hasText(c, "Chat text size"), "the row is still drawn after folding")
+    check(not shownButton(c, "Smaller"), "the stepper is still drawn after folding")
+    c:click(shownButton(c, "Show options"))
+    c:advance(0.2)
+    check(hasText(c, "Chat text size") and stepperText(c) == "18", "the row did not come back")
+end)
+
+test("settings: a feature that is off with no always row has no fold button", function()
+    local c, PE = T.new({})
+    local chat = PE:GetModule("chat")
+    for i = #chat.options, 1, -1 do chat.options[i] = nil end
+    PE:OpenSettings()
+    c:advance(0.2)
+    check(not shownButton(c, "Hide options") and not shownButton(c, "Show options"), "a fold button with nothing to fold")
 end)
 
 ---------------------------------------------------------------------------
