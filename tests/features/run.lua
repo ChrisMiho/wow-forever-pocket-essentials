@@ -85,14 +85,35 @@ end
 -- values given). opts.setup(c) runs before the addon loads; opts.on lists the
 -- features to switch on afterwards; opts.saved is the saved-variables table;
 -- opts.addonDir loads another copy of the addon (for a test that needs one changed value);
--- opts.quest = true loads QuestieDB into the client (T.questieDB must be set).
+-- opts.quest = true loads QuestieDB into the client (T.questieDB must be set);
+-- opts.firstRun = true leaves the setup guide free to open by itself (without it
+-- the saved settings are marked as "setup skipped").
 function T.new(opts)
     opts = opts or {}
-    local c = Client.new({ root = root, addonDir = opts.addonDir or addonDir, saved = opts.saved, gamepadUI = opts.gamepadUI,
+    -- The setup guide opens by itself about 1.5 s after login on an account
+    -- that never pressed Finish or Skip, which would put a window (and, before
+    -- that, a waiting timer) in the middle of every other test. So unless
+    -- opts.firstRun is set, the saved settings say "setup skipped" before the
+    -- addon loads; a test that hands in its own saved table gets the field
+    -- added to it. Scenario 1 of the smoke test and the firstRun tests in
+    -- setup_test.lua cover a login with no saved table at all.
+    local saved = opts.saved
+    if not opts.firstRun then
+        if saved == nil then
+            saved = { setup = "skipped" }
+        elseif type(saved) == "table" and saved.setup == nil then
+            saved.setup = "skipped"
+        end
+    end
+    local c = Client.new({ root = root, addonDir = opts.addonDir or addonDir, saved = saved, gamepadUI = opts.gamepadUI,
         questieDB = opts.quest and qdbDir or nil, shareQuestieDB = true, screen = opts.screen })
     clients[#clients + 1] = c
     if opts.setup then opts.setup(c) end
     local PE = c:loadAddon()
+    -- A saved value that is not a table could not carry the field: Setup.lua's
+    -- first-login check reads it again when its timer fires, so this still
+    -- keeps the guide closed (the same note is at FirstLoginCheck in Setup.lua).
+    if not opts.firstRun and PE.db and PE.db.setup == nil then PE.db.setup = "skipped" end
     for _, key in ipairs(opts.on or {}) do PE:SetModuleEnabled(key, true) end
     c:advance(0.1)
     return c, PE

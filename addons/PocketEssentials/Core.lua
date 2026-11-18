@@ -881,6 +881,16 @@ function PE:GetModuleState(key)
     return "off"
 end
 
+-- What a feature's switch shows: label, style, state, detail. One place for
+-- the settings window and the setup guide, so the two always agree.
+function PE:GetModuleSwitch(key)
+    local state, detail = self:GetModuleState(key)
+    if state == "blocked" then return "OFF", "disabled", state, detail end
+    if state == "on" then return "ON", "on", state, detail end
+    if state == "failed" then return "PROBLEM", "warn", state, detail end
+    return "OFF", "off", state, detail
+end
+
 function PE:SetModuleEnabled(key, on)
     local mod = key ~= nil and self.modules[key]
     if not mod then return false end
@@ -1227,6 +1237,8 @@ local function SlashCommand(msg)
         PE:SetUISetting("size", "medium")
         PE:SetUISetting("hubPos", "LEFT")
         PE:Print("Button size and round button position were reset.")
+    elseif msg == "setup" then
+        if PE.Setup and PE.Setup.Open then PE.Setup:Open("slash") else PE:ToggleSettings() end
     else
         PE:ToggleSettings()
     end

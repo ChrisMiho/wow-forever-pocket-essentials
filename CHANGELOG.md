@@ -10,6 +10,32 @@ Fifteenth test build, in progress. Not yet tested on a device.
 
 ### Added
 
+- **Setup guide**, a window of seven screens that explains each feature in a
+  few lines and has the feature's ON / OFF switch right there: Welcome,
+  Quests (Quest icons, Quest arrow, Menu background), Bags, Vendors, Chat,
+  "The round button and moving things", and "All set", which lists what is
+  switched on and what is still off. Every feature still starts off; the
+  guide is how you find out what there is and turn on what you want.
+  - It opens by itself a moment after the first loading screen, once, on an
+    account that has never pressed **Finish** or **Skip** in it. If you
+    already use the addon you will see it once after this update, with your
+    switches exactly as you left them.
+  - A switch in the guide is the same switch as in the settings: it acts at
+    once and is saved at once. Nothing waits for Finish.
+  - **Back**, **Skip** and **Next** sit in the bottom row. With the
+    controller, the d-pad moves the blue highlight, A presses and B closes;
+    the highlight stays on Next, so pressing A again and again walks through
+    the guide.
+  - Only Finish and Skip are remembered (for every character on the
+    account). Close, B, Escape, or the game closing its windows only hide
+    the guide; it comes back at the next login, and a chat line says so the
+    first time.
+  - It never opens during a fight. If a fight starts while it is open it
+    hides at once and comes back at the same screen when the fight ends.
+  - Open it again at any time with the new **Setup guide** button in the
+    bottom row of the settings (after "Move things"), or with `/pe setup`.
+  - Nothing of it exists until it is first opened, and nothing of it runs
+    while it is closed.
 - **Menu background**, a new switch, off by default. With it on, a plain
   dark panel with a thin grey edge sits behind the game's pop-up menus while
   they are open, so the text is easy to read. The menu it is meant for is

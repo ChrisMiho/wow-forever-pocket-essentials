@@ -752,6 +752,8 @@ local function OpenPanel()
         return
     end
     PE:CloseSettings()
+    -- Only one Pocket Essentials window at a time: the setup guide goes too.
+    if PE.Setup and PE.Setup.Close then PE.Setup:Close() end
     HookSettings()
     area.offset = 0
     if PE.debugOn then PE:Debug("chat", "picker opened") end

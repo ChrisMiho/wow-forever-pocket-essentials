@@ -15,6 +15,7 @@ UI.lua
 Move.lua
 Hub.lua
 Settings.lua
+Setup.lua
 QuestData.lua
 QuestIcons.lua
 QuestArrow.lua

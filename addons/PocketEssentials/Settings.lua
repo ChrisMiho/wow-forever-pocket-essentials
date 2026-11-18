@@ -357,16 +357,7 @@ local function BuildModuleRow(mod, y, width, separator)
     end
     local rowHeight = max(M.row, ty - y)
 
-    local label, style
-    if state == "blocked" then
-        label, style = "OFF", "disabled"
-    elseif state == "on" then
-        label, style = "ON", "on"
-    elseif state == "failed" then
-        label, style = "PROBLEM", "warn"
-    else
-        label, style = "OFF", "off"
-    end
+    local label, style = PE:GetModuleSwitch(key)
     -- The switch is placed (and so pooled) before the fold button: the buttons
     -- after it come and go when it is tapped, and it must keep its own place so
     -- the controller highlight stays on it.
@@ -455,6 +446,12 @@ local function BuildCoreSection(y, width)
         items[#items + 1] = {
             label = "Move things",
             onClick = PE:Wrap("core", function() PE.Move:Open() end),
+        }
+    end
+    if PE.Setup and PE.Setup.Open then
+        items[#items + 1] = {
+            label = "Setup guide",
+            onClick = PE:Wrap("core", function() PE.Setup:Open("settings") end),
         }
     end
     y = FlowButtons(items, x, y, innerWidth, M.button * 3)

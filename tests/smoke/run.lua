@@ -162,6 +162,8 @@ local function layoutOf(c, top)
 end
 
 local function panelOf(c) return rawget(c.env, "PocketEssentialsSettingsPanel") end
+local function guideOf(c) return rawget(c.env, "PocketEssentialsSetupPanel") end
+local function guideShown(c) return guideOf(c) ~= nil and guideOf(c):IsShown() end
 
 local function openPage(c, PE, page)
     PE:OpenSettings(page ~= "main" and page or nil)
@@ -204,6 +206,31 @@ local function findButton(c, top, label, ctx)
         if b.label == label and (ctx == nil or b.ctx == ctx) then return b.w end
     end
     return nil
+end
+
+-- Walks the open setup guide from its first screen to its last with Next,
+-- pressing no switch. eachScreen(i, n) runs on every screen. Returns the
+-- number of screens; the guide is left on the last one.
+local function walkGuide(c, where, eachScreen)
+    local guide = guideOf(c)
+    check(guideShown(c), where .. ": the setup guide is not open")
+    local n = tonumber(guide.peTitle:GetText():match("%(1 of (%d+)%)$"))
+    check(n and n >= 3, where .. ": the setup guide's title has no \"(1 of n)\": " .. tostring(guide.peTitle:GetText()))
+    for i = 1, n do
+        check(guide.peTitle:GetText():find("(" .. i .. " of " .. n .. ")", 1, true),
+            where .. ": screen " .. i .. " is titled " .. tostring(guide.peTitle:GetText()))
+        c:assertClean(where .. ", setup guide screen " .. i)
+        if eachScreen then eachScreen(i, n) end
+        if i < n then
+            local nextBtn = findButton(c, guide, i == 1 and "Start" or "Next")
+            check(nextBtn, where .. ": no " .. (i == 1 and "Start" or "Next") .. " button on screen " .. i)
+            c:click(nextBtn)
+            c:advance(0.2)
+        end
+    end
+    check(findButton(c, guide, "Finish"), where .. ": the last screen has no Finish button")
+    check(not findButton(c, guide, "Skip"), where .. ": the last screen has a Skip button")
+    return n
 end
 
 -- The error log must still work: one deliberate error adds exactly one entry,
@@ -404,6 +431,8 @@ end
 
 -- Everything on, then the whole game around it (scenarios 2 and 3).
 local function everythingOn(c, PE, hasQDB)
+    -- Not a first install: the setup guide must not open in the middle of this.
+    PE.db.setup = "skipped"
     for _, key in ipairs(FEATURES) do PE:SetModuleEnabled(key, true) end
     c:advance(1)
     if hasQDB then checkQuestChoice(c, PE) end
@@ -554,6 +583,39 @@ local function everythingOn(c, PE, hasQDB)
     PE:CloseSettings()
     c:advance(0.2)
     if os.getenv("SMOKE_VERBOSE") then print("  option presses: " .. presses) end
+
+    -- The setup guide, opened by hand with everything on, at each button size:
+    -- every switch reads what the feature is, and the last screen lists them.
+    for _, size in ipairs({ "small", "medium", "large" }) do
+        PE:SetUISetting("size", size)
+        c:advance(0.2)
+        check(PE.Setup:Open("settings") == true, "the setup guide did not open at size " .. size)
+        c:advance(0.2)
+        local switches, counted = 0, {}
+        walkGuide(c, "everything on, " .. size, function(i, n)
+            for _, b in ipairs(layoutOf(c, guideOf(c))) do
+                if b.w.peKey then
+                    if not counted[b.w.peKey] then switches = switches + 1 end
+                    counted[b.w.peKey] = true
+                    local want = (QUEST_FEATURES[b.w.peKey] and not hasQDB) and "OFF" or "ON"
+                    check(b.label == want, "the setup guide's switch for " .. b.w.peKey .. " reads " .. b.label .. ", expected " .. want)
+                end
+            end
+            if i == n then
+                local stillOff = false
+                for _, t in ipairs(visibleTexts(c, guideOf(c))) do
+                    if t:find("Still off:", 1, true) then stillOff = true end
+                end
+                check(stillOff == not hasQDB, "the setup guide's last screen "
+                    .. (stillOff and "has" or "has no") .. " \"Still off\" line with everything on")
+            end
+        end)
+        check(switches == #FEATURES, "the setup guide showed " .. switches .. " switches, expected " .. #FEATURES)
+        c:click(findButton(c, guideOf(c), "Close"))
+        c:advance(0.2)
+        check(not guideShown(c), "Close did not close the setup guide")
+    end
+    check(PE.db.setup == "skipped", "walking the setup guide and pressing Close changed the saved answer")
     -- Lowered by 7 a size in 0.4.0: "Chat text size" no longer has its number
     -- in the label, so Smaller and Bigger count once each, not once per size shown.
     check(presses >= (hasQDB and 3 * 65 or 3 * 28), "only " .. presses .. " option buttons were pressed")
@@ -591,6 +653,26 @@ scenarios[#scenarios + 1] = { name = "1 first install", run = function()
         check(rec.scripts.OnUpdate == nil, "a frame made by " .. rec.addonFile .. " has an OnUpdate at first install")
     end
     check(#addonFrames(c) > 0, "the addon made no frames (did it load?)")
+
+    -- The setup guide opens by itself a moment after the first loading screen.
+    check(guideOf(c) == nil, "the setup guide was built at load")
+    c:advance(2)
+    check(guideShown(c), "the setup guide did not open by itself at first install")
+    local screens = walkGuide(c, "first install")
+    check(screens == 7, "the setup guide has " .. screens .. " screens at first install, expected 7")
+    local nothingOn = false
+    for _, t in ipairs(visibleTexts(c, guideOf(c))) do
+        if t:find("Nothing is switched on yet", 1, true) then nothingOn = true end
+    end
+    check(nothingOn, "the setup guide's last screen does not say that nothing is switched on")
+    c:click(findButton(c, guideOf(c), "Finish"))
+    c:advance(0.2)
+    check(not guideShown(c), "Finish did not close the setup guide")
+    check(PE.db.setup == "finished", "Finish stored " .. tostring(PE.db.setup))
+    for _, key in ipairs(FEATURES) do
+        check(not PE:IsModuleEnabled(key), key .. " is on after walking the setup guide without touching a switch")
+    end
+    c:assertClean("setup guide at first install")
 
     local presses = 0
     -- bags switched on asks for a reload ("Reload now" in the header)
@@ -671,6 +753,13 @@ scenarios[#scenarios + 1] = { name = "1 first install", run = function()
     c._protect("/pe reset", slash, "reset")
     c:advance(0.2)
     check(PE.db.ui.size == "medium" and PE.db.ui.hubPos == "LEFT", "/pe reset did not reset the size and position")
+    c._protect("/pe setup", slash, "setup")
+    c:advance(0.2)
+    check(guideShown(c), "/pe setup did not open the setup guide")
+    check(not panelOf(c):IsShown(), "/pe setup left the settings open under the setup guide")
+    c:click(findButton(c, guideOf(c), "Close"))
+    c:advance(0.2)
+    check(not guideShown(c), "Close did not close the setup guide")
     PE:CloseSettings()
     c:advance(0.2)
     canary(c, PE, "first install, end")
@@ -770,6 +859,27 @@ scenarios[#scenarios + 1] = { name = "5 saved settings from 0.0.2", needsQDB = t
     check(opts.spots == 5, "spots is " .. tostring(opts.spots) .. " after an upgrade, expected 5")
     check(opts.show == "tracked", "show is " .. tostring(opts.show) .. " after an upgrade, expected tracked")
     check(PE:GetModuleState("questIcons") == "on", "quest icons did not come back on")
+    -- A player who already uses the addon sees the setup guide once after
+    -- updating, with the switches as they are; Skip changes none of them.
+    c:advance(1.5)
+    check(guideShown(c), "the setup guide did not open for saved settings that never answered it")
+    c:click(findButton(c, guideOf(c), "Start"))
+    c:advance(0.2)
+    local iconsSwitch
+    for _, b in ipairs(layoutOf(c, guideOf(c))) do
+        if b.w.peKey == "questIcons" then iconsSwitch = b end
+    end
+    check(iconsSwitch and iconsSwitch.label == "ON", "the setup guide does not show Quest icons as ON")
+    c:click(findButton(c, guideOf(c), "Skip"))
+    c:advance(0.2)
+    check(not guideShown(c), "Skip did not close the setup guide")
+    check(PE.db.setup == "skipped", "Skip stored " .. tostring(PE.db.setup))
+    local stillOn = 0
+    for key, on in pairs(PE.db.enabled) do
+        check(key == "questIcons" and on == true, "the setup guide changed the saved switch " .. tostring(key))
+        stillOn = stillOn + 1
+    end
+    check(stillOn == 1, "the saved switches changed while the setup guide was open")
     canary(c, PE, "old settings")
     c:assertClean("old settings")
     collectMissing(c)

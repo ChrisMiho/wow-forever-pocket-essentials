@@ -755,3 +755,78 @@ What the answers decide:
   next to the money, where the d-pad lines up exactly. Say so.
 - Step 2 shows nothing changed: the log line "bag icons: left alone, ..."
   says why.
+
+#### 13e. Setup guide
+
+What this is: a window of seven screens that explains each feature and lets
+you switch on the ones you want. It opens by itself once after you install
+0.4.0, because you have never pressed Finish or Skip in it. Your switches
+stay as they are; the guide only shows them.
+
+Install the 0.4.0 zip and log in. (The debug log you turned on earlier stays
+on; if it is off, turn it on from the Errors page after step 6 and carry on.)
+
+1. Wait a couple of seconds after the loading screen. A window "Pocket
+   Essentials - Setup guide (1 of 7)" should open by itself. If you are
+   attacked while logging in, it should wait and open when the fight ends.
+2. Read the Welcome screen. Without touching the screen, press the d-pad
+   down: a blue outline should appear on a button. Move to **Start** and
+   press A.
+3. On "Quests" there are three switches: Quest icons, Quest arrow and Menu
+   background. Each should show what you already have (ON if you had it on
+   before the update). Tap one switch with your finger: it should flip at
+   once. Flip it back with the d-pad and A; the blue outline should stay on
+   the switch.
+4. Press **Next** with A several times. The blue outline should stay on
+   Next, so A alone walks through Bags, Vendors, Chat, and "The round button
+   and moving things". Check each text reads correctly and nothing is cut
+   off or overlapping. If a screen is taller than the window, the Up / Down
+   buttons at the right should scroll it, and moving the outline to a switch
+   should bring that switch into view.
+5. Press **Back** once and **Next** again. Back should not be on the first
+   screen; Skip should not be on the last.
+6. On the last screen, "All set", check the "Switched on:" and "Still off:"
+   lines match what you really have on. Press **Finish** (green). The window
+   closes.
+7. Open the settings (round button, or hold it if the chat window opens).
+   Check the features you switched in the guide show the same ON / OFF
+   there.
+8. Scroll to the bottom of the settings. Tap **Setup guide** (after "Move
+   things"). The settings should close and the guide open at screen 1.
+9. Press B. The guide should close. No chat line is expected this time (you
+   already pressed Finish in step 6).
+10. Reload (Settings > Reload UI) or log out and in. The guide should
+    **not** open by itself any more.
+11. Open the guide again from the settings, go to screen 3, and pull a
+    monster (or get attacked). The guide should disappear at once, and come
+    back at screen 3 when the fight ends. Then press Skip.
+12. Try to open the guide from the settings during a fight (touch): it
+    should not open, and chat should say it cannot be opened during a fight.
+13. With the guide open, switch **Big chat buttons** on, press Finish, then
+    tap the round button: the chat window should open (so the switch really
+    took effect).
+14. Try the guide once at the **Large** button size (Settings > Button
+    size): the Quests and Chat screens are the longest. Say whether
+    scrolling them was comfortable.
+15. Optional, on a second account or after deleting
+    `WTF/Account/<account>/SavedVariables/PocketEssentials.lua` with the
+    game closed: log in. Everything should be off, the guide should open by
+    itself, and pressing B should close it with a chat line saying it will
+    show again next time. Log out and in: it shows again. Press Skip: next
+    login it stays away.
+16. Tell us: was the text clear, was any screen too long, did the d-pad ever
+    stop moving the blue outline (especially right after login), and did the
+    guide ever close by itself. Send the saved `PocketEssentials.lua` file.
+    (`scripts/read-log.sh <file> --grep "setup"` shows the guide's lines.)
+
+What the answers decide:
+
+- The d-pad does nothing in the guide right after login, but works when the
+  guide is opened from the settings: the game took the controller keys back
+  after the guide opened. The wait before it opens gets longer, or the guide
+  takes the keys a second time.
+- A screen is too long to read comfortably: its text gets shorter.
+- The guide closed by itself outside a fight: say what you were doing (a
+  loading screen, dying and losing control of the character all close every
+  window of this kind; that is the game's rule, and the guide comes back at
+  the next login).
