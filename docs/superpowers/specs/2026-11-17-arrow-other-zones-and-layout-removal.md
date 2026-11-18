@@ -1,5 +1,8 @@
 # 0.3.0: the arrow points into other zones; the Layout helper goes
 
+> **Section 2 was rolled back in 0.3.1** at the owner's decision of
+> 2026-11-17 (postponed; see `docs/DECISIONS.md`). Section 1 stands.
+
 Date: 2026-11-17. Status: **approved by the owner's instruction of 2026-11-17**
 ("can we remove that if it's descoped", "happy to keep blasting out features,
 keeping them lightweight", said while stepping away). The choice of the arrow

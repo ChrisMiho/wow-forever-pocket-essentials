@@ -4,6 +4,23 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-11-17
+
+Fourteenth test build: the arrow's "Quest in another zone" choice from 0.3.0
+is taken out again. Not yet tested on a device.
+
+### Removed
+
+- Quest arrow: the **"Quest in another zone"** choice ("Point the way", the
+  light blue arrow). A straight line across zones does not know where the
+  zones connect, so it can point at a mountain wall; doing it properly needs
+  a list of crossings, which is more than this addon should carry for now.
+  The owner chose to postpone it. For a quest in another zone the arrow says
+  "Outside this zone / Head to <zone>", as it did before 0.3.0. If you had
+  chosen "Point the way", nothing happens: the choice is simply gone.
+
+The Layout helper stays removed.
+
 ## [0.3.0] - 2026-11-17
 
 Thirteenth test build: the arrow can now point at a quest in another zone,

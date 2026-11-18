@@ -22,7 +22,7 @@ Every feature has its own on/off switch and starts switched off.
 | Feature | What it does |
 |---------|--------------|
 | Quest icons | Objective icons on the map and minimap for your tracked quests (or only the focused one, or all), no blue haze; a limit on icons per objective, and an icon key page in the settings |
-| Quest arrow | An arrow to your focused quest's nearest objective in your zone, with distance. Focus a quest from the quest log. For a quest in another zone it names the zone, or (your choice, "Quest in another zone") points straight at it with a light blue arrow (same continent only) |
+| Quest arrow | An arrow to your focused quest's nearest objective in your zone, with distance. Focus a quest from the quest log. For a quest in another zone it names the zone |
 | Bag sorter | A big Sort button on Blizzard's combined bag; a stick click (left, right or none, your choice) sorts while it is open; three sizes |
 | Sell junk automatically | Sells every grey item at vendors. Only the last 12 sold can be bought back |
 | Repair automatically | Repairs from your own money |

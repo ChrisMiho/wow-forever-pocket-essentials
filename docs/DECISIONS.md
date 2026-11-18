@@ -156,6 +156,20 @@ Made without the owner:
 - The test stand-in keeps four Edit Mode names for the restriction probe's
   tests; they are checked against the probe's file in the API audit.
 
+## Rollback of 2026-11-17 (0.3.1)
+
+Decided by the owner on seeing 0.3.0's report: take the arrow's "Quest in
+another zone" choice out again and postpone it, to keep the addon light.
+- Why: a straight line does not lead to the place where two zones connect.
+  The game gives addons no list of crossings and the quest database has none.
+- What a later version would need (not planned): a list of crossings, either
+  written by hand (60 to 80 places, unchecked until walked) or learned by
+  remembering where the player changes zone. The map conversion written for
+  0.3.0 (`C_Map.GetWorldPosFromMapPos` sampled at two points per map, checked
+  against the map's size) is in git at commit `608d3ff`, and the spec is
+  `docs/superpowers/specs/2026-11-17-arrow-other-zones-and-layout-removal.md`.
+- The Layout helper stays removed.
+
 ## What was left out, and why
 
 - **Edit Mode nudge helper: not shipped, and why.** We wanted big on-screen
@@ -210,8 +224,8 @@ Made without the owner:
   owner on 2026-11-15 to keep the addon focused on accepted quests. The hard
   part would have been correctness (quest chains, reputation and profession
   quests), not speed.
-- **Arrow across zones.** (Built in 0.3.0 as a choice that is off by default;
-  see "Batch of 2026-11-17 (0.3.0)".) The arrow only points at objectives in the zone you
+- **Arrow across zones.** (Built in 0.3.0 as a choice that was off by default, taken out
+  again in 0.3.1; see "Rollback of 2026-11-17 (0.3.1)".) The arrow only points at objectives in the zone you
   are in. If the focused quest is elsewhere it says "Outside this zone"
   rather than guessing a direction. Pointing across zone borders was written,
   then removed after review because it could show a confidently wrong arrow.

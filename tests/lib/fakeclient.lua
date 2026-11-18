@@ -1301,12 +1301,6 @@ function Client.new(opts)
         end,
     })
 
-    -- A table like Blizzard's Vector2D (Blizzard_SharedXML/Vector2D.lua): x, y and GetXY.
-    local function MakeVector2D(x, y)
-        return { x = x, y = y, GetXY = function(self) return self.x, self.y end }
-    end
-    Global("CreateVector2D", MakeVector2D)
-
     Namespace("C_Map", {
         GetBestMapForUnit = function(unit)
             if unit ~= "player" then return nil end
@@ -1327,22 +1321,7 @@ function Client.new(opts)
             if not m then return nil end
             return { mapID = mapID, name = m.name, mapType = 3, parentMapID = m.parent or 0, flags = 0 }
         end,
-        -- A place on a zone map as a position on its continent, for a map with `continent`, `top`
-        -- and `left` (its north-west corner in continent yards): x runs north-south (growing north),
-        -- y east-west (growing west). world.mapWorldSwap gives the two the other way round;
-        -- world.mapWorldSecret marks the position secret. Nothing for a map without `continent`.
-        GetWorldPosFromMapPos = function(mapID, vec)
-            local m = world.maps[mapID]
-            if not (m and m.continent) or type(vec) ~= "table" then return nil end
-            local fx, fy = vec.x, vec.y
-            if type(vec.GetXY) == "function" then fx, fy = vec:GetXY() end
-            local north, west = m.top - fy * m.height, m.left - fx * m.width
-            local pos = MakeVector2D(north, west)
-            if world.mapWorldSwap then pos.x, pos.y = west, north end
-            if world.mapWorldSecret then world.secrets[pos] = true end
-            return m.continent, pos
-        end,
-    }, { GetWorldPosFromMapPos = true })
+    })
 
     local function QuestEntries() return world.questLog.quests end
     local function FindQuest(id)

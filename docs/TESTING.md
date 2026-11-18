@@ -504,29 +504,14 @@ Debug log on first; save and send the file afterwards, as in step 10.
     things** says it cannot open.
 12. Report each step yes / no with notes, anything odd, and the saved file.
 
-### 12. Version 0.3.0: the arrow into other zones; Layout helper gone
+### 12. Version 0.3.1: Layout helper gone; the arrow as before
 
-Debug log on first; save and send the file afterwards, as in step 10.
+The arrow's "Quest in another zone" choice of 0.3.0 was taken out in 0.3.1,
+so there is nothing new to try on the arrow.
 
 1. Log in. The settings no longer have a **Layout helper** row, and nothing
    complains in chat about it.
-2. Focus a quest whose places are all in a neighbouring zone. The arrow's
-   place still reads "Outside this zone / Head to <zone>", as before.
-3. Settings > Quest arrow > **Quest in another zone**: choose **Point the
-   way**. At once a **light blue** arrow shows, with a distance in yards and
-   "<zone> - <quest name>" under it. If the text stays instead, nothing is
-   broken: the addon's safety check refused that zone. The debug log says why
-   ("map ... cannot be converted: ..."), so send it.
-4. Check the direction. Open the world map, note which way the quest's zone
-   lies from you (up is north), close the map and face north (the minimap's
-   arrow points up). The blue arrow should point the same way as on the map.
-   Turn in a full circle: it should keep pointing at the same place, and say
-   "Turn around" when the place is behind you.
-5. Travel there. The distance should fall. On entering the zone the arrow
-   turns gold, the zone name goes from the text, and it behaves as before
-   (including "Here" at the spot).
-6. Focus a quest on the other continent: text only ("Outside this zone").
-7. Choose **Name the zone** again: the text comes back at once.
-8. Report each step yes / no with notes. Step 4 is the one that matters most:
-   if the arrow pointed the wrong way, say which way it pointed and which way
-   the zone really was, and leave the choice on "Name the zone".
+2. Settings > Quest arrow: there is no **Quest in another zone** choice.
+3. Focus a quest whose places are all in another zone: the arrow's place
+   reads "Outside this zone / Head to <zone>", as before.
+4. Report each step yes / no with notes, and send the saved file.
