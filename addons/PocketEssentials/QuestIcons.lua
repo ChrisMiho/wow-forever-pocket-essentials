@@ -193,17 +193,20 @@ local function IconSize(view)
     return Px(sizes[Opt("size")] or sizes.medium)
 end
 
+-- What the settings' number control can show is what the map uses: a whole
+-- number from 0 to MAX_CLUSTER, anything else is the default (as the
+-- control shows it; the saved value is left alone until a press).
 local function ClusterValue()
-    local value = tonumber(Opt("cluster")) or DEFAULT_CLUSTER
-    if value ~= value or value < 0 then value = 0 end
-    if value > 20 then value = 20 end
+    local value = tonumber(Opt("cluster"))
+    if not value or value ~= floor(value) or value < 0 or value > MAX_CLUSTER then return DEFAULT_CLUSTER end
     return value
 end
 
--- 0 = all spots; anything unusable falls back to the default.
+-- 0 = all spots, else a whole number from 1 to MAX_SPOTS; anything else is
+-- the default, as the settings show it.
 local function SpotsValue()
     local value = tonumber(Opt("spots"))
-    if not value or value ~= value or value < 0 then return DEFAULT_SPOTS end
+    if not value or value ~= floor(value) or value < 0 or value > MAX_SPOTS then return DEFAULT_SPOTS end
     return value
 end
 

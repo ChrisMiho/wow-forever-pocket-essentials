@@ -700,4 +700,19 @@ test("quest icons: /qd spots takes 1 to 20, and /qd cluster stops at 10", functi
     c:assertClean("qd numbers")
 end)
 
+
+-- Review of 0.7.0, finding 1: what the map uses is what the control shows.
+test("quest icons: a saved Merge or Spots value the control cannot show runs as the default it shows", function()
+    for _, case in ipairs({ { "cluster", 15, "cluster", 2 }, { "cluster", 2.5, "cluster", 2 }, { "cluster", 7, "cluster", 7 },
+                            { "spots", 25, "spotLimit", 5 }, { "spots", 7.5, "spotLimit", 5 }, { "spots", 0, "spotLimit", 0 },
+                            { "spots", 17, "spotLimit", 17 } }) do
+        local c, PE = newIcons()
+        setOpt(PE, case[1], case[2])
+        c:advance(0.5)
+        eq(PE.QuestData[case[3]], case[4], case[1] .. " " .. case[2])
+        eq(PE:GetModule("questIcons").opts[case[1]], case[2], "the saved value was rewritten")
+        c:assertClean(case[1] .. " " .. case[2])
+    end
+end)
+
 return { known = KNOWN_FAILURES }
