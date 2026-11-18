@@ -44,10 +44,12 @@ dependency.
 
 ### From GitHub
 
-There are no GitHub releases yet, so you build the zip yourself.
+Test builds are published as pre-releases on the project's GitHub
+"Releases" page.
 
-1. On a Mac or Linux computer, run `scripts/build.sh`. It writes
-   `dist/wow-forever-pocket-essentials.zip`.
+1. Download `wow-forever-pocket-essentials.zip` from the newest release. (Or
+   build it yourself: on a Mac or Linux computer, run `scripts/build.sh`,
+   which writes `dist/wow-forever-pocket-essentials.zip`.)
 2. Copy that zip to your device.
 3. In the game's `Interface/AddOns` folder, **delete any old `QuestDots`
    folder** from an earlier version of this bundle.

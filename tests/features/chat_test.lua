@@ -977,6 +977,62 @@ test("chat size: the edit box is not touched and the game's own size list stays 
     c:assertClean("chat size")
 end)
 
+-- Review of 0.4.0, point 5: at either end the button that can go no further is dimmed (the
+-- kit's "disabled" look, which can still be pressed and does nothing).
+test("chat size: at the smallest and the biggest size the end button is dimmed and a press does nothing", function()
+    local function styles(c, PE)
+        return { settingsButton(c, PE, "Smaller").peStyle, shownButton(c, "Bigger").peStyle }
+    end
+    local c, PE = newChat()
+    eq(styles(c, PE), { "normal", "normal" }, "in the middle")
+    setAllTo(c, 34)
+    PE:RefreshSettings()
+    c:advance(0.1)
+    eq(styles(c, PE), { "normal", "disabled" }, "at the biggest")
+    c:click(shownButton(c, "Bigger"))
+    c:advance(0.1)
+    eq(#sizeCalls(c), 0, "a press on the dimmed Bigger called the game")
+    eq(mainSize(c), 34)
+    eq(styles(c, PE), { "normal", "disabled" }, "after the press")
+    -- one step down and Bigger is a plain button again
+    c:click(shownButton(c, "Smaller"))
+    c:advance(0.1)
+    eq(mainSize(c), 30)
+    eq(styles(c, PE), { "normal", "normal" }, "one step below the biggest")
+    setAllTo(c, 12)
+    PE:RefreshSettings()
+    c:advance(0.1)
+    eq(styles(c, PE), { "disabled", "normal" }, "at the smallest")
+    local before = #sizeCalls(c)
+    c:click(shownButton(c, "Smaller"))
+    c:advance(0.1)
+    eq(#sizeCalls(c), before, "a press on the dimmed Smaller called the game")
+    eq(mainSize(c), 12)
+    -- beyond the list the same holds
+    setAllTo(c, 40)
+    PE:RefreshSettings()
+    c:advance(0.1)
+    eq(styles(c, PE), { "normal", "disabled" }, "above the biggest")
+    c:assertClean("dimmed ends")
+end)
+
+-- The step waiting for the end of a fight counts: the last step taken in a fight dims the button.
+test("chat size: in a fight the end button dims as soon as the waiting size is the last one", function()
+    local c, PE = newChat()
+    setAllTo(c, 30)
+    local bigger = settingsButton(c, PE, "Bigger")
+    eq(bigger.peStyle, "normal")
+    c:enterCombat()
+    c:click(bigger)
+    c:advance(0.1)
+    eq(shownButton(c, "Bigger").peStyle, "disabled", "34 is waiting, Bigger is not dimmed")
+    eq(shownButton(c, "Smaller").peStyle, "normal")
+    c:leaveCombat()
+    c:advance(0.1)
+    eq(mainSize(c), 34)
+    eq(shownButton(c, "Bigger").peStyle, "disabled")
+end)
+
 -- Spec 0.4.0 Rulings: one stepper, "Chat text size", then Smaller, the size, Bigger.
 test("chat size: the row in the chat block shows the label, Smaller, the size and Bigger, in that order", function()
     local c, PE = newChat()

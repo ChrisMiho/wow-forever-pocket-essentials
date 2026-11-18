@@ -86,8 +86,8 @@ local SCREENS = {
                 .. "open to sort. In the settings you can pick the right stick or no stick, and make the bag "
                 .. "window larger."
                 .. "\n\nTwo more choices are under Bag sorter in the settings, once it is on. Both start off. "
-                .. "\"D-pad to Sort\": press Left from the bag's first column to reach the Sort button, then A to "
-                .. "sort. \"Bag icons\": \"One row at the top\" puts the pictures of your equipped bags side by "
+                .. "\"D-pad to Sort\": press Left from the bag's first column to reach the Sort button, then A "
+                .. "should press it (this is new and untested; if A does nothing, tap it). \"Bag icons\": \"One row at the top\" puts the pictures of your equipped bags side by "
                 .. "side above your items, not in among them."
                 .. "\n\nIf you play without the controller style, the game needs a reload to join the bags into "
                 .. "one window. The last screen of this guide offers it." },
@@ -558,11 +558,31 @@ local function OnFight()
     Setup:Close("fight")
 end
 
+-- Whenever the window comes onto the screen: from Setup:Open, and when the
+-- game shows its whole interface again after hiding it (cinematic,
+-- full-screen view) with the guide still open. The watch for a fight starts
+-- here. A fight that began while the guide was out of sight hides it now,
+-- to come back at the same screen afterwards.
+local function OnShown()
+    if PE:InCombat() then
+        Debug("back on screen in a fight")
+        Setup:Close("fight")
+        return
+    end
+    PE:RegisterCoreEvent("PLAYER_REGEN_DISABLED", "setup", OnFight)
+end
+
 -- Every way the window goes away ends here: our buttons, B, Escape, another
 -- of our windows, and the game closing its windows by itself (loading screen,
 -- death, loss of control). Only Finish and Skip are remembered.
 local function OnHidden()
     PE:UnregisterCoreEvent("PLAYER_REGEN_DISABLED", "setup")
+    if panel:IsShown() then
+        -- Not a closing: the game hid its whole interface and the guide went
+        -- with it. It is still open and comes back by itself (OnShown).
+        Debug("hidden with the game's interface, still open")
+        return
+    end
     local why = closeWhy
     closeWhy = nil
     if why == "finished" then
@@ -588,6 +608,11 @@ end
 -- Building the window (first opening only)
 ---------------------------------------------------------------------------
 
+local function ReloadClicked()
+    pcall(Remember, "finished")
+    PE:ReloadNow()
+end
+
 local function Build()
     UI = PE.UI
     M = UI:Metrics()
@@ -610,16 +635,16 @@ local function Build()
     reloadButton:SetStyle("warn")
     reloadButton:Hide()
     -- Called straight from the tap, in case reloading needs a real button
-    -- press. The reload ends the session, so Finish is stored first.
-    reloadButton:SetScript("OnClick", function()
-        pcall(Remember, "finished")
-        PE:ReloadNow()
-    end)
+    -- press (PE:Safe runs it at once, inside the tap). The button is on the
+    -- last screen and the reload ends the session, so Finish is stored first:
+    -- otherwise the reload would bring the guide back.
+    reloadButton:SetScript("OnClick", function() PE:Safe("core", ReloadClicked) end)
 
     UI:AttachNav(panel, function() return navList end)
     panel.navOnFocus = function(btn)
         if btn.peScrollTop then area:ScrollIntoView(btn) end
     end
+    panel:HookScript("OnShow", PE:Wrap("core", OnShown))
     panel:HookScript("OnHide", PE:Wrap("core", OnHidden))
 
     UI:OnMetricsChanged(PE:Wrap("core", function()
@@ -682,7 +707,9 @@ function Setup:Open(how)
     resumeIndex = nil
     closeWhy = nil
     area.offset = 0
-    PE:RegisterCoreEvent("PLAYER_REGEN_DISABLED", "setup", OnFight)
+    -- The watch for a fight starts in OnShown. Asked for by hand while the
+    -- game's whole interface is hidden, the guide is out of sight and OnShown
+    -- runs when the interface comes back.
     if not panel:IsShown() then panel:Show() end
     panel:Raise()
     if PE.debugOn then

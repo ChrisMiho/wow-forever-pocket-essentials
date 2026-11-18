@@ -608,15 +608,18 @@ the debug log on (Errors page).
     confirm. Did the usual "abandon?" question appear and work?
 11. Open the menu on a zone heading in the quest log (the "track all" menu).
     Does it have the panel too?
-12. If you can, with touch or a mouse: right click your own portrait or a
+12. Open a menu that has a side menu (an entry with an arrow) and open the
+    side menu. Where the two menus meet, is the first menu's text still
+    readable, or does the side menu's dark panel cover part of it?
+13. If you can, with touch or a mouse: right click your own portrait or a
     chat tab. Does that menu have a panel? Does any menu look worse than
     before (a dark box around a menu that already had a background)?
-13. Start a fight with something easy, and during the fight open the quest
+14. Start a fight with something easy, and during the fight open the quest
     log and the quest menu. Panel there? Does the chat say "Interface action
     failed because of an AddOn" at any point in this whole test?
-14. Switch **Menu background** off. Open the quest menu once more. It should
+15. Switch **Menu background** off. Open the quest menu once more. It should
     look as it did in step 1.
-15. Log out, and send the saved `PocketEssentials.lua` file plus the
+16. Log out, and send the saved `PocketEssentials.lua` file plus the
     screenshot from step 3.
 
 Report for each step: yes / no / what you saw. The saved file's `menuBg`
@@ -630,7 +633,7 @@ with the d-pad (Left from the bag's first column) and press it with A.
 
 Two answers matter more than all the others:
 
-- **Using items must still work** (steps 2, 6, 7, 10, 12 and 13). This is the
+- **Using items must still work** (steps 2, 6, 7, 10, 12, 13 and 16). This is the
   first time the addon asks the game to store something on the bag's own item
   buttons. If any item will not use, equip, sell, pick up or split, or the
   chat says "Interface action failed", stop there.
@@ -642,6 +645,14 @@ Before starting: install the 0.4.0 zip, turn the debug log on (settings,
 Errors page), Gamepad UI on, out of a fight, in a safe place. Have in your
 bags: something you can use (food or a potion), something you can equip,
 and a stack of 2 or more.
+
+A known limit, so it does not surprise you: in a fight the game does not let
+the addon change where Left goes. Each time the bag is opened, or one of your
+bags is folded, the game may deal its item buttons out to other slots. Out of
+a fight the addon follows at once. In a fight it cannot, so until the fight
+ends Left may jump to Sort from a slot that is not in the first column, or
+not jump from the first column at all. It is put right the moment the fight
+ends. Using items must work the whole time (step 16).
 
 1. Settings, "Bag sorter": set **D-pad to Sort** to **On**. Make sure
    **Sort button** is on Show. The text under the feature should now say
@@ -682,7 +693,15 @@ and a stack of 2 or more.
     should still sort, as before this version.
 15. Settings: set **D-pad to Sort** to **Off**. Open the bag: Left from the
     first column wraps round to the last column, as it did before.
-16. Send the saved `PocketEssentials.lua` file and say for each step:
+16. **(Matters most.)** Set **D-pad to Sort** back to **On**. Open the bag
+    out of a fight, start a fight, then close the bag and open it again
+    during the fight. Move around the bag with the d-pad and press Left in a
+    few places. Left may land on Sort from an odd slot, or not at all from
+    the first column, until the fight ends: that is the known limit above,
+    say what you saw. Use a potion or food from the bag during the fight: it
+    **must** work. After the fight, Left from the first column (and only from
+    there) should reach the tab again.
+17. Send the saved `PocketEssentials.lua` file and say for each step:
     worked / did not / what you saw. If at any point the game says
     "Interface action failed" or an item will not use, stop, note the step,
     use Reload UI, and send the file.
@@ -694,7 +713,8 @@ What the answers decide:
   line "A taken for Sort (A is now: ...)" says who holds it. The choice then
   stays Off and the idea is dropped (the stick click and the game's own
   "Clean Up Bags" entry in the bag menu already sort).
-- Any failure in steps 2, 6, 7, 10, 12 or 13: switch the choice Off. It
+- Any failure in steps 2, 6, 7, 10, 12, 13 or 16 (an item that will not
+  use; Left landing oddly in step 16 is not a failure): switch the choice Off. It
   stays off, and the log names the cause.
 
 #### 13d. Bag icons

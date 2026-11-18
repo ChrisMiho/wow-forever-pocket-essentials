@@ -1540,6 +1540,108 @@ test("bags: with Bag icons and D-pad to Sort both on, the Left jump is on the fi
     c:assertClean("both choices")
 end)
 
+-- Review of 0.4.0, point 1: Blizzard hands its pooled item buttons back to the slots in no fixed
+-- order whenever the bag is generated. Out of a fight the route follows at once. In a fight
+-- Blizzard's setter is refused, so the old jumps stay on whatever slots their buttons serve now
+-- until the fight ends (spec part 3, rule 4); then they are put right.
+local function checkShuffledJumps(c, what, wantCount)
+    local tab = sortButton(c)
+    local n = 0
+    for _, e in ipairs(c:bagCells()) do
+        local jump = rawget(e.button, LEFT)
+        if e.kind == "slot" and e.col == 1 then
+            check(rawequal(jump, tab), what .. ": no Left jump on the slot in row " .. e.row .. " of the first column")
+            n = n + 1
+        else
+            eq(jump, nil, what .. ": Left jump on " .. e.kind .. " at row " .. e.row .. ", column " .. e.col)
+        end
+    end
+    -- wantCount nil: however many slots the layout put in the first column, but some
+    if wantCount then eq(n, wantCount, what .. ": first-column slots") end
+    check(n > 0, what .. ": no slot in the first column")
+    -- no button anywhere else keeps one (folded bags' buttons, hidden ones)
+    local total = 0
+    for _, b in ipairs(c.bagButtons) do
+        if rawget(b, LEFT) ~= nil then total = total + 1 end
+    end
+    eq(total, n, what .. ": buttons with a Left jump in all")
+    local right = rawget(tab, RIGHT)
+    check(right ~= nil and c.bagInfo[right].kind == "slot" and rawequal(rawget(right, LEFT), tab),
+        what .. ": Right from the tab does not go to a first-column slot")
+end
+
+-- How many laid-out slots off the first column carry a Left jump to the tab (the stale ones).
+local function strayJumps(c)
+    local tab, n = sortButton(c), 0
+    for _, e in ipairs(c:bagCells()) do
+        if not (e.kind == "slot" and e.col == 1) and rawequal(rawget(e.button, LEFT), tab) then n = n + 1 end
+    end
+    return n
+end
+
+test("d-pad to Sort: out of a fight, buttons handed to other slots get the route put right at once", function()
+    for _, row in ipairs({ true, false }) do
+        local what = row and "icon row" or "grid"
+        local c = newIcons({ dpad = true, row = row })
+        local want = row and 6 or 5
+        c:openBag()
+        c:advance(0.5)
+        checkShuffledJumps(c, what .. ", opened", want)
+        -- the game lays the bag out again with its buttons on other slots
+        c:shuffleBagButtons()
+        c:relayoutBag()
+        checkShuffledJumps(c, what .. ", shuffled", want)
+        -- closed and opened again
+        c:closeBag()
+        c:shuffleBagButtons(13)
+        c:openBag()
+        checkShuffledJumps(c, what .. ", reopened", want)
+        -- a bag folded
+        c:shuffleBagButtons(29)
+        c:collapseBag(1, true)
+        checkShuffledJumps(c, what .. ", folded", row and 5 or nil)
+        eq(c.blocked, {})
+        c:assertClean(what)
+    end
+end)
+
+test("d-pad to Sort: in a fight, buttons handed to other slots keep the old jumps until the fight ends, then all are put right", function()
+    local changes = {
+        reopened = function(c) c:closeBag(); c:shuffleBagButtons(); c:openBag() end,
+        folded = function(c) c:shuffleBagButtons(); c:collapseBag(1, true) end,
+    }
+    for name, change in pairs(changes) do
+        for _, row in ipairs({ true, false }) do
+            local what = name .. (row and ", icon row" or ", grid")
+            local c = newIcons({ dpad = true, row = row })
+            c:openBag()
+            c:advance(0.5)
+            local want = row and 6 or 5
+            checkShuffledJumps(c, what .. ", before the fight", want)
+            c:enterCombat()
+            local calls = setterCalls(c)
+            change(c)
+            c:advance(0.5)
+            -- the limit: nothing can be set in a fight, so the old jumps sit on other slots
+            eq(setterCalls(c), calls, what .. ": the setter was called in a fight")
+            eq(c.blocked, {}, what)
+            check(strayJumps(c) > 0, what .. ": the shuffle moved no jump off the first column (the test's premise)")
+            -- item buttons are still Blizzard's own: nothing of ours but the Left jump is on them
+            for _, b in ipairs(c.bagButtons) do
+                for k in pairs(b) do
+                    if type(k) == "string" and k:find("^smartNavigation") then eq(k, LEFT, what .. ": field on an item button") end
+                end
+            end
+            c:leaveCombat()
+            if name == "folded" then want = row and 5 or nil end
+            checkShuffledJumps(c, what .. ", after the fight", want)
+            eq(strayJumps(c), 0, what)
+            eq(c.blocked, {}, what)
+            c:assertClean(what)
+        end
+    end
+end)
+
 -- FirstColumn: a slot is only in the first column if no bag button is further left.
 test("bags: slots that finish the icon row get no Left jump when bag buttons are to their left", function()
     local c = newIcons({ dpad = true, sizes = { 3, 0, 0, 0, 0 } })

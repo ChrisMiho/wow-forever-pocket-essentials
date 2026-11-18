@@ -276,6 +276,10 @@ test("setup: every feature of this build has a switch on some screen, and the ne
     for _, part in ipairs({ "D-pad to Sort", "Bag icons", "One row at the top", "Chat text size", "Smaller and Bigger" }) do
         check(joined:find(part, 1, true), "no screen mentions \"" .. part .. "\"")
     end
+    -- Review of 0.4.0, point 7: A on the Sort tab is not device-tested, so it is not stated as fact.
+    check(not joined:find("then A to sort", 1, true), "the Bags screen promises that A sorts")
+    check(joined:find("then A should press it (this is new and untested; if A does nothing, tap it)", 1, true),
+        "the Bags screen does not say that A on the Sort button is untested")
 end)
 
 test("setup: a switch calls the same path as the settings switch", function()
@@ -434,6 +438,31 @@ test("setup: the finish screen offers a reload when a feature asked for one", fu
     eq(#c:callsTo("C_UI.Reload") - before, 1, "Reload now called C_UI.Reload")
     eq(PE.db.setup, "finished", "the reload did not store Finish first")
     c:assertClean("reload offer")
+end)
+
+-- Review of 0.4.0, point 3: the click runs inside PE:Safe, so an error in it lands on our
+-- Errors page and never reaches the game; Finish is still stored first (rule 11).
+test("setup: an error under Reload now does not escape the click, and Finish is already stored", function()
+    local c, PE = T.new({ gamepadUI = false, setup = function(c) c.world.cvars.combinedBags = "0" end })
+    open(c, PE)
+    goTo(c, 3)
+    c:click(switch(c, "bags"))
+    c:advance(0.2)
+    goTo(c, 5)
+    PE.db.setup = nil
+    local reload = PE.ReloadNow
+    local called = 0
+    PE.ReloadNow = function()
+        called = called + 1
+        error("reload broke")
+    end
+    local before = #PE.errors
+    c:click(button(c, "Reload now"))
+    PE.ReloadNow = reload
+    eq(called, 1, "the reload was not asked for straight from the click")
+    eq(c.errors, {}, "the error reached the game's error list")
+    eq(#PE.errors - before, 1, "the error was not recorded on the Errors page")
+    eq(PE.db.setup, "finished", "Finish was not stored before the reload")
 end)
 
 ---------------------------------------------------------------------------
@@ -656,6 +685,80 @@ test("setup: it does not come back after a fight if another window was opened me
     c:advance(0.2)
     check(not isOpen(c), "the guide came back after a later fight")
     c:assertClean("fight with another window")
+end)
+
+-- Review of 0.4.0, point 2 (rule 12): the game hides its whole interface for a cinematic or a
+-- full-screen view. The guide's OnHide runs although the guide itself is still "shown"; that is
+-- not a closing. When the interface comes back the guide is on the screen again and must hide
+-- for a fight as before.
+test("setup: the game hiding its whole interface is not a closing; back on screen, a fight still hides the guide", function()
+    local c, PE = T.new({ firstRun = true })
+    c:advance(2)
+    goTo(c, 3)
+    c.UIParent:Hide()
+    c:advance(0.1)
+    check(guide(c):IsShown() and not guide(c):IsVisible(), "the test's premise: shown, but not on the screen")
+    eq(linesWith(c, "Setup guide closed"), 0, "the closed line was printed")
+    eq(PE.db.setup, nil)
+    c.UIParent:Show()
+    c:advance(0.1)
+    check(guide(c):IsVisible(), "the guide did not come back with the interface")
+    eq(title(c), TITLE .. " (3 of 7)")
+    eq(bindings(c), ALL_KEYS)
+    c:enterCombat()
+    check(not isOpen(c), "the guide stayed on screen in a fight after the interface came back")
+    eq(linesWith(c, "Setup guide closed"), 0, "a fight printed the closed line")
+    c:leaveCombat()
+    c:advance(0.1)
+    check(isOpen(c), "the guide did not come back after the fight")
+    eq(title(c), TITLE .. " (3 of 7)")
+    -- a real closing still says its line, once
+    c:click(button(c, "Close"))
+    eq(linesWith(c, "Setup guide closed"), 1)
+    eq(PE.db.setup, nil)
+    eq(c.blocked, {})
+    c:assertClean("interface hidden")
+end)
+
+test("setup: a fight that starts while the interface is hidden hides the guide when it comes back, until the fight ends", function()
+    local c, PE = T.new({ firstRun = true })
+    c:advance(2)
+    goTo(c, 2)
+    c.UIParent:Hide()
+    c:enterCombat()
+    check(guide(c):IsShown(), "a fight closed a guide that was not on the screen")
+    c.UIParent:Show()
+    c:advance(0.1)
+    check(not isOpen(c), "the guide is on the screen in a fight")
+    eq(bindings(c), nil, "the controller keys were kept in a fight")
+    eq(PE.db.setup, nil)
+    eq(linesWith(c, "Setup guide closed"), 0)
+    c:leaveCombat()
+    c:advance(0.1)
+    check(isOpen(c), "the guide did not come back after the fight")
+    eq(title(c), TITLE .. " (2 of 7)")
+    eq(c.blocked, {})
+    c:assertClean("interface back in a fight")
+end)
+
+test("setup: a fight that starts and ends while the interface is hidden changes nothing", function()
+    local c, PE = T.new({ firstRun = true })
+    c:advance(2)
+    goTo(c, 2)
+    c.UIParent:Hide()
+    c:enterCombat(); c:leaveCombat()
+    c:advance(0.1)
+    c.UIParent:Show()
+    c:advance(0.1)
+    check(isOpen(c) and guide(c):IsVisible(), "the guide is gone")
+    eq(title(c), TITLE .. " (2 of 7)")
+    eq(linesWith(c, "Setup guide closed"), 0)
+    c:enterCombat()
+    check(not isOpen(c), "the guide stayed on screen in a fight")
+    c:leaveCombat()
+    c:advance(0.1)
+    check(isOpen(c), "the guide did not come back after the fight")
+    c:assertClean("fight while hidden")
 end)
 
 ---------------------------------------------------------------------------

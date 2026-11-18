@@ -940,14 +940,20 @@ local function TextSizeValue()
     return "Not available on this version of the game"
 end
 
--- The stepper: Smaller, the size the game is using right now, Bigger.
+-- The stepper: Smaller, the size the game is using right now, Bigger. A
+-- button that has no further step (counting a step that waits for the end
+-- of a fight) is dimmed; a press on it still does nothing.
 local function TextSizeButtons()
     local size = TextSizeAvailable() and CurrentTextSize()
     if not size then return {} end
+    local sizes = StepSizes()
+    local base = pendingSize or size
     return {
-        { label = "Smaller", action = function() ChangeTextSize(-1) end },
+        { label = "Smaller", action = function() ChangeTextSize(-1) end,
+          style = not NextTextSize(sizes, base, -1) and "disabled" or nil },
         { text = tostring(size) },
-        { label = "Bigger", action = function() ChangeTextSize(1) end },
+        { label = "Bigger", action = function() ChangeTextSize(1) end,
+          style = not NextTextSize(sizes, base, 1) and "disabled" or nil },
     }
 end
 

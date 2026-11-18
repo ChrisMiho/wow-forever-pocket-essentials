@@ -2086,6 +2086,34 @@ function Client:relayoutBag()
     self._protect("UpdateContainerFrameAnchors", self.env.UpdateContainerFrameAnchors)
 end
 
+-- Blizzard hands its pooled item buttons back to the slots in no fixed order each time the
+-- bag is generated (ContainerFrame_GenerateFrame; the pool's free list is walked with pairs,
+-- Pools.lua), so after the bag is closed and opened, or a bag is folded, a slot may be served
+-- by another button. This changes which button serves which slot: every slot gets the button
+-- that served the slot `by` places on (default 7), over all bags together. Nothing is laid out
+-- here; follow it with c:openBag(), c:collapseBag() or c:relayoutBag(). c.bagSlots and
+-- c.bagInfo follow, so c:bagCells() still tells the truth.
+function Client:shuffleBagButtons(by)
+    assert(self.bagButtons, "fakeclient: buildBag first")
+    local places, buttons = {}, {}
+    for _, bagID in ipairs({ KEYRING, 5, 4, 3, 2, 1, 0 }) do
+        for slot = 1, self.bagSizes[bagID] do
+            places[#places + 1] = { bag = bagID, slot = slot }
+            buttons[#buttons + 1] = self.bagSlots[bagID][slot]
+        end
+    end
+    local n = #places
+    if n < 2 then return end
+    by = (by or 7) % n
+    if by == 0 then by = 1 end
+    for i, place in ipairs(places) do
+        local b = buttons[(i - 1 + by) % n + 1]
+        self.bagSlots[place.bag][place.slot] = b
+        local e = self.bagInfo[b]
+        e.bag, e.slot = place.bag, place.slot
+    end
+end
+
 -- A client whose bag has no bag bar (the name is gone, the buttons stay where they are).
 function Client:removeBagBar()
     rawset(self.env, "GamepadBagBar", nil)

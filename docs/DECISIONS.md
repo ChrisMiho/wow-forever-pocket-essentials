@@ -232,6 +232,21 @@ Made without the owner:
   The answer is still read a second time when the timer fires.
 - Opening the chat window closes the setup guide, so that only one Pocket
   Essentials window is open at a time (one line in `Chat.lua`).
+- Setup guide: **"Reload now" stores "finished" before it reloads.** The
+  button is only on the last screen, and the reload would otherwise bring
+  the guide back at the next loading screen (spec part 5, rule 11).
+- Setup guide: the game hiding its whole interface (cinematic, full-screen
+  view) is not a closing: no chat line, nothing remembered. The watch for a
+  fight starts each time the guide comes onto the screen, and a fight that is
+  already on at that moment hides it until the fight ends (rule 12).
+- "D-pad to Sort" has a limit that cannot be fixed: the game deals its item
+  buttons out to other slots when the bag is reopened or a bag is folded, and
+  in a fight the addon may not move the Left jumps. Until the fight ends they
+  can sit on odd slots; then they are put right. Stated in the changelog and
+  in device step 13c.16 (spec part 3, rule 5).
+- Chat text size: at the smallest and the biggest size the button that can go
+  no further is drawn dim (the settings' existing "disabled" look). It can
+  still be pressed and does nothing.
 - Offline tests: the test helper marks setup as skipped in the saved settings
   it hands to the addon, unless a test asks for a first run, so that the
   roughly 400 other tests do not get a window opening by itself.

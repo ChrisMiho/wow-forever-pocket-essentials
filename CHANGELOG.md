@@ -36,6 +36,11 @@ every new choice starts off. Not yet tested on a device.
     first time.
   - It never opens during a fight. If a fight starts while it is open it
     hides at once and comes back at the same screen when the fight ends.
+  - When the game hides its whole interface (a cinematic, a full-screen
+    view) the guide goes and comes back with it. That is not a closing: no
+    chat line, nothing remembered.
+  - **Reload now** on the last screen counts as Finish, so the reload does
+    not bring the guide back.
   - Open it again at any time with the new **Setup guide** button in the
     bottom row of the settings (after "Move things"), or with `/pe setup`.
   - Nothing of it exists until it is first opened, and nothing of it runs
@@ -60,6 +65,11 @@ every new choice starts off. Not yet tested on a device.
   switched Off. In a fight the game does not let an addon set this up: a bag
   first opened in a fight gets the route when the fight ends, and on a tab
   reached during a fight A does nothing (the stick click still sorts).
+  One limit: if you close and reopen the bag, or fold one of your bags,
+  during a fight, the game may deal its item buttons out to other slots and
+  the addon cannot follow until the fight ends. Until then Left may jump to
+  Sort from an odd slot, or not from the first column at all. Using items is
+  not affected, and it is put right the moment the fight ends.
   Touch and the stick click work exactly as before. Using, equipping,
   selling and picking up items is not changed. Not yet tested on a device:
   whether A on the tab really sorts can only be seen there.
@@ -88,7 +98,9 @@ every new choice starts off. Not yet tested on a device.
   number, **Bigger**. One press moves one step through the game's own sizes
   (12, 14, 16, 18, 20, 24, 27) and then on to 30 and 34. The number is the
   size the game is using right now, so it also follows a change made from
-  the game's own chat tab menu. The buttons stop at the ends.
+  the game's own chat tab menu. The buttons stop at the ends: at the
+  smallest size Smaller is drawn dim, at the biggest size Bigger is, and a
+  press on a dim button does nothing.
 - The **Chat text size** row is now shown whether "Big chat buttons" is ON
   or OFF; it never needed that feature. Because of this the "Big chat
   buttons" block has a "Hide options" button even while it is off.

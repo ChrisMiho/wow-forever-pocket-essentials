@@ -209,6 +209,8 @@ end
 --            runs its action, then the window is drawn again, so the value
 --            text is read again. An entry { text = } in the list is drawn
 --            as a short text at that place in the row instead of a button.
+--            A button entry with style = "disabled" is drawn dim (it has
+--            nothing to do right now); it can still be pressed.
 -- onlyAlways: draw only the rows marked `always`.
 local function BuildOptions(mod, y, width, onlyAlways)
     local x = M.pad * 2
@@ -262,6 +264,8 @@ local function BuildOptions(mod, y, width, onlyAlways)
                     elseif type(b) == "table" and type(b.action) == "function" then
                         items[#items + 1] = {
                             label = tostring(b.label ~= nil and b.label or "Do it"),
+                            -- dim: nothing to do right now (still safe to press)
+                            style = b.style == "disabled" and "disabled" or nil,
                             onClick = PE:Wrap("core", function()
                                 PE:Safe(mod.key, b.action, mod)
                                 PE:RefreshSettings()

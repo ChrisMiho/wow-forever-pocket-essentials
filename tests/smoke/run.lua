@@ -616,9 +616,8 @@ local function everythingOn(c, PE, hasQDB)
         check(not guideShown(c), "Close did not close the setup guide")
     end
     check(PE.db.setup == "skipped", "walking the setup guide and pressing Close changed the saved answer")
-    -- Lowered by 7 a size in 0.4.0: "Chat text size" no longer has its number
-    -- in the label, so Smaller and Bigger count once each, not once per size shown.
-    check(presses >= (hasQDB and 3 * 65 or 3 * 28), "only " .. presses .. " option buttons were pressed")
+    -- The counts at 0.4.0 are 220 with QuestieDB and 144 without (SMOKE_VERBOSE=1 prints them).
+    check(presses >= (hasQDB and 3 * 72 or 3 * 47), "only " .. presses .. " option buttons were pressed")
     c:assertClean("pressing every option")
 
     local states = moduleStates(PE)
