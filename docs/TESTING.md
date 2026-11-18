@@ -945,3 +945,39 @@ the debug log on (settings, Errors page).
     icons and Bags screens: they should look the same as the settings.
 12. Tell us: is it easier to read than 0.5.0, and is any toggle unclear
     about what it does? Send the saved `PocketEssentials.lua` file.
+
+### 15. Version 0.7.0: number control, finer Quest icons, smaller arrow
+
+Install the 0.7.0 zip (only the `PocketEssentials` folder; the probe is not
+needed) and log in. Your choices from before should all still be as you left
+them. Keep the debug log on (settings, Errors page).
+
+1. Open the settings with **Quest icons**, **Quest arrow** and **Big chat
+   buttons** on. **Merge nearby icons**, **Spots per objective** and **Chat
+   text size** each show one gold-edged box: **-**, a gold number with a
+   small word under it, **+**. Say whether it looks right and nothing is cut
+   off.
+2. **Spots per objective** shows the number you had (out of the box 5).
+   Tap **+** until it reads **20**, then once more: it should read **All**,
+   and **+** goes dim. Tap **-**: back to 20. Open the map after a few taps:
+   the number of icons per objective should follow.
+3. Tap **-** down to **1**: **-** goes dim, and another tap does nothing.
+4. **Merge nearby icons** shows **5** if you had "More" (or 2 for "Normal").
+   Step it to **Off** and to **10** and look at a crowded spot on the map
+   (a camp of mobs): more merging means fewer icons.
+5. **Chat text size**: **-** and **+** change the chat text as Smaller and
+   Bigger did. At the biggest size **+** is dim.
+6. **Icon size** has **Extra small** first. Pick it: the icons on the map and
+   minimap get a little smaller than Small.
+7. **Arrow size** has **Small** first. Pick it: the arrow gets smaller than
+   Normal.
+8. **Hide blue haze** is now near the bottom of Quest icons, just above
+   **Icon key**.
+9. Use only the d-pad: the blue outline stops on **-** and **+** of each box
+   (never on the number), and A presses them.
+10. Try **Button size** Small and Large: the boxes should stay whole on one
+    line.
+11. Open the **Setup guide** and walk to the Quest icons and Chat screens:
+    the same boxes, and a change in one window shows in the other.
+12. Reload. Everything you changed should still be the way you left it.
+    Send the saved `PocketEssentials.lua` file.

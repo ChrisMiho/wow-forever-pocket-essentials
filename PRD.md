@@ -436,6 +436,18 @@ per objective". The owner has more Quest icons ideas to bring after testing.
 Spec `docs/superpowers/specs/2026-11-18-tidier-settings.md`; device steps
 `docs/TESTING.md` 14.
 
+**0.7.0 (2026-11-18, untested):** the owner after trying 0.6.0: Spots per
+objective and Merge nearby icons should let them pick the exact amount, with
+a control that "looks nice too"; a smaller icon size and a smaller arrow;
+Chat text size "a little ugly"; Hide blue haze "awkward" in the middle. Built:
+a joined "- value +" number control (mockup A, chosen by the owner) for
+Spots (1 to 20, then All), Merge (Off, 1 to 10) and Chat text size; Extra
+small icons; Small arrow; Hide blue haze at the bottom. The next builds,
+agreed in chat and listed in the spec: Move replaces the position buttons,
+Bags split in two (D-pad to Sort tested working by the owner), button
+colours. Spec `docs/superpowers/specs/2026-11-18-number-control-design.md`;
+device steps `docs/TESTING.md` section 15.
+
 **0.5.0 (2026-11-18, untested):** the owner on the setup guide: "the other thing i was expecting is that the setup screens didnt expose the same options i see in the settings menu, can we enhance the flow to expose those, so people are setting things up and configuring, not just turning things on?"
 The guide now shows each feature's options under its switch, drawn by the
 same code as the settings (one "list drawer", two windows), so labels,

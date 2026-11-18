@@ -4,6 +4,28 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-11-18
+
+Nineteenth test build. From the owner, after trying 0.6.0: fine-tune the
+Quest icons rows, a smaller arrow, a nicer chat text size row. Spec
+`docs/superpowers/specs/2026-11-18-number-control-design.md`. Not yet tested
+on a device. Your saved choices carry over as they are.
+
+### Changed
+
+- **A new number control: - value +.** One joined, gold-edged box with the
+  number large in the middle and a small word under it. An end that can go
+  no further is dimmed. The d-pad stops on - and +.
+  - **Spots per objective:** any number from 1 to 20, then **All**.
+  - **Merge nearby icons:** **Off**, then 1 to 10 (higher merges icons that
+    are further apart). The old "Normal" is 2 and "More" is 5.
+  - **Chat text size:** the same box replaces Smaller and Bigger.
+- **Icon size: Extra small**, a little smaller than Small.
+- **Arrow size: Small**, about three quarters of Normal.
+- **Hide blue haze** moved to the bottom of Quest icons, just before Icon key.
+- `/qd spots` takes any number from 1 to 20; `/qd cluster` goes up to 10;
+  `/qd size xsmall`.
+
 ## [0.6.0] - 2026-11-18
 
 Eighteenth test build. From the owner: fewer buttons and less clutter in the

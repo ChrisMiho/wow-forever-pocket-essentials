@@ -6,7 +6,7 @@ A small, lightweight addon suite that makes WoW Forever comfortable to play on
 a handheld, with touch and a controller together: big buttons, no tiny
 targets, no typed commands.
 
-> **Status: In progress: version 0.5.0 is a test build. Quest icons, the quest arrow, the bag sorter, sell junk, repair and the chat buttons have run on a device (0.0.9 and 0.1.0). Everything added since has not: Move things, the setup guide, Menu background, the two new bag choices and the chat text size stepper.**
+> **Status: In progress: version 0.7.0 is a test build. Quest icons, the quest arrow, the bag sorter, sell junk, repair and the chat buttons have run on a device (0.0.9 and 0.1.0). Everything added since has not: Move things, the setup guide, Menu background, the two new bag choices and the chat text size stepper.**
 > Treat every feature as unproven until it has been tested in the game.
 
 ## Who it's for
@@ -29,7 +29,7 @@ choices right under its switch.
 | Bag sorter | A big Sort button on Blizzard's combined bag; a stick click (left, right or none, your choice) sorts while it is open; three sizes. Two choices that start off: "D-pad to Sort" (press Left from the bag's first column to reach the Sort button, A sorts) and "Bag icons: One row at the top" (the pictures of your equipped bags side by side above your items, not in among them) |
 | Sell junk automatically | Sells every grey item at vendors. Only the last 12 sold can be bought back |
 | Repair automatically | Repairs from your own money |
-| Big chat buttons | The round button opens a picker: one big button per channel and per recent whisperer. A badge shows unanswered whispers. "Chat text size" (Smaller / Bigger) is in the settings and works with the feature on or off |
+| Big chat buttons | The round button opens a picker: one big button per channel and per recent whisperer. A badge shows unanswered whispers. "Chat text size" (a - size + control) is in the settings and works with the feature on or off |
 | Menu background | A plain dark panel behind the game's pop-up menus, such as the menu on a quest in the quest log, so the text is easy to read |
 | Setup guide | Not a switch: nine short screens that explain the features above, each with its switch and, under it, the same choices as in the settings. Opens by itself once; open it again from the settings ("Setup guide") |
 
