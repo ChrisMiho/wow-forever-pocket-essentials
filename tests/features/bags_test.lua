@@ -1080,4 +1080,531 @@ test("debug log: the d-pad route and the A button each write one line when they 
     eq(count(c, "d-pad: route removed"), 1)
 end)
 
+---------------------------------------------------------------------------
+-- "Bag icons": the bag buttons in one row at the top (spec 2026-11-17, part 4)
+---------------------------------------------------------------------------
+
+-- Gamepad UI on, the bag built as the game builds it (60 slots unless o.sizes says otherwise),
+-- "Bag icons" on "One row at the top" (o.row = false: left as shipped).
+local function newIcons(o)
+    o = o or {}
+    local c = newBags({ gamepadUI = o.gamepadUI ~= false, setup = o.setup, cvar = o.cvar })
+    c:buildBag(o.sizes)
+    local opts = c.PE:GetModule("bags").opts
+    if o.row ~= false then opts.iconRow = true end
+    if o.dpad then opts.dpad = true end
+    if o.debug then c.PE:SetDebug(true) end
+    return c
+end
+
+-- How many widget calls the addon has made on the bag's own buttons.
+local function moves(c)
+    local n = 0
+    for _, call in ipairs(c.calls) do
+        if call.name:find("^GamepadBagButton:") or call.name:find("^ContainerItemButton:") then n = n + 1 end
+    end
+    return n
+end
+
+-- Every button's anchor as text, in the stand-in's fixed button order.
+local function places(c)
+    local out = {}
+    for i, b in ipairs(c.bagButtons) do
+        if b:GetNumPoints() == 0 then
+            out[i] = "none"
+        else
+            local point, rel, relPoint, x, y = b:GetPoint(1)
+            out[i] = table.concat({ b:GetNumPoints(), point, rawequal(rel, c.bagMoney) and "money" or tostring(rel),
+                relPoint, x, y }, " ")
+        end
+    end
+    return out
+end
+
+-- What Blizzard's own layout gives for the same bags, from a second client with the choice off.
+local function gameLayout(o)
+    local g = newIcons({ row = false, sizes = o and o.sizes, gamepadUI = o and o.gamepadUI })
+    if o and o.collapsed then for id, v in pairs(o.collapsed) do g.world.collapsed[id] = v end end
+    g:openBag()
+    return g
+end
+
+local function cellsByKind(c)
+    local icons, slots = {}, {}
+    for _, e in ipairs(c:bagCells()) do
+        if e.kind == "icon" then icons[#icons + 1] = e else slots[#slots + 1] = e end
+    end
+    return icons, slots
+end
+
+-- The layout rule of the spec, checked on what is on the screen: icons in the top row from the
+-- left in Blizzard's order; slots in Blizzard's order reading left to right, top to bottom; every
+-- row below the first slot row full; the first slot row filled from the left, or, when it is the
+-- top row, at its right end.
+local function checkRowLayout(c, wantIcons, wantSlots)
+    local icons, slots = cellsByKind(c)
+    eq(#icons, wantIcons, "icons")
+    eq(#slots, wantSlots, "slots")
+    for i, e in ipairs(icons) do eq({ e.row, e.col }, { 1, i }, "icon " .. i) end
+    local seen, perRow, lastRow = {}, {}, 1
+    for i, e in ipairs(slots) do
+        local key = e.row .. "," .. e.col
+        check(not seen[key], "two buttons in cell " .. key)
+        seen[key] = true
+        check(e.col >= 1 and e.col <= 10 and e.col == math.floor(e.col), "column " .. tostring(e.col))
+        perRow[e.row] = (perRow[e.row] or 0) + 1
+        if e.row > lastRow then lastRow = e.row end
+        if i > 1 then
+            local p = slots[i - 1]
+            check(e.row > p.row or (e.row == p.row and e.col > p.col),
+                "slot " .. i .. " is not after slot " .. (i - 1) .. " in reading order")
+        end
+    end
+    for i, e in ipairs(icons) do check(not seen[e.row .. "," .. e.col], "a slot shares icon " .. i .. "'s cell") end
+    return perRow, lastRow, slots, icons
+end
+
+-- 1. Spec part 4: label "Bag icons", choices "In the grid" (default) / "One row at the top".
+test("bags: Bag icons is a choice with two values, In the grid first, and is off by default", function()
+    local c = newBags()
+    local mod = c.PE:GetModule("bags")
+    local found
+    for _, opt in ipairs(mod.options) do if opt.key == "iconRow" then found = opt end end
+    check(found, "no iconRow option")
+    eq(found.label, "Bag icons")
+    eq({ found.choices[1].value, found.choices[1].label }, { false, "In the grid" })
+    eq({ found.choices[2].value, found.choices[2].label }, { true, "One row at the top" })
+    eq(#found.choices, 2)
+    eq(mod.opts.iconRow, false)
+    mod.opts.iconRow = "yes"
+    mod:OnLoad()
+    eq(mod.opts.iconRow, false, "a broken saved value")
+end)
+
+-- 2. Spec: default "the game's way".
+test("bags: with In the grid nothing in the bag is moved", function()
+    local c = newIcons({ row = false })
+    c:openBag()
+    c:relayoutBag()
+    c:closeBag()
+    c:openBag()
+    eq(moves(c), 0)
+    -- and the stand-in starts from the game's layout: every bag button is in the grid, each
+    -- ahead of its own bag's slots, spread over the rows
+    local icons = cellsByKind(c)
+    eq(#icons, 7)
+    local rows, n = {}, 0
+    for _, e in ipairs(icons) do
+        if not rows[e.row] then rows[e.row], n = true, n + 1 end
+    end
+    eq(n, 6, "rows with a bag button")
+    local cells = c:bagCells()
+    eq({ cells[1].kind, cells[1].bag, cells[2].kind, cells[2].slot, cells[18].kind, cells[18].bag }, { "icon", 0, "slot", 1, "icon", 1 })
+    c:assertClean("in the grid")
+end)
+
+-- 3. Layout rule: "Icons: top row, columns 1..h, in Blizzard's order."
+test("bags: One row at the top puts the seven icons in the top row from the left", function()
+    local c = newIcons()
+    c:openBag()
+    local icons = cellsByKind(c)
+    eq(#icons, 7)
+    local order = {}
+    for i, e in ipairs(icons) do
+        eq({ e.row, e.col }, { 1, i }, "icon " .. i)
+        order[i] = e.bag
+    end
+    eq(order, { 0, 1, 2, 3, 4, 5, -2 })
+    c:assertClean("icon row")
+end)
+
+-- 4. Layout rule: "Slots keep Blizzard's order (backpack slot 1 first)", nothing in between.
+test("bags: the slots follow below in Blizzard's order with no icon between them", function()
+    local c = newIcons()
+    c:openBag()
+    local perRow, lastRow, slots = checkRowLayout(c, 7, 60)
+    eq(lastRow, 7)
+    eq(perRow[1], nil, "slots in the icon row")
+    for row = 2, 7 do eq(perRow[row], 10, "row " .. row) end
+    eq({ slots[1].bag, slots[1].slot, slots[1].row, slots[1].col }, { 0, 1, 2, 1 })
+    eq({ slots[60].bag, slots[60].slot, slots[60].row, slots[60].col }, { 4, 10, 7, 10 })
+end)
+
+-- 5. Layout rule: "the first row under the icons holds the odd slots, from the left".
+test("bags: odd slots sit in the first row under the icons, from the left", function()
+    local c = newIcons({ sizes = { 16, 16, 16, 16, 0 } })
+    c:openBag()
+    local perRow, lastRow, slots = checkRowLayout(c, 7, 64)
+    eq(lastRow, 8)
+    eq(perRow[1], nil)
+    eq(perRow[2], 4)
+    for i = 1, 4 do eq({ slots[i].row, slots[i].col }, { 2, i }) end
+    for row = 3, 8 do eq(perRow[row], 10, "row " .. row) end
+end)
+
+-- 6. Layout rule: "Otherwise ... those first slots finish the top row at its right end".
+test("bags: when the slots do not fit below, the first ones finish the top row at the right", function()
+    local c = newIcons({ sizes = { 16, 16, 16, 15, 0 } })
+    c:openBag()
+    local perRow, lastRow, slots = checkRowLayout(c, 7, 63)
+    eq(lastRow, 7)
+    eq(perRow[1], 3)
+    for i = 1, 3 do eq({ slots[i].row, slots[i].col }, { 1, 7 + i }) end
+    for row = 2, 7 do eq(perRow[row], 10, "row " .. row) end
+end)
+
+-- 7. Rules: "Offsets are copied exactly from what Blizzard set, never calculated"; the window
+-- keeps Blizzard's size; the anchor is the one Blizzard's grid uses.
+test("bags: every button keeps one of Blizzard's own columns and rows", function()
+    for _, sizes in ipairs({ { 16, 12, 12, 10, 10 }, { 16, 16, 16, 16, 0 }, { 16, 16, 16, 15, 0 }, { 16, 0, 0, 0, 0 } }) do
+        local g = gameLayout({ sizes = sizes })
+        local xs, ys = {}, {}
+        for _, e in ipairs(g:bagCells()) do xs[e.x], ys[e.y] = true, true end
+        local c = newIcons({ sizes = sizes })
+        c:openBag()
+        local cells = c:bagCells()
+        eq(#cells, #g:bagCells())
+        for _, e in ipairs(cells) do
+            check(xs[e.x], "x " .. tostring(e.x) .. " is not one of the game's columns")
+            check(ys[e.y], "y " .. tostring(e.y) .. " is not one of the game's rows")
+            eq({ e.point, e.relPoint }, { "BOTTOMRIGHT", "TOPRIGHT" })
+            check(rawequal(e.rel, c.bagMoney), "anchored to something else")
+            eq(e.button:GetNumPoints(), 1)
+        end
+        eq({ c.bagFrame:GetWidth(), c.bagFrame:GetHeight() }, { g.bagFrame:GetWidth(), g.bagFrame:GetHeight() })
+        c:assertClean("cells")
+    end
+end)
+
+-- 8. ApplyIconRow: only buttons whose place differs are touched.
+test("bags: a second layout pass without changes moves nothing", function()
+    local c = newIcons()
+    c:openBag()
+    local first, before = moves(c), places(c)
+    check(first > 0, "nothing was moved at all")
+    layoutPass(c)
+    layoutPass(c)
+    eq(moves(c), first, "moved again though the game had moved nothing")
+    eq(places(c), before)
+    -- the game lays the items out again (same bags): the same result once more
+    c:relayoutBag()
+    eq(places(c), before)
+    eq(moves(c), first * 2)
+end)
+
+-- 9. Spec: "X on an icon still collapses and expands that bag and the layout stays tidy".
+test("bags: collapsing a bag re-flows the remaining slots", function()
+    local c = newIcons()
+    c:openBag()
+    c:collapseBag(1, true)
+    local perRow, lastRow, slots = checkRowLayout(c, 7, 48)
+    eq(lastRow, 6)
+    eq(perRow[2], 8)
+    for row = 3, 6 do eq(perRow[row], 10, "row " .. row) end
+    for _, e in ipairs(slots) do check(e.bag ~= 1, "a slot of the collapsed bag is in the grid") end
+    for slot = 1, 12 do eq(c.bagSlots[1][slot]:GetNumPoints(), 0, "collapsed slot was given a place") end
+    -- the key ring expanded as well, then everything back
+    c:collapseBag(-2, false)
+    checkRowLayout(c, 7, 52)
+    c:collapseBag(1, false)
+    c:collapseBag(-2, true)
+    local again = newIcons()
+    again:openBag()
+    eq(places(c), places(again))
+    c:assertClean("collapse")
+end)
+
+-- 10. Rules, switch-off: "each button gets back the exact anchor Blizzard gave it".
+test("bags: switching back to In the grid puts every button back exactly", function()
+    local g = gameLayout()
+    local c = newIcons()
+    c:openBag()
+    check(table.concat(places(c), "|") ~= table.concat(places(g), "|"), "the row layout is the game's layout")
+    chooseOption(c, "iconRow", false)
+    eq(places(c), places(g))
+    local after = moves(c)
+    layoutPass(c)
+    c:relayoutBag()
+    eq(moves(c), after, "still moving buttons with the choice back on In the grid")
+    eq(places(c), places(g))
+    -- and on again with the bag open
+    chooseOption(c, "iconRow", true)
+    checkRowLayout(c, 7, 60)
+    c:assertClean("back to the grid")
+end)
+
+-- 10b. The same after the bag changed while the row was on (a collapsed bag).
+test("bags: switching back after a bag was collapsed gives the game's layout for those bags", function()
+    local g = gameLayout({ collapsed = { [2] = true } })
+    local c = newIcons()
+    c:openBag()
+    c:collapseBag(2, true)
+    chooseOption(c, "iconRow", false)
+    eq(places(c), places(g))
+end)
+
+-- 11. Rules: "Switching ... Bag sorter off puts every button back where the game had it".
+test("bags: switching Bag sorter off puts every button back exactly", function()
+    local g = gameLayout()
+    local c = newIcons()
+    c:openBag()
+    c.PE:SetModuleEnabled("bags", false)
+    eq(places(c), places(g))
+    local after = moves(c)
+    layoutPass(c)
+    c:relayoutBag()
+    eq(moves(c), after, "buttons moved with the feature off")
+    c:assertClean("feature off")
+end)
+
+-- 11b. Switch-off: "but only if it still has the anchor we set".
+test("bags: a button that is no longer where it was put is not touched at switch-off", function()
+    local c = newIcons()
+    c:openBag()
+    local stray = c.bagSlots[0][1]
+    c._state(stray).points[1].x = -999
+    local before = places(c)
+    c.PE:SetModuleEnabled("bags", false)
+    eq(places(c), before, "buttons were moved though the layout was no longer ours")
+    c:assertClean("stray")
+end)
+
+-- 12. Spec: "It only acts in the controller style"; debug line.
+test("bags: with the Gamepad UI off the choice does nothing and says why in the debug log", function()
+    local c = newIcons({ gamepadUI = false, debug = true, cvar = "1" })
+    c:openBag()
+    layoutPass(c)
+    eq(moves(c), 0)
+    eq(count(c, "bag icons: left alone, no bag icons in the grid (not the controller style)"), 1)
+    local texts = table.concat(textsOf(c), "\n")
+    check(texts:find("Bag icons: only in the controller style.", 1, true), "no row note: " .. texts)
+    c:assertClean("mouse style")
+end)
+
+-- 13. Rules: "If anything is not as expected (no GamepadBagBar ...): do nothing, one debug line."
+test("bags: without GamepadBagBar the choice does nothing and writes one debug line", function()
+    local c = newIcons({ debug = true })
+    c:removeBagBar()
+    c:openBag()
+    layoutPass(c)
+    c:relayoutBag()
+    eq(moves(c), 0)
+    eq(count(c, "bag icons: left alone, the grid is not as expected (no GamepadBagBar)"), 1)
+    c:assertClean("no bar")
+end)
+
+-- 13b. The other "not as expected" cases: a second point on a button, a different anchor,
+-- fewer than ten columns in use.
+test("bags: a grid that is not Blizzard's is left alone", function()
+    local a = newIcons({ debug = true })
+    a:openBag()
+    a:layoutBagItems()   -- the game lays the items out again, and one comes out differently
+    local st = a._state(a.bagSlots[0][5])
+    st.points[1].rel, st.points[1].relPoint = a.bagFrame, "BOTTOMRIGHT"
+    local before, n = places(a), moves(a)
+    layoutPass(a)
+    layoutPass(a)
+    eq(places(a), before)
+    eq(moves(a), n)
+    eq(count(a, "bag icons: left alone, the grid is not as expected (mixed anchors)"), 1)
+    a:assertClean("mixed anchors")
+
+    -- two slots and seven bag buttons: one row of nine
+    local b = newIcons({ debug = true, sizes = { 2, 0, 0, 0, 0 } })
+    b:openBag()
+    eq(moves(b), 0)
+    eq(count(b, "bag icons: left alone, the grid is not as expected (fewer than ten columns)"), 1)
+    b:assertClean("short grid")
+end)
+
+-- 14. Rules: "No field written on any Blizzard frame or table."
+test("bags: nothing is written onto Blizzard's buttons or tables", function()
+    local c = newIcons()
+    local function keys(t)
+        local out = {}
+        for k in pairs(t) do out[#out + 1] = tostring(k) end
+        table.sort(out)
+        return out
+    end
+    local bar = rawget(c.env, "GamepadBagBar")
+    local bagKeys, barKeys = keys(c.bagFrame), keys(bar)
+    local items, array = rawget(c.bagFrame, "Items"), rawget(bar, "BagButtonArray")
+    local nItems, nArray = #items, #array
+    c:openBag()
+    c:collapseBag(3, true)
+    c:closeBag()
+    c:openBag()
+    chooseOption(c, "iconRow", false)
+    chooseOption(c, "iconRow", true)
+    c.PE:SetModuleEnabled("bags", false)
+    for i, b in ipairs(c.bagButtons) do eq(next(b), nil, "a field on bag button " .. i) end
+    eq(keys(c.bagFrame), bagKeys)
+    eq(keys(bar), barKeys)
+    check(rawequal(rawget(c.bagFrame, "Items"), items) and rawequal(rawget(bar, "BagButtonArray"), array), "a list was replaced")
+    eq({ #items, #array }, { nItems, nArray })
+    eq(next(c.bagMoney), nil)
+    c:assertClean("no fields")
+end)
+
+-- 15. Rules, combat: "allowed, the buttons are not protected. If a button says it is protected
+-- during a fight: leave Blizzard's layout, one debug line, redo after the fight".
+test("bags: the bag opened in a fight is re-flowed at once; with protected buttons it waits for the fight to end", function()
+    local c = newIcons()
+    c:enterCombat()
+    c:openBag()
+    checkRowLayout(c, 7, 60)
+    eq(c.blocked, {})
+    c:assertClean("fight, not protected")
+
+    local g = gameLayout()
+    local p = newIcons({ debug = true })
+    p._state(p.bagSlots[2][3]).protected = true
+    p:enterCombat()
+    p:openBag()
+    layoutPass(p)
+    eq(moves(p), 0)
+    eq(places(p), places(g))
+    eq(count(p, "bag icons: held for after the fight"), 1)
+    p:leaveCombat()
+    checkRowLayout(p, 7, 60)
+    eq(p.blocked, {})
+    -- switched off in a fight: put back when the fight ends
+    p:enterCombat()
+    chooseOption(p, "iconRow", false)
+    checkRowLayout(p, 7, 60)
+    p:leaveCombat()
+    eq(places(p), places(g))
+    p:assertClean("fight, protected")
+end)
+
+-- 16. Rules: "Bag size and the Sort tab are unaffected (the window's size does not change)."
+test("bags: Bag size and the Sort tab are the same with either choice", function()
+    local function snapshot(row)
+        local c = newIcons({ row = row })
+        c.PE:GetModule("bags").opts.size = "large"
+        c:openBag()
+        local bag, tab = c.bagFrame, sortButton(c)
+        local point, _, relPoint, x, y = bag:GetPoint(1)
+        local tp, trel, trp, tx, ty = tab:GetPoint(1)
+        check(rawequal(trel, bag), "tab not on the bag")
+        check(tab:IsVisible(), "tab not shown")
+        return { bag:GetScale(), bag:GetNumPoints(), point, relPoint, x, y, bag:GetWidth(), bag:GetHeight(),
+            tp, trp, tx, ty, tab:GetWidth(), tab:GetHeight() }
+    end
+    local grid, row = snapshot(false), snapshot(true)
+    check(grid[1] > 1, "the bag was not made larger: " .. tostring(grid[1]))
+    eq(row, grid)
+end)
+
+-- Rulings: "the Left jump to the Sort tab is put on whatever item buttons end up in the first
+-- column after the bag icons have been moved". The bag buttons themselves get no jump (they are
+-- not item buttons and keep the game's own navigation).
+test("bags: with Bag icons and D-pad to Sort both on, the Left jump is on the first column of the re-flowed bag", function()
+    local c = newIcons({ dpad = true })
+    c:openBag()
+    c:advance(0.5)
+    local tab = sortButton(c)
+    local function checkJumps(what, wantCount)
+        local n = 0
+        for _, e in ipairs(c:bagCells()) do
+            local jump = rawget(e.button, LEFT)
+            if e.kind == "slot" and e.col == 1 then
+                check(rawequal(jump, tab), what .. ": no Left jump on the slot in row " .. e.row .. " of the first column")
+                n = n + 1
+            else
+                eq(jump, nil, what .. ": Left jump on " .. e.kind .. " at row " .. e.row .. ", column " .. e.col)
+            end
+        end
+        eq(n, wantCount, what .. ": first-column slots")
+        for _, b in ipairs(c.bagButtons) do
+            if b:GetNumPoints() == 0 then eq(rawget(b, LEFT), nil, what .. ": jump on a button that is not laid out") end
+        end
+        local right = rawget(tab, RIGHT)
+        check(right ~= nil and c.bagInfo[right].kind == "slot" and rawequal(rawget(right, LEFT), tab),
+            what .. ": Right from the tab does not go to a first-column slot")
+    end
+    checkJumps("row", 6)                 -- rows 2 to 7 of column 1; the backpack button above them has none
+    is(c:padMove(c.bagSlots[0][1], "left"), tab)
+    eq(c:padMove(c.bagIcons[0], "left"), nil)
+    -- a bag collapsed: the first column is other buttons now
+    c:collapseBag(1, true)
+    checkJumps("collapsed", 5)
+    c:collapseBag(1, false)
+    checkJumps("expanded", 6)
+    -- back to the game's layout: its first column holds five slots and a bag button
+    chooseOption(c, "iconRow", false)
+    checkJumps("grid", 5)
+    chooseOption(c, "iconRow", true)
+    checkJumps("row again", 6)
+    eq(c.blocked, {})
+    c:assertClean("both choices")
+end)
+
+-- FirstColumn: a slot is only in the first column if no bag button is further left.
+test("bags: slots that finish the icon row get no Left jump when bag buttons are to their left", function()
+    local c = newIcons({ dpad = true, sizes = { 3, 0, 0, 0, 0 } })
+    c:openBag()
+    c:advance(0.5)
+    local icons, slots = cellsByKind(c)
+    eq({ #icons, #slots }, { 7, 3 })
+    for i, e in ipairs(slots) do
+        eq({ e.row, e.col }, { 1, 7 + i })
+        eq(rawget(e.button, LEFT), nil, "Left jump on a slot with bag buttons to its left")
+    end
+    c:assertClean("one row")
+end)
+
+-- "Nothing ticks. No new event."
+test("bags: Bag icons registers nothing and leaves nothing ticking", function()
+    local off = newIcons({ row = false })
+    off:openBag()
+    off:advance(1)
+    local on = newIcons()
+    on:openBag()
+    on:advance(1)
+    eq(#on._timers, #off._timers, "timers")
+    eq(on.stats.addonOnUpdate, off.stats.addonOnUpdate)
+    for _, event in ipairs({ "BAG_UPDATE_DELAYED", "BAG_UPDATE", "PLAYER_REGEN_ENABLED" }) do
+        eq(eventRegistered(on, event), eventRegistered(off, event), event)
+    end
+end)
+
+-- Spec part 4: row notes.
+test("bags: with One row at the top the settings text says so", function()
+    local c = newIcons()
+    c:openBag()
+    local texts = table.concat(textsOf(c), "\n")
+    check(texts:find("Bag icons are in one row at the top of the bag.", 1, true), "no row note: " .. texts)
+    local off = newIcons({ row = false })
+    for _, text in ipairs(textsOf(off)) do check(not text:find("Bag icons a"), "row note while off: " .. text) end
+end)
+
+-- 17. Spec part 4, "Debug-log lines".
+test("debug log: the bag icons lines", function()
+    local c = newIcons({ debug = true, row = false })
+    c:openBag()
+    eq(count(c, "bag icons: 7 icons in the top row, 60 slots below"), 0)
+    chooseOption(c, "iconRow", true)
+    eq(count(c, "bag icons choice: row"), 1)
+    layoutPass(c)
+    c:relayoutBag()
+    c:closeBag()
+    c:openBag()
+    eq(count(c, "bag icons: 7 icons in the top row, 60 slots below"), 1)
+    c:collapseBag(1, true)
+    eq(count(c, "bag icons: 7 icons in the top row, 48 slots below"), 1)
+    chooseOption(c, "iconRow", false)
+    eq(count(c, "bag icons choice: grid"), 1)
+    eq(count(c, "bag icons: the game's own places put back"), 1)
+    chooseOption(c, "iconRow", true)
+    c:closeBag()
+    chooseOption(c, "iconRow", false)
+    eq(count(c, "bag icons: nothing of ours to put back"), 1)
+    -- switching the feature off with the choice never used says nothing about bag icons
+    local d = newIcons({ debug = true, row = false })
+    d:openBag()
+    d.PE:SetModuleEnabled("bags", false)
+    for _, line in ipairs(debugLines(d, "bags")) do check(not line:find("bag icons"), "line with the choice off: " .. line) end
+end)
+
 return { known = KNOWN_FAILURES }

@@ -1,8 +1,9 @@
 -- Pocket Essentials: module "bags" (Bag sorter).
 -- Uses Blizzard's own combined bag window (ContainerFrameCombinedBags) and adds
 -- a large Sort button, a stick-click shortcut (left, right or none: the "Sort
--- key" choice), a size choice and, as a choice of its own, a d-pad route onto
--- the Sort button ("D-pad to Sort").
+-- key" choice), a size choice and, as choices of their own, a d-pad route onto
+-- the Sort button ("D-pad to Sort") and the bag pictures in one row at the top
+-- ("Bag icons").
 --
 -- Taint rules followed here (item use must never be blocked):
 --   * No field is ever written onto a Blizzard frame or table.
@@ -25,10 +26,15 @@
 --     made by addon code, which the item actions then read.)
 --   * The Sort button carries none of the fields the bag's own code reads from
 --     the button under the cursor (buttonContext and the like).
+--   * "Bag icons" moves Blizzard's own buttons, with the widget methods
+--     ClearAllPoints and SetPoint only. A button's place is not a Lua value, so
+--     nothing Blizzard's item code later reads is ours. What we remember about
+--     a button is kept in a table of our own.
 local ADDON_NAME, PE = ...
 
-local type, pcall, tostring = type, pcall, tostring
-local max, abs = math.max, math.abs
+local type, pcall, tostring, pairs, next = type, pcall, tostring, pairs, next
+local max, abs, floor = math.max, math.abs, math.floor
+local sort = table.sort
 
 local FRAME_NAME = "ContainerFrameCombinedBags"
 local LAYOUT_FUNC = "UpdateContainerFrameAnchors"
@@ -47,6 +53,11 @@ local NAV_CLEAR = "SmartNavigation_ClearJumpNavigationOverridesInDirection"
 local NAV_DIRS = "SMART_NAV_INPUT_DIRECTION"
 local NAV_KEY = "smartNavigationOverride-" -- plus the direction's name; read only, to see whose it is
 local CONFIRM_BUTTON_NAME = "PocketEssentialsBagSortConfirm"
+-- The frame that holds the bag pictures drawn inside the bag in the controller
+-- style, in its list BagButtonArray (Blizzard_MainMenuBarBagButtons/Camelot/
+-- MainMenuBarBagButtons.xml). Reached by name; read only.
+local BAR_NAME = "GamepadBagBar"
+local COLUMNS = 10 -- the combined bag's width in buttons (ContainerFrame.lua, GetColumns)
 
 local mod            -- set by RegisterModule below
 local active = false -- true between OnEnable and OnDisable; every hook checks it
@@ -71,6 +82,12 @@ local base           -- { scale, x, y }: what Blizzard's layout pass last set
 local applied        -- { scale, x, y }: what we set on top of it, or nil
 local baseStale = false -- Blizzard's layout pass ran since we last read its values
 local clamped = false
+-- "Bag icons": [button] = { ox, oy, nx, ny }, the place Blizzard's layout gave
+-- the button and the place we gave it. A table of ours; nothing is written on
+-- the button.
+local placed = setmetatable({}, { __mode = "k" })
+local gridPoint, gridRel, gridRelPoint -- the anchor Blizzard's grid uses, read from the buttons
+local lastIconLine   -- what the debug log last said about the bag icons (a line only on change)
 
 ---------------------------------------------------------------------------
 -- Small helpers
@@ -130,6 +147,14 @@ local function ReadCVar()
     local ok, value = pcall(C_CVar.GetCVar, CVAR)
     if not ok or value == nil then return nil end
     return tostring(value)
+end
+
+-- Blizzard's list of bag-picture buttons (backpack, bags, key ring), or nil.
+local function BagIconList()
+    local bar = _G[BAR_NAME]
+    local list = type(bar) == "table" and bar.BagButtonArray
+    if type(list) ~= "table" then return nil end
+    return list
 end
 
 -- True unless the game says plainly that the frame is not protected.
@@ -505,7 +530,10 @@ end
 -- The item buttons that sit in the bag's leftmost column right now, as an
 -- array, or nil and why not. Works from where the buttons are on the screen
 -- after the bag has been laid out, so it gives the right answer again after
--- any re-flow. Reads only.
+-- any re-flow. The bag pictures in the grid count as part of the grid (a slot
+-- with a bag picture to its left is not in the first column) but are never
+-- returned: they are not item buttons and keep the game's own navigation.
+-- Reads only.
 local function FirstColumn()
     local items = bagFrame and bagFrame.Items
     if type(items) ~= "table" then return nil, "bag has no item list" end
@@ -525,11 +553,25 @@ local function FirstColumn()
             end
         end
     end
+    if #seen == 0 then return nil, "bag has no item list" end
+    local icons = BagIconList()
+    for i = 1, icons and #icons or 0 do
+        local button = icons[i]
+        if type(button) == "table" and type(button.IsVisible) == "function"
+            and type(button.GetLeft) == "function" then
+            local ok, visible = pcall(button.IsVisible, button)
+            if ok and visible then
+                local ok2, left = pcall(button.GetLeft, button)
+                left = ok2 and Plain(left) or nil
+                if left and left < least then least = left end
+            end
+        end
+    end
     local out = {}
     for i = 1, #seen do
         if lefts[i] - least <= 0.5 then out[#out + 1] = seen[i] end
     end
-    if #out == 0 then return nil, "bag has no item list" end
+    if #out == 0 then return nil, "no slot in the first column" end
     return out
 end
 
@@ -956,14 +998,301 @@ local function SyncScale()
 end
 
 ---------------------------------------------------------------------------
+-- "Bag icons": the bag pictures in one row at the top.
+--
+-- In the controller style Blizzard puts one button per bag into the same
+-- ten-wide grid as the item slots, each at the start of its bag's slots
+-- (ContainerFrame.lua, UpdateItemLayout), so they look like items lying in
+-- the bag. After each of Blizzard's layout passes the same buttons are given
+-- other cells of the same grid: the bag pictures side by side in the top row
+-- from the left, the slots below in Blizzard's order. Every offset used is one
+-- Blizzard set on some button; none is calculated. Nothing is made, hidden,
+-- given another parent or resized, and no item is moved.
+--
+-- Columns stay filled from the bottom up (Blizzard's d-pad grid lines columns
+-- up from the bottom: SmartNavigation.lua, gridHeightCompensate), so a row
+-- that is not full is the first row of slots, not the last.
+---------------------------------------------------------------------------
+
+local function IconRowWanted()
+    local opts = Opts()
+    return active and opts ~= nil and opts.iconRow == true
+end
+
+local function NoteIcons(text)
+    if text == lastIconLine then return end
+    lastIconLine = text
+    if text and PE.debugOn then PE:Debug("bags", "bag icons: " .. text) end
+end
+
+local function ForgetPlaced()
+    for button in pairs(placed) do placed[button] = nil end
+end
+
+local function NothingToPutBack(announce)
+    lastIconLine = nil
+    if announce and PE.debugOn then PE:Debug("bags", "bag icons: nothing of ours to put back") end
+end
+
+-- Every bag picture and slot that is in the grid now (shown, with exactly one
+-- anchor point), as an array of { button, icon, x, y, cx, cy }: x, y is the
+-- cell Blizzard's layout gave the button, cx, cy where it is at this moment.
+-- Second result: true when the buttons are where we last put them (then x, y
+-- come from what we remembered), false when Blizzard has laid them out since.
+-- The whole grid is judged together: either every button is where we put it,
+-- or none of what we remembered is used. Returns nil and why when the grid is
+-- not the one Blizzard's layout makes. Reads only.
+local function ReadGrid()
+    local icons = BagIconList()
+    if not icons then return nil, "no " .. BAR_NAME end
+    local items = bagFrame.Items
+    if type(items) ~= "table" then return nil, "no item list" end
+    local cells, seen = {}, {}
+    local point, rel, relPoint
+    for pass = 1, 2 do
+        local list = pass == 1 and icons or items
+        for i = 1, #list do
+            local button = list[i]
+            if type(button) == "table" and not seen[button] and type(button.IsShown) == "function"
+                and type(button.GetNumPoints) == "function" and type(button.GetPoint) == "function"
+                and type(button.SetPoint) == "function" and type(button.ClearAllPoints) == "function" then
+                seen[button] = true
+                local ok, shown = pcall(button.IsShown, button)
+                local ok2, count = pcall(button.GetNumPoints, button)
+                if ok and shown and ok2 and Plain(count) == 1 then
+                    local ok3, p, r, rp, x, y = pcall(button.GetPoint, button, 1)
+                    x, y = Plain(x), Plain(y)
+                    if not ok3 or type(p) ~= "string" or type(r) ~= "table" or type(rp) ~= "string"
+                        or not x or not y then
+                        return nil, "a button's place cannot be read"
+                    end
+                    if point == nil then
+                        point, rel, relPoint = p, r, rp
+                    elseif p ~= point or r ~= rel or rp ~= relPoint then
+                        return nil, "mixed anchors"
+                    end
+                    cells[#cells + 1] = { button = button, icon = pass == 1, x = x, y = y, cx = x, cy = y }
+                end
+            end
+        end
+    end
+
+    local ours = next(placed) ~= nil
+    if ours then
+        local known = 0
+        for _ in pairs(placed) do known = known + 1 end
+        ours = known == #cells
+    end
+    for i = 1, ours and #cells or 0 do
+        local cell = cells[i]
+        local was = placed[cell.button]
+        if not (was and Near(cell.cx, was.nx) and Near(cell.cy, was.ny)) then
+            ours = false
+            break
+        end
+    end
+    if ours then
+        for i = 1, #cells do
+            local cell = cells[i]
+            local was = placed[cell.button]
+            cell.x, cell.y = was.ox, was.oy
+        end
+    end
+
+    local taken = {}
+    for i = 1, #cells do
+        local cell = cells[i]
+        local key = floor(cell.x * 10 + 0.5) .. ":" .. floor(cell.y * 10 + 0.5)
+        if taken[key] then return nil, "two buttons in one place" end
+        taken[key] = true
+    end
+    gridPoint, gridRel, gridRelPoint = point, rel, relPoint
+    return cells, ours
+end
+
+-- Blizzard's reading order: top row first, each row from the left. (Its grid
+-- is anchored at the bottom right, so a higher row has the larger y and a
+-- column further left the smaller x.)
+local function ReadingOrder(a, b)
+    if abs(a.y - b.y) >= 0.01 then return a.y > b.y end
+    return a.x < b.x
+end
+
+-- The different values in `values`, ascending.
+local function Distinct(values)
+    sort(values)
+    local out = {}
+    for i = 1, #values do
+        if #out == 0 or not Near(values[i], out[#out]) then out[#out + 1] = values[i] end
+    end
+    return out
+end
+
+-- Which cell each button goes to. `icons` and `slots` are arrays of cells in
+-- Blizzard's reading order. Returns an array of { cell, x, y }, or nil and why
+-- not. Works on numbers only; every x and y handed back is one of the inputs'.
+--   * bag pictures: top row, from the left;
+--   * slots: the rows below, in order. If they do not fill whole rows, the
+--     short row is their first one, filled from the left;
+--   * if the rows below cannot hold them all, the first slots finish the top
+--     row at its right end.
+local function PlanCells(icons, slots)
+    local xs, ys = {}, {}
+    for pass = 1, 2 do
+        local list = pass == 1 and icons or slots
+        for i = 1, #list do
+            xs[#xs + 1], ys[#ys + 1] = list[i].x, list[i].y
+        end
+    end
+    xs, ys = Distinct(xs), Distinct(ys)
+    if #xs < COLUMNS then return nil, "fewer than ten columns" end
+    if #xs > COLUMNS then return nil, "more than ten columns" end
+    local rows = #ys
+    local topY = ys[rows]
+    local h, s = #icons, #slots
+    if h > COLUMNS then return nil, "more bag icons than columns" end
+    local extra = s - COLUMNS * (rows - 1)
+    if extra < 0 then extra = 0 end
+    if extra > COLUMNS - h then return nil, "no room in the top row" end
+
+    local out = {}
+    for i = 1, h do
+        out[#out + 1] = { cell = icons[i], x = xs[i], y = topY }
+    end
+    local below = s - extra
+    local short = below % COLUMNS
+    local firstRow = rows - floor((below + COLUMNS - 1) / COLUMNS) + 1 -- counted from the top; the top row is 1
+    local shift = short > 0 and (COLUMNS - short) or 0
+    for i = 1, s do
+        local row, col
+        if i <= extra then
+            row, col = 1, COLUMNS - extra + i
+        else
+            local k = i - extra
+            if k <= short then
+                row, col = firstRow, k
+            else
+                local index = k - 1 + shift
+                row, col = firstRow + floor(index / COLUMNS), index % COLUMNS + 1
+            end
+        end
+        out[#out + 1] = { cell = slots[i], x = xs[col], y = ys[rows - row + 1] }
+    end
+    return out
+end
+
+local function MoveButton(button, x, y)
+    button:ClearAllPoints()
+    button:SetPoint(gridPoint, gridRel, gridRelPoint, x, y)
+end
+
+local SyncIcons -- defined below; the function held for after a fight calls it
+
+local function SyncIconsAfterFight()
+    SyncIcons()
+    RefreshSortJump() -- the first column may be other buttons now
+end
+
+-- The single place that moves the bag's buttons: into the row when the choice
+-- is on, back to the places Blizzard gave them when it is not (also when the
+-- feature is switched off). `announce`: say so in the debug log when there
+-- was nothing to put back.
+SyncIcons = function(announce)
+    local wanted = IconRowWanted()
+    if not wanted and next(placed) == nil then
+        NothingToPutBack(announce)
+        return
+    end
+    if not bagFrame or not bagFrame:IsShown() then
+        -- Closed: Blizzard lays the bag out afresh every time it opens.
+        ForgetPlaced()
+        if not wanted then NothingToPutBack(announce) end
+        return
+    end
+    local cells, ours = ReadGrid()
+    if not cells then
+        ForgetPlaced()
+        if wanted then
+            NoteIcons("left alone, the grid is not as expected (" .. tostring(ours) .. ")")
+        else
+            NothingToPutBack(announce)
+        end
+        return
+    end
+    if not ours then
+        -- Blizzard has laid the buttons out since: what we remembered is void.
+        ForgetPlaced()
+        if not wanted then
+            NothingToPutBack(announce)
+            return
+        end
+    end
+
+    local icons, slots = {}, {}
+    for i = 1, #cells do
+        local cell = cells[i]
+        if cell.icon then icons[#icons + 1] = cell else slots[#slots + 1] = cell end
+    end
+    if wanted and #icons == 0 then
+        NoteIcons("left alone, no bag icons in the grid (not the controller style)")
+        return
+    end
+    if PE:InCombat() then
+        for i = 1, #cells do
+            if IsProtectedNow(cells[i].button) then
+                NoteIcons("held for after the fight")
+                PE:RunOutOfCombat("bags:icons", SyncIconsAfterFight)
+                return
+            end
+        end
+    end
+
+    if not wanted then
+        for i = 1, #cells do
+            local cell = cells[i]
+            if not (Near(cell.cx, cell.x) and Near(cell.cy, cell.y)) then
+                MoveButton(cell.button, cell.x, cell.y)
+            end
+        end
+        ForgetPlaced()
+        lastIconLine = nil
+        if PE.debugOn then PE:Debug("bags", "bag icons: the game's own places put back") end
+        return
+    end
+
+    sort(icons, ReadingOrder)
+    sort(slots, ReadingOrder)
+    local plan, why = PlanCells(icons, slots)
+    if not plan then
+        NoteIcons("left alone, the grid is not as expected (" .. tostring(why) .. ")")
+        return
+    end
+    for i = 1, #plan do
+        local move = plan[i]
+        local cell = move.cell
+        if not (Near(cell.cx, move.x) and Near(cell.cy, move.y)) then
+            MoveButton(cell.button, move.x, move.y)
+        end
+        local was = placed[cell.button]
+        if not was then
+            was = {}
+            placed[cell.button] = was
+        end
+        was.ox, was.oy, was.nx, was.ny = cell.x, cell.y, move.x, move.y
+    end
+    NoteIcons(("%d icons in the top row, %d slots below"):format(#icons, #slots))
+end
+
+---------------------------------------------------------------------------
 -- Hooks (installed once, no-ops while the module is off)
 ---------------------------------------------------------------------------
 
 local function OnLayoutPass()
     if not active then return end
     baseStale = true
+    SyncIcons()       -- first: Blizzard has just laid the buttons out
     SyncScale()
-    RefreshSortJump() -- the item buttons may have moved
+    RefreshSortJump() -- the item buttons may have moved (by Blizzard, or by us just now)
 end
 
 local function OnBagShown()
@@ -1012,6 +1341,7 @@ local function Start()
     WantCombined()
     SyncButton()
     SyncBinding()
+    SyncIcons()
     SyncScale()
     RefreshSortJump()
 end
@@ -1032,6 +1362,7 @@ local function OnStyleChanged(self)
         WantCombined()
         SyncButton()
         SyncBinding()
+        SyncIcons()
         SyncScale()
         SyncConfirm()
         RefreshSortJump()
@@ -1083,6 +1414,10 @@ local function Status(self)
             lines[#lines + 1] = "This client has no way to reach Sort with the d-pad."
         end
     end
+    if opts and opts.iconRow == true then
+        lines[#lines + 1] = gamepad and "Bag icons are in one row at the top of the bag."
+            or "Bag icons: only in the controller style."
+    end
     if clamped then lines[#lines + 1] = "The bag is as big as the screen allows." end
     return lines
 end
@@ -1092,7 +1427,7 @@ mod = PE:RegisterModule({
     label = "Bag sorter",
     desc = "Sort your bags with a big button or a stick click.",
     order = 30,
-    defaults = { size = "normal", showTab = true, sortKey = "l3", dpad = false },
+    defaults = { size = "normal", showTab = true, sortKey = "l3", dpad = false, iconRow = false },
 
     options = {
         { key = "size", label = "Bag size",
@@ -1147,6 +1482,23 @@ mod = PE:RegisterModule({
               SyncConfirm()
               RefreshSortJump()
           end },
+        -- Its own choice, off until it has passed a device test: it moves the
+        -- bag's own buttons (their places only).
+        { key = "iconRow", label = "Bag icons",
+          choices = {
+              { value = false, label = "In the grid" },
+              { value = true, label = "One row at the top" },
+          },
+          OnChange = function()
+              local opts = Opts()
+              local row = opts ~= nil and opts.iconRow == true
+              if PE.debugOn then PE:Debug("bags", row and "bag icons choice: row" or "bag icons choice: grid") end
+              lastIconLine = nil
+              if active then
+                  SyncIcons(true)
+                  RefreshSortJump() -- the first column may be other buttons now
+              end
+          end },
     },
 
     status = Status,
@@ -1158,6 +1510,7 @@ mod = PE:RegisterModule({
         if type(opts.showTab) ~= "boolean" then opts.showTab = true end
         if opts.sortKey ~= "none" and not SORT_KEYS[opts.sortKey] then opts.sortKey = "l3" end
         if type(opts.dpad) ~= "boolean" then opts.dpad = false end
+        if type(opts.iconRow) ~= "boolean" then opts.iconRow = false end
         ResolvePendingCVar()
     end,
 
@@ -1180,6 +1533,10 @@ mod = PE:RegisterModule({
         active = false
         SyncButton()
         SyncBinding()
+        -- The bag's buttons go back to the game's own places (with the bag open;
+        -- closed, the game lays them out afresh at the next opening).
+        local opts = Opts()
+        SyncIcons(opts ~= nil and opts.iconRow == true)
         SyncScale()
         -- A goes back now; the jumps come off now, or after the fight (until
         -- then they point at a hidden tab, which the cursor never goes to).

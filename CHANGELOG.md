@@ -33,6 +33,24 @@ Fifteenth test build, in progress. Not yet tested on a device.
   Touch and the stick click work exactly as before. Using, equipping,
   selling and picking up items is not changed. Not yet tested on a device:
   whether A on the tab really sorts can only be seen there.
+- **Bag icons**, a new choice inside "Bag sorter": "In the grid" (as the
+  game draws it, and the default) or "One row at the top". With the Gamepad
+  UI on, the game draws a picture of each equipped bag inside the bag
+  window, in among the item slots, where they look like loose bags lying in
+  your inventory. With "One row at the top" those pictures sit side by side
+  in the top row, starting at the left, and every slot follows below in the
+  same order as before with nothing in between. The window keeps its size.
+  Items are not moved or packed, and the bag pictures still do their jobs
+  (X folds a bag away, Y opens its menu, LB and RB jump between them). When
+  the slots do not fill whole rows, the short row is the first one under the
+  pictures. Switching back to "In the grid", or switching "Bag sorter" off,
+  puts every button back where the game had it, at once. It does nothing
+  in the mouse and keyboard style, where the game does not draw those
+  pictures in the bag. With "D-pad to Sort" also On, Left goes to the Sort
+  tab from the slots of the leftmost column, not from the backpack picture
+  above them. Not yet tested on a device: that using, moving and selling
+  items still works with it on, in and out of a fight, can only be seen
+  there.
 
 ### Changed
 

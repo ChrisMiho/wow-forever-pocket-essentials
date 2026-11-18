@@ -676,3 +676,82 @@ What the answers decide:
   "Clean Up Bags" entry in the bag menu already sort).
 - Any failure in steps 2, 6, 7, 10, 12 or 13: switch the choice Off. It
   stays off, and the log names the cause.
+
+#### 13d. Bag icons
+
+What this is: a new choice in "Bag sorter". In the controller style the game
+draws a picture of each of your equipped bags inside the bag window, in
+among the item slots, so they look like loose bags lying in your inventory.
+With "Bag icons" on "One row at the top", those pictures sit side by side in
+the top row and the slots follow below with nothing in between.
+
+One answer matters more than all the others:
+
+- **Using, dragging and selling items must still work, in and out of a
+  fight** (steps 4, 5, 9 and 10). This is the first time the addon moves the
+  bag's own item buttons. Reading the game's code says that moving a button
+  cannot block what the button does, but only the device can show it. If any
+  item will not use, equip, move, split or sell, or the chat says "Interface
+  action failed", stop there, use Reload UI, and send the file.
+
+Before starting: install the 0.4.0 zip, turn the debug log on (settings,
+Errors page), Gamepad UI on, out of a fight, in a safe place. Have in your
+bags: something you can use (food or a potion), something you can equip, a
+stack of 2 or more, and something a vendor will buy.
+
+1. Settings, "Bag sorter" on. Leave **Bag icons** on **In the grid**. Open
+   the bag: it should look exactly as before (the bag pictures in a diagonal
+   among the slots).
+2. Set **Bag icons** to **One row at the top**. The text under the feature
+   should now say "Bag icons are in one row at the top of the bag." Open the
+   bag. The bag pictures (backpack first, the key last) should be side by
+   side in the top row, starting at the left. Below them there should be
+   only item slots. Take a screenshot.
+3. Move with the d-pad: along the row of bag pictures, down into the slots,
+   across a row, and back up. Say if the cursor ever jumps somewhere odd,
+   and from where to where. (Up from the first slot under the backpack
+   picture may go to the round picture in the window's corner; that is the
+   game's own rule.)
+4. **(Matters most.)** Use a food or potion from the bag. Equip an item.
+   Nothing may show "Interface action failed because of an AddOn".
+5. **(Matters most.)** Pick an item up and put it in another slot (drag it
+   with a finger, and also with A on the controller). Split a stack. Both
+   must work as always.
+6. Put the cursor on a bag picture. Press **X**: that bag's slots should
+   fold away and the rest should close up tidily under the row. Press **X**
+   again: they come back. Press **Y**: the bag's menu should open. Press
+   **LB** and **RB**: the cursor should jump from one bag picture to the
+   next.
+7. Do the same X on the key picture (last in the row): the key slots should
+   appear among the slots and go away again.
+8. Click the stick (or tap the Sort tab). Items should sort as before.
+9. **(Matters most.)** At a vendor, sell one item from the bag with the
+   usual button, and drag another onto the vendor window.
+10. **(Matters most.)** Start a fight with the bag closed. Open the bag in
+    the fight: the bag pictures should be in the top row at once. Use a
+    potion or food from it, and move one item to another slot. Both must
+    work.
+11. Try each **Bag size** (Normal, Large, Extra large) with the bag open.
+    The row should stay tidy and the Sort tab should stay in its place.
+12. If you use **D-pad to Sort** (13c): set it On. Left from any slot in the
+    leftmost column should go to the Sort tab. Left from the backpack
+    picture (top left) is left to the game and should not go to the tab.
+13. Equip or take off a bag, if you can spare one. Open the bag: the row and
+    the slots should still be tidy.
+14. Set **Bag icons** back to **In the grid** with the bag open: it should
+    return to the old look at once. Then switch "Bag sorter" off and on
+    again and open the bag: still the old look.
+15. Send the saved `PocketEssentials.lua` file and the screenshot, and say
+    for each step: worked / did not / what you saw.
+    (`scripts/read-log.sh <file> --grep "bag icons"` shows this choice's
+    lines.)
+
+What the answers decide:
+
+- Any failure in steps 4, 5, 9 or 10: set the choice back to "In the grid".
+  It stays off and is withdrawn.
+- Step 3 feels wrong (the cursor slips a row beside a bag picture that has
+  an empty space under it): the row of pictures can be put at the bottom,
+  next to the money, where the d-pad lines up exactly. Say so.
+- Step 2 shows nothing changed: the log line "bag icons: left alone, ..."
+  says why.

@@ -82,6 +82,9 @@ local INDIRECT = {
     { "frame", "SMART_NAV_INPUT_DIRECTION", "Bags.lua", "NAV_DIRS" },
     { "method", "OnSmartNavSelect", "Bags.lua", "OnSmartNavSelect" },
     { "method", "OnSmartNavDeselect", "Bags.lua", "OnSmartNavDeselect" },
+    -- Bag icons: the frame that holds the bag buttons drawn inside the combined bag is reached
+    -- by name (Blizzard_MainMenuBarBagButtons/Camelot/MainMenuBarBagButtons.xml:99).
+    { "frame", "GamepadBagBar", "Bags.lua", "BAR_NAME" },
 }
 -- Event names held as table keys rather than strings.
 -- Strings that look like events but are other constants.

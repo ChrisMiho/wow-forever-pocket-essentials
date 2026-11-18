@@ -965,6 +965,7 @@ function Client.new(opts)
             __tostring = mt.__tostring,
         })
     end
+    c._logMutations = LogBlizzardMutations
 
     -----------------------------------------------------------------------
     -- Blizzard frames the addon touches
@@ -1945,6 +1946,8 @@ function Client:closeWorldMap()
 end
 
 function Client:openBag()
+    -- ContainerFrameCombinedBagsMixin:OnShow lays the items out, then runs the layout pass.
+    if self.bagButtons then self:layoutBagItems() end
     self._state(self.bagFrame).shown = false
     self.bagFrame:Show()
     self._protect("UpdateContainerFrameAnchors", self.env.UpdateContainerFrameAnchors)
@@ -1971,6 +1974,146 @@ function Client:fillBag(columns, rows)
     end
     rawset(bag, "Items", items)
     return grid
+end
+
+-- The combined bag as the game builds it, in place of fillBag's plain grid: a money frame,
+-- `GamepadBagBar` with its seven bag buttons in `BagButtonArray` (backpack, four bags, reagent
+-- bag, key ring: Blizzard_MainMenuBarBagButtons/Camelot/MainMenuBarBagButtons.xml:99-138) and
+-- one item button per slot in the bag's `Items` (ContainerFrame.lua:1058-1078).
+-- `sizes`: the slot counts of the backpack and the four bags (default 16, 12, 12, 10, 10);
+-- `keyring`: the key ring's slot count (default 4; it starts collapsed, as in the game).
+-- world.collapsed[bagID] = true leaves that bag's slots out of the layout (bag IDs 0 to 5, key
+-- ring -2). Widget calls the addon makes on these buttons go into c.calls as
+-- "GamepadBagButton:<method>" and "ContainerItemButton:<method>"; the stand-in's own layout
+-- writes the anchors directly, so everything logged is the addon's doing.
+local KEYRING = -2
+function Client:buildBag(sizes, keyring)
+    if not self.snapshot.frame.GamepadBagBar then
+        error("fakeclient: frame GamepadBagBar is not in the API snapshot", 2)
+    end
+    sizes = sizes or { 16, 12, 12, 10, 10 }
+    local bag, world = self.bagFrame, self.world
+    local make, state = self._createWidget, self._state
+    local money = make("Frame", nil, bag, { blizzard = true })
+    money:SetSize(168, 17)
+    money:SetPoint("BOTTOMRIGHT", bag, "BOTTOMRIGHT", -7, 7)
+    rawset(bag, "MoneyFrame", money)
+    local bar = make("Frame", "GamepadBagBar", bag, { blizzard = true })
+    bar:SetSize(215, 50)
+    local info, all, icons, array = {}, {}, {}, {}
+    local function Button(parent, label, entry)
+        local b = make("Button", nil, parent, { blizzard = true })
+        b:SetSize(37, 37)
+        self._logMutations(b, label)
+        entry.button = b
+        info[b] = entry
+        all[#all + 1] = b
+        return b
+    end
+    for i, bagID in ipairs({ 0, 1, 2, 3, 4, 5, KEYRING }) do
+        local b = Button(bar, "GamepadBagButton", { kind = "icon", bag = bagID })
+        -- GamepadBagBarMixin:OnLoad: hidden unless the Gamepad UI is on.
+        if not world.gamepadUI then state(b).shown = false end
+        icons[bagID], array[i] = b, b
+    end
+    rawset(bar, "BagButtonArray", array)
+    -- UpdateItemSlots: bags from the last to the first, each bag's slots from the last to the first.
+    local size = { [KEYRING] = keyring or 4, [5] = 0 }
+    for i = 1, 5 do size[i - 1] = sizes[i] or 0 end
+    local items, slots = {}, {}
+    for _, bagID in ipairs({ 5, 4, 3, 2, 1, 0, KEYRING }) do
+        slots[bagID] = {}
+        for slot = size[bagID], 1, -1 do
+            local b = Button(bag, "ContainerItemButton", { kind = "slot", bag = bagID, slot = slot })
+            state(b).shown = false
+            items[#items + 1] = b
+            slots[bagID][slot] = b
+        end
+    end
+    rawset(bag, "Items", items)
+    world.collapsed = world.collapsed or {}
+    if world.collapsed[KEYRING] == nil then world.collapsed[KEYRING] = true end
+    self.bagButtons, self.bagInfo, self.bagIcons, self.bagSlots, self.bagMoney = all, info, icons, slots, money
+    self.bagSizes = size
+    return self
+end
+
+-- Blizzard's item layout (ContainerFrameMixin:UpdateItemLayout, ContainerFrame.lua:1080-1106):
+-- one list of every slot of every bag that is not collapsed plus, with the Gamepad UI on, one
+-- bag button per bag; sorted by bag from the last to the first (key ring ahead of all), a bag's
+-- slots ahead of its own button; laid out ten to a row from the bottom right upward, 42 apart,
+-- each button with the one point BOTTOMRIGHT on the money frame's TOPRIGHT (AnchorUtil.GridLayout,
+-- ContainerFrame.lua:3033-3035). Buttons left out have no points (Pool_HideAndClearAnchors).
+function Client:layoutBagItems()
+    assert(self.bagButtons, "fakeclient: buildBag first")
+    local world, state = self.world, self._state
+    local list = {}
+    for _, bagID in ipairs({ KEYRING, 5, 4, 3, 2, 1, 0 }) do
+        -- Mouse style: no bag is collapsed, and the key ring is not part of the combined bag.
+        local absent = not world.gamepadUI and bagID == KEYRING
+        local collapsed = absent or (world.gamepadUI and world.collapsed[bagID])
+        for slot = self.bagSizes[bagID], 1, -1 do
+            local b = self.bagSlots[bagID][slot]
+            local st = state(b)
+            -- A collapsed bag's buttons are still shown (ContainerFrameItemButtonMixin:Initialize)
+            -- but have no place: the pool cleared their points and the layout skips them.
+            st.points, st.shown = {}, not absent
+            if not collapsed then list[#list + 1] = b end
+        end
+        if world.gamepadUI then list[#list + 1] = self.bagIcons[bagID] end
+    end
+    for i, b in ipairs(list) do
+        local row, col = math.floor((i - 1) / 10), (i - 1) % 10
+        state(b).points = { { point = "BOTTOMRIGHT", rel = self.bagMoney, relPoint = "TOPRIGHT",
+            x = -col * 42, y = 4 + row * 42 } }
+        self.bagInfo[b].order = #list - i + 1   -- reading order: 1 is the top left button
+    end
+    -- UpdateFrameSize: the window is as tall as its rows.
+    local bst = state(self.bagFrame)
+    bst.width, bst.height = 436, 96 + math.ceil(#list / 10) * 42
+end
+
+-- Blizzard's X on a bag button (Gamepad_ToggleCollapseBag, ContainerFrame.lua:3346-3355): the
+-- bag is collapsed or expanded, the items are laid out again and the layout pass runs.
+function Client:collapseBag(bagID, collapsed)
+    self.world.collapsed[bagID] = collapsed and true or nil
+    self:relayoutBag()
+end
+
+-- A full Blizzard layout of the open bag: the items, then the layout pass.
+function Client:relayoutBag()
+    self:layoutBagItems()
+    self._protect("UpdateContainerFrameAnchors", self.env.UpdateContainerFrameAnchors)
+end
+
+-- A client whose bag has no bag bar (the name is gone, the buttons stay where they are).
+function Client:removeBagBar()
+    rawset(self.env, "GamepadBagBar", nil)
+end
+
+-- Where every laid-out button of the built bag is now, in Blizzard's reading order (the order
+-- its own layout gives: backpack button, backpack slots 1.., first bag's button, ...). Each
+-- entry: button, kind ("icon" or "slot"), bag, slot, x, y (the anchor's offsets), col (1 is the
+-- leftmost of the ten columns) and row (1 is the top row in use). Buttons that are hidden or
+-- have no point (a collapsed bag's slots) are left out.
+function Client:bagCells()
+    local out, top = {}, nil
+    for _, b in ipairs(self.bagButtons) do
+        local st = self._state(b)
+        local p = st.points[1]
+        if st.shown and #st.points == 1 then
+            local e = self.bagInfo[b]
+            out[#out + 1] = { button = b, kind = e.kind, bag = e.bag, slot = e.slot, order = e.order,
+                point = p.point, rel = p.rel, relPoint = p.relPoint, x = p.x, y = p.y }
+            if not top or p.y > top then top = p.y end
+        end
+    end
+    for _, e in ipairs(out) do
+        e.col = 10 + e.x / 42
+        e.row = 1 + (top - e.y) / 42
+    end
+    table.sort(out, function(a, b) return a.order < b.order end)
+    return out
 end
 
 -- A client without Blizzard's controller navigation helpers (world.noSmartNav).

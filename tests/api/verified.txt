@@ -45,6 +45,7 @@ frame	GameFontHighlight	Blizzard_Fonts_Shared/Shared/FontStyles.xml used
 frame	GameFontHighlightLarge	Blizzard_Fonts_Shared/Shared/FontStyles.xml used
 frame	GameFontNormal	Blizzard_Fonts_Shared/Shared/FontStyles.xml used
 frame	GameFontNormalLarge	Blizzard_Fonts_Shared/Shared/FontStyles.xml used
+frame	GamepadBagBar	Blizzard_MainMenuBarBagButtons/Camelot/MainMenuBarBagButtons.xml used
 frame	MerchantFrame	Blizzard_UIPanels_Game/Mainline/MerchantFrame.xml used
 frame	Minimap	Blizzard_Minimap/Mainline/Minimap.xml used
 frame	NUM_BAG_SLOTS	Blizzard_FrameXMLBase/Constants.lua used
