@@ -73,10 +73,20 @@ local INDIRECT = {
     { "global", "QuestMapLogTitleButton_CreateContextMenu", "MenuBackground.lua", "QuestMapLogTitleButton_CreateContextMenu" },
     { "namespace", "Menu.GetManager", "MenuBackground.lua", "Menu.GetManager" },
     { "cvar",   "combinedBags", "Bags.lua", '"combinedBags"' },
+    -- D-pad to Sort: Blizzard's two navigation setters and its table of directions are reached by
+    -- name (Blizzard_GamepadSmartNavigation/Utility.lua, loaded only with the Gamepad UI); the two
+    -- methods are ones we define on our own Sort button for Blizzard's cursor to call
+    -- (SmartNavigation.lua, SelectButton).
+    { "global", "SmartNavigation_AddJumpNavigationOverride", "Bags.lua", "NAV_ADD" },
+    { "global", "SmartNavigation_ClearJumpNavigationOverridesInDirection", "Bags.lua", "NAV_CLEAR" },
+    { "frame", "SMART_NAV_INPUT_DIRECTION", "Bags.lua", "NAV_DIRS" },
+    { "method", "OnSmartNavSelect", "Bags.lua", "OnSmartNavSelect" },
+    { "method", "OnSmartNavDeselect", "Bags.lua", "OnSmartNavDeselect" },
 }
 -- Event names held as table keys rather than strings.
 -- Strings that look like events but are other constants.
-local NOT_AN_EVENT = { PIN_FRAME_LEVEL_QUEST_PING = true }
+-- (SMART_NAV_INPUT_DIRECTION is the name of a Blizzard table, listed in INDIRECT above.)
+local NOT_AN_EVENT = { PIN_FRAME_LEVEL_QUEST_PING = true, SMART_NAV_INPUT_DIRECTION = true }
 local EVENT_TABLES = { ["QuestData.lua"] = "EVENTS" }
 -- Tables whose first string in each row is a method name called as obj[name](...).
 local METHOD_TABLES = { ["QuestIcons.lua"] = "BLOB_SETTINGS" }

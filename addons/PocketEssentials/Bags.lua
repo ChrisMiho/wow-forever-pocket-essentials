@@ -1,7 +1,8 @@
 -- Pocket Essentials: module "bags" (Bag sorter).
 -- Uses Blizzard's own combined bag window (ContainerFrameCombinedBags) and adds
 -- a large Sort button, a stick-click shortcut (left, right or none: the "Sort
--- key" choice) and a size choice.
+-- key" choice), a size choice and, as a choice of its own, a d-pad route onto
+-- the Sort button ("D-pad to Sort").
 --
 -- Taint rules followed here (item use must never be blocked):
 --   * No field is ever written onto a Blizzard frame or table.
@@ -15,6 +16,15 @@
 --     handler would run inside our call and store its result in our name; every
 --     later bag opening would then be tainted. It is written at logout/reload
 --     instead, and Blizzard reads it cleanly on the way back in.
+--   * Exception (d-pad route): Blizzard's own navigation setters
+--     SmartNavigation_AddJumpNavigationOverride /
+--     SmartNavigation_ClearJumpNavigationOverridesInDirection are called, out of
+--     a fight only, with a frame (never a function) as the target. They store
+--     the value through Blizzard's SecureHelper; we still never write a field
+--     ourselves. (A function as the target would hand Blizzard's cursor a value
+--     made by addon code, which the item actions then read.)
+--   * The Sort button carries none of the fields the bag's own code reads from
+--     the button under the cursor (buttonContext and the like).
 local ADDON_NAME, PE = ...
 
 local type, pcall, tostring = type, pcall, tostring
@@ -30,6 +40,13 @@ local SORT_KEY_LABELS = { l3 = "left stick click", r3 = "right stick click" }
 local KEY_BUTTON_NAME = "PocketEssentialsBagSortKey"
 local SIZE_FACTOR = { normal = 1, large = 1.25, xlarge = 1.5 }
 local RELOAD_REASON = "Reload to finish changing the bags."
+-- The d-pad route (Blizzard_GamepadSmartNavigation/Utility.lua). Reached by
+-- name: the gamepad code is only loaded with the Gamepad UI.
+local NAV_ADD = "SmartNavigation_AddJumpNavigationOverride"
+local NAV_CLEAR = "SmartNavigation_ClearJumpNavigationOverridesInDirection"
+local NAV_DIRS = "SMART_NAV_INPUT_DIRECTION"
+local NAV_KEY = "smartNavigationOverride-" -- plus the direction's name; read only, to see whose it is
+local CONFIRM_BUTTON_NAME = "PocketEssentialsBagSortConfirm"
 
 local mod            -- set by RegisterModule below
 local active = false -- true between OnEnable and OnDisable; every hook checks it
@@ -39,6 +56,14 @@ local layoutHooked = false
 local metricsHooked = false
 local sortButton     -- the big button (child of UIParent, anchored to the bag)
 local keyButton      -- hidden named button the chosen stick click is pointed at
+local confirmButton  -- hidden; holds the A button and is what A clicks while the cursor is on the tab
+local routed = {}    -- [item button] = true: buttons we put a Left jump on
+local tabRight       -- the item button the tab's Right jump points at, or nil
+local tabFocused = false -- the controller cursor is on the Sort tab
+local confirmHeld = false -- A is taken for Sort right now
+local bagWatched = false -- BAG_UPDATE_DELAYED is registered (only while the cursor is on the tab)
+local navNote        -- what the debug log last said about the route (a line only on change)
+local confirmNote    -- and about the A button
 local logoutFrame
 local logoutWatching = false
 local lastSort = 0
@@ -256,8 +281,13 @@ end
 -- Sorting (same as Blizzard's own Clean Up button: a sound, then SortBags)
 ---------------------------------------------------------------------------
 
+-- fromKey: false (a tap on the tab), true (the stick click) or "pad" (A with
+-- the controller cursor on the tab).
 local function DoSort(fromKey)
-    if PE.debugOn then PE:Debug("bags", fromKey and "Sort pressed: stick click" or "Sort pressed: the tab") end
+    if PE.debugOn then
+        PE:Debug("bags", fromKey == "pad" and "Sort pressed: A on the tab"
+            or fromKey and "Sort pressed: stick click" or "Sort pressed: the tab")
+    end
     if not active or not BagShown() then -- also covers a stale key binding
         if PE.debugOn then PE:Debug("bags", "Sort ignored: bag not open or feature off") end
         return
@@ -424,6 +454,314 @@ local function SyncBinding()
     PE:RunOutOfCombat("bags:bind", ApplyBinding)
 end
 
+---------------------------------------------------------------------------
+-- "D-pad to Sort": a Left jump from the bag's first column onto the Sort
+-- tab, and the A button while the cursor is on it.
+--
+-- Blizzard's cursor looks for a "jump override" on the current button before
+-- anything else and goes to that frame if it is visible, whether or not the
+-- frame belongs to the focused window (SmartNavigation.lua, Navigate). Its
+-- own round bag picture is reached the same way (ContainerFrame.lua,
+-- ApplySmartNavOverrideForLeftmostButton). The tab stays a child of UIParent.
+--
+-- A needs help: with the bag focused, A belongs to the bag's own "Select"
+-- action, which only fires for buttons carrying the bag's own tag, and one
+-- key has one binding. So A is taken with our own override binding while the
+-- cursor is on the tab, the way the stick click is taken.
+---------------------------------------------------------------------------
+
+local function DpadWanted()
+    local opts = Opts()
+    return opts ~= nil and opts.dpad == true
+end
+
+-- Blizzard's two setters and its table of directions, or nil and why not.
+local function NavApi()
+    local add, clear, dirs = _G[NAV_ADD], _G[NAV_CLEAR], _G[NAV_DIRS]
+    if type(add) ~= "function" or type(clear) ~= "function" or type(dirs) ~= "table"
+        or type(dirs.LEFT) ~= "table" or type(dirs.RIGHT) ~= "table"
+        or type(dirs.LEFT.dirKey) ~= "string" or type(dirs.RIGHT.dirKey) ~= "string" then
+        return nil, "no navigation helpers on this client"
+    end
+    return add, clear, dirs
+end
+
+local function NoteNav(text)
+    if text == navNote then return end
+    navNote = text
+    if text and PE.debugOn then PE:Debug("bags", "d-pad: " .. text) end
+end
+
+-- A region's vertical centre on the screen (its own units times its scale), or nil.
+local function ScreenY(region)
+    if type(region.GetCenter) ~= "function" or type(region.GetEffectiveScale) ~= "function" then return nil end
+    local ok, _, y = pcall(region.GetCenter, region)
+    local ok2, scale = pcall(region.GetEffectiveScale, region)
+    y, scale = ok and Plain(y) or nil, ok2 and Plain(scale) or nil
+    if not (y and scale) then return nil end
+    return y * scale
+end
+
+-- The item buttons that sit in the bag's leftmost column right now, as an
+-- array, or nil and why not. Works from where the buttons are on the screen
+-- after the bag has been laid out, so it gives the right answer again after
+-- any re-flow. Reads only.
+local function FirstColumn()
+    local items = bagFrame and bagFrame.Items
+    if type(items) ~= "table" then return nil, "bag has no item list" end
+    local seen, lefts, least = {}, {}, nil
+    for i = 1, #items do
+        local button = items[i]
+        if type(button) == "table" and type(button.IsVisible) == "function"
+            and type(button.GetLeft) == "function" then
+            local ok, visible = pcall(button.IsVisible, button)
+            if ok and visible then
+                local ok2, left = pcall(button.GetLeft, button)
+                left = ok2 and Plain(left) or nil
+                if left then
+                    seen[#seen + 1], lefts[#lefts + 1] = button, left
+                    if least == nil or left < least then least = left end
+                end
+            end
+        end
+    end
+    local out = {}
+    for i = 1, #seen do
+        if lefts[i] - least <= 0.5 then out[#out + 1] = seen[i] end
+    end
+    if #out == 0 then return nil, "bag has no item list" end
+    return out
+end
+
+-- The single place that sets or clears jump overrides. Only ever run through
+-- PE:RunOutOfCombat, and not while the game's combat restriction is on either
+-- (that, not lockdown, is what Blizzard's setter asks: SecureHelper.lua).
+-- An override is only cleared if it is still ours, and one that is already
+-- there and not ours is left alone.
+local function ApplyRoute()
+    local wanted = active and DpadWanted()
+    local hadRoute = next(routed) ~= nil or tabRight ~= nil
+    if not wanted and not hadRoute then
+        navNote = nil
+        return
+    end
+    local reason
+    if wanted and not IsGamepadStyle() then reason = "Gamepad UI off" end
+    local add, clear, dirs = NavApi()
+    if not add then
+        -- Without the setters nothing of ours can be on any button.
+        for button in pairs(routed) do routed[button] = nil end
+        tabRight = nil
+        if wanted then NoteNav("not set up: " .. (reason or clear)) else navNote = nil end
+        return
+    end
+    if PE:CombatRestricted() then
+        -- What is already there stays (a jump to a hidden tab does nothing:
+        -- the cursor only goes to a visible frame). The next call tries again.
+        if wanted and not hadRoute then NoteNav("not set up: waiting for the fight to end") end
+        return
+    end
+    local leftKey, rightKey = NAV_KEY .. dirs.LEFT.dirKey, NAV_KEY .. dirs.RIGHT.dirKey
+
+    local cols
+    if wanted and not reason and sortButton and TabWanted() and BagShown() then
+        local why
+        cols, why = FirstColumn()
+        if not cols then reason = why end
+    end
+
+    local keep = {}
+    if cols then
+        for i = 1, #cols do keep[cols[i]] = true end
+    end
+    for button in pairs(routed) do
+        if not keep[button] then
+            if button[leftKey] == sortButton then pcall(clear, button, dirs.LEFT) end
+            -- Forgotten only once it is really gone (a refused call is tried again).
+            if button[leftKey] ~= sortButton then routed[button] = nil end
+        end
+    end
+
+    if not cols then
+        if tabRight then
+            pcall(clear, sortButton, dirs.RIGHT)
+            if sortButton[rightKey] == nil then tabRight = nil end
+        end
+        if reason then
+            NoteNav("not set up: " .. reason)
+        elseif hadRoute then
+            NoteNav("route removed")
+        else
+            navNote = nil
+        end
+        return
+    end
+
+    local count = 0
+    local tabY = ScreenY(sortButton)
+    local nearest, nearestGap
+    for i = 1, #cols do
+        local button = cols[i]
+        local current = button[leftKey]
+        if current == nil then
+            pcall(add, button, dirs.LEFT, sortButton)
+            routed[button] = true
+            count = count + 1
+        elseif current == sortButton then
+            routed[button] = true
+            count = count + 1
+        end
+        local y = ScreenY(button)
+        local gap = (y and tabY) and abs(y - tabY) or nil
+        if nearest == nil or (gap and (nearestGap == nil or gap < nearestGap)) then
+            nearest, nearestGap = button, gap
+        end
+    end
+    -- Right from the tab goes back into the bag, to the slot level with the tab's middle.
+    if nearest ~= tabRight then
+        pcall(add, sortButton, dirs.RIGHT, nearest)
+        tabRight = nearest
+    end
+    NoteNav(("route set on %d first-column slots"):format(count))
+end
+
+-- Clears the Left jumps that no longer belong and puts them on whatever item
+-- buttons are in the bag's first column now (and takes them all away when the
+-- choice, the tab or the bag is not there). Call it after anything that moves
+-- the bag's buttons. In a fight it waits for the fight to end.
+local function RefreshSortJump()
+    local wanted = active and DpadWanted()
+    if not wanted and next(routed) == nil and tabRight == nil then
+        navNote = nil
+        return
+    end
+    if wanted and PE:InCombat() and next(routed) == nil and BagShown() and TabWanted() then
+        NoteNav("not set up: waiting for the fight to end")
+    end
+    PE:RunOutOfCombat("bags:dpad", ApplyRoute)
+end
+
+local function ConfirmKey()
+    return type(GAMEPAD_FACE_BOTTOM) == "string" and GAMEPAD_FACE_BOTTOM or "PAD1"
+end
+
+local function ConfirmWanted()
+    return active and DpadWanted() and tabFocused and BagShown()
+        and sortButton ~= nil and sortButton:IsVisible() and true or false
+end
+
+local function IsTakenNote(text)
+    return text ~= nil and text:find("^A taken") ~= nil
+end
+
+-- nil: A is the game's. A line is only written when something changed.
+local function NoteConfirm(text)
+    if text == confirmNote then return end
+    local was = confirmNote
+    confirmNote = text
+    if not PE.debugOn then return end
+    if IsTakenNote(was) and not IsTakenNote(text) then PE:Debug("bags", "d-pad: A given back") end
+    if text then PE:Debug("bags", "d-pad: " .. text) end
+end
+
+-- Only ever run through PE:RunOutOfCombat (bindings cannot change in combat).
+-- A is never held during a fight: OnCombatStart gives it back.
+local function ApplyConfirm()
+    if not confirmButton then return end
+    if not (SetOverrideBindingClick and ClearOverrideBindings) then return end
+    local want = ConfirmWanted()
+    if not want and not confirmHeld then
+        NoteConfirm(nil)
+        return
+    end
+    -- Always handed back first, so nothing stale is ever left.
+    ClearOverrideBindings(confirmButton)
+    confirmHeld = false
+    if not want then
+        NoteConfirm(nil)
+    elseif PE:CombatRestricted() then
+        NoteConfirm("A not taken: game restrictions on")
+    else
+        local key = ConfirmKey()
+        SetOverrideBindingClick(confirmButton, true, key, CONFIRM_BUTTON_NAME, "LeftButton")
+        confirmHeld = true
+        if not IsTakenNote(confirmNote) then
+            -- What the game says holds A now (the bag's footer holds it too;
+            -- which of the two wins is the game's to decide).
+            local holder = "unknown"
+            if PE.debugOn and type(GetBindingAction) == "function" then
+                local ok, action = pcall(GetBindingAction, key, true)
+                if ok then holder = tostring(action) end
+            end
+            NoteConfirm("A taken for Sort (A is now: " .. holder .. ")")
+        end
+    end
+end
+
+local function SyncConfirm()
+    if not confirmHeld and not ConfirmWanted() then
+        NoteConfirm(nil)
+        return
+    end
+    if PE:InCombat() and not confirmHeld then NoteConfirm("A not taken: in a fight") end
+    PE:RunOutOfCombat("bags:confirm", ApplyConfirm)
+end
+
+-- The bag's footer sets its own A binding again on every bag update
+-- (ContainerFrame.lua, ContainerFrameCombinedBagsMixin:Update), so ours is
+-- set again after each one, but only while the cursor is on the tab.
+local function OnBagUpdate()
+    if not active then return end
+    SyncConfirm()
+end
+
+local function WatchBag(want)
+    want = want and true or false
+    if want == bagWatched then return end
+    if want then
+        bagWatched = mod:RegisterEvent("BAG_UPDATE_DELAYED", OnBagUpdate) and true or false
+    else
+        mod:UnregisterEvent("BAG_UPDATE_DELAYED")
+        bagWatched = false
+    end
+end
+
+-- The cursor has left the tab in any way (moved off, bag closed, choice or
+-- feature switched off).
+local function DropFocus()
+    local was = tabFocused
+    tabFocused = false
+    WatchBag(false)
+    if was and PE.debugOn then PE:Debug("bags", "d-pad: left the Sort tab") end
+    SyncConfirm()
+end
+
+-- Blizzard's cursor calls these two on the button it arrives on and leaves
+-- (SmartNavigation.lua, SelectButton), each behind its own taint barrier.
+local function OnTabFocused()
+    if not active or not DpadWanted() then return end
+    tabFocused = true
+    if PE.debugOn then PE:Debug("bags", "d-pad: on the Sort tab") end
+    WatchBag(true)
+    -- One frame later, so it lands after the bag's footer has set its own A
+    -- binding again in the same call chain. A one-shot, not a ticker.
+    mod:After(0, SyncConfirm)
+end
+
+local function OnTabUnfocused()
+    DropFocus()
+end
+
+local function OnConfirmKey(_, _, down)
+    if down then return end
+    -- A binding that outlived its moment never sorts by surprise.
+    if not tabFocused then
+        if PE.debugOn then PE:Debug("bags", "A left alone: the cursor is not on the Sort tab") end
+        return
+    end
+    DoSort("pad")
+end
+
 -- PLAYER_REGEN_DISABLED: lockdown starts only after this event's handlers, so
 -- the stick click can still be handed back to the game (auto-run) here.
 local function OnCombatStart()
@@ -431,10 +769,17 @@ local function OnCombatStart()
     if InCombatLockdown and InCombatLockdown() then return end
     pcall(ClearOverrideBindings, keyButton)
     if stickState ~= "none" then NoteStick(nil) end    -- Button only: nothing was taken, nothing to say
+    if confirmHeld and confirmButton then
+        pcall(ClearOverrideBindings, confirmButton)
+        confirmHeld = false
+        NoteConfirm(nil)
+    end
 end
 
 local function OnCombatEnd()
     SyncBinding()
+    SyncConfirm()
+    RefreshSortJump()
 end
 
 local function CreateButtons()
@@ -443,6 +788,12 @@ local function CreateButtons()
         keyButton:SetSize(1, 1)
         keyButton:RegisterForClicks("AnyUp")
         keyButton:SetScript("OnClick", mod:Wrap(OnSortKey))
+    end
+    if not confirmButton then
+        confirmButton = CreateFrame("Button", CONFIRM_BUTTON_NAME, UIParent)
+        confirmButton:SetSize(1, 1)
+        confirmButton:RegisterForClicks("AnyUp")
+        confirmButton:SetScript("OnClick", mod:Wrap(OnConfirmKey))
     end
     if not sortButton and PE.UI and PE.UI.CreateButton then
         local btn = PE.UI:CreateButton(UIParent, "Sort")
@@ -472,6 +823,11 @@ local function CreateButtons()
         letters:SetText("S\no\nr\nt")
         btn.peSortLetters = letters
         btn:SetScript("OnClick", mod:Wrap(OnSortTapped))
+        -- Called by Blizzard's controller cursor when it arrives and leaves.
+        -- No other field its bag code reads from the current button is set
+        -- here (see the header).
+        btn.OnSmartNavSelect = mod:Wrap(OnTabFocused)
+        btn.OnSmartNavDeselect = mod:Wrap(OnTabUnfocused)
         sortButton = btn
     end
 end
@@ -607,24 +963,29 @@ local function OnLayoutPass()
     if not active then return end
     baseStale = true
     SyncScale()
+    RefreshSortJump() -- the item buttons may have moved
 end
 
 local function OnBagShown()
     if not active then return end
     SyncButton()
     SyncBinding()
+    RefreshSortJump()
 end
 
 local function OnBagHidden()
     if not active then return end
     SyncButton()
     SyncBinding()
+    DropFocus()
+    RefreshSortJump()
 end
 
 local function OnMetricsChanged()
     if not active then return end
     SyncButton()
     SyncScale()
+    RefreshSortJump() -- the tab changed size: Right from it may now belong to another slot
 end
 
 local function Setup()
@@ -652,6 +1013,7 @@ local function Start()
     SyncButton()
     SyncBinding()
     SyncScale()
+    RefreshSortJump()
 end
 
 local function OnAddonLoaded(self)
@@ -671,6 +1033,8 @@ local function OnStyleChanged(self)
         SyncButton()
         SyncBinding()
         SyncScale()
+        SyncConfirm()
+        RefreshSortJump()
         self:RefreshPanel()
     end)
 end
@@ -712,6 +1076,13 @@ local function Status(self)
     if opts and opts.showTab == false then
         lines[#lines + 1] = "The Sort button is hidden; show it again here if you need it."
     end
+    if DpadWanted() and gamepad then
+        if NavApi() then
+            lines[#lines + 1] = "D-pad: press Left from the first column to reach Sort, then A."
+        else
+            lines[#lines + 1] = "This client has no way to reach Sort with the d-pad."
+        end
+    end
     if clamped then lines[#lines + 1] = "The bag is as big as the screen allows." end
     return lines
 end
@@ -721,7 +1092,7 @@ mod = PE:RegisterModule({
     label = "Bag sorter",
     desc = "Sort your bags with a big button or a stick click.",
     order = 30,
-    defaults = { size = "normal", showTab = true, sortKey = "l3" },
+    defaults = { size = "normal", showTab = true, sortKey = "l3", dpad = false },
 
     options = {
         { key = "size", label = "Bag size",
@@ -756,7 +1127,25 @@ mod = PE:RegisterModule({
           -- The bag may now grow into the tab's space, or make room for it.
           OnChange = function()
               if PE.debugOn then PE:Debug("bags", TabWanted() and "Sort tab choice: show" or "Sort tab choice: hide") end
-              if active then SyncScale() end
+              if active then
+                  SyncScale()
+                  SyncConfirm()
+                  RefreshSortJump()
+              end
+          end },
+        -- Its own choice, off until it has passed a device test: it is the one
+        -- part of this feature that has a value stored on Blizzard's item
+        -- buttons (by Blizzard's own setter).
+        { key = "dpad", label = "D-pad to Sort",
+          choices = {
+              { value = false, label = "Off" },
+              { value = true, label = "On" },
+          },
+          OnChange = function()
+              if PE.debugOn then PE:Debug("bags", DpadWanted() and "d-pad choice: on" or "d-pad choice: off") end
+              if not DpadWanted() then DropFocus() end
+              SyncConfirm()
+              RefreshSortJump()
           end },
     },
 
@@ -768,6 +1157,7 @@ mod = PE:RegisterModule({
         if not SIZE_FACTOR[opts.size] then opts.size = "normal" end
         if type(opts.showTab) ~= "boolean" then opts.showTab = true end
         if opts.sortKey ~= "none" and not SORT_KEYS[opts.sortKey] then opts.sortKey = "l3" end
+        if type(opts.dpad) ~= "boolean" then opts.dpad = false end
         ResolvePendingCVar()
     end,
 
@@ -791,6 +1181,10 @@ mod = PE:RegisterModule({
         SyncButton()
         SyncBinding()
         SyncScale()
+        -- A goes back now; the jumps come off now, or after the fight (until
+        -- then they point at a hidden tab, which the cursor never goes to).
+        DropFocus()
+        RefreshSortJump()
         RestoreCVar()
     end,
 })

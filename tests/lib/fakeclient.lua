@@ -1093,6 +1093,15 @@ function Client.new(opts)
     rawset(env, "ENABLE_GAMEPAD_UI", "Enable Gamepad UI")
     rawset(env, "GAMEPAD_LABEL", "Gamepad")
     rawset(env, "SOUNDKIT", { UI_BAG_SORTING_01 = 43937 }) -- SoundKitConstants.lua:152
+    rawset(env, "GAMEPAD_FACE_BOTTOM", "PAD1")              -- GamepadConstants.lua:8
+    -- Blizzard_GamepadSmartNavigation/Utility.lua:6. That addon is only loaded with the
+    -- Gamepad UI, so the table (and the two setters further down) exist only then.
+    if world.gamepadUI then
+        rawset(env, "SMART_NAV_INPUT_DIRECTION", {
+            UP = { x = 0, y = 1, dirKey = "up" }, DOWN = { x = 0, y = -1, dirKey = "down" },
+            LEFT = { x = -1, y = 0, dirKey = "left" }, RIGHT = { x = 1, y = 0, dirKey = "right" },
+        })
+    end
     rawset(env, "SlashCmdList", {})
     rawset(env, "UISpecialFrames", {})
     -- Enum and Constants values: only those the audit verified (`enum` rows) are
@@ -1593,6 +1602,41 @@ function Client.new(opts)
         if not IsWidget(owner) then error("ClearOverrideBindings(): owner must be a frame", 2) end
         W[owner].bindings = nil
     end)
+    -- What the game says a key does (override bindings looked at when checkOverride is true):
+    -- here, the click target of the stand-in's override for the key, or "" (as the game answers).
+    Global("GetBindingAction", function(key, checkOverride)
+        if not checkOverride then return "" end
+        for _, f in ipairs(allFrames) do
+            local b = W[f].bindings
+            if b and b[key] then return "CLICK " .. tostring(b[key]) .. ":LeftButton" end
+        end
+        return ""
+    end)
+    -- Blizzard's jump-override setters (Blizzard_GamepadSmartNavigation/Utility.lua:414, :470). They
+    -- hand the write to SecureHelper:SetSecureValue, which refuses an addon's call while the game's
+    -- combat restriction is on (SecureHelper.lua:26; device: probe trial pad.mark) and otherwise
+    -- stores the value on the button. A function as the target is legal in the game but is
+    -- the one thing the addon must never pass (its return value would be tainted): the stand-in
+    -- records an error for it, which no pcall in the addon can hide.
+    if world.gamepadUI then
+        local function NavSetter(name, clears)
+            Global(name, function(button, direction, value)
+                if not button or not direction then return end
+                if clears then value = nil end
+                if type(value) == "function" then
+                    Record(name, "a function was passed as the jump target")
+                    error(name .. "(): the stand-in refuses a function as the jump target", 2)
+                end
+                if world.inCombat or world.combatRestricted then
+                    c.blocked[#c.blocked + 1] = { name = name, stack = debug.traceback("", 2) }
+                    return
+                end
+                rawset(button, "smartNavigationOverride-" .. direction.dirKey, value)
+            end, true)
+        end
+        NavSetter("SmartNavigation_AddJumpNavigationOverride", false)
+        NavSetter("SmartNavigation_ClearJumpNavigationOverridesInDirection", true)
+    end
     -- Blizzard's layout pass for open bags (ContainerFrame.lua:1380-1405).
     Global("UpdateContainerFrameAnchors", function()
         if not W[bag].shown then return end
@@ -1908,6 +1952,58 @@ end
 
 function Client:closeBag()
     self.bagFrame:Hide()
+end
+
+-- Gives the combined bag item buttons on a grid (ContainerFrame.lua: the frame's `Items` array,
+-- AcquireNewItemButton). Returns them as grid[column][row], column 1 leftmost, row 1 at the top.
+function Client:fillBag(columns, rows)
+    local bag = self.bagFrame
+    local items, grid = {}, {}
+    for col = 1, columns do grid[col] = {} end
+    for row = 1, rows do
+        for col = 1, columns do
+            local b = self._createWidget("Button", nil, bag, { blizzard = true })
+            b:SetSize(37, 37)
+            b:SetPoint("TOPLEFT", bag, "TOPLEFT", 8 + (col - 1) * 42, -60 - (row - 1) * 42)
+            items[#items + 1] = b
+            grid[col][row] = b
+        end
+    end
+    rawset(bag, "Items", items)
+    return grid
+end
+
+-- A client without Blizzard's controller navigation helpers (world.noSmartNav).
+function Client:removeSmartNav()
+    self.world.noSmartNav = true
+    rawset(self.env, "SMART_NAV_INPUT_DIRECTION", nil)
+    rawset(self.env, "SmartNavigation_AddJumpNavigationOverride", nil)
+    rawset(self.env, "SmartNavigation_ClearJumpNavigationOverridesInDirection", nil)
+end
+
+-- The controller cursor leaves the button it is on (SmartNavigation.lua:680: the button's
+-- optional OnSmartNavDeselect is called).
+function Client:padLeave()
+    local prev = self.padFocus
+    self.padFocus = nil
+    local fn = prev and rawget(prev, "OnSmartNavDeselect")
+    if type(fn) == "function" then self._protect("OnSmartNavDeselect", fn, prev) end
+end
+
+-- One d-pad press with the cursor on `from`, by the rule at the top of Blizzard's Navigate
+-- (SmartNavigation.lua:1503-1530): a jump override for that direction ("left", "right", "up",
+-- "down") that is a visible frame takes the cursor there, whatever window it belongs to.
+-- Returns the button the cursor went to, or nil when there is no usable override (the game
+-- then moves inside the window's own grid, which the stand-in does not model).
+function Client:padMove(from, dir)
+    local target = rawget(from, "smartNavigationOverride-" .. dir)
+    if not (self._isWidget(target) and target:IsVisible()) then return nil end
+    if self.padFocus == nil then self.padFocus = from end
+    self:padLeave()
+    self.padFocus = target
+    local fn = rawget(target, "OnSmartNavSelect")
+    if type(fn) == "function" then self._protect("OnSmartNavSelect", fn, target) end
+    return target
 end
 
 function Client:openMerchant()

@@ -523,4 +523,561 @@ test("debug log: Button only says so once per bag opening, not after every fight
     eq(count(c, "stick click given back to the game"), 0)
 end)
 
+---------------------------------------------------------------------------
+-- D-pad to Sort (spec 2026-11-17-0.4.0-handheld-batch, part 3; plan Task 3)
+--
+-- The stand-in's cursor follows the one rule the design leans on: a jump override that is a
+-- visible frame takes the cursor there (c:padMove). Whether the game's own A binding or ours
+-- wins on the device cannot be shown here.
+---------------------------------------------------------------------------
+
+local LEFT, RIGHT = "smartNavigationOverride-left", "smartNavigationOverride-right"
+local NAV_ADD, NAV_CLEAR = "SmartNavigation_AddJumpNavigationOverride", "SmartNavigation_ClearJumpNavigationOverridesInDirection"
+local CONFIRM = "PocketEssentialsBagSortConfirm"
+
+-- Gamepad UI on, a bag of 4 columns by 3 rows, "D-pad to Sort" on (o.dpad = false: left as shipped).
+local function newPad(o)
+    o = o or {}
+    local gamepad = o.gamepadUI ~= false
+    local c = newBags({ gamepadUI = gamepad, setup = o.setup })
+    local grid = not o.noItems and c:fillBag(4, 3) or nil
+    if o.dpad ~= false then c.PE:GetModule("bags").opts.dpad = true end
+    if o.debug then c.PE:SetDebug(true) end
+    return c, grid
+end
+
+local function confirmButton(c)
+    local b = rawget(c.env, CONFIRM)
+    check(b, "no hidden confirm button was made")
+    return b
+end
+local function confirmBindings(c) return c._state(confirmButton(c)).bindings end
+local function setterCalls(c) return #c:callsTo(NAV_ADD) + #c:callsTo(NAV_CLEAR) end
+local function layoutPass(c) c._protect("UpdateContainerFrameAnchors", c.env.UpdateContainerFrameAnchors) end
+
+-- Frames are compared by identity (eq would walk into them, and a jump there and back is a loop).
+local function is(actual, expected, msg)
+    if not rawequal(actual, expected) then
+        error((msg and (msg .. ": ") or "") .. "expected " .. tostring(expected) .. ", got " .. tostring(actual), 2)
+    end
+end
+
+-- Every item button of the grid that has a Left jump, as "col,row" = "tab" (our Sort tab) or
+-- the target's name.
+local function leftJumps(grid, tab)
+    local out = {}
+    for col = 1, #grid do
+        for row = 1, #grid[col] do
+            local v = rawget(grid[col][row], LEFT)
+            if v ~= nil then out[col .. "," .. row] = rawequal(v, tab) and "tab" or tostring(v) end
+        end
+    end
+    return out
+end
+
+local FIRST_COLUMN = { ["1,1"] = "tab", ["1,2"] = "tab", ["1,3"] = "tab" }
+
+local function hasLine(c, text)
+    for _, line in ipairs(debugLines(c, "bags")) do if line == text then return true end end
+    return false
+end
+
+local function eventRegistered(c, event) return #c:_eventOrder(event) > 0 end
+
+-- Moves the cursor from the first column onto the tab and lets the one-frame timer run.
+local function focusTab(c, grid)
+    local got = c:padMove(grid[1][1], "left")
+    is(got, sortButton(c), "Left from the first column did not reach the Sort tab")
+    c:advance(0.1)
+    return got
+end
+
+-- 1. Spec part 3: "New choice ... Off (default)".
+test("d-pad to Sort: off by default, nothing is put on any item button", function()
+    local c, grid = newPad({ dpad = false })
+    eq(c.PE:GetModule("bags").opts.dpad, false)
+    c:openBag()
+    c:advance(0.5)
+    eq(setterCalls(c), 0)
+    eq(leftJumps(grid, sortButton(c)), {})
+    is(rawget(sortButton(c), RIGHT), nil)
+    c:assertClean("default")
+end)
+
+test("d-pad to Sort: it is a choice of Bag sorter with Off first, and a broken saved value reads as Off", function()
+    local c = newPad({ dpad = false })
+    local mod = c.PE:GetModule("bags")
+    local opt
+    for _, o in ipairs(mod.options) do if o.key == "dpad" then opt = o end end
+    check(opt, "no dpad option")
+    eq(opt.label, "D-pad to Sort")
+    eq({ opt.choices[1].value, opt.choices[1].label, opt.choices[2].value, opt.choices[2].label }, { false, "Off", true, "On" })
+    mod.opts.dpad = "yes"
+    mod:OnLoad()
+    eq(mod.opts.dpad, false)
+end)
+
+-- 2. Spec: "pressing Left ... from any item in the bag's first (leftmost) column".
+test("d-pad to Sort: the Left jump is put on the first column only, and points at the Sort tab", function()
+    local c, grid = newPad()
+    c:openBag()
+    eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN)
+    is(c:padMove(grid[1][2], "left"), sortButton(c))
+    is(c:padMove(grid[2][2], "left"), nil, "a second-column slot leads to the tab")
+    c:assertClean("route")
+end)
+
+-- 3. Plan, rejected routes: "Only ever pass a frame." (The stand-in also records an error for a function.)
+test("d-pad to Sort: every jump target handed to the game is a frame, never a function", function()
+    local c, grid = newPad()
+    c:openBag()
+    grid[1][1]:Hide()
+    layoutPass(c)
+    chooseOption(c, "dpad", false)
+    local calls = c:callsTo(NAV_ADD)
+    check(#calls >= 4, "expected the setter to have been called, got " .. #calls)
+    for _, call in ipairs(calls) do
+        check(c._isWidget(call.args[1]), "the button is not a frame")
+        check(type(call.args[2]) == "table" and type(call.args[2].dirKey) == "string", "the direction is not one of the game's")
+        check(c._isWidget(call.args[3]), "the target is not a frame: " .. type(call.args[3]))
+    end
+    for _, call in ipairs(c:callsTo(NAV_CLEAR)) do
+        check(c._isWidget(call.args[1]), "the cleared button is not a frame")
+        eq(call.args.n, 2, "arguments to the clear call")
+    end
+    c:assertClean("targets")
+end)
+
+-- 4. Spec: "Right goes back into the bag (to the first-column slot level with the middle of the tab)".
+test("d-pad to Sort: Right from the tab goes back to the first-column slot nearest the tab's middle", function()
+    local c, grid = newPad()
+    c:openBag()
+    local tab = sortButton(c)
+    local function midY(w) local _, _, t, b = c._rect(w) return (t + b) / 2 end
+    local want, gap
+    for row = 1, 3 do
+        local g = math.abs(midY(grid[1][row]) - midY(tab))
+        if not gap or g < gap then want, gap = grid[1][row], g end
+    end
+    is(rawget(tab, RIGHT), want)
+    focusTab(c, grid)
+    is(c:padMove(tab, "right"), want)
+end)
+
+-- 5. Bags.lua header: "we still never write a field ourselves"; nothing else of the bag is touched.
+test("d-pad to Sort: the only thing added to an item button is the Left jump, and the bag is set no differently", function()
+    local function bagSets(c)
+        local n = 0
+        for _, call in ipairs(c.calls) do
+            if call.name:find("^ContainerFrameCombinedBags:") then n = n + 1 end
+        end
+        return n
+    end
+    local off, offGrid = newPad({ dpad = false })
+    off:openBag()
+    off:advance(0.5)
+    local on, grid = newPad()
+    on:openBag()
+    on:advance(0.5)
+    eq(bagSets(on), bagSets(off), "calls on the bag frame")
+    for col = 1, 4 do
+        for row = 1, 3 do
+            for k in pairs(grid[col][row]) do
+                check(col == 1 and k == LEFT, "field " .. tostring(k) .. " written on item button " .. col .. "," .. row)
+            end
+            eq(next(offGrid[col][row]), nil)
+        end
+    end
+    eq(rawget(on.bagFrame, "Items") ~= nil, true)
+    for k in pairs(on.bagFrame) do check(k == "Items", "field " .. tostring(k) .. " written on the bag") end
+end)
+
+-- 6. Plan: "We must not give our button a buttonContext field"; header: children of UIParent.
+test("d-pad to Sort: the Sort tab carries no field the bag's own code reads, and stays a child of UIParent", function()
+    local c, grid = newPad()
+    c:openBag()
+    focusTab(c, grid)
+    local tab = sortButton(c)
+    for _, k in ipairs({ "buttonContext", "hasItem", "isBag", "isBackpack", "isCollapsed", "HasBag", "GetBagID", "OpenMenu",
+        "customSmartNavOffsetX", "customSmartNavOffsetY" }) do
+        is(rawget(tab, k), nil, k)
+    end
+    for k in pairs(tab) do
+        if type(k) == "string" and k:find("^smartNavigation") then eq(k, RIGHT, "navigation field on the tab") end
+    end
+    is(tab:GetParent(), c.UIParent)
+    is(confirmButton(c):GetParent(), c.UIParent)
+end)
+
+-- 7. Spec "When it does nothing": the Gamepad UI is off.
+test("d-pad to Sort: with the Gamepad UI off nothing is set up and the log says why", function()
+    local c, grid = newPad({ gamepadUI = false, debug = true })
+    c:openBag()
+    c:advance(0.5)
+    eq(setterCalls(c), 0)
+    eq(leftJumps(grid, sortButton(c)), {})
+    check(hasLine(c, "d-pad: not set up: Gamepad UI off"), "no log line for the Gamepad UI being off")
+    c:assertClean("gamepad off")
+end)
+
+-- 8. Spec "When it does nothing": the game is missing any of the pieces it needs.
+test("d-pad to Sort: a client without the navigation helpers gets nothing, no error, and is told so", function()
+    local c, grid = newPad({ debug = true, setup = function(cc) cc:removeSmartNav() end })
+    c:openBag()
+    c:advance(0.5)
+    eq(setterCalls(c), 0)
+    eq(leftJumps(grid, sortButton(c)), {})
+    check(hasLine(c, "d-pad: not set up: no navigation helpers on this client"), "no log line")
+    local found = false
+    for _, text in ipairs(textsOf(c)) do
+        if text == "This client has no way to reach Sort with the d-pad." then found = true end
+    end
+    check(found, "the settings text does not say the d-pad route is not possible")
+    c:click(sortButton(c))
+    eq(sorts(c), 1)
+    eq(bindings(c), { PADLSTICK = "PocketEssentialsBagSortKey" })
+    c:assertClean("no helpers")
+end)
+
+test("d-pad to Sort: with it on and usable the settings text says how to use it", function()
+    local c = newPad()
+    local found = false
+    for _, text in ipairs(textsOf(c)) do
+        if text == "D-pad: press Left from the first column to reach Sort, then A." then found = true end
+    end
+    check(found, "no d-pad line in the settings text")
+    local off = newPad({ dpad = false })
+    for _, text in ipairs(textsOf(off)) do check(not text:find("D%-pad"), "d-pad text while off: " .. text) end
+end)
+
+-- 9. FirstColumn: "bag has no item list".
+test("d-pad to Sort: a bag with no item list gets nothing and no error", function()
+    local c = newPad({ noItems = true, debug = true })
+    c:openBag()
+    c:advance(0.5)
+    eq(setterCalls(c), 0)
+    check(hasLine(c, "d-pad: not set up: bag has no item list"), "no log line")
+    c:assertClean("no items")
+end)
+
+-- 10. Spec rule 4: "If the bag is first opened in a fight, the d-pad route appears after the fight."
+test("d-pad to Sort: a bag opened in a fight gets the route when the fight ends, with nothing refused", function()
+    local c, grid = newPad({ debug = true })
+    c:enterCombat()
+    c:openBag()
+    c:advance(0.5)
+    eq(setterCalls(c), 0)
+    eq(c.blocked, {})
+    check(hasLine(c, "d-pad: not set up: waiting for the fight to end"), "no log line")
+    c:leaveCombat()
+    eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN)
+    eq(c.blocked, {})
+    c:assertClean("fight")
+end)
+
+-- 11. Core PE:CombatRestricted: Blizzard's setter asks the combat restriction, not lockdown.
+test("d-pad to Sort: with the game's restriction on but no lockdown the setter is not called", function()
+    local c, grid = newPad()
+    c.world.combatRestricted = true
+    c:openBag()
+    c:advance(0.5)
+    eq(setterCalls(c), 0)
+    eq(c.blocked, {})
+    c.world.combatRestricted = false
+    layoutPass(c)
+    eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN)
+    c:assertClean("restriction")
+end)
+
+-- 12. FirstColumn works from where the buttons are after layout.
+test("d-pad to Sort: when the layout changes the route moves to the new first column", function()
+    local c, grid = newPad()
+    c:openBag()
+    local tab = sortButton(c)
+    for row = 1, 3 do grid[1][row]:Hide() end
+    layoutPass(c)
+    eq(leftJumps(grid, sortButton(c)), { ["2,1"] = "tab", ["2,2"] = "tab", ["2,3"] = "tab" })
+    check(rawget(tab, RIGHT) == grid[2][1] or rawget(tab, RIGHT) == grid[2][2] or rawget(tab, RIGHT) == grid[2][3],
+        "Right from the tab does not point into the new first column")
+    -- and by position alone: the fourth column moved to the far left
+    for row = 1, 3 do
+        grid[4][row]:ClearAllPoints()
+        grid[4][row]:SetPoint("TOPLEFT", c.bagFrame, "TOPLEFT", 2, -60 - (row - 1) * 42)
+    end
+    layoutPass(c)
+    eq(leftJumps(grid, sortButton(c)), { ["4,1"] = "tab", ["4,2"] = "tab", ["4,3"] = "tab" })
+    c:assertClean("layout change")
+end)
+
+-- 13. ApplyRoute: an override that is already there and not ours is left alone.
+test("d-pad to Sort: a Left jump that is not ours is left alone, on and off", function()
+    local c, grid = newPad()
+    local other = c.minimap
+    rawset(grid[1][2], LEFT, other)
+    c:openBag()
+    local tab = sortButton(c)
+    eq(leftJumps(grid, sortButton(c)), { ["1,1"] = "tab", ["1,2"] = tostring(other), ["1,3"] = "tab" })
+    chooseOption(c, "dpad", false)
+    eq(leftJumps(grid, sortButton(c)), { ["1,2"] = tostring(other) })
+    is(rawget(grid[1][2], LEFT), other)
+    c:assertClean("someone else's jump")
+end)
+
+-- 14. Spec "When it does nothing": "Sort button" is set to Hide.
+test("d-pad to Sort: hiding the Sort button removes the route and showing it puts it back", function()
+    local c, grid = newPad()
+    c:openBag()
+    chooseOption(c, "showTab", false)
+    eq(leftJumps(grid, sortButton(c)), {})
+    is(rawget(sortButton(c), RIGHT), nil)
+    chooseOption(c, "showTab", true)
+    eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN)
+end)
+
+-- 15. Plan: "clears overrides ... on switch-off"; in a fight, after it.
+test("d-pad to Sort: the choice Off, the feature off and the bag closed each remove the route", function()
+    local c, grid = newPad({ debug = true })
+    local tab = sortButton(c)
+    c:openBag()
+    chooseOption(c, "dpad", false)
+    eq(leftJumps(grid, sortButton(c)), {})
+    is(rawget(tab, RIGHT), nil)
+    check(hasLine(c, "d-pad: route removed"), "no log line for the removal")
+    chooseOption(c, "dpad", true)
+    eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN)
+
+    c:closeBag()
+    eq(leftJumps(grid, sortButton(c)), {})
+    c:openBag()
+    eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN)
+
+    c.PE:SetModuleEnabled("bags", false)
+    c:advance(0.5)
+    eq(leftJumps(grid, sortButton(c)), {})
+    is(rawget(tab, RIGHT), nil)
+    c:assertClean("switch-off")
+end)
+
+test("d-pad to Sort: switched off in a fight, the route comes off when the fight ends and nothing is refused", function()
+    for _, how in ipairs({ "choice", "feature" }) do
+        local c, grid = newPad()
+        local tab = sortButton(c)
+        c:openBag()
+        c:enterCombat()
+        if how == "choice" then chooseOption(c, "dpad", false) else c.PE:SetModuleEnabled("bags", false) end
+        c:advance(0.5)
+        eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN, how .. ": changed during the fight")
+        eq(c.blocked, {}, how)
+        c:leaveCombat()
+        eq(leftJumps(grid, sortButton(c)), {}, how)
+        is(rawget(tab, RIGHT), nil, how)
+        c:assertClean(how)
+    end
+end)
+
+test("d-pad to Sort: switching to the mouse and keyboard style removes the route", function()
+    local c, grid = newPad()
+    c:openBag()
+    c.world.gamepadUI = false
+    c:fire("INPUT_DEVICE_INTERFACE_TRANSITION", 0, 0)
+    c:advance(1.5)
+    eq(leftJumps(grid, sortButton(c)), {})
+    c:assertClean("style change")
+end)
+
+-- 16. Spec rule 3: "A is only taken while the cursor is on the Sort tab".
+test("d-pad to Sort: A is taken only once the cursor is on the tab", function()
+    local c, grid = newPad()
+    c:openBag()
+    c:advance(0.5)
+    eq(confirmBindings(c), nil, "A taken before the cursor reached the tab")
+    -- one frame after arriving, so it lands after the bag's footer has set its own A again
+    is(c:padMove(grid[1][1], "left"), sortButton(c))
+    eq(confirmBindings(c), nil, "A taken in the same call as the cursor's arrival")
+    c:padLeave()
+    focusTab(c, grid)
+    eq(confirmBindings(c), { PAD1 = CONFIRM })
+    c:assertClean("A taken")
+end)
+
+-- 17. Spec: "A sorts the bags (same sound, same sort, same half-second guard as a tap)".
+test("d-pad to Sort: A on the tab sorts once, and again only after half a second", function()
+    local c, grid = newPad({ debug = true })
+    c:openBag()
+    focusTab(c, grid)
+    local a = confirmButton(c)
+    c:script(a, "OnClick", "LeftButton", true)      -- down
+    eq(sorts(c), 0, "sorted on key down")
+    c:script(a, "OnClick", "LeftButton", false)     -- up
+    eq(sorts(c), 1)
+    c:script(a, "OnClick", "LeftButton", false)
+    eq(sorts(c), 1, "sorted twice within half a second")
+    c:advance(1)
+    c:script(a, "OnClick", "LeftButton", false)
+    eq(sorts(c), 2)
+    check(hasLine(c, "Sort pressed: A on the tab"), "no log line for A")
+    c:assertClean("A sorts")
+end)
+
+-- 18. Spec rule 3: "handed back the moment the cursor leaves it".
+test("d-pad to Sort: A is given back when the cursor leaves the tab, and a late press does not sort", function()
+    local c, grid = newPad()
+    c:openBag()
+    local tab = focusTab(c, grid)
+    check(c:padMove(tab, "right"), "Right from the tab went nowhere")
+    eq(confirmBindings(c), nil)
+    c:script(confirmButton(c), "OnClick", "LeftButton", false)
+    eq(sorts(c), 0)
+    -- leaving in a direction with no jump (the game's own grid takes over) gives it back too
+    focusTab(c, grid)
+    eq(confirmBindings(c), { PAD1 = CONFIRM })
+    c:padLeave()
+    eq(confirmBindings(c), nil)
+    c:assertClean("A given back")
+end)
+
+-- 19. Spec rule 3: "...the bag closes, a fight starts, or the feature is switched off".
+test("d-pad to Sort: A is given back when the bag closes, when a fight starts and when the choice goes Off", function()
+    local c, grid = newPad()
+    c:openBag()
+    focusTab(c, grid)
+    c:closeBag()
+    eq(confirmBindings(c), nil, "kept after the bag closed")
+    c:script(confirmButton(c), "OnClick", "LeftButton", false)
+    eq(sorts(c), 0, "sorted with the bag closed")
+
+    c:openBag()
+    c:advance(0.1)
+    eq(confirmBindings(c), nil, "taken on reopening without the cursor on the tab")
+    focusTab(c, grid)
+    eq(confirmBindings(c), { PAD1 = CONFIRM })
+    c:enterCombat()
+    eq(confirmBindings(c), nil, "kept in a fight")
+    eq(c.blocked, {})
+    c:advance(1)
+    c:leaveCombat()
+    eq(confirmBindings(c), { PAD1 = CONFIRM }, "not taken again after the fight with the cursor still on the tab")
+
+    chooseOption(c, "dpad", false)
+    eq(confirmBindings(c), nil, "kept after the choice went Off")
+    c:assertClean("hand-backs")
+
+    local d, dgrid = newPad()
+    d:openBag()
+    focusTab(d, dgrid)
+    d.PE:SetModuleEnabled("bags", false)
+    d:advance(0.5)
+    eq(confirmBindings(d), nil, "kept after the feature went off")
+    d:assertClean("feature off")
+end)
+
+-- 20. Spec rule 4: "Left still reaches the tab but A does nothing there".
+test("d-pad to Sort: A is never taken in a fight; it is taken when the fight ends with the cursor still on the tab", function()
+    local c, grid = newPad({ debug = true })
+    c:openBag()
+    c:enterCombat()
+    focusTab(c, grid)
+    c:advance(0.5)
+    eq(confirmBindings(c), nil)
+    eq(c.blocked, {})
+    check(hasLine(c, "d-pad: A not taken: in a fight"), "no log line")
+    eq(bindings(c), nil, "the stick is held in a fight")
+    c:leaveCombat()
+    eq(confirmBindings(c), { PAD1 = CONFIRM })
+    c:assertClean("fight focus")
+end)
+
+test("d-pad to Sort: with the game's restriction on A is not taken, and is taken at the next bag update after it lifts", function()
+    local c, grid = newPad({ debug = true })
+    c:openBag()
+    c.world.combatRestricted = true
+    focusTab(c, grid)
+    eq(confirmBindings(c), nil)
+    check(hasLine(c, "d-pad: A not taken: game restrictions on"), "no log line")
+    c.world.combatRestricted = false
+    c:fire("BAG_UPDATE_DELAYED")
+    eq(confirmBindings(c), { PAD1 = CONFIRM })
+    c:assertClean("restriction focus")
+end)
+
+-- 21. Plan OnTabFocused: the bag's footer sets its own A again on every bag update.
+test("d-pad to Sort: A is taken again after a bag update while on the tab, and the update is not listened to otherwise", function()
+    local c, grid = newPad()
+    c:openBag()
+    check(not eventRegistered(c, "BAG_UPDATE_DELAYED"), "listening for bag updates before the cursor is on the tab")
+    local tab = focusTab(c, grid)
+    check(eventRegistered(c, "BAG_UPDATE_DELAYED"), "not listening for bag updates on the tab")
+    c._state(confirmButton(c)).bindings = nil      -- as if the game had taken A back
+    c:fire("BAG_UPDATE_DELAYED")
+    eq(confirmBindings(c), { PAD1 = CONFIRM })
+    c:padMove(tab, "right")
+    check(not eventRegistered(c, "BAG_UPDATE_DELAYED"), "still listening after leaving the tab")
+    c:fire("BAG_UPDATE_DELAYED")
+    eq(confirmBindings(c), nil)
+    c:assertClean("bag update")
+end)
+
+-- 22. The stick click (ApplyBinding) and A (ApplyConfirm) are held by two different hidden buttons.
+test("d-pad to Sort: the stick click and A do not disturb each other", function()
+    local c, grid = newPad()
+    c:openBag()
+    focusTab(c, grid)
+    eq(bindings(c), { PADLSTICK = "PocketEssentialsBagSortKey" })
+    eq(confirmBindings(c), { PAD1 = CONFIRM })
+    chooseOption(c, "sortKey", "r3")
+    eq(bindings(c), { PADRSTICK = "PocketEssentialsBagSortKey" })
+    eq(confirmBindings(c), { PAD1 = CONFIRM }, "changing the Sort key dropped A")
+    c:fire("BAG_UPDATE_DELAYED")
+    eq(bindings(c), { PADRSTICK = "PocketEssentialsBagSortKey" }, "taking A again dropped the stick")
+    c:advance(1)
+    c:script(keyButton(c), "OnClick", "LeftButton", false)
+    eq(sorts(c), 1, "the stick click no longer sorts")
+    c:padLeave()
+    eq(confirmBindings(c), nil)
+    eq(bindings(c), { PADRSTICK = "PocketEssentialsBagSortKey" }, "giving A back dropped the stick")
+    c:assertClean("stick and A")
+end)
+
+-- 23. CLAUDE.md: "Nothing ticks while its feature is off."
+test("d-pad to Sort: nothing is pending or listened to while the choice or the feature is off", function()
+    local c, grid = newPad({ dpad = false })
+    c:openBag()
+    c:advance(1)
+    eq(#c._timers, 0, "timers pending with the choice off")
+    check(not eventRegistered(c, "BAG_UPDATE_DELAYED"), "bag updates listened to with the choice off")
+    -- a cursor that lands on the tab anyway (a jump left over from a fight) takes nothing
+    rawset(grid[1][1], LEFT, sortButton(c))
+    c:padMove(grid[1][1], "left")
+    c:advance(0.5)
+    eq(confirmBindings(c), nil)
+    eq(#c._timers, 0)
+    check(not eventRegistered(c, "BAG_UPDATE_DELAYED"), "bag updates listened to with the choice off")
+
+    local d, dgrid = newPad()
+    d:openBag()
+    focusTab(d, dgrid)
+    d.PE:SetModuleEnabled("bags", false)
+    d:advance(1)
+    eq(#d._timers, 0, "timers pending with the feature off")
+    check(not eventRegistered(d, "BAG_UPDATE_DELAYED"), "bag updates listened to with the feature off")
+    eq(d.stats.addonOnUpdate, 0)
+end)
+
+-- Spec part 3, "Debug-log lines".
+test("debug log: the d-pad route and the A button each write one line when they change", function()
+    local c, grid = newPad({ debug = true })
+    c:openBag()
+    layoutPass(c)
+    local tab = focusTab(c, grid)
+    c:fire("BAG_UPDATE_DELAYED")
+    c:padMove(tab, "right")
+    c:closeBag()
+    eq(count(c, "d-pad: route set on 3 first-column slots"), 1)
+    eq(count(c, "d-pad: on the Sort tab"), 1)
+    eq(count(c, "d-pad: A taken for Sort (A is now: CLICK PocketEssentialsBagSortConfirm:LeftButton)"), 1)
+    eq(count(c, "d-pad: left the Sort tab"), 1)
+    eq(count(c, "d-pad: A given back"), 1)
+    eq(count(c, "d-pad: route removed"), 1)
+end)
+
 return { known = KNOWN_FAILURES }

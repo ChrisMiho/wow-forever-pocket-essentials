@@ -19,6 +19,20 @@ Fifteenth test build, in progress. Not yet tested on a device.
   takes a tap, and it goes away when the menu closes. No reload is needed
   to turn it on or off. With the debug log on, the log also says whether
   the game's own menu background picture is missing on this client.
+- **D-pad to Sort**, a new choice inside "Bag sorter", Off by default. With
+  it On, the Gamepad UI on and the bag open, pressing **Left** from any slot
+  in the bag's first (leftmost) column moves the controller cursor onto the
+  Sort tab. On the tab **A** sorts the bags, **Right** goes back into the
+  bag and **B** closes the bag as usual. Left from the first column used to
+  wrap round to the last column; with this On it goes to the tab first.
+  A is only taken while the cursor is on the tab and is handed back when
+  the cursor leaves, the bag closes, a fight starts or the choice is
+  switched Off. In a fight the game does not let an addon set this up: a bag
+  first opened in a fight gets the route when the fight ends, and on a tab
+  reached during a fight A does nothing (the stick click still sorts).
+  Touch and the stick click work exactly as before. Using, equipping,
+  selling and picking up items is not changed. Not yet tested on a device:
+  whether A on the tab really sorts can only be seen there.
 
 ### Changed
 

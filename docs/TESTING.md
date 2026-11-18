@@ -602,3 +602,77 @@ the debug log on (Errors page).
 Report for each step: yes / no / what you saw. The saved file's `menuBg`
 lines say which way the addon heard about the menu and whether the game's
 own background picture is missing on this client.
+
+#### 13c. D-pad to Sort
+
+What this is: a new choice in "Bag sorter" that lets you reach the Sort tab
+with the d-pad (Left from the bag's first column) and press it with A.
+
+Two answers matter more than all the others:
+
+- **Using items must still work** (steps 2, 6, 7, 10, 12 and 13). This is the
+  first time the addon asks the game to store something on the bag's own item
+  buttons. If any item will not use, equip, sell, pick up or split, or the
+  chat says "Interface action failed", stop there.
+- **A must really press Sort** (step 4). Reaching the tab is the easy half.
+  The game also holds A while the bag is open, and only the device can show
+  whether our hold or the game's wins.
+
+Before starting: install the 0.4.0 zip, turn the debug log on (settings,
+Errors page), Gamepad UI on, out of a fight, in a safe place. Have in your
+bags: something you can use (food or a potion), something you can equip,
+and a stack of 2 or more.
+
+1. Settings, "Bag sorter": set **D-pad to Sort** to **On**. Make sure
+   **Sort button** is on Show. The text under the feature should now say
+   "D-pad: press Left from the first column to reach Sort, then A."
+2. **(Matters most.)** Open the bag. Use an item with the usual button. It
+   must work as always.
+3. Move the cursor to any slot in the leftmost column. Press **Left**. The
+   cursor should jump onto the Sort tab. Say where the cursor's pointer is
+   drawn (beside the tab, on it, off the screen).
+4. **(Matters most.)** Press **A**. The bags should sort (you hear the sort
+   sound and the tab flashes). Wait a second and press **A** again: they
+   should sort again.
+5. Press **Right**. The cursor should go back into the bag's first column.
+6. **(Matters most.)** Press **A** on an item: it should pick the item up as
+   usual. Press B to put it down.
+7. **(Matters most.)** Use an item, equip an item, and split a stack (the
+   "more actions" button). All must work, with no red error and no
+   "Interface action failed" line in chat.
+8. Go to the tab again (Left), then press **B**. The bag should close. Open
+   it again: the cursor should be in the bag as usual, and A should behave
+   normally on items.
+9. Go to the tab, then press **Up**, **Down** and **Left** in turn (going
+   back to the tab between them). Say where the cursor goes each time. It
+   must never get stuck.
+10. **(Matters most.)** Start a fight with the bag closed. Open the bag in
+    the fight. Use a potion or food from it: it must work. Left from the
+    first column may do the old thing (wrap round to the last column); that
+    is expected.
+11. After the fight, with the bag still open, press Left from the first
+    column: it should reach the tab again and A should sort.
+12. **(Matters most.)** Open the bag out of a fight, move onto the tab, then
+    get into a fight without closing it. Press A on the tab (nothing should
+    happen), click the stick (should sort), then move Right and use an item
+    (must work).
+13. **(Matters most.)** Go to a vendor with the bag open and sell one item
+    from the bag with the usual button. It must work.
+14. Tap the Sort tab with a finger and click the stick once more: both
+    should still sort, as before this version.
+15. Settings: set **D-pad to Sort** to **Off**. Open the bag: Left from the
+    first column wraps round to the last column, as it did before.
+16. Send the saved `PocketEssentials.lua` file and say for each step:
+    worked / did not / what you saw. If at any point the game says
+    "Interface action failed" or an item will not use, stop, note the step,
+    use Reload UI, and send the file.
+
+What the answers decide:
+
+- Step 3 fails: the route cannot be used, and the choice is dropped.
+- Step 3 works but step 4 fails: the game's hold on A beats ours. The log
+  line "A taken for Sort (A is now: ...)" says who holds it. The choice then
+  stays Off and the idea is dropped (the stick click and the game's own
+  "Clean Up Bags" entry in the bag menu already sort).
+- Any failure in steps 2, 6, 7, 10, 12 or 13: switch the choice Off. It
+  stays off, and the log names the cause.
