@@ -616,4 +616,129 @@ test("options: a heading sits on its buttons' line when they fit, and above them
     end
 end)
 
+---------------------------------------------------------------------------
+-- The number control (spec 2026-11-18-number-control-design, section 1):
+-- one joined box, "-" | value | "+", drawn by the shared list drawer.
+---------------------------------------------------------------------------
+
+local function numberRow(opts, extra)
+    local calls = {}
+    local row = { key = "n", label = "Count",
+        number = { min = 1, max = 20, default = 5, unit = "spots", all = 0, allLabel = "All" },
+        OnChange = function(m, v) calls[#calls + 1] = v end }
+    for k, v in pairs(extra or {}) do row.number[k] = v end
+    local c, PE, mod = withOptions({ row }, opts)
+    return c, PE, mod, calls
+end
+
+local function press(c, label)
+    c:click(shownButtons(c, label)[1])
+    c:advance(0.2)
+end
+
+test("number: one joined box, - value +, on the heading's line, - then + in the d-pad order", function()
+    local c, PE = numberRow({ n = 5 })
+    local minus, plus, value = shownButtons(c, "-")[1], shownButtons(c, "+")[1], textRegionOf(c, "5")
+    check(minus and plus and value, "the box is not drawn as -, 5, +")
+    check(textRegionOf(c, "spots"), "no unit word under the value")
+    local ml, mr, mt = c._rect(minus)
+    local vl, vr = c._rect(value)
+    local pl, _, pt = c._rect(plus)
+    check(mr <= vl + 0.01 and vr <= pl + 0.01, "the pieces are not in the order - value +")
+    check(math.abs(mt - pt) < 0.01, "- and + are not on one line")
+    check(math.abs(pl - mr) > 0, "the ends touch with nothing between them")
+    local heading = textRegionOf(c, "Count")
+    local hl = c._rect(heading)
+    check(hl < ml, "the heading is not left of the box")
+    dpadTo(c, minus)
+    local nav = rawget(c.env, NAV_NAME)
+    c:script(nav, "OnClick", "RIGHT", true)
+    c:script(nav, "OnClick", "RIGHT", false)
+    check(settingsPanel(c).peNavFocus == plus, "after - the d-pad does not go to +")
+    eq(minus.peStyle, "step")
+    c:assertClean("number box")
+end)
+
+test("number: + and - step by one and run OnChange with the new value", function()
+    local c, PE, mod, calls = numberRow({ n = 5 })
+    press(c, "+")
+    eq(mod.opts.n, 6)
+    check(textRegionOf(c, "6"), "the box does not show the new value")
+    press(c, "-")
+    press(c, "-")
+    eq(mod.opts.n, 4)
+    eq(calls, { 6, 5, 4 })
+    c:assertClean("number step")
+end)
+
+test("number: + at the top goes to All, - from All goes back to the top, and + is dim at All", function()
+    local c, PE, mod = numberRow({ n = 20 })
+    press(c, "+")
+    eq(mod.opts.n, 0)
+    check(textRegionOf(c, "All"), "the box does not read All")
+    eq(shownButtons(c, "+")[1].peStyle, "stepDim")
+    press(c, "+")
+    eq(mod.opts.n, 0, "a dim + changed the value")
+    press(c, "-")
+    eq(mod.opts.n, 20)
+    c:assertClean("number all")
+end)
+
+test("number: - is dim at the bottom, and pressing it saves nothing and runs no OnChange", function()
+    local c, PE, mod, calls = numberRow({ n = 1 })
+    eq(shownButtons(c, "-")[1].peStyle, "stepDim")
+    press(c, "-")
+    eq(mod.opts.n, 1)
+    eq(calls, {})
+    c:assertClean("number bottom")
+end)
+
+test("number: 0 with an Off label reads Off", function()
+    local c = numberRow({ n = 0 }, { min = 0, max = 10, default = 2, all = false, offLabel = "Off", unit = "merge" })
+    check(textRegionOf(c, "Off"), "0 does not read Off")
+    eq(shownButtons(c, "-")[1].peStyle, "stepDim")
+    c:assertClean("number off")
+end)
+
+test("number: a saved value out of range or not a number reads the default, and + steps from it", function()
+    for _, bad in ipairs({ 15.5, 25, "x", -3 }) do
+        local c, PE, mod = numberRow({ n = bad }, { all = false })
+        check(textRegionOf(c, "5"), tostring(bad) .. " does not read as the default")
+        press(c, "+")
+        eq(mod.opts.n, 6, tostring(bad))
+        c:assertClean("number bad " .. tostring(bad))
+    end
+end)
+
+test("number: a stepper row draws the same box from the feature's own value, and a missing step is dim", function()
+    local ups = 0
+    local c = withOptions({
+        { label = "Size", stepper = function() return { text = "14", unit = "text size", up = function() ups = ups + 1 end } end },
+    })
+    check(textRegionOf(c, "14") and textRegionOf(c, "text size"), "the stepper's value is not in the box")
+    eq(shownButtons(c, "-")[1].peStyle, "stepDim")
+    eq(shownButtons(c, "+")[1].peStyle, "step")
+    press(c, "+")
+    press(c, "-")
+    eq(ups, 1)
+    c:assertClean("stepper")
+end)
+
+test("number: at every size in a narrow window the three pieces stay on one line", function()
+    for _, size in ipairs({ "small", "medium", "large" }) do
+        local c, PE = T.new({ on = { "sellJunk" } })
+        PE:SetUISetting("size", size)
+        local mod = PE:GetModule("sellJunk")
+        mod.opts = mod.opts or {}
+        mod.opts.n = 3
+        mod.options = { { key = "n", label = "A rather long heading for a number row",
+            number = { min = 1, max = 20, default = 5, unit = "spots" } } }
+        openSettings(c, PE)
+        local _, _, mt = c._rect(shownButtons(c, "-")[1])
+        local _, _, pt = c._rect(shownButtons(c, "+")[1])
+        check(math.abs(mt - pt) < 0.01, size .. ": the box split across lines")
+        c:assertClean("number at " .. size)
+    end
+end)
+
 return { known = KNOWN_FAILURES }

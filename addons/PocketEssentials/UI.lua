@@ -195,6 +195,10 @@ local STYLES = {
     warn     = { fill = { 0.52, 0.28, 0.03 }, border = { 1.00, 0.62, 0.15 }, text = { 1, 1, 1 } },
     tab      = { fill = { 0.07, 0.06, 0.04 }, border = { 0.80, 0.64, 0.20 }, text = { 1, 0.82, 0 } },
     disabled = { fill = { 0.11, 0.11, 0.12 }, border = { 0.27, 0.27, 0.29 }, text = { 0.50, 0.50, 0.50 } },
+    -- The ends of a number control (Settings.lua NumberBox): gold edge, gold
+    -- sign; stepDim when that side has no further step.
+    step     = { fill = { 0.15, 0.16, 0.19 }, border = { 0.62, 0.52, 0.22 }, text = { 1, 0.82, 0 } },
+    stepDim  = { fill = { 0.11, 0.11, 0.12 }, border = { 0.62, 0.52, 0.22 }, text = { 0.33, 0.32, 0.29 } },
 }
 local SELECTED = { fill = { 0.56, 0.42, 0.03 }, border = { 1, 0.82, 0 }, text = { 1, 1, 1 } }
 local FOCUS = { 0.25, 0.92, 1.00 }
@@ -267,7 +271,8 @@ function ButtonMethods:SetSelected(selected)
 end
 
 -- "normal", "on" (green), "off" (grey), "warn" (amber), "tab" (gold on dark, like a bag
--- window) or "disabled" (dim; still tappable).
+-- window), "disabled" (dim; still tappable), or "step" / "stepDim" (the ends
+-- of a number control).
 function ButtonMethods:SetStyle(style)
     if not STYLES[style] then style = "normal" end
     if self.peStyle ~= style then

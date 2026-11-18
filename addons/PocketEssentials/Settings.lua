@@ -154,17 +154,82 @@ function Drawer:Button(text, x, y, width, height, style, onClick)
     return btn
 end
 
+-- The number control's width: two square ends and the well between them,
+-- their borders overlapping so each joint is one line.
+local function NumberBoxWidth()
+    return M.button * 2 + M.button * 2.2 - M.border * 2
+end
+
+-- One end of a number control: "-" or "+". With no step it is dimmed, and a
+-- press does nothing (it still redraws, like any press).
+function Drawer:NumberEnd(sign, step, x, y)
+    local btn = self:Acquire("button")
+    ResetButton(btn)
+    btn:SetLabel(sign)
+    btn:SetSize(M.button, M.button)
+    btn:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -y)
+    btn:SetStyle(step and "step" or "stepDim")
+    btn:SetScript("OnClick", step or self.noStep)
+    btn.peScrollTop, btn.peScrollBottom = y, y + M.button
+    self.navList[#self.navList + 1] = btn
+    return btn
+end
+
+-- The number control (spec 2026-11-18-number-control-design): "-", a dark
+-- well with the value in gold and a small grey unit word under it, "+", as
+-- one box. box: { text, unit, down = onClick or nil, up = onClick or nil }.
+-- The well is not a d-pad stop.
+function Drawer:NumberBox(box, x, y)
+    local endWidth, wellWidth = M.button, M.button * 2.2
+    self:NumberEnd("-", box.down, x, y)
+    local well = self:Acquire("well")
+    local wx = x + endWidth - M.border
+    well:ClearAllPoints()
+    well:SetSize(wellWidth, M.button)
+    well:SetPoint("TOPLEFT", self.child, "TOPLEFT", wx, -y)
+    well.fill:ClearAllPoints()
+    well.fill:SetPoint("TOPLEFT", well, "TOPLEFT", M.border, -M.border)
+    well.fill:SetPoint("BOTTOMRIGHT", well, "BOTTOMRIGHT", -M.border, M.border)
+    local inner = wellWidth - M.border * 2
+    local unit = box.unit ~= nil and tostring(box.unit) or ""
+    -- The unit word goes under the value only when both lines fit.
+    local showUnit = unit ~= "" and M.fontSize + M.smallFontSize <= M.button - M.border * 2
+    local valueHeight = SetText(well.value, "font", box.text, inner, COLOR.option)
+    well.value:ClearAllPoints()
+    if showUnit then
+        local unitHeight = SetText(well.unit, "small", unit, inner, COLOR.dim)
+        local top = max((M.button - valueHeight - unitHeight) * 0.5, M.border)
+        well.value:SetPoint("TOP", well, "TOP", 0, -top)
+        well.unit:ClearAllPoints()
+        well.unit:SetPoint("TOP", well, "TOP", 0, -(top + valueHeight))
+        well.unit:Show()
+    else
+        well.value:SetPoint("TOP", well, "TOP", 0, -max((M.button - valueHeight) * 0.5, 0))
+        well.unit:Hide()
+    end
+    self:NumberEnd("+", box.up, wx + wellWidth - M.border, y)
+    return NumberBoxWidth()
+end
+
 -- A run of buttons sized to their labels, wrapping onto new lines.
 -- items: { { label =, selected =, style =, onClick = }, ... }. An item
--- { text = } is not a button: it is a short centred text in the run (the
--- number between "Smaller" and "Bigger"). Returns the new y.
+-- { text = } is not a button: it is a short centred text in the run. An
+-- item { box = } is a number control (NumberBox), kept whole on one line.
+-- Returns the new y.
 function Drawer:Flow(items, x0, y, maxWidth, minWidth)
     local x, height = x0, M.button
     local navList = self.navList
     for i = 1, #items do
         local item = items[i]
         local width
-        if item.text ~= nil then
+        if item.box ~= nil then
+            width = NumberBoxWidth()
+            if x > x0 and x + width > x0 + maxWidth then
+                x = x0
+                y = y + height + M.gap
+            end
+            self:NumberBox(item.box, x, y)
+        elseif item.text ~= nil then
             local text = tostring(item.text)
             -- A fixed width for short texts, so the button after it stays put
             -- when the number changes.
@@ -312,6 +377,40 @@ local function IsToggleRow(opt)
         and type(opt.choices[1]) == "table" and type(opt.choices[2]) == "table"
 end
 
+local function IsNumberRow(opt)
+    local n = opt.number
+    return opt.key ~= nil and type(n) == "table" and type(n.min) == "number" and type(n.max) == "number"
+        and n.min <= n.max
+end
+
+-- The value a number row shows: the saved one when it is a whole number in
+-- the range (or the `all` value), else the row's default.
+local function NumberCurrent(mod, opt)
+    local n = opt.number
+    local v = type(mod.opts) == "table" and mod.opts[opt.key] or nil
+    if n.all ~= nil and n.all ~= false and v == n.all then return v end
+    if type(v) == "number" and v == floor(v) and v >= n.min and v <= n.max then return v end
+    local d = n.default
+    if type(d) == "number" and d >= n.min and d <= n.max then return d end
+    return n.min
+end
+
+-- The values one step down and one step up from v (nil: no step that way).
+-- After max comes `all`, when the row has one.
+local function NumberSteps(n, v)
+    local hasAll = n.all ~= nil and n.all ~= false
+    if hasAll and v == n.all then return n.max, nil end
+    local down = v > n.min and v - 1 or nil
+    local up = (v < n.max and v + 1) or (hasAll and n.all) or nil
+    return down, up
+end
+
+local function NumberText(n, v)
+    if n.all ~= nil and n.all ~= false and v == n.all then return n.allLabel or "All" end
+    if v == 0 and n.offLabel then return n.offLabel end
+    return tostring(v)
+end
+
 -- The tap on a choice: save it (through `set`, or as mod.opts[key]), run
 -- OnChange, redraw.
 local function ChooseHandler(mod, opt, value, refresh)
@@ -355,6 +454,17 @@ end
 --            as a short text at that place in the row instead of a button.
 --            A button entry with style = "disabled" is drawn dim (it has
 --            nothing to do right now); it can still be pressed.
+--   number:  { key, label, number = { min, max, default, unit, all,
+--            allLabel, offLabel }, OnChange }
+--            the number control "- value +" (NumberBox); each end saves
+--            mod.opts[key] one step down or up. `all` (optional) is the
+--            value after max, shown as allLabel ("All"); offLabel (optional)
+--            is shown at 0. A saved value that is not a whole number in the
+--            range shows the default. An end with no step is dimmed.
+--   stepper: { label, value = function(mod) -> text, stepper =
+--            function(mod) -> { text, unit, down = fn, up = fn } or nil }
+--            the same control for a value the feature keeps itself; a
+--            missing down or up is a dimmed end. nil draws the label only.
 -- onlyAlways: draw only the rows marked `always`.
 -- Returns the new y.
 function Drawer:Options(mod, y, width, onlyAlways)
@@ -369,9 +479,10 @@ function Drawer:Options(mod, y, width, onlyAlways)
             local text
             if IsToggleRow(opt) or type(opt.action) == "function" then
                 text = nil
-            elseif IsChoiceRow(opt) then
+            elseif IsChoiceRow(opt) or IsNumberRow(opt) then
                 text = type(opt.label) == "string" and opt.label or ""
-            elseif type(opt.buttons) == "table" or type(opt.buttons) == "function" then
+            elseif type(opt.buttons) == "table" or type(opt.buttons) == "function"
+                or type(opt.stepper) == "function" then
                 text = type(opt.label) == "string" and opt.label or ""
                 if type(opt.value) == "function" then
                     local ok, shown = pcall(opt.value, mod)
@@ -426,6 +537,33 @@ function Drawer:Options(mod, y, width, onlyAlways)
                     end
                 end
                 y = self:LabeledRow(row.text, items, x, y, innerWidth, labelWidth) + M.gap
+            elseif IsNumberRow(opt) then
+                local n = opt.number
+                local current = NumberCurrent(mod, opt)
+                local down, up = NumberSteps(n, current)
+                local box = {
+                    text = NumberText(n, current),
+                    unit = n.unit,
+                    down = down ~= nil and ChooseHandler(mod, opt, down, refresh) or nil,
+                    up = up ~= nil and ChooseHandler(mod, opt, up, refresh) or nil,
+                }
+                y = self:LabeledRow(row.text, { { box = box } }, x, y, innerWidth, labelWidth) + M.gap
+            elseif type(opt.stepper) == "function" then
+                local text = row.text or ""
+                local ok, got = pcall(opt.stepper, mod)
+                if ok and type(got) == "table" then
+                    local function Step(fn)
+                        if type(fn) ~= "function" then return nil end
+                        return PE:Wrap("core", function()
+                            PE:Safe(mod.key, fn, mod)
+                            refresh()
+                        end)
+                    end
+                    local box = { text = got.text, unit = got.unit, down = Step(got.down), up = Step(got.up) }
+                    y = self:LabeledRow(text, { { box = box } }, x, y, innerWidth, labelWidth) + M.gap
+                elseif text ~= "" then
+                    y = y + self:Text("small", text, x, y, innerWidth, COLOR.option) + M.gap * 0.4
+                end
             elseif type(opt.action) == "function" then
                 local items = { {
                     label = (type(opt.label) == "string" and opt.label ~= "") and opt.label or "Do it",
@@ -555,6 +693,23 @@ function PE:NewListDrawer(spec)
         lowest = 0,
     }
     for name, fn in pairs(Drawer) do drawer[name] = fn end
+    -- A dimmed end of a number control: saves nothing, only redraws.
+    drawer.noStep = PE:Wrap("core", function() drawer.refresh() end)
+    drawer:AddPool("well", function()
+        local well = CreateFrame("Frame", nil, child)
+        well.border = well:CreateTexture(nil, "BACKGROUND")
+        well.border:SetAllPoints(well)
+        well.border:SetColorTexture(0.62, 0.52, 0.22, 1)
+        well.fill = well:CreateTexture(nil, "BORDER")
+        well.fill:SetColorTexture(0.03, 0.03, 0.04, 1)
+        well.value = UI:CreateText(well, "font")
+        well.value:SetJustifyH("CENTER")
+        well.value:SetWordWrap(false)
+        well.unit = UI:CreateText(well, "small")
+        well.unit:SetJustifyH("CENTER")
+        well.unit:SetWordWrap(false)
+        return well
+    end)
     drawer:AddPool("button", function() return UI:CreateButton(child, "") end)
     drawer:AddPool("font", function() return UI:CreateText(child, "font") end)
     drawer:AddPool("small", function() return UI:CreateText(child, "small") end)
