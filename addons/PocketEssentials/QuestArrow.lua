@@ -95,7 +95,7 @@ local POSITIONS = {
     left  = { "CENTER", "CENTER", -230, 60 },
     right = { "CENTER", "CENTER", 230,  60 },
 }
-local BOX_PX = { normal = 76, large = 112 }
+local BOX_PX = { small = 56, normal = 76, large = 112 }
 local DEFAULTS = { position = "top", size = "normal" }
 
 local COLOR_ARROW = { 1, 0.82, 0 }
@@ -849,6 +849,7 @@ mod = PE:RegisterModule({
           end },
         { key = "size", label = "Arrow size",
           choices = {
+              { value = "small", label = "Small" },
               { value = "normal", label = "Normal" },
               { value = "large", label = "Large" },
           },

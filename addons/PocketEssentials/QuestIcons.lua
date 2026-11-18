@@ -22,7 +22,7 @@ local ADDON_NAME, PE = ...
 if type(PE) ~= "table" or type(PE.RegisterModule) ~= "function" then return end
 
 local type, pairs, tonumber, tostring, pcall, next = type, pairs, tonumber, tostring, pcall, next
-local max, min, sqrt, sin, cos = math.max, math.min, math.sqrt, math.sin, math.cos
+local max, min, sqrt, sin, cos, floor = math.max, math.min, math.sqrt, math.sin, math.cos, math.floor
 
 local KEY = "questIcons"
 
@@ -42,8 +42,8 @@ local DEFAULTS = {
 
 -- Icon sizes in pixels on a 720p screen (a 6 inch 720p screen has about ten
 -- pixels to the millimetre, so "medium" is roughly 3 mm on the map).
-local MAP_PX = { small = 22, medium = 28, large = 36 }
-local MINI_PX = { small = 14, medium = 18, large = 22 }
+local MAP_PX = { xsmall = 18, small = 22, medium = 28, large = 36 }
+local MINI_PX = { xsmall = 11, small = 14, medium = 18, large = 22 }
 -- On the minimap the tap area of an icon is at least this big. On the world
 -- map the tap area is exactly the icon, so the map can still be dragged and
 -- Blizzard's own pins underneath can still be tapped.
@@ -57,6 +57,8 @@ local MINI_INTERVAL = 0.1 -- seconds between minimap updates
 local LABEL_SECONDS = 5
 local DEFAULT_CLUSTER = 2
 local DEFAULT_SPOTS = 5
+local MAX_CLUSTER = 10   -- the settings' Merge control goes 0 to 10
+local MAX_SPOTS = 20     -- the settings' Spots control goes 1 to 20, then All
 
 local OLD_ADDON_MESSAGE = "Delete the old QuestDots folder from AddOns, then reload."
 local TURN_ON_MESSAGE = "Turn on \"Quest icons\" in the Pocket Essentials settings first."
@@ -1148,16 +1150,19 @@ mod = PE:RegisterModule({
               ApplyOption("map")
               ApplyOption("mini")
           end },
-        { key = "hideHaze", label = "Hide blue haze", choices = ON_OFF, toggle = true, OnChange = OptionChanged("hideHaze") },
         { key = "size", label = "Icon size",
-          choices = { { value = "small", label = "Small" }, { value = "medium", label = "Medium" }, { value = "large", label = "Large" } },
+          choices = { { value = "xsmall", label = "Extra small" }, { value = "small", label = "Small" },
+                      { value = "medium", label = "Medium" }, { value = "large", label = "Large" } },
           OnChange = OptionChanged("size") },
+        -- Number controls (0.7.0). The saved values are the same as before:
+        -- cluster in % of the map (0 = off), spots 0 = all.
         { key = "cluster", label = "Merge nearby icons",
-          choices = { { value = 0, label = "Off" }, { value = 2, label = "Normal" }, { value = 5, label = "More" } },
+          number = { min = 0, max = MAX_CLUSTER, default = DEFAULT_CLUSTER, unit = "merge", offLabel = "Off" },
           OnChange = OptionChanged("cluster") },
         { key = "spots", label = "Spots per objective",
-          choices = { { value = 0, label = "All" }, { value = 10, label = "10" }, { value = 5, label = "5" }, { value = 3, label = "3" } },
+          number = { min = 1, max = MAX_SPOTS, default = DEFAULT_SPOTS, unit = "spots", all = 0, allLabel = "All" },
           OnChange = OptionChanged("spots") },
+        { key = "hideHaze", label = "Hide blue haze", choices = ON_OFF, toggle = true, OnChange = OptionChanged("hideHaze") },
         -- Opens the Icon key page of the settings (Back returns to the main list).
         { label = "Icon key", action = function() PE:OpenSettings("key") end },
     },
@@ -1191,9 +1196,16 @@ local TOGGLES = {
     haze = { key = "hideHaze", name = "Hide blue haze" },
 }
 local CLUSTER_WORDS = { off = 0, normal = 2, more = 5 }
-local SPOTS_WORDS = { all = 0, ["10"] = 10, ["5"] = 5, ["3"] = 3 }
+local SPOTS_WORDS = { all = 0 }
 local SHOW_WORDS = { focus = "Focused quest", tracked = "Tracked quests", all = "All quests" }
-local USAGE = "/qd show tracked (or focus, all), /qd map, /qd mini, /qd haze, /qd size small (or medium, large), /qd cluster 2 (0 is off), /qd spots all (or 10, 5, 3)"
+local USAGE = "/qd show tracked (or focus, all), /qd map, /qd mini, /qd haze, /qd size small (or xsmall, medium, large), /qd cluster 2 (0 to 10, 0 is off), /qd spots all (or 1 to 20)"
+
+-- "/qd spots 7": a whole number from 1 to MAX_SPOTS, else nil.
+local function SpotsNumber(text)
+    local n = tonumber(text)
+    if n and n == floor(n) and n >= 1 and n <= MAX_SPOTS then return n end
+    return nil
+end
 
 local function SlashCommand(msg)
     local opts = mod.opts
@@ -1227,11 +1239,11 @@ local function SlashCommand(msg)
     elseif cmd == "cluster" and (CLUSTER_WORDS[value] or tonumber(value)) then
         local number = CLUSTER_WORDS[value] or tonumber(value)
         if number ~= number then number = DEFAULT_CLUSTER end
-        opts.cluster = max(0, min(20, number))
+        opts.cluster = floor(max(0, min(MAX_CLUSTER, number)))
         changed = "cluster"
         PE:Print("Merge nearby icons: " .. (opts.cluster == 0 and "off" or tostring(opts.cluster)) .. ".")
-    elseif cmd == "spots" and SPOTS_WORDS[value] then
-        opts.spots = SPOTS_WORDS[value]
+    elseif cmd == "spots" and (SPOTS_WORDS[value] or SpotsNumber(value)) then
+        opts.spots = SPOTS_WORDS[value] or SpotsNumber(value)
         changed = "spots"
         PE:Print("Spots per objective: " .. (opts.spots == 0 and "all" or tostring(opts.spots)) .. ".")
     else

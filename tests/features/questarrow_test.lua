@@ -206,6 +206,14 @@ test("quest arrow: the five positions and two sizes put the block where QuestArr
     check(math.abs(parts(c).box.frame:GetWidth() - Px(76)) < 0.01, "normal size " .. parts(c).box.frame:GetWidth())
     choose("size", "large")
     check(math.abs(parts(c).box.frame:GetWidth() - Px(112)) < 0.01, "large size " .. parts(c).box.frame:GetWidth())
+    -- Spec 2026-11-18-number-control-design, section 3: Small first, 56 px.
+    choose("size", "small")
+    check(math.abs(parts(c).box.frame:GetWidth() - Px(56)) < 0.01, "small size " .. parts(c).box.frame:GetWidth())
+    local got = {}
+    for _, opt in ipairs(mod.options) do
+        if opt.key == "size" then for _, ch in ipairs(opt.choices) do got[#got + 1] = ch.value end end
+    end
+    eq(got, { "small", "normal", "large" })
 end)
 
 -- DECISIONS "Quest arrow": 'With none focused it says "No quest focused / Focus one in your quest log"'.

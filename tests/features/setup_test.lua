@@ -276,7 +276,7 @@ test("setup: every feature of this build has a switch on some screen, and the ne
             if at == i then switch(c, key) end
         end
         -- The stepper is a real control now, shown with Big chat buttons off (it is marked always).
-        if i == AT.chat then button(c, "Smaller"); button(c, "Bigger") end
+        if i == AT.chat then button(c, "-"); button(c, "+") end
         if i < N then goTo(c, 2) end
     end
     for _, mod in ipairs(PE.moduleList) do
@@ -1165,6 +1165,14 @@ local function checkOption(c, top, mod, opt, shown, where)
                     where .. ": \"" .. opt.label .. "\" / " .. tostring(choice.label) .. " marked")
             end
         end
+    elseif type(opt.number) == "table" or type(opt.stepper) == "function" then
+        -- A number control (0.7.0): the heading, then "-" and "+".
+        local region = textRegion(c, top, opt.label)
+        eq(region ~= nil, shown, where .. ": \"" .. opt.label .. "\" drawn")
+        if shown then
+            local after = buttonsAfter(c, top, opt.label)
+            eq({ T.labelOf(after[1]), T.labelOf(after[2]) }, { "-", "+" }, where .. ": the ends of \"" .. opt.label .. "\"")
+        end
     elseif type(opt.action) == "function" then
         eq(#shownButtons(c, top, opt.label), shown and 1 or 0, where .. ": button \"" .. opt.label .. "\"")
     else
@@ -1389,9 +1397,9 @@ test("options: a choice pressed in the guide is saved, runs the same OnChange an
     check(pressed >= 5, "only " .. pressed .. " choices were tried")
 end)
 
--- The number between Smaller and Bigger in a window.
+-- The number in the chat text size box (between - and +) in a window.
 local function stepperNumber(c, top)
-    local smaller, bigger = shownButtons(c, top, "Smaller")[1], shownButtons(c, top, "Bigger")[1]
+    local smaller, bigger = shownButtons(c, top, "-")[1], shownButtons(c, top, "+")[1]
     check(smaller and bigger, "no Smaller / Bigger pair", 2)
     local _, sr, st, sb = c._rect(smaller)
     local bl = c._rect(bigger)
@@ -1399,7 +1407,7 @@ local function stepperNumber(c, top)
     walk(c, top, function(w)
         for _, r in ipairs(c._state(w).regions) do
             local rs = c._state(r)
-            if rs.type == "FontString" and rs.text and rs.text ~= "" and r:IsVisible() and w == smaller:GetParent() then
+            if rs.type == "FontString" and tonumber(rs.text) and r:IsVisible() then
                 local l, rr, t = c._rect(r)
                 if l >= sr - 0.01 and rr <= bl + 0.01 and t <= st + 0.01 and t >= sb - 0.01 then found = rs.text end
             end
@@ -1414,7 +1422,7 @@ test("options: the chat text size stepper works in the guide with Big chat butto
     goToFeature(c, PE, "chat")
     local start = stepperNumber(c, guide(c))
     check(start, "no number between Smaller and Bigger in the guide")
-    c:click(button(c, "Bigger"))
+    c:click(button(c, "+"))
     c:advance(0.1)
     local bigger = stepperNumber(c, guide(c))
     check(bigger > start, "Bigger in the guide did not raise the number: " .. tostring(bigger))
@@ -1422,9 +1430,9 @@ test("options: the chat text size stepper works in the guide with Big chat butto
     PE:OpenSettings()
     c:advance(0.2)
     eq(stepperNumber(c, settingsPanel(c)), bigger, "the settings show another size")
-    c:click(shownButtons(c, settingsPanel(c), "Smaller")[1])
+    c:click(shownButtons(c, settingsPanel(c), "-")[1])
     c:advance(0.2)
-    c:click(shownButtons(c, settingsPanel(c), "Smaller")[1])
+    c:click(shownButtons(c, settingsPanel(c), "-")[1])
     c:advance(0.2)
     local smaller = stepperNumber(c, settingsPanel(c))
     check(smaller < start, "Smaller twice in the settings did not lower the number")
@@ -1435,10 +1443,10 @@ test("options: the chat text size stepper works in the guide with Big chat butto
     -- the highlight stays on the button after a press with A
     local panel = guide(c)
     press(c, "DOWN")
-    while panel.peNavFocus ~= button(c, "Bigger") do press(c, "RIGHT") end
+    while panel.peNavFocus ~= button(c, "+") do press(c, "RIGHT") end
     press(c, "A")
     c:advance(0.1)
-    check(panel.peNavFocus == button(c, "Bigger"), "the highlight left Bigger")
+    check(panel.peNavFocus == button(c, "+"), "the highlight left Bigger")
     check(stepperNumber(c, guide(c)) > smaller, "A on Bigger did nothing")
     c:assertClean("stepper")
 end)
@@ -1667,7 +1675,7 @@ test("options: with options on screen the guide still has no per-frame code and 
     for i = 2, N do
         goTo(c, 2)
         if i == AT.bags then button(c, "Extra large") end
-        if i == AT.chat then button(c, "Bigger") end
+        if i == AT.chat then button(c, "+") end
     end
     c:advance(2)
     eq(c.stats.addonOnUpdate, 0, "something ticked while the guide was open")

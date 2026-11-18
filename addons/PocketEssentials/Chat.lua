@@ -780,7 +780,7 @@ end
 -- source it makes no protected call and never touches the chat box. The
 -- game's chat tab menu (Font Size) does one window; here it is called for
 -- every chat window so all tabs match, and only out of a fight.
--- The settings row is a stepper: Smaller, the size the game is using, Bigger.
+-- The settings row is a number control: -, the size the game is using, +.
 -- The steps are the game's own list, read when the row is drawn or tapped,
 -- then two larger sizes. Nothing is saved here: the game keeps the size, and
 -- nothing is changed until one of the two buttons is tapped. The row is
@@ -940,20 +940,24 @@ local function TextSizeValue()
     return "Not available on this version of the game"
 end
 
--- The stepper: Smaller, the size the game is using right now, Bigger. A
--- button that has no further step (counting a step that waits for the end
--- of a fight) is dimmed; a press on it still does nothing.
-local function TextSizeButtons()
+-- The number control (Settings.lua, stepper row): the size the game is
+-- using right now between - and +. A side with no further step (counting a
+-- step that waits for the end of a fight) is a dimmed end; a press on it
+-- changes nothing. nil when there is no size to show.
+local function TextSizeStepper()
     local size = TextSizeAvailable() and CurrentTextSize()
-    if not size then return {} end
+    if not size then return nil end
     local sizes = StepSizes()
     local base = pendingSize or size
     return {
-        { label = "Smaller", action = function() ChangeTextSize(-1) end,
-          style = not NextTextSize(sizes, base, -1) and "disabled" or nil },
-        { text = tostring(size) },
-        { label = "Bigger", action = function() ChangeTextSize(1) end,
-          style = not NextTextSize(sizes, base, 1) and "disabled" or nil },
+        text = tostring(size),
+        unit = "text size",
+        -- A dimmed end still calls ChangeTextSize, which only writes the
+        -- debug line saying there is no further step.
+        down = function() ChangeTextSize(-1) end,
+        up = function() ChangeTextSize(1) end,
+        downDim = not NextTextSize(sizes, base, -1),
+        upDim = not NextTextSize(sizes, base, 1),
     }
 end
 
@@ -969,7 +973,7 @@ mod = PE:RegisterModule({
     defaults = { whispers = {} },
 
     options = {
-        { label = "Chat text size", value = TextSizeValue, buttons = TextSizeButtons, always = true },
+        { label = "Chat text size", value = TextSizeValue, stepper = TextSizeStepper, always = true },
     },
 
     OnEnable = function(self)

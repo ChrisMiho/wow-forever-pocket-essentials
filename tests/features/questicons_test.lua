@@ -644,4 +644,60 @@ test("quest icons: Map only takes the icons off the minimap, and Map and minimap
     c:assertClean("icons on")
 end)
 
+
+---------------------------------------------------------------------------
+-- Spec 2026-11-18-number-control-design, section 2: order, Extra small,
+-- Merge and Spots as number controls.
+---------------------------------------------------------------------------
+
+local function optionOf(PE, key)
+    for _, o in ipairs(PE:GetModule("questIcons").options) do if o.key == key then return o end end
+end
+
+test("quest icons: the rows are in the spec's order, Hide blue haze just before Icon key", function()
+    local c, PE = newIcons()
+    local names = {}
+    for _, o in ipairs(PE:GetModule("questIcons").options) do names[#names + 1] = o.key or o.label end
+    eq(names, { "show", "Icons on", "size", "cluster", "spots", "hideHaze", "Icon key" })
+end)
+
+test("quest icons: Icon size starts with Extra small, 18 px on the map and 11 on the minimap", function()
+    local c, PE = newIcons()
+    local got = {}
+    for _, ch in ipairs(optionOf(PE, "size").choices) do got[#got + 1] = ch.value .. "=" .. ch.label end
+    eq(got, { "xsmall=Extra small", "small=Small", "medium=Medium", "large=Large" })
+    setOpt(PE, "size", "xsmall")
+    c:advance(0.5)
+    local mini = iconsOn(c, c.minimap)
+    check(#mini > 0, "no minimap icons (the test's premise)")
+    check(math.abs(mini[1]:GetWidth() - PE.UI:Px(11)) < 0.01, "minimap icon " .. mini[1]:GetWidth())
+    c:assertClean("extra small")
+end)
+
+test("quest icons: Merge is 0 to 10 with Off at 0, Spots 1 to 20 then All, with the spec's defaults", function()
+    local c, PE = newIcons()
+    local m, s = optionOf(PE, "cluster").number, optionOf(PE, "spots").number
+    eq({ m.min, m.max, m.default, m.unit, m.offLabel }, { 0, 10, 2, "merge", "Off" })
+    eq({ s.min, s.max, s.default, s.unit, s.all, s.allLabel }, { 1, 20, 5, "spots", 0, "All" })
+    check(m.all == nil or m.all == false, "Merge has an All value")
+    check(not optionOf(PE, "cluster").choices and not optionOf(PE, "spots").choices, "still preset buttons")
+end)
+
+test("quest icons: /qd spots takes 1 to 20, and /qd cluster stops at 10", function()
+    local c, PE = newIcons()
+    local qd = c.env.SlashCmdList.POCKETESSENTIALSQD
+    local mod = PE:GetModule("questIcons")
+    qd("spots 17")
+    eq(mod.opts.spots, 17)
+    qd("spots all")
+    eq(mod.opts.spots, 0)
+    qd("spots 25")
+    eq(mod.opts.spots, 0, "25 was taken")
+    qd("cluster 15")
+    eq(mod.opts.cluster, 10)
+    qd("size xsmall")
+    eq(mod.opts.size, "xsmall")
+    c:assertClean("qd numbers")
+end)
+
 return { known = KNOWN_FAILURES }

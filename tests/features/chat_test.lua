@@ -774,10 +774,10 @@ local function shownButton(c, label)
     return found
 end
 
--- The stepper's number: the one shown text that sits between "Smaller" and
--- "Bigger" on their line (spec 2026-11-17-0.4.0, Rulings). nil when there is none.
+-- The stepper's number: the one shown text that sits between "-" and
+-- "+" on their line (spec 2026-11-17-0.4.0, Rulings). nil when there is none.
 local function stepperText(c)
-    local smaller, bigger = shownButton(c, "Smaller"), shownButton(c, "Bigger")
+    local smaller, bigger = shownButton(c, "-"), shownButton(c, "+")
     if not (smaller and bigger) then return nil end
     local _, sr, st, sb = c._rect(smaller)
     local bl = c._rect(bigger)
@@ -785,7 +785,7 @@ local function stepperText(c)
     walk(c, settingsOf(c), function(w)
         for _, r in ipairs(c._state(w).regions) do
             local rs = c._state(r)
-            if rs.type == "FontString" and rs.shown and rs.text and rs.text ~= "" then
+            if rs.type == "FontString" and rs.shown and rs.text and rs.text ~= "" and rs.text ~= "text size" then
                 local l, rr, t = c._rect(r)
                 if l and rr and t and l >= sr - 0.01 and rr <= bl + 0.01 and t <= st + 0.01 and t >= sb - 0.01 then
                     found, count = rs.text, count + 1
@@ -800,7 +800,7 @@ end
 -- Spec 3 "Behaviour": each tap moves one step and every chat window gets the same size.
 test("chat size: Bigger moves one step and all ten chat windows follow", function()
     local c, PE = newChat()
-    c:click(settingsButton(c, PE, "Bigger"))
+    c:click(settingsButton(c, PE, "+"))
     c:advance(0.5)
     for i, f in ipairs(c.chatWindows) do eq(select(2, f:GetFont()), 20, "window " .. i) end
     eq(c.chatSizes[1], 20)
@@ -811,7 +811,7 @@ end)
 
 test("chat size: Smaller moves one step down", function()
     local c, PE = newChat()
-    c:click(settingsButton(c, PE, "Smaller"))
+    c:click(settingsButton(c, PE, "-"))
     eq(mainSize(c), 16)
     eq(c.chatSizes[3], 16)
 end)
@@ -821,16 +821,16 @@ test("chat size: the steps run 12 14 16 18 20 24 27 30 34 and stop at both ends"
     local c, PE = newChat()
     local seen = { mainSize(c) }
     for _ = 1, 10 do
-        c:click(settingsButton(c, PE, "Bigger"))
+        c:click(settingsButton(c, PE, "+"))
         seen[#seen + 1] = mainSize(c)
     end
     eq(seen, { 18, 20, 24, 27, 30, 34, 34, 34, 34, 34, 34 })
     local before = #sizeCalls(c)
-    c:click(settingsButton(c, PE, "Bigger"))
+    c:click(settingsButton(c, PE, "+"))
     eq(#sizeCalls(c), before, "a tap at the top still called the game")
     seen = {}
     for _ = 1, 10 do
-        c:click(settingsButton(c, PE, "Smaller"))
+        c:click(settingsButton(c, PE, "-"))
         seen[#seen + 1] = mainSize(c)
     end
     eq(seen, { 30, 27, 24, 20, 18, 16, 14, 12, 12, 12 })
@@ -839,8 +839,8 @@ end)
 -- Spec 3: a size that is not on the list moves to the next listed size in the tapped direction.
 test("chat size: a size between steps moves to the next listed size in the tapped direction", function()
     local cases = {
-        { 19, "Bigger", 20 }, { 19, "Smaller", 18 }, { 13, "Smaller", 12 }, { 13, "Bigger", 14 },
-        { 11, "Bigger", 12 }, { 40, "Smaller", 34 }, { 28.4, "Bigger", 30 }, { 17.6, "Smaller", 16 },
+        { 19, "+", 20 }, { 19, "-", 18 }, { 13, "-", 12 }, { 13, "+", 14 },
+        { 11, "+", 12 }, { 40, "-", 34 }, { 28.4, "+", 30 }, { 17.6, "-", 16 },
     }
     for _, case in ipairs(cases) do
         local c, PE = newChat()
@@ -852,7 +852,7 @@ end)
 
 -- Spec 3: below the first and above the last step nothing is done.
 test("chat size: a size beyond the list in the tapped direction does nothing", function()
-    for _, case in ipairs({ { 35, "Bigger" }, { 11, "Smaller" } }) do
+    for _, case in ipairs({ { 35, "+" }, { 11, "-" } }) do
         local c, PE = newChat()
         setAllTo(c, case[1])
         c:click(settingsButton(c, PE, case[2]))
@@ -865,7 +865,7 @@ end)
 test("chat size: a tap in a fight is held until the fight ends", function()
     local c, PE = newChat()
     PE:SetDebug(true)
-    local bigger = settingsButton(c, PE, "Bigger")
+    local bigger = settingsButton(c, PE, "+")
     c:enterCombat()
     c:click(bigger)
     eq(#sizeCalls(c), 0, "the game was called during the fight")
@@ -882,7 +882,7 @@ end)
 
 test("chat size: two taps in one fight are two steps once it ends", function()
     local c, PE = newChat()
-    local bigger = settingsButton(c, PE, "Bigger")
+    local bigger = settingsButton(c, PE, "+")
     c:enterCombat()
     c:click(bigger)
     c:click(bigger)
@@ -894,8 +894,8 @@ end)
 
 test("chat size: a bigger and a smaller tap in one fight cancel out", function()
     local c, PE = newChat()
-    local bigger = settingsButton(c, PE, "Bigger")
-    local smaller = settingsButton(c, PE, "Smaller")
+    local bigger = settingsButton(c, PE, "+")
+    local smaller = settingsButton(c, PE, "-")
     c:enterCombat()
     c:click(bigger)
     c:click(smaller)
@@ -906,7 +906,7 @@ end)
 
 test("chat size: in a fight the value text shows the size that is waiting; afterwards just the size", function()
     local c, PE = newChat()
-    local bigger = settingsButton(c, PE, "Bigger")
+    local bigger = settingsButton(c, PE, "+")
     check(hasText(c, "Chat text size"))
     eq(stepperText(c), "18")
     c:enterCombat()
@@ -926,7 +926,7 @@ end)
 test("chat size: taps in a fight stop at the end of the list", function()
     local c, PE = newChat()
     setAllTo(c, 30)
-    local bigger = settingsButton(c, PE, "Bigger")
+    local bigger = settingsButton(c, PE, "+")
     c:enterCombat()
     c:click(bigger)
     c:click(bigger)
@@ -940,7 +940,7 @@ end)
 test("chat size: the debug log has one line for the change, without a player's name", function()
     local c, PE = newChat()
     PE:SetDebug(true)
-    c:click(settingsButton(c, PE, "Bigger"))
+    c:click(settingsButton(c, PE, "+"))
     eq(debugLines(c, "chat"), { "text size 18 -> 20 (10 windows)" })
 end)
 
@@ -948,7 +948,7 @@ test("chat size: a tap at the end writes a line and calls nothing", function()
     local c, PE = newChat()
     PE:SetDebug(true)
     setAllTo(c, 34)
-    c:click(settingsButton(c, PE, "Bigger"))
+    c:click(settingsButton(c, PE, "+"))
     eq(debugLines(c, "chat"), { "text size 34: already the biggest" })
     eq(#sizeCalls(c), 0)
 end)
@@ -956,7 +956,7 @@ end)
 -- Spec 3: "The addon stores nothing" and "With no tap, nothing is changed".
 test("chat size: nothing is called or saved until a button is tapped", function()
     local c, PE = newChat()
-    settingsButton(c, PE, "Bigger")
+    settingsButton(c, PE, "+")
     eq(#sizeCalls(c), 0)
     local saved = rawget(c.env, "PocketEssentialsDB").options.chat
     eq(saved.whispers, {})
@@ -968,7 +968,7 @@ end)
 -- Spec 3 "Rules": the edit box is never touched; the game's own size list is not written to.
 test("chat size: the edit box is not touched and the game's own size list stays as it is", function()
     local c, PE = newChat()
-    c:click(settingsButton(c, PE, "Bigger"))
+    c:click(settingsButton(c, PE, "+"))
     for _, call in ipairs(c.calls) do
         check(not tostring(call.name):find("EditBox", 1, true) and not tostring(call.name):find("OpenChat", 1, true),
             "touched the chat box: " .. tostring(call.name))
@@ -981,30 +981,30 @@ end)
 -- kit's "disabled" look, which can still be pressed and does nothing).
 test("chat size: at the smallest and the biggest size the end button is dimmed and a press does nothing", function()
     local function styles(c, PE)
-        return { settingsButton(c, PE, "Smaller").peStyle, shownButton(c, "Bigger").peStyle }
+        return { settingsButton(c, PE, "-").peStyle, shownButton(c, "+").peStyle }
     end
     local c, PE = newChat()
-    eq(styles(c, PE), { "normal", "normal" }, "in the middle")
+    eq(styles(c, PE), { "step", "step" }, "in the middle")
     setAllTo(c, 34)
     PE:RefreshSettings()
     c:advance(0.1)
-    eq(styles(c, PE), { "normal", "disabled" }, "at the biggest")
-    c:click(shownButton(c, "Bigger"))
+    eq(styles(c, PE), { "step", "stepDim" }, "at the biggest")
+    c:click(shownButton(c, "+"))
     c:advance(0.1)
     eq(#sizeCalls(c), 0, "a press on the dimmed Bigger called the game")
     eq(mainSize(c), 34)
-    eq(styles(c, PE), { "normal", "disabled" }, "after the press")
+    eq(styles(c, PE), { "step", "stepDim" }, "after the press")
     -- one step down and Bigger is a plain button again
-    c:click(shownButton(c, "Smaller"))
+    c:click(shownButton(c, "-"))
     c:advance(0.1)
     eq(mainSize(c), 30)
-    eq(styles(c, PE), { "normal", "normal" }, "one step below the biggest")
+    eq(styles(c, PE), { "step", "step" }, "one step below the biggest")
     setAllTo(c, 12)
     PE:RefreshSettings()
     c:advance(0.1)
-    eq(styles(c, PE), { "disabled", "normal" }, "at the smallest")
+    eq(styles(c, PE), { "stepDim", "step" }, "at the smallest")
     local before = #sizeCalls(c)
-    c:click(shownButton(c, "Smaller"))
+    c:click(shownButton(c, "-"))
     c:advance(0.1)
     eq(#sizeCalls(c), before, "a press on the dimmed Smaller called the game")
     eq(mainSize(c), 12)
@@ -1012,7 +1012,7 @@ test("chat size: at the smallest and the biggest size the end button is dimmed a
     setAllTo(c, 40)
     PE:RefreshSettings()
     c:advance(0.1)
-    eq(styles(c, PE), { "normal", "disabled" }, "above the biggest")
+    eq(styles(c, PE), { "step", "stepDim" }, "above the biggest")
     c:assertClean("dimmed ends")
 end)
 
@@ -1020,27 +1020,27 @@ end)
 test("chat size: in a fight the end button dims as soon as the waiting size is the last one", function()
     local c, PE = newChat()
     setAllTo(c, 30)
-    local bigger = settingsButton(c, PE, "Bigger")
-    eq(bigger.peStyle, "normal")
+    local bigger = settingsButton(c, PE, "+")
+    eq(bigger.peStyle, "step")
     c:enterCombat()
     c:click(bigger)
     c:advance(0.1)
-    eq(shownButton(c, "Bigger").peStyle, "disabled", "34 is waiting, Bigger is not dimmed")
-    eq(shownButton(c, "Smaller").peStyle, "normal")
+    eq(shownButton(c, "+").peStyle, "stepDim", "34 is waiting, Bigger is not dimmed")
+    eq(shownButton(c, "-").peStyle, "step")
     c:leaveCombat()
     c:advance(0.1)
     eq(mainSize(c), 34)
-    eq(shownButton(c, "Bigger").peStyle, "disabled")
+    eq(shownButton(c, "+").peStyle, "stepDim")
 end)
 
 -- Spec 0.4.0 Rulings: one stepper, "Chat text size", then Smaller, the size, Bigger.
 test("chat size: the row in the chat block shows the label, Smaller, the size and Bigger, in that order", function()
     local c, PE = newChat()
-    check(settingsButton(c, PE, "Smaller") and settingsButton(c, PE, "Bigger"), "buttons missing")
+    check(settingsButton(c, PE, "-") and settingsButton(c, PE, "+"), "buttons missing")
     check(hasText(c, "Chat text size"), "no label: " .. table.concat(settingsTexts(c), " | "))
     eq(stepperText(c), "18", "no number between the buttons: " .. table.concat(settingsTexts(c), " | "))
-    local sl, sr, st = c._rect(shownButton(c, "Smaller"))
-    local bl, _, bt = c._rect(shownButton(c, "Bigger"))
+    local sl, sr, st = c._rect(shownButton(c, "-"))
+    local bl, _, bt = c._rect(shownButton(c, "+"))
     check(sl < sr and sr < bl, "Smaller is not left of Bigger")
     check(math.abs(st - bt) < 0.01, "the two buttons are not on one line")
 end)
@@ -1061,7 +1061,7 @@ test("chat size: the number steps through the full list both ways and stops at t
     c:advance(0.2)
     local seen = { stepperText(c) }
     for _ = 1, 10 do
-        c:click(shownButton(c, "Bigger"))
+        c:click(shownButton(c, "+"))
         c:advance(0.2)
         seen[#seen + 1] = stepperText(c)
     end
@@ -1069,7 +1069,7 @@ test("chat size: the number steps through the full list both ways and stops at t
     eq(#sizeCalls(c), 80, "a tap at the top still called the game")
     seen = {}
     for _ = 1, 10 do
-        c:click(shownButton(c, "Smaller"))
+        c:click(shownButton(c, "-"))
         c:advance(0.2)
         seen[#seen + 1] = stepperText(c)
     end
@@ -1081,7 +1081,7 @@ end)
 -- Rulings: "The number shown is the size the game is using, read from the game."
 test("chat size: the number is read from the game, not from anything the addon keeps", function()
     local c, PE = newChat()
-    c:click(settingsButton(c, PE, "Bigger"))
+    c:click(settingsButton(c, PE, "+"))
     c:advance(0.2)
     eq(stepperText(c), "20")
     local before = #sizeCalls(c)
@@ -1095,7 +1095,7 @@ end)
 
 -- Rulings: a size that is not in the list is shown as it is and steps to its neighbour.
 test("chat size: a size that is not in the list is shown, and one press goes to the neighbour that way", function()
-    for _, case in ipairs({ { 19, "Bigger", "20" }, { 19, "Smaller", "18" }, { 22, "Bigger", "24" }, { 40, "Smaller", "34" } }) do
+    for _, case in ipairs({ { 19, "+", "20" }, { 19, "-", "18" }, { 22, "+", "24" }, { 40, "-", "34" } }) do
         local c, PE = newChat()
         setAllTo(c, case[1])
         PE:OpenSettings()
@@ -1111,7 +1111,7 @@ end)
 -- Spec 1 rule 6 and the Rulings: in a fight the number stays the game's size; the label has the waiting size.
 test("chat size: in a fight the number stays the game's size until the change is applied", function()
     local c, PE = newChat()
-    local bigger = settingsButton(c, PE, "Bigger")
+    local bigger = settingsButton(c, PE, "+")
     c:enterCombat()
     c:click(bigger)
     c:advance(0.2)
@@ -1128,7 +1128,7 @@ test("chat size: the steps follow the game's list when it differs, then 30 and 3
     setAllTo(c, 10)
     local seen = {}
     for _ = 1, 5 do
-        c:click(settingsButton(c, PE, "Bigger"))
+        c:click(settingsButton(c, PE, "+"))
         seen[#seen + 1] = mainSize(c)
     end
     eq(seen, { 15, 22, 30, 34, 34 })
@@ -1140,7 +1140,7 @@ test("chat size: a game list that already goes past 30 gets only the larger extr
     setAllTo(c, 12)
     local seen = {}
     for _ = 1, 3 do
-        c:click(settingsButton(c, PE, "Bigger"))
+        c:click(settingsButton(c, PE, "+"))
         seen[#seen + 1] = mainSize(c)
     end
     eq(seen, { 32, 34, 34 })
@@ -1154,12 +1154,12 @@ test("chat size: without the game's list the known sizes are used, and the log s
         setAllTo(c, 12)
         local seen = {}
         for _ = 1, 9 do
-            c:click(settingsButton(c, PE, "Bigger"))
+            c:click(settingsButton(c, PE, "+"))
             seen[#seen + 1] = mainSize(c)
         end
         eq(seen, { 14, 16, 18, 20, 24, 27, 30, 34, 34 }, name)
         PE:SetDebug(true)
-        c:click(settingsButton(c, PE, "Smaller"))
+        c:click(settingsButton(c, PE, "-"))
         eq(debugLines(c, "chat"), { "text size: the game's size list is missing, using our own",
             "text size 34 -> 30 (10 windows)" }, name)
     end
@@ -1173,7 +1173,7 @@ test("chat size: the row is drawn and works while the chat feature is off", func
     c:advance(0.2)
     check(hasText(c, "Chat text size"), "not drawn with the feature off: " .. table.concat(settingsTexts(c), " | "))
     eq(stepperText(c), "18")
-    c:click(shownButton(c, "Smaller"))
+    c:click(shownButton(c, "-"))
     c:advance(0.2)
     eq(stepperText(c), "16")
     eq(#sizeCalls(c), 10)
@@ -1194,7 +1194,7 @@ test("chat size: with the feature off nothing is saved and nothing is called unt
     PE:OpenSettings()
     c:advance(0.2)
     eq(#sizeCalls(c), 0)
-    c:click(shownButton(c, "Bigger"))
+    c:click(shownButton(c, "+"))
     local saved = rawget(c.env, "PocketEssentialsDB").options.chat
     for key in pairs(type(saved) == "table" and saved or {}) do
         eq(key, "whispers", "the chat feature saved something besides its whisper list")
@@ -1205,7 +1205,7 @@ test("chat size: a tap in a fight with the feature off is held and applied when 
     local c, PE = T.new({})
     PE:OpenSettings()
     c:advance(0.2)
-    local bigger = shownButton(c, "Bigger")
+    local bigger = shownButton(c, "+")
     c:enterCombat()
     c:click(bigger)
     eq(#sizeCalls(c), 0, "the game was called during the fight")
@@ -1221,7 +1221,7 @@ test("chat size: without the game's function the row says so and has no buttons"
     PE:OpenSettings()
     c:advance(0.2)
     check(hasText(c, "Chat text size: Not available on this version of the game"), table.concat(settingsTexts(c), " | "))
-    check(not settingsButton(c, PE, "Bigger") and not settingsButton(c, PE, "Smaller"), "buttons drawn")
+    check(not settingsButton(c, PE, "+") and not settingsButton(c, PE, "-"), "buttons drawn")
 end)
 
 test("chat size: without a main chat window the row says so and has no buttons", function()
@@ -1229,7 +1229,7 @@ test("chat size: without a main chat window the row says so and has no buttons",
     PE:OpenSettings()
     c:advance(0.2)
     check(hasText(c, "Chat text size: Not available on this version of the game"), table.concat(settingsTexts(c), " | "))
-    check(not settingsButton(c, PE, "Bigger"), "buttons drawn")
+    check(not settingsButton(c, PE, "+"), "buttons drawn")
 end)
 
 -- Guard: a window that fails does not stop the others.
@@ -1240,7 +1240,7 @@ test("chat size: one chat window that raises an error does not stop the rest", f
         if f:GetID() == 2 then error("boom") end
         return real(self, f, size)
     end)
-    c:click(settingsButton(c, PE, "Bigger"))
+    c:click(settingsButton(c, PE, "+"))
     eq(c.chatSizes[1], 20)
     eq(c.chatSizes[3], 20)
     eq(c.chatSizes[2], nil)
@@ -1269,15 +1269,15 @@ test("settings: a text entry in a buttons row is drawn between the buttons and r
     local mod = PE:GetModule("bags")
     local n = 7
     mod.options[#mod.options + 1] = { label = "Test row", buttons = function()
-        return { { label = "Smaller", action = function() n = n - 1 end }, { text = "n" .. n },
-            { label = "Bigger", action = function() n = n + 1 end } }
+        return { { label = "-", action = function() n = n - 1 end }, { text = "n" .. n },
+            { label = "+", action = function() n = n + 1 end } }
     end }
     PE:OpenSettings()
     c:advance(0.2)
     check(hasText(c, "Test row"), table.concat(settingsTexts(c), " | "))
     eq(stepperText(c), "n7")
     check(not shownButton(c, "n7"), "the text was drawn as a button")
-    c:click(shownButton(c, "Bigger"))
+    c:click(shownButton(c, "+"))
     c:advance(0.2)
     eq(stepperText(c), "n8")
     c:assertClean("settings text entry")
@@ -1314,7 +1314,7 @@ test("settings: a feature that is off with an always row has a fold button that 
     c:click(hide)
     c:advance(0.2)
     check(not hasText(c, "Chat text size"), "the row is still drawn after folding")
-    check(not shownButton(c, "Smaller"), "the stepper is still drawn after folding")
+    check(not shownButton(c, "-"), "the stepper is still drawn after folding")
     c:click(shownButton(c, "Show options"))
     c:advance(0.2)
     check(hasText(c, "Chat text size") and stepperText(c) == "18", "the row did not come back")

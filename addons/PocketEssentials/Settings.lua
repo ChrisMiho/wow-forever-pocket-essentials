@@ -161,14 +161,15 @@ local function NumberBoxWidth()
 end
 
 -- One end of a number control: "-" or "+". With no step it is dimmed, and a
--- press does nothing (it still redraws, like any press).
-function Drawer:NumberEnd(sign, step, x, y)
+-- press does nothing (it still redraws, like any press). dim: drawn dimmed
+-- although it has a press (one that only notes there is no further step).
+function Drawer:NumberEnd(sign, step, dim, x, y)
     local btn = self:Acquire("button")
     ResetButton(btn)
     btn:SetLabel(sign)
     btn:SetSize(M.button, M.button)
     btn:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -y)
-    btn:SetStyle(step and "step" or "stepDim")
+    btn:SetStyle((step and not dim) and "step" or "stepDim")
     btn:SetScript("OnClick", step or self.noStep)
     btn.peScrollTop, btn.peScrollBottom = y, y + M.button
     self.navList[#self.navList + 1] = btn
@@ -177,11 +178,12 @@ end
 
 -- The number control (spec 2026-11-18-number-control-design): "-", a dark
 -- well with the value in gold and a small grey unit word under it, "+", as
--- one box. box: { text, unit, down = onClick or nil, up = onClick or nil }.
+-- one box. box: { text, unit, down = onClick or nil, up = onClick or nil,
+-- downDim, upDim }.
 -- The well is not a d-pad stop.
 function Drawer:NumberBox(box, x, y)
     local endWidth, wellWidth = M.button, M.button * 2.2
-    self:NumberEnd("-", box.down, x, y)
+    self:NumberEnd("-", box.down, box.downDim, x, y)
     local well = self:Acquire("well")
     local wx = x + endWidth - M.border
     well:ClearAllPoints()
@@ -207,7 +209,7 @@ function Drawer:NumberBox(box, x, y)
         well.value:SetPoint("TOP", well, "TOP", 0, -max((M.button - valueHeight) * 0.5, 0))
         well.unit:Hide()
     end
-    self:NumberEnd("+", box.up, wx + wellWidth - M.border, y)
+    self:NumberEnd("+", box.up, box.upDim, wx + wellWidth - M.border, y)
     return NumberBoxWidth()
 end
 
@@ -462,9 +464,12 @@ end
 --            is shown at 0. A saved value that is not a whole number in the
 --            range shows the default. An end with no step is dimmed.
 --   stepper: { label, value = function(mod) -> text, stepper =
---            function(mod) -> { text, unit, down = fn, up = fn } or nil }
+--            function(mod) -> { text, unit, down = fn, up = fn, downDim,
+--            upDim } or nil }
 --            the same control for a value the feature keeps itself; a
---            missing down or up is a dimmed end. nil draws the label only.
+--            missing down or up, or downDim / upDim = true, is a dimmed end
+--            (a dimmed end with a function still runs it). nil draws the
+--            label only.
 -- onlyAlways: draw only the rows marked `always`.
 -- Returns the new y.
 function Drawer:Options(mod, y, width, onlyAlways)
@@ -559,7 +564,8 @@ function Drawer:Options(mod, y, width, onlyAlways)
                             refresh()
                         end)
                     end
-                    local box = { text = got.text, unit = got.unit, down = Step(got.down), up = Step(got.up) }
+                    local box = { text = got.text, unit = got.unit, down = Step(got.down), up = Step(got.up),
+                        downDim = got.downDim == true, upDim = got.upDim == true }
                     y = self:LabeledRow(text, { { box = box } }, x, y, innerWidth, labelWidth) + M.gap
                 elseif text ~= "" then
                     y = y + self:Text("small", text, x, y, innerWidth, COLOR.option) + M.gap * 0.4
