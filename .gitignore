@@ -2,3 +2,4 @@ dist/
 vendor/
 .DS_Store
 CLAUDE.local.md
+.superpowers/
