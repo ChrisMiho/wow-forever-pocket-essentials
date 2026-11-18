@@ -6,7 +6,11 @@ All notable changes to this project are recorded here. The format follows
 
 ## [0.4.0] - 2026-11-17
 
-Fifteenth test build, in progress. Not yet tested on a device.
+Fifteenth test build: a setup guide that explains each feature and lets you
+switch on what you want, a background for the game's pop-up menus, two new
+choices for the bag (the d-pad can reach the Sort tab; the bag pictures in one
+row at the top), and chat text size as one small stepper. Every feature and
+every new choice starts off. Not yet tested on a device.
 
 ### Added
 
@@ -91,6 +95,12 @@ Fifteenth test build, in progress. Not yet tested on a device.
 - As before, every chat window gets the same size, and a press during a
   fight is held and applied when the fight ends (the row then says, for
   example, "Chat text size: 20 (after the fight)").
+- **All features stay off by default**, also after they have passed a device
+  test. The earlier plan was to turn each one on for everybody once it was
+  proven; the setup guide replaces that: it shows what there is and you
+  switch on what you want.
+- Opening the chat window now also closes the setup guide, so only one
+  Pocket Essentials window is ever open.
 
 ## [0.3.1] - 2026-11-17
 

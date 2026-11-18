@@ -15,6 +15,7 @@ addons/PocketEssentials/
   Move.lua        "Move things": saved offsets for our on-screen pieces, the small panel that nudges them
   Hub.lua         the round button and the minimap addon-list entry
   Settings.lua    the settings window and Errors page
+  Setup.lua       the setup guide: screens that explain each feature with its switch (no switch of its own)
   QuestData.lua   reads QuestieDB + the quest log into objective locations (shared, no switch of its own)
   QuestIcons.lua  feature: quest icons        (also keeps /qd working)
   QuestArrow.lua  feature: quest arrow
@@ -57,6 +58,23 @@ How the pieces protect each other:
   and the only tick is the hold-to-repeat driver, live only while an arrow
   button is held (it stops itself after 8 seconds). The game's Edit Mode is
   never used.
+- The setup guide (`Setup.lua`, 0.4.0) is a window like the settings, built
+  from one table of screens (`SCREENS`: id, title, text, and rows of
+  `{ key, title, text }`). A row is shown only when its feature is registered,
+  and a screen whose rows are all missing is left out. Its switches read
+  `PE:GetModuleSwitch(key)` and write through `PE:SetModuleEnabled`, the same
+  two calls the settings window uses, so the two cannot disagree; it never
+  writes the saved on/off table itself. The only thing it saves is
+  `PocketEssentialsDB.setup`: `"finished"`, `"skipped"`, or nothing (never
+  answered; any other value reads as nothing). It opens by itself from one
+  1.5-second timer after the first `PLAYER_ENTERING_WORLD` of a login, and
+  only when that field is empty and the saved settings really loaded. Nothing
+  is built before the first opening and it has no per-frame code. While open
+  it listens for `PLAYER_REGEN_DISABLED` (a fight hides it); while closed it
+  listens for nothing, except one `PLAYER_REGEN_ENABLED` wait after a fight
+  hid it or kept it from opening at login. It redraws with the settings
+  window: it wraps `PE:RefreshSettings`, which is why it loads after
+  `Settings.lua`.
 - Sizes are defined as pixels on a 720p screen and converted, so buttons stay
   the same physical size at 1080p. "Button size: Small / Medium / Large" in
   settings re-tunes everything without typing.
@@ -100,9 +118,14 @@ How the pieces protect each other:
      `OnDisable(mod)` when switched off. An error in `OnEnable` marks the
      feature failed, calls `OnDisable`, and shows the error on the Errors page.
 4. A feature is off until the player switches it on (only a saved `true`
-   enables it). Do not change that until the maintainer has tested it on the device.
+   enables it). That does not change after a device test: every feature stays
+   off by default (the maintainer's ruling of 2026-11-17, `docs/DECISIONS.md`).
 5. The feature's switch row appears in the settings window by itself; no UI
-   code is needed unless it has `options`.
+   code is needed unless it has `options`. For the setup guide, add one row
+   `{ key = "myFeature", text = "..." }` to the fitting screen in `SCREENS`
+   at the top of `Setup.lua`: a few plain sentences about what the player
+   will see. A choice inside a feature gets a sentence in that feature's
+   text, not a row.
 6. Inside a feature use the module methods: `mod:RegisterEvent(event, fn)`
    (dropped automatically on switch-off), `mod:After(seconds, fn)` (cancelled
    on switch-off), `mod:Safe(fn, ...)`, `mod:Wrap(fn)`, `mod:RequestReload`.

@@ -6,7 +6,7 @@ A small, lightweight addon suite that makes WoW Forever comfortable to play on
 a handheld, with touch and a controller together: big buttons, no tiny
 targets, no typed commands.
 
-> **Status: In progress: version 0.0.3 is a test build. The quest features ran once on a device (0.0.1); everything else has not run in the game yet.**
+> **Status: In progress: version 0.4.0 is a test build. Quest icons, the quest arrow, the bag sorter, sell junk, repair and the chat buttons have run on a device (0.0.9 and 0.1.0). Everything added since has not: Move things, the setup guide, Menu background, the two new bag choices and the chat text size stepper.**
 > Treat every feature as unproven until it has been tested in the game.
 
 ## Who it's for
@@ -17,16 +17,20 @@ Droid Deck.
 
 ## Features
 
-Every feature has its own on/off switch and starts switched off.
+Every feature has its own on/off switch and starts switched off. The first
+time you log in, a short **setup guide** explains each one in a few lines and
+lets you switch on the ones you want.
 
 | Feature | What it does |
 |---------|--------------|
 | Quest icons | Objective icons on the map and minimap for your tracked quests (or only the focused one, or all), no blue haze; a limit on icons per objective, and an icon key page in the settings |
 | Quest arrow | An arrow to your focused quest's nearest objective in your zone, with distance. Focus a quest from the quest log. For a quest in another zone it names the zone |
-| Bag sorter | A big Sort button on Blizzard's combined bag; a stick click (left, right or none, your choice) sorts while it is open; three sizes |
+| Bag sorter | A big Sort button on Blizzard's combined bag; a stick click (left, right or none, your choice) sorts while it is open; three sizes. Two choices that start off: "D-pad to Sort" (press Left from the bag's first column to reach the Sort button, A sorts) and "Bag icons: One row at the top" (the pictures of your equipped bags side by side above your items, not in among them) |
 | Sell junk automatically | Sells every grey item at vendors. Only the last 12 sold can be bought back |
 | Repair automatically | Repairs from your own money |
-| Big chat buttons | The round button opens a picker: one big button per channel and per recent whisperer. A badge shows unanswered whispers |
+| Big chat buttons | The round button opens a picker: one big button per channel and per recent whisperer. A badge shows unanswered whispers. "Chat text size" (Smaller / Bigger) is in the settings and works with the feature on or off |
+| Menu background | A plain dark panel behind the game's pop-up menus, such as the menu on a quest in the quest log, so the text is easy to read |
+| Setup guide | Not a switch: seven short screens that explain the features above, each with its switch. Opens by itself once; open it again from the settings ("Setup guide") |
 
 ## Install
 
@@ -49,8 +53,11 @@ There are no GitHub releases yet, so you build the zip yourself.
    folder** from an earlier version of this bundle.
 4. Extract the zip into `Interface/AddOns`. You should end up with two folders
    side by side: `PocketEssentials` and `QuestieDB`. Do not rename either.
-5. Log in. A round "PE" button appears at the left edge of the screen. Tap it
-   to open the settings, then turn features on one at a time.
+5. Log in. A round "PE" button appears at the left edge of the screen, and a
+   moment after the loading screen the setup guide opens by itself. Read
+   through it and switch on what you want, then press **Finish** (or **Skip**
+   to leave everything off). Closing it any other way only hides it until the
+   next login. Later, tap the round button to open the settings.
 
 ### Without QuestieDB, or with a version this addon doesn't understand
 
@@ -65,6 +72,10 @@ load."). Everything else keeps working.
 - **Hold the round button for half a second** to always open the settings.
 - **Type `/pe`**, or use the addon-list button on the minimap, as other ways
   to open them.
+- **Setup guide:** the "Setup guide" button in the bottom row of the settings
+  (or `/pe setup`) opens the guide again at any time. Its switches are the
+  same switches as in the settings. Use the touch screen, or the d-pad to
+  move the blue highlight, A to press and B to close.
 - **Reload UI button:** at the bottom of the settings, so a reload never
   needs a typed command.
 - **Errors page:** if something goes wrong, the settings window has an Errors

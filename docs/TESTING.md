@@ -57,7 +57,8 @@ publishes nothing and uses no secrets.
    when the QuestieDB pin in `scripts/fetch-questiedb.sh` is bumped. Never
    update it just to make a failing run pass.
 4. **Rule tests** (`tests/features/`). One file per feature (sell junk,
-   repair, chat, core, bags, layout, quest arrow, quest icons). Each states
+   repair, chat, core, bags, quest arrow, quest icons, menu background, Move
+   things, the setup guide, the shared window code). Each states
    the feature's rules in plain terms ("never sells a non-grey item", "does
    nothing in combat", "off means nothing ticks") and checks them in a
    stand-in game client.
@@ -276,6 +277,11 @@ and `QuestieDB` sit side by side.
 
 ### 0. Baseline — every feature off (do nothing in the settings yet)
 - Log in. **Does any error box appear?**
+- From 0.4.0 on, the setup guide opens by itself a moment after the loading
+  screen, until you have pressed Finish or Skip in it once. For a baseline
+  with every feature off, press **Close** (it comes back at the next login)
+  or **Skip** (it stays away) without touching a switch. Its own steps are
+  in 13e.
 - **Is login noticeably slower than with no addons?** (QuestieDB carries
   18 MB of data; this is the main thing that could slow login.) If it feels
   slower, try once with the `QuestieDB` folder removed and compare.
@@ -517,6 +523,20 @@ so there is nothing new to try on the arrow.
 4. Report each step yes / no with notes, and send the saved file.
 
 ### 13. Version 0.4.0
+
+Five parts, in the order they are best tried. Each can be done on its own
+day; report after each one.
+
+- **13e. Setup guide** comes first in practice, because it opens by itself
+  at the first login with 0.4.0. Do its steps 1 to 6 then, and the rest of
+  13e whenever you like.
+- **13a. Chat text size**: the stepper in the settings.
+- **13b. Menu background**: the dark panel behind the quest log's menu.
+- **13c. D-pad to Sort**: reaching the Sort tab with the d-pad.
+- **13d. Bag icons**: the bag pictures in one row at the top.
+
+In 13c and 13d the answer that matters most is that using, moving and
+selling items still works.
 
 #### 13a. Chat text size
 

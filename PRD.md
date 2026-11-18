@@ -176,9 +176,10 @@ in the quest log works; untracking quests thins the world map. Found:
    Nothing in this addon draws, hooks or changes the quest log or that menu
    (our only world-map hooks redraw our own icons), so it is probably a gap in
    the default UI. To confirm: switch Pocket Essentials off in the addon list,
-   reload, open the menu again. See "Parked ideas".
+   reload, open the menu again.
    **Confirmed 2026-11-15:** still broken with every addon switched off, so
-   it is the default UI's problem, not ours. Not being fixed for now.
+   it is the default UI's problem, not ours. 0.4.0 adds "Menu background", a
+   switch that puts our own dark panel behind the menu (untested).
 5. Untracking quests was found by guessing.
 6. The arrow's "Focus one in your quest log" line is cut off with "...": the
    line under the arrow is a single line of fixed width (`QuestArrow.lua`
@@ -227,10 +228,12 @@ until its step in the test plan passes.
 | Round "PE" button | Always on screen, left edge by default, position chosen from six preset spots. Opens settings; opens the chat picker instead when the chat feature is on. Holding it for half a second always opens settings. Smooth round art since 0.0.2 | Works (0.0.1); new art untested |
 | Quest icons | Objective icons on map and minimap from QuestieDB data, blue haze hidden. "Show icons for": Tracked quests (default; the quest tracker's quests plus the focused one), Focused quest, All quests. "Spots per objective" (All / 10 / 5 / 3, default 5; 0.0.6) limits icons per objective. Tapping an icon shows its text only | 0.0.1 ran without errors; too many icons and minimap haze fixed in 0.0.2; the spots limit is new in 0.0.6; all untested |
 | Quest arrow | On-screen arrow to the focused quest's nearest objective in the current zone, with distance and quest name. "Outside this zone / Head to <zone>" when elsewhere, "No quest focused" with none, "Turn around" when the objective is behind you. Pointed arrow art since 0.0.2. Since 0.0.6 the spot it points at always keeps its icon, even beyond the spots limit. Since 0.1.0 it keeps its spot across quest-log changes, needs a clearly nearer spot before it swaps, and leaves a spot it has reached alone for three minutes | Worked on the device with and without a focused quest (0.0.9); the 0.1.0 changes worked in the 0.1.0 log. |
-| Bag sorter (was "One big bag") | Blizzard's own combined bag, a big Sort tab, a stick click sorts while the bag is open (left stick, right stick, or no stick: "Sort key", 0.1.0), three bag sizes | Sort tab and left-stick sort worked on the device (0.0.9); the Sort key choice is untested |
+| Bag sorter (was "One big bag") | Blizzard's own combined bag, a big Sort tab, a stick click sorts while the bag is open (left stick, right stick, or no stick: "Sort key", 0.1.0), three bag sizes. Two more choices since 0.4.0, both starting on the game's own behaviour: "D-pad to Sort" (Left from the bag's first column goes to the Sort tab, A sorts) and "Bag icons" ("In the grid" / "One row at the top": the pictures of the equipped bags in one row above the slots) | Sort tab and left-stick sort worked on the device (0.0.9); the Sort key choice worked in the 0.1.0 log; "D-pad to Sort" and "Bag icons" (0.4.0) untested |
 | Sell junk automatically | Sells every grey item at vendors | Worked on the device (0.0.9) |
 | Repair automatically | Repairs from your own money at vendors that can | Worked on the device (0.0.9) |
-| Big chat buttons | Picker with one big button per channel plus the last six whisperers; badge on the round button for unanswered whispers. With the Gamepad UI on (0.0.9) a tap sets where the chat goes and the player opens chat with the game's own button; with it off the tap opens the chat box | Say and Guild through "Press A to type" worked on the device (0.0.9); a whisper is untried. 0.1.0 adds the on-screen "Press A to type" prompt and "Chat text size" (Smaller / Bigger, the game's own setting); both untested |
+| Big chat buttons | Picker with one big button per channel plus the last six whisperers; badge on the round button for unanswered whispers. With the Gamepad UI on (0.0.9) a tap sets where the chat goes and the player opens chat with the game's own button; with it off the tap opens the chat box | Say and Guild through "Press A to type" worked on the device (0.0.9); a whisper is untried. 0.1.0 adds the on-screen "Press A to type" prompt and "Chat text size" (the game's own setting); the size changed on all chat windows in the 0.1.0 log, the prompt is untested. Since 0.4.0 "Chat text size" is one stepper (Smaller, the size, Bigger; 12 to 34) shown whether the feature is on or off: untested |
+| Menu background (0.4.0) | Its own switch. A plain dark panel of ours behind the game's pop-up menus while they are open; made for the menu on a quest in the quest log, which the game draws with no background. The menu itself is not touched | Untested |
+| Setup guide (0.4.0) | A window of seven screens (Welcome, Quests, Bags, Vendors, Chat, the round button and moving things, All set) that explains each feature and carries its switch, the same switch as in the settings. Opens by itself once per account, a moment after the first loading screen, until Finish or Skip is pressed; never in a fight. Reopened from the settings' bottom row ("Setup guide") or `/pe setup`. Touch and d-pad / A / B | Untested |
 | QuestieDB | Official Questie data addon, Forever build 1.1.1, shipped unmodified. Only the two quest features need it | Untested |
 | Move things (0.2.0) | A small panel, opened from the settings' bottom row, that nudges the quest arrow, the "Press A to type" text and the round button with Up / Down / Left / Right buttons (press = 2 pixels, hold = repeat and speed up), by touch or d-pad / A / B. Saved as an offset from each piece's preset. Does not use the game's Edit Mode | Untested |
 | `scripts/build.sh` | Downloads QuestieDB (pinned checksum), checks the addon's file list, writes `dist/wow-forever-pocket-essentials.zip` (GitHub bundle) and `dist/PocketEssentials-<version>.zip` (CurseForge, addon only) | Runs on the Mac |
@@ -247,7 +250,7 @@ that say "Not needed" are skipped.
 | 1. Hide Blizzard's blue "haze" areas | `QuestIcons.lua` `SetWorldMapHaze`, `ZeroMinimapBlobs`, `ReapplyMinimapHaze` | Yes: hidden on the world map and the minimap (minimap re-hidden after loading screens and zone changes since 0.0.2); switching it off restores the map at once, but the minimap needs a reload |
 | 1. An arrow that points toward the current objective | `QuestArrow.lua` `Select`, `DrawArrow`, `Update`; `QuestData.lua` `GetTrackedQuest` | Partial: follows the quest you focus in the quest log; points only at objectives in the zone you are standing in; for a quest elsewhere it says "Outside this zone" and names the zone (see `docs/DECISIONS.md`) |
 | 2. One combined bag window instead of separate bags | `Bags.lua` `WantCombined`, `Setup` | Yes: uses Blizzard's own combined bag; with the Gamepad UI off, switching it on needs a reload |
-| 2. A way to sort it | `Bags.lua` `DoSort`, `CreateButtons` | Yes: a big Sort tab, plus a stick click while the bag is open (left, right or none, "Sort key") |
+| 2. A way to sort it | `Bags.lua` `DoSort`, `CreateButtons` | Yes: a big Sort tab, plus a stick click while the bag is open (left, right or none, "Sort key"). Since 0.4.0 the d-pad can reach the tab ("D-pad to Sort", a choice, off by default, untested: `RefreshSortJump`, `SyncConfirm`) |
 | 3. Automatically sell junk (grey items) at a vendor | `Vendor.lua` `ScanJunk`, `SellStep` | Yes: sells every grey item worth money, except in bags you marked to ignore; no cap per visit |
 | 3. Optional automatic repair | `Vendor.lua` `RepairOnShow` | Yes: its own on/off switch, pays from your own money |
 | 4. A large icon that sits permanently on screen | `Hub.lua` `Create` | Yes: the round "PE" button, always shown; it is the same button that opens settings when chat is off |
@@ -256,12 +259,13 @@ that say "Not needed" are skipped.
 | 4. Tapping a channel or name opens the chat box set to that target | `Chat.lua` `TargetClicked`, `OpenChatTo` | Yes |
 | 4. The icon shows when there is an unanswered whisper | `Chat.lua` `UpdateBadge`, `OnWhisper`; `Hub.lua` `SetBadge` | Yes: a badge on the round button, plus a "Clear marks" button |
 | 5. A way to arrange the interface that does not depend on fiddly touch dragging | `Move.lua` `Open`, `Register`, `GetOffset`; each piece's layout | Yes (0.2.0, untested): the "Move things" panel moves the quest arrow, the chat prompt and the round button with big buttons or the d-pad, no dragging |
-| 6. One touch-friendly place to turn each feature on or off, no typed commands | `Settings.lua` `PE:OpenSettings`, `BuildModuleRow`; `Hub.lua` `OnClick` | Yes: one row and big switch per feature, opened from the round button |
+| 6. One touch-friendly place to turn each feature on or off, no typed commands | `Settings.lua` `PE:OpenSettings`, `BuildModuleRow`; `Hub.lua` `OnClick` | Yes: one row and big switch per feature, opened from the round button. Since 0.4.0 (untested) the setup guide (`Setup.lua` `Setup:Open`, `SCREENS`) walks a new player through the same switches with a few lines about each |
 
-Defaults: every feature is off so players can switch them on one at a time.
-**Once a feature has passed its device test, its default flips to on** (one
-line per feature in its Lua file's registration; today all default to off
-because nothing is saved as on).
+Defaults: **every feature is off and stays off by default**, also after it
+has passed its device test (owner's ruling, 2026-11-17; it replaces the earlier
+plan to flip each default to on once tested). Nothing is switched on for the
+player. The setup guide (0.4.0) is how a player learns what exists and turns
+on what they want; the settings window has the same switches.
 
 The device test plan is in `docs/TESTING.md`.
 
@@ -275,8 +279,9 @@ Rules 1 and 2 apply: one phase at a time, one item at a time.
    the game, one step at a time: bags (step 4), sell junk (5), repair (6),
    chat (7), and the wrap-up (9). (Step 8, the layout helper, was removed in
    0.3.0.)
-2. **Performance and user-experience polish.** Fix what the tests show, and
-   flip each feature's default to on once it passes.
+2. **Performance and user-experience polish.** Fix what the tests show.
+   Features stay off by default; the setup guide is how players turn on what
+   they want (see "Defaults" above).
 3. **First CurseForge upload.** Use `curseforge/FIELDS.md`.
 4. **Left to build.** One at a time, spec first; see "Parked ideas".
 
@@ -389,7 +394,9 @@ the owner: so far so good, the folding settings are "great". Requests so far:
   keep moving), d-pad / A / B, for the quest arrow, the "Press A to type"
   text and the round button. The game's Edit Mode is not used. Untested.
 - Chat options should be more configurable than two buttons (a small
-  refinement; the owner will say what once they have played more). Not built.
+  refinement; the owner will say what once they have played more). 0.4.0
+  makes "Chat text size" one stepper that shows the size and works with the
+  feature off; nothing else has been asked for yet.
 
 Log from that test (`docs/real2/`, 0.1.0 only, two sessions, about an hour,
 57 fights): no error and no blocked action. Seen working in the log: folding
@@ -419,17 +426,43 @@ connect, and a list of crossings is more than the addon should carry for now
 (`docs/DECISIONS.md`, "Rollback of 2026-11-17"). The Layout helper stays
 removed.
 
-Next: device test of 0.2.0 (Move things) and 0.3.1 (`docs/TESTING.md` steps
-11 and 12) with the debug log on.
+**0.4.0 (2026-11-17, untested), built while the owner was away** at their
+instruction (spec `docs/superpowers/specs/2026-11-17-0.4.0-handheld-batch.md`,
+rulings in `docs/DECISIONS.md`, "Batch of 2026-11-17 (0.4.0)"). Five things,
+every one off or on the game's own behaviour until the player changes it:
+- Setup guide: seven screens that explain each feature and carry its switch.
+  It opens by itself once per account until Finish or Skip is pressed, and
+  again from the settings or `/pe setup`. The owner's words: "all settings
+  remain off by default, i want to introduce a tutorial/setup flow with a few
+  screens that educate and enable users to turn on what they want, that way
+  they understand whats turned on and how it works."
+- Menu background: its own switch; a dark panel behind the game's pop-up
+  menus (second device test, finding 4).
+- Bags, "D-pad to Sort": a choice in Bag sorter; Left from the bag's first
+  column goes to the Sort tab and A sorts. Whether A can be won from the
+  bag's own footer can only be seen on the device; if not, the idea is
+  dropped.
+- Bags, "Bag icons": a choice in Bag sorter; the pictures of the equipped
+  bags in one row at the top of the game's bag window ("like Bagnon"). No
+  bag window of our own. This is the first time the addon moves the bag's
+  own buttons, so the device test of item use (press, drag, sell, split, in
+  and out of a fight) decides whether it stays.
+- Chat text size: one stepper (Smaller, the size, Bigger), shown whether or
+  not Big chat buttons is on. This is the "more configurable chat options"
+  asked for in the ninth test, as far as the owner has said so far.
+
+Next: device test of 0.2.0 (Move things), 0.3.1 and 0.4.0 (`docs/TESTING.md`
+steps 11, 12 and 13a to 13e) with the debug log on.
 
 Upcoming from the fourth device test (2026-11-16), one at a time:
-- Bags: reach the Sort tab with the d-pad (Blizzard's controller navigation
-  has helpers for addon buttons; needs a device test that item use is never
-  blocked).
+- Bags: reach the Sort tab with the d-pad: built in 0.4.0 ("D-pad to Sort"),
+  untested.
 - Bags: clearer settings wording and a choice of sort key: built in 0.1.0
-  ("Bag sorter", "Sort key"), untested.
-- Bags: one plain box with items packed at the top (needs a bag window of our
-  own; not planned yet).
+  ("Bag sorter", "Sort key"); the Sort key choice worked in the 0.1.0 log.
+- Bags: "one plain box with items packed at the top" became, after the
+  owner's ruling of 2026-11-17, the bag icons row: built in 0.4.0 ("Bag
+  icons"), untested. The game's one big bag box stays; packing the items
+  with no gaps is parked (see "Parked ideas").
 
 Open questions from the device tests (not yet known to be ours):
 - Blue icons on the minimap only (second device test, finding 1).
@@ -444,15 +477,20 @@ Everything still to be built, in rough order of how much it is wanted.
   it does not lead to where zones connect. Needs a list of crossings (written
   by hand or learned from where the player changes zone). Routes by boat or
   flight path and other continents are not planned at all.
-- A solid background for the quest log's pop-up menu (2026-11-15): the menu on
-  a quest (Track, Focus, Share, Abandon) is drawn with no background and is
-  hard to read (second device test, finding 4). Confirmed to be the default
-  UI's problem. **Skipped for now by the maintainer.** If picked up: our own
-  panel behind the menu when it opens (Blizzard announces menu opening to
-  addons through `EventRegistry` "MenuProxy.OnShow"), behind an off-by-default
-  switch so it can be turned off once Blizzard fixes it; spec first.
+- Bags: items packed together with no gaps between the bags' slots. The
+  game's bag window lays out its own slots by the bag they sit in; 0.4.0 only
+  moves the bag pictures out of the grid ("Bag icons"). Packing needs either
+  a bag window of our own, which the owner ruled out on 2026-11-17, or moving
+  every slot button; wait for the device test of "Bag icons" first.
+- The setup guide could also offer the button size and the round button's
+  position, a picture per feature, and come back when a later version adds a
+  feature. Proposed in the 0.4.0 spec, not asked for.
 - Owner has more ideas; add them here as one line each, then spec before
   building.
+
+Built since they were parked here: a background for the quest log's pop-up
+menu ("Menu background", 0.4.0), the d-pad reaching the Sort tab ("D-pad to
+Sort", 0.4.0) and the chat text size stepper (0.4.0). All untested.
 
 Dropped on 2026-11-15 (see "Non-goals"): the radial wheel entry, and icons for
 quests not yet picked up.

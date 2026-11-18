@@ -170,6 +170,72 @@ another zone" choice out again and postpone it, to keep the addon light.
   `docs/superpowers/specs/2026-11-17-arrow-other-zones-and-layout-removal.md`.
 - The Layout helper stays removed.
 
+## Batch of 2026-11-17 (0.4.0)
+
+Spec: `docs/superpowers/specs/2026-11-17-0.4.0-handheld-batch.md` (its
+"Rulings" section). Built while the owner was away, at their instruction.
+
+Said by the owner on 2026-11-17:
+- **All features stay off by default.** "all settings remain off by default,
+  i want to introduce a tutorial/setup flow with a few screens that educate
+  and enable users to turn on what they want, that way they understand whats
+  turned on and how it works." Nothing is switched on for the player; the
+  setup guide is how a player learns what exists. This replaces the PRD's
+  earlier "flip each default to on after its device test".
+- **Chat text size is one small stepper, not a button per size** ("that's a
+  lot of buttons"): Smaller, the size, Bigger. One press is one step through
+  the game's own sizes (12, 14, 16, 18, 20, 24, 27) and then 30 and 34. The
+  number is the size the game is using. The row shows whether or not "Big
+  chat buttons" is on, and every chat window gets the size.
+- **Bags: the game's one big bag box stays.** The complaint was that the
+  pictures of the equipped bags are drawn inside the item grid, in a
+  diagonal, and look like loose bags. They go to one row at the top, "like
+  Bagnon". No bag window of our own.
+
+Made without the owner:
+- "D-pad to Sort" and "Bag icons" are choices inside "Bag sorter", and both
+  start on the game's own behaviour (Off, "In the grid").
+- "Menu background" is its own switch, off by default. In the setup guide it
+  sits on the Quests screen, because the quest log's menu is where it is
+  needed.
+- If the device shows that the A button cannot be won from the bag's footer,
+  "D-pad to Sort" stays off and the idea is dropped; the game's own bag menu
+  already has "Clean Up Bags".
+- "D-pad to Sort" and "Bag icons" both touch the bag's first column: the Left
+  jump to the Sort tab is put on whatever item buttons end up in the first
+  column after the bag pictures have been moved.
+- Setup guide: B closes it, like every other window of ours (it does not go
+  back a screen).
+- Setup guide: only **Finish** and **Skip** are remembered, for the whole
+  account. Close, B, Escape, another of our windows and the game closing its
+  windows only hide it, and it comes back at the next login. Reason: the game
+  closes every addon window of this kind on each loading screen, on death and
+  on loss of control; if any closing counted as "skipped", the game could
+  dismiss the guide before the player had read it.
+- Setup guide: players who already use the addon see it once after updating,
+  with their switches as they are. Nothing they switched on is touched.
+- Setup guide: it opens about a second and a half after the first loading
+  screen, not at login (the game closes such windows when the character
+  enters the world), never in a fight, and at most once per login by itself.
+  A fight that starts while it is open hides it; it comes back at the same
+  screen afterwards unless another of our windows was opened meanwhile.
+- Setup guide: a switch in it acts and saves at once, exactly as in the
+  settings (one source of truth: `PE:GetModuleSwitch` and
+  `PE:SetModuleEnabled`). Nothing waits for Finish.
+- Setup guide: the two new bag choices and the chat text size are explained
+  in the text and left to the settings; the guide has switches only. The
+  settings window's option rows are drawn by code that belongs to that window
+  (its own pools and layout), so showing them in the guide would have meant a
+  second copy of that code.
+- Setup guide: when the answer is already saved, no timer is started at
+  login at all (the plan read the saved answer only when the timer fired).
+  The answer is still read a second time when the timer fires.
+- Opening the chat window closes the setup guide, so that only one Pocket
+  Essentials window is open at a time (one line in `Chat.lua`).
+- Offline tests: the test helper marks setup as skipped in the saved settings
+  it hands to the addon, unless a test asks for a first run, so that the
+  roughly 400 other tests do not get a window opening by itself.
+
 ## What was left out, and why
 
 - **Edit Mode nudge helper: not shipped, and why.** We wanted big on-screen
