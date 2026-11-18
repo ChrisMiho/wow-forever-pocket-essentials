@@ -798,6 +798,10 @@ What the answers decide:
 
 #### 13e. Setup guide
 
+Since 0.4.1 the guide has no **Up** / **Down** buttons on a screen that fits.
+If a screen is too long for the window they appear on the right; say on which
+screen and at which button size you see them.
+
 What this is: a window of seven screens that explains each feature and lets
 you switch on the ones you want. It opens by itself once after you install
 0.4.0, because you have never pressed Finish or Skip in it. Your switches

@@ -426,6 +426,12 @@ connect, and a list of crossings is more than the addon should carry for now
 (`docs/DECISIONS.md`, "Rollback of 2026-11-17"). The Layout helper stays
 removed.
 
+**0.4.1 (2026-11-18):** the owner's first look at 0.4.0 on the device: "initial
+testing went well, ui and everything had no issues, the setup screen was
+nice". One fix asked for: the guide's Up and Down buttons on the right are
+now shown only on a screen too long to fit. The numbered steps of
+`docs/TESTING.md` section 13 are still to be reported.
+
 **0.4.0 (2026-11-17, untested), built while the owner was away** at their
 instruction (spec `docs/superpowers/specs/2026-11-17-0.4.0-handheld-batch.md`,
 rulings in `docs/DECISIONS.md`, "Batch of 2026-11-17 (0.4.0)"). Five things,

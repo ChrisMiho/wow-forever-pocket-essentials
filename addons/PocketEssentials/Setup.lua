@@ -435,16 +435,26 @@ local function DoDraw()
     LayoutBottomRow()
     area:ClearAllPoints()
     area:SetPoint("TOPLEFT", panel.content, "TOPLEFT", 0, 0)
-    area:Layout(panel.contentWidth, max(panel.contentHeight - M.button - M.gap, M.button * 2 + M.gap))
-
-    reloadButton:Hide()
+    local areaHeight = max(panel.contentHeight - M.button - M.gap, M.button * 2 + M.gap)
     local rowCount = (entry.screen.id ~= "finish" and entry.rows) and #entry.rows or 0
-    for i = rowCount + 1, #switches do
-        switches[i].peKey = nil
-        switches[i]:Hide()
+    local total
+    -- First with no paging buttons and the whole width. Only a screen that
+    -- turns out too long is drawn again, narrower, with Up and Down.
+    for pass = 1, 2 do
+        for i = #navList, 1, -1 do navList[i] = nil end
+        for _, pool in pairs(texts) do pool.used = 0 end
+        lines.used = 0
+        area:Layout(panel.contentWidth, areaHeight, pass == 1)
+        reloadButton:Hide()
+        for i = rowCount + 1, #switches do
+            switches[i].peKey = nil
+            switches[i]:Hide()
+        end
+        local ok
+        ok, total = PE:Safe("core", entry.screen.id == "finish" and DrawFinish or DrawScreen, entry, area.viewWidth)
+        if not ok or type(total) ~= "number" then total = area.viewHeight end
+        if total <= area.viewHeight + 0.5 then break end
     end
-    local ok, total = PE:Safe("core", entry.screen.id == "finish" and DrawFinish or DrawScreen, entry, area.viewWidth)
-    if not ok or type(total) ~= "number" then total = area.viewHeight end
     for _, pool in pairs(texts) do
         for i = pool.used + 1, #pool.list do pool.list[i]:Hide() end
     end

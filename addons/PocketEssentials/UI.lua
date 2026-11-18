@@ -583,11 +583,15 @@ function AreaMethods:SetContentHeight(height)
     self:ScrollTo(self.offset)
 end
 
-function AreaMethods:Layout(width, height)
+-- noPaging: for a list known to fit. The two paging buttons are hidden and
+-- the list takes the whole width.
+function AreaMethods:Layout(width, height, noPaging)
     local m = UI:Metrics()
     local column = m.button * 1.4
     width, height = max(width or 0, column + m.gap + 10), max(height or 0, 10)
-    self.viewWidth = width - column - m.gap
+    self.viewWidth = noPaging and width or (width - column - m.gap)
+    self.upButton:SetShown(not noPaging)
+    self.downButton:SetShown(not noPaging)
     self.viewHeight = height
     self:SetSize(width, height)
     self.scrollFrame:ClearAllPoints()

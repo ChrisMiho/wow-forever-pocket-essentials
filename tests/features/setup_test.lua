@@ -917,6 +917,38 @@ test("setup: it draws at every button size, and a size change while open keeps i
     c:assertClean("sizes")
 end)
 
+test("setup: Up and Down show only on a screen too long to fit, and a screen that fits has the whole width", function()
+    local c, PE = T.new({})
+    local withPaging, without = 0, 0
+    for _, size in ipairs({ "small", "medium", "large" }) do
+        PE:SetUISetting("size", size)
+        c:advance(0.2)
+        open(c, PE)
+        for i = 1, 7 do
+            local up, down = shownButtons(c, guide(c), "Up"), shownButtons(c, guide(c), "Down")
+            eq(#up, #down, size .. ", screen " .. i .. ": Up and Down go together")
+            if #up > 0 then
+                withPaging = withPaging + 1
+                local area = up[1]:GetParent()
+                check(area:GetRange() > 0, size .. ", screen " .. i .. ": paging buttons on a screen that fits")
+                check(area.viewWidth < guide(c).contentWidth, size .. ", screen " .. i .. ": no room kept for the paging buttons")
+            else
+                without = without + 1
+            end
+            if i < 7 then goTo(c, 2) end
+        end
+        c:click(button(c, "Close"))
+    end
+    check(without > 0, "no screen was drawn without paging buttons")
+    if os.getenv("SETUP_VERBOSE") then print("screens with paging: " .. withPaging .. ", without: " .. without) end
+    -- The welcome screen is short at every size.
+    PE:SetUISetting("size", "medium")
+    c:advance(0.2)
+    open(c, PE)
+    check(not has(c, "Up") and not has(c, "Down"), "the welcome screen shows paging buttons")
+    c:assertClean("paging")
+end)
+
 test("setup: the debug log has the lines of the spec", function()
     local start = saved({}, "finished")
     start.debug = { on = true }

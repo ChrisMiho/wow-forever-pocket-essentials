@@ -4,6 +4,20 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] - 2026-11-18
+
+Sixteenth test build. From the owner's first look at 0.4.0 on the device: the
+setup guide and the rest showed no problems, but the guide had Up and Down
+buttons down its right side that did nothing.
+
+### Changed
+
+- Setup guide: the **Up** and **Down** buttons are gone from every screen
+  that fits in the window, and the text uses the whole width. They only
+  appear on a screen that is too long to show at once (which can happen at
+  the larger button sizes), because there they are the only way to read the
+  rest by touch.
+
 ## [0.4.0] - 2026-11-17
 
 Fifteenth test build: a setup guide that explains each feature and lets you
