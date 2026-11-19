@@ -171,7 +171,7 @@ local function debugLinesOf(c, key)
 end
 
 test("fold: a feature that is on with options shows Hide options; tapping folds it and keeps the switch ON", function()
-    local c, PE = T.new({ on = { "bags" } })
+    local c, PE = T.new({ on = { "bagWindow" } })
     openSettings(c, PE)
     eq(#foldButtons(c, "Hide options"), 1)
     check(shownButtons(c, "Normal")[1], "the options are not drawn at first")
@@ -181,16 +181,16 @@ test("fold: a feature that is on with options shows Hide options; tapping folds 
     eq(#foldButtons(c, "Hide options"), 0)
     eq(#shownButtons(c, "Normal"), 0, "the options are still drawn")
     check(not shownText(c, "Bag size"), "the option label is still drawn")
-    check(PE:IsModuleEnabled("bags"), "folding switched the feature off")
+    check(PE:IsModuleEnabled("bagWindow"), "folding switched the feature off")
     eq(#shownButtons(c, "ON"), 1, "the switch no longer shows ON")
-    eq(PE.db.ui.folded.bags, true)
+    eq(PE.db.ui.folded.bagWindow, true)
     c:assertClean("fold")
 end)
 
 test("fold: the description line is hidden when folded and comes back when unfolded", function()
-    local c, PE = T.new({ on = { "bags" } })
-    local desc = PE:GetModule("bags").desc
-    check(type(desc) == "string" and desc ~= "", "bags has no description")
+    local c, PE = T.new({ on = { "bagWindow" } })
+    local desc = PE:GetModule("bagWindow").desc
+    check(type(desc) == "string" and desc ~= "", "bagWindow has no description")
     openSettings(c, PE)
     check(shownText(c, desc), "no description at first")
     c:click(foldButtons(c, "Hide options")[1])
@@ -200,7 +200,7 @@ test("fold: the description line is hidden when folded and comes back when unfol
     c:advance(0.5)
     check(shownText(c, desc), "the description did not come back")
     check(shownButtons(c, "Normal")[1], "the options did not come back")
-    eq(PE.db.ui.folded.bags, nil, "unfold left the entry in the saved table")
+    eq(PE.db.ui.folded.bagWindow, nil, "unfold left the entry in the saved table")
 end)
 
 test("fold: a status line stays while folded", function()
@@ -240,11 +240,11 @@ test("fold: a feature that is off, or has no options, has no fold button", funct
 end)
 
 test("fold: a folded feature that is switched off shows no fold button and no options", function()
-    local c, PE = T.new({ on = { "bags" } })
+    local c, PE = T.new({ on = { "bagWindow" } })
     openSettings(c, PE)
     c:click(foldButtons(c, "Hide options")[1])
     c:advance(0.5)
-    PE:SetModuleEnabled("bags", false)
+    PE:SetModuleEnabled("bagWindow", false)
     c:advance(0.5)
     eq(#foldButtons(c, "Show options"), 0)
     eq(#shownButtons(c, "Normal"), 0)

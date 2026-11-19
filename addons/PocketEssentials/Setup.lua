@@ -95,18 +95,19 @@ local SCREENS = {
       } },
 
     { id = "bags", title = "Bags",
-      text = "With the game's controller style on, all your bags already show as one window. This helper gives "
-          .. "you an easy way to tidy it.",
+      text = "With the game's controller style on, all your bags already show as one window. These two helpers "
+          .. "make it bigger and easier to tidy. Each has its own switch."
+          .. "\n\nIf you play without the controller style, the game needs a reload to join the bags into "
+          .. "one window. The last screen of this guide offers it.",
       rows = {
+          { key = "bagWindow",
+            text = "\"Bag size\" makes the bag window bigger. \"Bag icons\": \"One row at the top\" puts the "
+                .. "pictures of your equipped bags side by side above your items, not in among them." },
           { key = "bags",
-            text = "Adds a big Sort button to the bag window. A click on a stick can sort too, while the bag is "
-                .. "open."
-                .. "\n\n\"D-pad to Sort\": press Left from the bag's first column to reach the Sort button, then A "
-                .. "should press it (this is new and untested; if A does nothing, tap it). \"Bag icons\": \"One "
-                .. "row at the top\" puts the pictures of your equipped bags side by side above your items, not "
-                .. "in among them."
-                .. "\n\nIf you play without the controller style, the game needs a reload to join the bags into "
-                .. "one window. The last screen of this guide offers it." },
+            text = "Adds a big Sort button to the bag window (\"Sort button\"). A click on the stick you pick in "
+                .. "\"Sort stick\" sorts too, while the bag is open."
+                .. "\n\nWith the Sort button on, press Left from the bag's first column to reach it, then A "
+                .. "should press it (this is new and untested; if A does nothing, tap it)." },
       } },
 
     { id = "vendors", title = "Vendors",
@@ -294,8 +295,8 @@ local function AnswerTouch(yes)
     local opts = bags and (bags.opts or (PE.db and PE.db.options and PE.db.options.bags))
     if type(opts) ~= "table" then return end
     local want
-    if not yes and opts.showTab ~= false and opts.sortKey ~= "none" then
-        -- With no stick key chosen the button is the only way to sort: leave it.
+    if not yes and opts.showTab ~= false then
+        -- The stick click still sorts.
         want = false
         noHidSortButton = true
     elseif yes and noHidSortButton then
@@ -304,9 +305,9 @@ local function AnswerTouch(yes)
     end
     if want == nil then return end
     opts.showTab = want
-    -- Let Bag sorter apply it the way its own "How to sort" choice does.
+    -- Let Bag sorter apply it the way its own "Sort button" choice does.
     for _, opt in ipairs(bags.options or {}) do
-        if opt.label == "How to sort" and type(opt.OnChange) == "function" then
+        if opt.key == "showTab" and type(opt.OnChange) == "function" then
             PE:Safe("bags", opt.OnChange, bags, want)
         end
     end

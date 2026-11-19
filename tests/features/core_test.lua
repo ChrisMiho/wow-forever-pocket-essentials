@@ -11,7 +11,7 @@ local test, eq, check = T.test, T.eq, T.check
 local KNOWN_FAILURES = {
 }
 
-local FEATURES = { "questIcons", "questArrow", "bags", "sellJunk", "repair", "chat", "menuBg" }
+local FEATURES = { "questIcons", "questArrow", "bags", "bagWindow", "sellJunk", "repair", "chat", "menuBg" }
 
 local function saved(enabled, options)
     return { version = 1, enabled = enabled or {}, options = options or {}, ui = { size = "medium", hubPos = "LEFT" }, errors = {} }
@@ -83,7 +83,7 @@ test("core: new default options are added to old saved options without overwriti
     eq(opts.show, "all"); eq(opts.size, "large"); eq(opts.map, false)    -- chosen values kept (false is a choice too)
     eq(opts.spots, 5); eq(opts.cluster, 2); eq(opts.mini, true); eq(opts.hideHaze, true)  -- defaults added
     eq(PE:GetModule("chat").opts.whispers[1].name, "Ann")
-    eq(PE:GetModule("bags").opts.size, "normal", "a feature with no saved options gets its defaults")
+    eq(PE:GetModule("bagWindow").opts.size, "normal", "a feature with no saved options gets its defaults")
     eq(PE.db.ui, { size = "medium", hubPos = "LEFT", folded = {}, moved = {} })
 end)
 

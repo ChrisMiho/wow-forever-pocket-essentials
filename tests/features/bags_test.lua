@@ -1,4 +1,5 @@
--- Rules for "Bag sorter" (Bags.lua).
+-- Rules for "Bag sorter" and "Bag window" (Bags.lua; split in two in 0.8.0,
+-- spec 2026-11-18-0.8.0-design, section 2: size and icons are Bag window's).
 -- Sources: Bags.lua's header and comments; docs/DECISIONS.md, part "Bags" of
 -- "Decisions made without the maintainer". Each test names its source in a comment.
 -- Fresh client and addon per test.
@@ -12,9 +13,10 @@ local test, eq, check = T.test, T.eq, T.check
 local KNOWN_FAILURES = {
 }
 
+-- Bag sorter on; opts.window = true switches Bag window on too.
 local function newBags(opts)
     opts = opts or {}
-    return T.new({ on = { "bags" }, gamepadUI = opts.gamepadUI, setup = function(c)
+    return T.new({ on = opts.window and { "bags", "bagWindow" } or { "bags" }, gamepadUI = opts.gamepadUI, setup = function(c)
         c.world.cvars.combinedBags = opts.cvar or "0"
         if opts.setup then opts.setup(c) end
     end })
@@ -74,21 +76,19 @@ test("bags: the Sort tab is a tall, narrow tab", function()
         "tab not tall and narrow: " .. btn:GetWidth() .. " x " .. btn:GetHeight())
 end)
 
--- Sets one saved value and runs the OnChange of the row that holds it.
--- sortKey and showTab are held by the one "How to sort" row since 0.6.0.
+-- Sets one saved value and runs the OnChange of the row that holds it, in
+-- whichever of the two features has that row.
 local function chooseOption(c, key, value)
-    local mod = c.PE:GetModule("bags")
-    mod.opts[key] = value
-    for _, opt in ipairs(mod.options) do
-        if opt.key == key or (opt.label == "How to sort" and (key == "sortKey" or key == "showTab")) then
-            opt.OnChange(mod, value)
+    for _, modKey in ipairs({ "bags", "bagWindow" }) do
+        local mod = c.PE:GetModule(modKey)
+        for _, opt in ipairs(mod.options) do
+            if opt.key == key then
+                mod.opts[key] = value
+                opt.OnChange(mod, value)
+            end
         end
     end
     c:advance(0.5)
-end
-
-local function howToSort(mod)
-    for _, o in ipairs(mod.options) do if o.label == "How to sort" then return o end end
 end
 
 -- Spec 2026-11-16-vertical-sort-tab, "Sort button" choice: shown by default; hidden, the stick
@@ -259,11 +259,11 @@ end)
 ---------------------------------------------------------------------------
 
 local function scaleAfterOpen(size, bagHeight)
-    local c = newBags({ gamepadUI = true, setup = function(c)
+    local c = newBags({ window = true, gamepadUI = true, setup = function(c)
         if bagHeight then c.bagFrame:SetSize(388, bagHeight) end
     end })
     local PE = c.PE
-    PE:GetModule("bags").opts.size = size
+    PE:GetModule("bagWindow").opts.size = size
     c:openBag()
     c:advance(0.5)
     return c, c.bagFrame:GetScale()
@@ -297,7 +297,7 @@ end)
 -- the bag open (option OnChange -> SyncScale) must resize the tab too, not only the bag.
 test("bags: the Sort tab grows with the bag when Bag size changes while it is open", function()
     local c = scaleAfterOpen("normal", 500)
-    local mod = c.PE:GetModule("bags")
+    local mod = c.PE:GetModule("bagWindow")
     local btn = sortButton(c)
     local before = btn:GetHeight()
     mod.opts.size = "large"
@@ -311,15 +311,19 @@ test("bags: the Sort tab grows with the bag when Bag size changes while it is op
         "tab height did not follow the bag: " .. before .. " -> " .. after)
 end)
 
--- Bags.lua OnDisable -> RestoreScaleNow: puts back exactly what Blizzard's layout pass set.
-test("bags: switching the feature off puts the game's own scale back", function()
-    local c, scale = scaleAfterOpen("large")
-    eq(scale, 1.25)
-    c.PE:SetModuleEnabled("bags", false)
-    c:advance(0.5)
-    eq(c.bagFrame:GetScale(), 1)
-    local point, _, relPoint, x, y = c.bagFrame:GetPoint(1)
-    eq({ point, relPoint, x, y }, { "BOTTOMRIGHT", "BOTTOMRIGHT", 4, 85 })
+-- Bags.lua ApplyScaleNow (Bag window off: the game's size) and RestoreScaleNow (both off):
+-- each puts back exactly what Blizzard's layout pass set.
+test("bags: switching Bag window off puts the game's own scale back, with Bag sorter on or off", function()
+    for _, sorterToo in ipairs({ false, true }) do
+        local c, scale = scaleAfterOpen("large")
+        eq(scale, 1.25)
+        if sorterToo then c.PE:SetModuleEnabled("bags", false) end
+        c.PE:SetModuleEnabled("bagWindow", false)
+        c:advance(0.5)
+        eq(c.bagFrame:GetScale(), 1)
+        local point, _, relPoint, x, y = c.bagFrame:GetPoint(1)
+        eq({ point, relPoint, x, y }, { "BOTTOMRIGHT", "BOTTOMRIGHT", 4, 85 })
+    end
 end)
 
 -- The debug log's lines for one feature, without the time and the feature's name.
@@ -354,12 +358,16 @@ end)
 -- Bag sorter: name and sort key choice (spec 2026-11-17-post-0.0.9-batch, item 2)
 ---------------------------------------------------------------------------
 
+-- The names, descriptions and status lines of both bag features.
 local function textsOf(c)
-    local mod = c.PE:GetModule("bags")
-    local out = { mod.label, mod.desc }
-    local status = mod.status(mod)
-    if type(status) == "string" then out[#out + 1] = status
-    elseif type(status) == "table" then for _, l in ipairs(status) do out[#out + 1] = l end end
+    local out = {}
+    for _, key in ipairs({ "bags", "bagWindow" }) do
+        local mod = c.PE:GetModule(key)
+        out[#out + 1], out[#out + 2] = mod.label, mod.desc
+        local status = mod.status(mod)
+        if type(status) == "string" then out[#out + 1] = status
+        elseif type(status) == "table" then for _, l in ipairs(status) do out[#out + 1] = l end end
+    end
     return out
 end
 
@@ -380,87 +388,12 @@ test("bags: the feature is called Bag sorter and no text of it says One big bag"
     check(not tostring(status):lower():find("one big bag", 1, true), "old name in status")
 end)
 
--- Spec 2026-11-18-tidier-settings, part 4: "Sort key" and "Sort button" are one row.
-test("bags: How to sort is one option with five ways, Button + left stick first, and no Sort key or Sort button rows", function()
-    local c = newBags()
-    local mod = c.PE:GetModule("bags")
-    local opt = howToSort(mod)
-    check(opt, "no How to sort option")
-    local got = {}
-    for _, ch in ipairs(opt.choices) do got[#got + 1] = ch.value .. "=" .. ch.label end
-    eq(got, { "l3=Button + left stick", "r3=Button + right stick", "none=Button only",
-        "l3only=Left stick only", "r3only=Right stick only" })
-    for _, o in ipairs(mod.options) do
-        check(o.key ~= "sortKey" and o.key ~= "showTab", "a row of its own for " .. tostring(o.key))
-    end
-    eq(opt.get(mod), "l3", "the default")
-end)
-
-test("bags: each How to sort way saves its stick and its button, and reads back as itself", function()
-    local want = {
-        l3 = { "l3", true }, r3 = { "r3", true }, none = { "none", true },
-        l3only = { "l3", false }, r3only = { "r3", false },
-    }
-    local c = newBags()
-    local mod = c.PE:GetModule("bags")
-    local opt = howToSort(mod)
-    for value, saved in pairs(want) do
-        opt.set(mod, value)
-        eq({ mod.opts.sortKey, mod.opts.showTab }, saved, value)
-        eq(opt.get(mod), value, value .. " read back")
-    end
-    opt.set(mod, "r3only")
-    opt.set(mod, "nonsense")
-    eq({ mod.opts.sortKey, mod.opts.showTab }, { "r3", false }, "an unknown way changed something")
-end)
-
-test("bags: an old save with Button only and the button hidden gets the button back at load", function()
-    local c = newBags()
-    local mod = c.PE:GetModule("bags")
-    mod.opts.sortKey, mod.opts.showTab = "none", false
-    mod:OnLoad()
-    eq({ mod.opts.sortKey, mod.opts.showTab }, { "none", true })
-    eq(howToSort(mod).get(mod), "none")
-    -- left alone when a stick still sorts
-    mod.opts.sortKey, mod.opts.showTab = "r3", false
-    mod:OnLoad()
-    eq(mod.opts.showTab, false)
-end)
-
-test("bags: How to sort with the bag open moves the stick and hides or shows the tab in one press", function()
-    local c = newBags()
-    local mod = c.PE:GetModule("bags")
-    local opt = howToSort(mod)
-    c:openBag()
-    local tab = sortButton(c)
-    for _, step in ipairs({ { "r3only", "PADRSTICK", false }, { "none", nil, true }, { "l3only", "PADLSTICK", false },
-        { "l3", "PADLSTICK", true } }) do
-        opt.set(mod, step[1])
-        opt.OnChange(mod, step[1])
-        c:advance(0.5)
-        eq(bindings(c), step[2] and { [step[2]] = "PocketEssentialsBagSortKey" } or nil, step[1] .. ": stick")
-        eq(tab:IsVisible(), step[3], step[1] .. ": tab")
-    end
-    c:assertClean("how to sort")
-end)
-
-test("bags: D-pad to Sort and Bag icons are one-tap toggles", function()
-    local c = newBags()
-    for _, o in ipairs(c.PE:GetModule("bags").options) do
-        if o.key == "dpad" or o.key == "iconRow" then eq(o.toggle, true, o.key) end
-    end
-end)
-
-test("bags: each Sort key choice binds the right key on open and clears it on close, tab always there", function()
-    for value, want in pairs({ l3 = "PADLSTICK", r3 = "PADRSTICK", none = false }) do
+test("bags: each Sort stick choice binds the right key on open and clears it on close, tab always there", function()
+    for value, want in pairs({ l3 = "PADLSTICK", r3 = "PADRSTICK" }) do
         local c = newBags({ setup = function(cc) end })
         c.PE:GetModule("bags").opts.sortKey = value
         c:openBag()
-        if want then
-            eq(bindings(c), { [want] = "PocketEssentialsBagSortKey" }, value)
-        else
-            eq(bindings(c), nil, value)
-        end
+        eq(bindings(c), { [want] = "PocketEssentialsBagSortKey" }, value)
         check(sortButton(c):IsVisible(), "tab missing for " .. value)
         c:closeBag()
         eq(bindings(c), nil, "still bound after close: " .. value)
@@ -473,8 +406,6 @@ test("bags: changing Sort key with the bag open hands back the old stick and tak
     eq(bindings(c), { PADLSTICK = "PocketEssentialsBagSortKey" })
     chooseOption(c, "sortKey", "r3")
     eq(bindings(c), { PADRSTICK = "PocketEssentialsBagSortKey" })
-    chooseOption(c, "sortKey", "none")
-    eq(bindings(c), nil)
     chooseOption(c, "sortKey", "l3")
     eq(bindings(c), { PADLSTICK = "PocketEssentialsBagSortKey" })
 end)
@@ -515,17 +446,16 @@ test("bags: switching the feature off hands the chosen stick back", function()
     eq(bindings(c), nil)
 end)
 
-test("debug log: the sort key choice writes which stick was taken, given back, or none taken", function()
+test("debug log: the sort key choice writes which stick was taken and given back", function()
     local c = newBags()
     c.PE:SetDebug(true)
     c:openBag()
     chooseOption(c, "sortKey", "r3")
-    chooseOption(c, "sortKey", "none")
     c:closeBag()
     local seen = {}
     for _, line in ipairs(debugLines(c, "bags")) do seen[line] = true end
     for _, want in ipairs({ "left stick click taken for Sort (bag open)", "right stick click taken for Sort (bag open)",
-        "no stick taken: button only", "stick click given back to the game" }) do
+        "sort key choice: r3", "stick click given back to the game" }) do
         check(seen[want], "no line \"" .. want .. "\"")
     end
 end)
@@ -576,21 +506,10 @@ test("debug log: a stick taken and handed back writes one line each, also across
     eq(count(c, "stick click given back to the game"), 2, "nothing was taken any more")
 end)
 
-test("debug log: Button only says so once per bag opening, not after every fight", function()
-    local c = newBags()
-    c.PE:GetModule("bags").opts.sortKey = "none"
-    c.PE:SetDebug(true)
-    c:openBag()
-    c:enterCombat()
-    c:advance(1)
-    c:leaveCombat()
-    c:advance(1)
-    eq(count(c, "no stick taken: button only"), 1)
-    eq(count(c, "stick click given back to the game"), 0)
-end)
-
 ---------------------------------------------------------------------------
--- D-pad to Sort (spec 2026-11-17-0.4.0-handheld-batch, part 3; plan Task 3)
+-- D-pad to Sort (spec 2026-11-17-0.4.0-handheld-batch, part 3; plan Task 3). Since 0.8.0 it is
+-- not a choice of its own: the route is there whenever the Sort button shows (spec
+-- 2026-11-18-0.8.0-design, section 2), so "off" below means "Sort button" Off.
 --
 -- The stand-in's cursor follows the one rule the design leans on: a jump override that is a
 -- visible frame takes the cursor there (c:padMove). Whether the game's own A binding or ours
@@ -601,14 +520,21 @@ local LEFT, RIGHT = "smartNavigationOverride-left", "smartNavigationOverride-rig
 local NAV_ADD, NAV_CLEAR = "SmartNavigation_AddJumpNavigationOverride", "SmartNavigation_ClearJumpNavigationOverridesInDirection"
 local CONFIRM = "PocketEssentialsBagSortConfirm"
 
--- Gamepad UI on, a bag of 4 columns by 3 rows, "D-pad to Sort" on (o.dpad = false: left as shipped).
+-- Gamepad UI on, a bag of 4 columns by 3 rows, the Sort button on (o.dpad = false: Sort button Off).
+-- With o.debug the feature is switched off and on again with the log on, so the log
+-- starts from the feature switching on.
 local function newPad(o)
     o = o or {}
     local gamepad = o.gamepadUI ~= false
     local c = newBags({ gamepadUI = gamepad, setup = o.setup })
     local grid = not o.noItems and c:fillBag(4, 3) or nil
-    if o.dpad ~= false then c.PE:GetModule("bags").opts.dpad = true end
-    if o.debug then c.PE:SetDebug(true) end
+    if o.dpad == false then c.PE:GetModule("bags").opts.showTab = false end
+    if o.debug then
+        c.PE:SetDebug(true)
+        c.PE:SetModuleEnabled("bags", false)
+        c.PE:SetModuleEnabled("bags", true)
+        c:advance(0.1)
+    end
     return c, grid
 end
 
@@ -658,31 +584,6 @@ local function focusTab(c, grid)
     return got
 end
 
--- 1. Spec part 3: "New choice ... Off (default)".
-test("d-pad to Sort: off by default, nothing is put on any item button", function()
-    local c, grid = newPad({ dpad = false })
-    eq(c.PE:GetModule("bags").opts.dpad, false)
-    c:openBag()
-    c:advance(0.5)
-    eq(setterCalls(c), 0)
-    eq(leftJumps(grid, sortButton(c)), {})
-    is(rawget(sortButton(c), RIGHT), nil)
-    c:assertClean("default")
-end)
-
-test("d-pad to Sort: it is a choice of Bag sorter with Off first, and a broken saved value reads as Off", function()
-    local c = newPad({ dpad = false })
-    local mod = c.PE:GetModule("bags")
-    local opt
-    for _, o in ipairs(mod.options) do if o.key == "dpad" then opt = o end end
-    check(opt, "no dpad option")
-    eq(opt.label, "D-pad to Sort")
-    eq({ opt.choices[1].value, opt.choices[1].label, opt.choices[2].value, opt.choices[2].label }, { false, "Off", true, "On" })
-    mod.opts.dpad = "yes"
-    mod:OnLoad()
-    eq(mod.opts.dpad, false)
-end)
-
 -- 2. Spec: "pressing Left ... from any item in the bag's first (leftmost) column".
 test("d-pad to Sort: the Left jump is put on the first column only, and points at the Sort tab", function()
     local c, grid = newPad()
@@ -699,7 +600,7 @@ test("d-pad to Sort: every jump target handed to the game is a frame, never a fu
     c:openBag()
     grid[1][1]:Hide()
     layoutPass(c)
-    chooseOption(c, "dpad", false)
+    chooseOption(c, "showTab", false)
     local calls = c:callsTo(NAV_ADD)
     check(#calls >= 4, "expected the setter to have been called, got " .. #calls)
     for _, call in ipairs(calls) do
@@ -876,14 +777,14 @@ test("d-pad to Sort: when the layout changes the route moves to the new first co
 end)
 
 -- 13. ApplyRoute: an override that is already there and not ours is left alone.
-test("d-pad to Sort: a Left jump that is not ours is left alone, on and off", function()
+test("d-pad to Sort: a Left jump that is not ours is left alone, on and off (Sort button Off)", function()
     local c, grid = newPad()
     local other = c.minimap
     rawset(grid[1][2], LEFT, other)
     c:openBag()
     local tab = sortButton(c)
     eq(leftJumps(grid, sortButton(c)), { ["1,1"] = "tab", ["1,2"] = tostring(other), ["1,3"] = "tab" })
-    chooseOption(c, "dpad", false)
+    chooseOption(c, "showTab", false)
     eq(leftJumps(grid, sortButton(c)), { ["1,2"] = tostring(other) })
     is(rawget(grid[1][2], LEFT), other)
     c:assertClean("someone else's jump")
@@ -901,15 +802,15 @@ test("d-pad to Sort: hiding the Sort button removes the route and showing it put
 end)
 
 -- 15. Plan: "clears overrides ... on switch-off"; in a fight, after it.
-test("d-pad to Sort: the choice Off, the feature off and the bag closed each remove the route", function()
+test("d-pad to Sort: Sort button Off, the feature off and the bag closed each remove the route", function()
     local c, grid = newPad({ debug = true })
     local tab = sortButton(c)
     c:openBag()
-    chooseOption(c, "dpad", false)
+    chooseOption(c, "showTab", false)
     eq(leftJumps(grid, sortButton(c)), {})
     is(rawget(tab, RIGHT), nil)
     check(hasLine(c, "d-pad: route removed"), "no log line for the removal")
-    chooseOption(c, "dpad", true)
+    chooseOption(c, "showTab", true)
     eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN)
 
     c:closeBag()
@@ -930,7 +831,7 @@ test("d-pad to Sort: switched off in a fight, the route comes off when the fight
         local tab = sortButton(c)
         c:openBag()
         c:enterCombat()
-        if how == "choice" then chooseOption(c, "dpad", false) else c.PE:SetModuleEnabled("bags", false) end
+        if how == "choice" then chooseOption(c, "showTab", false) else c.PE:SetModuleEnabled("bags", false) end
         c:advance(0.5)
         eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN, how .. ": changed during the fight")
         eq(c.blocked, {}, how)
@@ -1003,7 +904,7 @@ test("d-pad to Sort: A is given back when the cursor leaves the tab, and a late 
 end)
 
 -- 19. Spec rule 3: "...the bag closes, a fight starts, or the feature is switched off".
-test("d-pad to Sort: A is given back when the bag closes, when a fight starts and when the choice goes Off", function()
+test("d-pad to Sort: A is given back when the bag closes, when a fight starts and when Sort button goes Off", function()
     local c, grid = newPad()
     c:openBag()
     focusTab(c, grid)
@@ -1024,7 +925,7 @@ test("d-pad to Sort: A is given back when the bag closes, when a fight starts an
     c:leaveCombat()
     eq(confirmBindings(c), { PAD1 = CONFIRM }, "not taken again after the fight with the cursor still on the tab")
 
-    chooseOption(c, "dpad", false)
+    chooseOption(c, "showTab", false)
     eq(confirmBindings(c), nil, "kept after the choice went Off")
     c:assertClean("hand-backs")
 
@@ -1105,7 +1006,7 @@ test("d-pad to Sort: the stick click and A do not disturb each other", function(
 end)
 
 -- 23. CLAUDE.md: "Nothing ticks while its feature is off."
-test("d-pad to Sort: nothing is pending or listened to while the choice or the feature is off", function()
+test("d-pad to Sort: nothing is pending or listened to while Sort button or the feature is off", function()
     local c, grid = newPad({ dpad = false })
     c:openBag()
     c:advance(1)
@@ -1151,14 +1052,15 @@ end)
 ---------------------------------------------------------------------------
 
 -- Gamepad UI on, the bag built as the game builds it (60 slots unless o.sizes says otherwise),
--- "Bag icons" on "One row at the top" (o.row = false: left as shipped).
+-- Bag sorter and Bag window on, "Bag icons" on "One row at the top" (o.row = false: left as
+-- shipped). The d-pad route is on with the Sort button (o.dpad = false: Sort button Off).
 local function newIcons(o)
     o = o or {}
-    local c = newBags({ gamepadUI = o.gamepadUI ~= false, setup = o.setup, cvar = o.cvar })
+    local c = newBags({ window = true, gamepadUI = o.gamepadUI ~= false, setup = o.setup, cvar = o.cvar })
     c:buildBag(o.sizes)
-    local opts = c.PE:GetModule("bags").opts
+    local opts = c.PE:GetModule("bagWindow").opts
     if o.row ~= false then opts.iconRow = true end
-    if o.dpad then opts.dpad = true end
+    if o.dpad == false then c.PE:GetModule("bags").opts.showTab = false end
     if o.debug then c.PE:SetDebug(true) end
     return c
 end
@@ -1232,8 +1134,8 @@ end
 
 -- 1. Spec part 4: label "Bag icons", choices "In the grid" (default) / "One row at the top".
 test("bags: Bag icons is a choice with two values, In the grid first, and is off by default", function()
-    local c = newBags()
-    local mod = c.PE:GetModule("bags")
+    local c = newBags({ window = true })
+    local mod = c.PE:GetModule("bagWindow")
     local found
     for _, opt in ipairs(mod.options) do if opt.key == "iconRow" then found = opt end end
     check(found, "no iconRow option")
@@ -1409,12 +1311,12 @@ test("bags: switching back after a bag was collapsed gives the game's layout for
     eq(places(c), places(g))
 end)
 
--- 11. Rules: "Switching ... Bag sorter off puts every button back where the game had it".
-test("bags: switching Bag sorter off puts every button back exactly", function()
+-- 11. Rules: "Switching ... off puts every button back where the game had it" (Bag window since 0.8.0).
+test("bags: switching Bag window off puts every button back exactly", function()
     local g = gameLayout()
     local c = newIcons()
     c:openBag()
-    c.PE:SetModuleEnabled("bags", false)
+    c.PE:SetModuleEnabled("bagWindow", false)
     eq(places(c), places(g))
     local after = moves(c)
     layoutPass(c)
@@ -1430,7 +1332,7 @@ test("bags: a button that is no longer where it was put is not touched at switch
     local stray = c.bagSlots[0][1]
     c._state(stray).points[1].x = -999
     local before = places(c)
-    c.PE:SetModuleEnabled("bags", false)
+    c.PE:SetModuleEnabled("bagWindow", false)
     eq(places(c), before, "buttons were moved though the layout was no longer ours")
     c:assertClean("stray")
 end)
@@ -1547,7 +1449,7 @@ end)
 test("bags: Bag size and the Sort tab are the same with either choice", function()
     local function snapshot(row)
         local c = newIcons({ row = row })
-        c.PE:GetModule("bags").opts.size = "large"
+        c.PE:GetModule("bagWindow").opts.size = "large"
         c:openBag()
         local bag, tab = c.bagFrame, sortButton(c)
         local point, _, relPoint, x, y = bag:GetPoint(1)
@@ -1771,8 +1673,245 @@ test("debug log: the bag icons lines", function()
     -- switching the feature off with the choice never used says nothing about bag icons
     local d = newIcons({ debug = true, row = false })
     d:openBag()
-    d.PE:SetModuleEnabled("bags", false)
+    d.PE:SetModuleEnabled("bagWindow", false)
     for _, line in ipairs(debugLines(d, "bags")) do check(not line:find("bag icons"), "line with the choice off: " .. line) end
+end)
+
+---------------------------------------------------------------------------
+-- 0.8.0: "Bag window" and "Bag sorter" (spec 2026-11-18-0.8.0-design, section 2)
+---------------------------------------------------------------------------
+
+-- A client with the saved table given and the features listed switched on
+-- afterwards. The bag is already combined unless o.cvar says otherwise.
+local function newSplit(o)
+    o = o or {}
+    return T.new({ on = o.on or {}, gamepadUI = o.gamepadUI, saved = o.saved, setup = function(c)
+        c.world.cvars.combinedBags = o.cvar or "1"
+        if o.setup then o.setup(c) end
+    end })
+end
+
+local function optionOf(mod, key)
+    for _, o in ipairs(mod.options) do if o.key == key then return o end end
+end
+
+-- Sets one saved value of one feature and runs that row's OnChange.
+local function choose(c, modKey, key, value)
+    local mod = c.PE:GetModule(modKey)
+    mod.opts[key] = value
+    local opt = optionOf(mod, key)
+    check(opt, "no row for " .. key .. " in " .. modKey)
+    opt.OnChange(mod, value)
+    c:advance(0.5)
+end
+
+-- Spec: "Bag window is switched on exactly when Bag sorter was on; size and iconRow are copied."
+test("split: the first 0.8.0 load switches Bag window on when Bag sorter was on and copies size and icons", function()
+    local _, PE = newSplit({ saved = { version = 1, enabled = { bags = true },
+        options = { bags = { size = "large", iconRow = true, dpad = true, sortKey = "r3", showTab = true } } } })
+    check(PE:IsModuleEnabled("bagWindow"), "Bag window is not on")
+    eq(PE.db.enabled.bagWindow, true)
+    local w = PE.db.options.bagWindow
+    eq({ w.size, w.iconRow }, { "large", true })
+    -- Spec: "Bag sorter's old size, iconRow and dpad keys are left in the file and no longer read."
+    local b = PE.db.options.bags
+    eq({ b.size, b.iconRow, b.dpad, b.sortKey, b.showTab }, { "large", true, true, "r3", true })
+end)
+
+-- Plan, device check "Bags migration": reloading again changes nothing.
+test("split: after the first 0.8.0 load a reload keeps Bag window as the player left it", function()
+    local c, PE = newSplit({ saved = { version = 1, enabled = { bags = true },
+        options = { bags = { size = "xlarge", iconRow = true } } } })
+    eq({ PE.db.enabled.bagWindow, PE.db.options.bagWindow.size, PE.db.options.bagWindow.iconRow }, { true, "xlarge", true })
+    PE:SetModuleEnabled("bagWindow", false)
+    PE.db.options.bagWindow.size = "large"
+    local _, PE2 = newSplit({ saved = rawget(c.env, "PocketEssentialsDB") })
+    check(not PE2:IsModuleEnabled("bagWindow"), "Bag window came back on after the reload")
+    eq({ PE2.db.options.bagWindow.size, PE2.db.options.bagWindow.iconRow }, { "large", true })
+    check(PE2:IsModuleEnabled("bags"), "Bag sorter did not stay on")
+end)
+
+test("split: the first 0.8.0 load leaves Bag window off when Bag sorter was off, and still copies its size", function()
+    local _, PE = newSplit({ saved = { version = 1, enabled = { bags = false },
+        options = { bags = { size = "xlarge", iconRow = false } } } })
+    check(not PE:IsModuleEnabled("bagWindow"), "Bag window is on")
+    eq(PE.db.enabled.bagWindow, false)
+    eq({ PE.db.options.bagWindow.size, PE.db.options.bagWindow.iconRow }, { "xlarge", false })
+end)
+
+test("split: a fresh install has both off, Bag window at Normal with the icons in the grid", function()
+    local _, PE = newSplit()
+    check(not PE:IsModuleEnabled("bagWindow") and not PE:IsModuleEnabled("bags"), "a bag feature is on")
+    check(PE.db.enabled.bagWindow ~= true and PE.db.enabled.bags ~= true, "saved on")
+    eq({ PE.db.options.bagWindow.size, PE.db.options.bagWindow.iconRow }, { "normal", false })
+    eq({ PE.db.options.bags.showTab, PE.db.options.bags.sortKey }, { true, "l3" })
+end)
+
+test("split: once Bag window has been saved it is not copied again", function()
+    local _, PE = newSplit({ saved = { version = 1, enabled = { bags = true, bagWindow = false },
+        options = { bags = { size = "large", iconRow = true }, bagWindow = { size = "normal", iconRow = false } } } })
+    check(not PE:IsModuleEnabled("bagWindow"), "Bag window was switched on again")
+    eq({ PE.db.options.bagWindow.size, PE.db.options.bagWindow.iconRow }, { "normal", false })
+end)
+
+test("split: a broken copied value reads as Normal and In the grid", function()
+    local _, PE = newSplit({ saved = { version = 1, enabled = { bags = true },
+        options = { bags = { size = "huge", iconRow = "yes" } } } })
+    eq({ PE.db.options.bagWindow.size, PE.db.options.bagWindow.iconRow }, { "normal", false })
+end)
+
+-- Spec: "A saved sortKey = "none" becomes l3 at load." The old repair (button back on) is gone.
+test("split: a saved Button only becomes the left stick, and a hidden Sort button stays hidden", function()
+    local _, PE = newSplit({ saved = { version = 1, enabled = { bags = true },
+        options = { bags = { sortKey = "none", showTab = false } } } })
+    eq({ PE.db.options.bags.sortKey, PE.db.options.bags.showTab }, { "l3", false })
+    local _, PE2 = newSplit({ saved = { version = 1, enabled = {}, options = { bags = { sortKey = "bogus" } } } })
+    eq(PE2.db.options.bags.sortKey, "l3")
+end)
+
+test("split: Bag window is its own feature with Bag size and Bag icons", function()
+    local c = newSplit()
+    local win = c.PE:GetModule("bagWindow")
+    check(win, "no bagWindow feature")
+    eq({ win.label, win.desc, win.order }, { "Bag window", "Makes the bag window bigger and tidier.", 31 })
+    eq(#win.options, 2)
+    local size, icons = win.options[1], win.options[2]
+    eq(size.key, "size")
+    eq(size.label, "Bag size")
+    local got = {}
+    for _, ch in ipairs(size.choices) do got[#got + 1] = ch.value .. "=" .. ch.label end
+    eq(got, { "normal=Normal", "large=Large", "xlarge=Extra large" })
+    eq({ icons.key, icons.label, icons.toggle }, { "iconRow", "Bag icons", true })
+    eq({ icons.choices[1].value, icons.choices[1].label, icons.choices[2].value, icons.choices[2].label },
+        { false, "In the grid", true, "One row at the top" })
+end)
+
+test("split: Bag sorter has the two toggles Sort button and Sort stick, and no How to sort or D-pad to Sort", function()
+    local c = newSplit()
+    local mod = c.PE:GetModule("bags")
+    eq(mod.label, "Bag sorter")
+    eq(#mod.options, 2)
+    local tab, stick = mod.options[1], mod.options[2]
+    eq({ tab.key, tab.label, tab.toggle }, { "showTab", "Sort button", true })
+    eq({ tab.choices[1].value, tab.choices[1].label, tab.choices[2].value, tab.choices[2].label }, { false, "Off", true, "On" })
+    eq({ stick.key, stick.label, stick.toggle }, { "sortKey", "Sort stick", true })
+    eq({ stick.choices[1].value, stick.choices[1].label, stick.choices[2].value, stick.choices[2].label },
+        { "l3", "Left", "r3", "Right" })
+    for _, key in ipairs({ "bags", "bagWindow" }) do
+        for _, o in ipairs(c.PE:GetModule(key).options) do
+            check(o.label ~= "How to sort" and o.label ~= "D-pad to Sort" and o.key ~= "dpad", key .. " still has " .. tostring(o.label))
+        end
+    end
+end)
+
+-- Spec: "Bag window alone: size and icons, with no Sort tab and no stick."
+test("split: Bag window alone sizes the bag and moves the icons, with no Sort tab and no stick taken", function()
+    local c, PE = newSplit({ on = { "bagWindow" }, gamepadUI = true })
+    c:buildBag()
+    local win = PE:GetModule("bagWindow")
+    win.opts.size, win.opts.iconRow = "large", true
+    c:openBag()
+    c:advance(0.5)
+    eq(c.bagFrame:GetScale(), 1.25)
+    checkRowLayout(c, 7, 60)
+    check(not sortButton(c):IsVisible(), "the Sort tab shows without Bag sorter")
+    eq(bindings(c), nil, "a stick is taken without Bag sorter")
+    c:script(sortButton(c), "OnClick", "LeftButton", false) -- a stale tap: the tab is hidden
+    eq(sorts(c), 0, "a stale tap sorted")
+    c:assertClean("window alone")
+end)
+
+-- Spec: "Bag sorter alone: the Sort tab and stick, at Blizzard's size, icons in the grid."
+test("split: Bag sorter alone has the tab and the stick at the game's size, icons in the grid", function()
+    local c, PE = newSplit({ on = { "bags" }, gamepadUI = true })
+    c:buildBag()
+    local win = PE:GetModule("bagWindow")
+    win.opts.size, win.opts.iconRow = "xlarge", true -- saved, but the feature is off
+    c:openBag()
+    c:advance(0.5)
+    eq(c.bagFrame:GetScale(), 1)
+    eq(moves(c), 0, "bag buttons were moved without Bag window")
+    check(sortButton(c):IsVisible(), "no Sort tab")
+    eq(bindings(c), { PADLSTICK = "PocketEssentialsBagSortKey" })
+    c:click(sortButton(c))
+    eq(sorts(c), 1)
+    c:assertClean("sorter alone")
+end)
+
+test("split: Sort stick Right takes the right stick", function()
+    local c = newSplit({ on = { "bags" } })
+    c:openBag()
+    choose(c, "bags", "sortKey", "r3")
+    eq(bindings(c), { PADRSTICK = "PocketEssentialsBagSortKey" })
+    choose(c, "bags", "sortKey", "l3")
+    eq(bindings(c), { PADLSTICK = "PocketEssentialsBagSortKey" })
+end)
+
+-- Spec: "D-pad to Sort is now on whenever the Sort button shows, and off when it does not."
+test("split: the d-pad route is there exactly when the Sort tab shows", function()
+    local c, PE = newSplit({ on = { "bags" }, gamepadUI = true })
+    local grid = c:fillBag(4, 3)
+    c:openBag()
+    c:advance(0.5)
+    eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN, "Sort button on")
+    choose(c, "bags", "showTab", false)
+    check(not sortButton(c):IsVisible(), "tab still shows")
+    eq(leftJumps(grid, sortButton(c)), {}, "Sort button off")
+    is(rawget(sortButton(c), RIGHT), nil)
+    choose(c, "bags", "showTab", true)
+    eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN, "Sort button on again")
+    -- Bag window alone: no tab, no route
+    PE:SetModuleEnabled("bags", false)
+    PE:SetModuleEnabled("bagWindow", true)
+    c:advance(0.5)
+    eq(leftJumps(grid, sortButton(c)), {}, "route with Bag window alone")
+    c:assertClean("route follows tab")
+end)
+
+-- Controller's brief: switching one off while the other stays on takes down only its own parts.
+test("split: Bag window off with Bag sorter on puts the scale and the icons back and keeps the tab", function()
+    local c, PE = newSplit({ on = { "bags", "bagWindow" }, gamepadUI = true })
+    c:buildBag()
+    local win = PE:GetModule("bagWindow")
+    win.opts.size, win.opts.iconRow = "large", true
+    c:openBag()
+    c:advance(0.5)
+    eq(c.bagFrame:GetScale(), 1.25)
+    PE:SetModuleEnabled("bagWindow", false)
+    c:advance(0.5)
+    eq(c.bagFrame:GetScale(), 1)
+    eq(places(c), places(gameLayout()), "the icons are not back in the grid")
+    check(sortButton(c):IsVisible(), "the tab went with Bag window")
+    eq(bindings(c), { PADLSTICK = "PocketEssentialsBagSortKey" })
+    c:assertClean("window off")
+end)
+
+test("split: Bag sorter off with Bag window on hides the tab, gives the stick back and keeps the size", function()
+    local c, PE = newSplit({ on = { "bags", "bagWindow" }, gamepadUI = true })
+    local grid = c:fillBag(4, 3)
+    PE:GetModule("bagWindow").opts.size = "large"
+    c:openBag()
+    c:advance(0.5)
+    eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN)
+    PE:SetModuleEnabled("bags", false)
+    c:advance(0.5)
+    check(not sortButton(c):IsVisible(), "the tab still shows")
+    eq(bindings(c), nil, "the stick is still taken")
+    eq(leftJumps(grid, sortButton(c)), {}, "the route is still there")
+    eq(c.bagFrame:GetScale(), 1.25)
+    eq(cvarWrites(c), {})
+    c:assertClean("sorter off")
+end)
+
+-- The combined bag setting belongs to the pair: it goes back only when both are off.
+test("split: the bag setting goes back only once both features are off", function()
+    local c, PE = newSplit({ on = { "bags", "bagWindow" }, cvar = "0" })
+    eq(#PE.reloadReasons, 1, "one reload asked for")
+    PE:SetModuleEnabled("bags", false)
+    eq(#PE.reloadReasons, 1, "the reload went with one feature still on")
+    PE:SetModuleEnabled("bagWindow", false)
+    eq(#PE.reloadReasons, 0, "a reload is still asked for with both off")
+    c:assertClean("cvar")
 end)
 
 return { known = KNOWN_FAILURES }

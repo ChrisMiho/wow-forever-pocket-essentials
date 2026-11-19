@@ -56,9 +56,9 @@ local EXPECTED_MISSING = {
     ["global PocketEssentialsDB"] = "first install: no saved variables yet (Core.lua InitDB checks)",
     ["global LibQuestieDB"] = "scenarios without QuestieDB (Core.lua CheckQuestieDB, QuestData.lua InitData)",
     ["global PocketEssentialsSettingsPanel"] = "Chat.lua HookSettings looks before the settings window was first opened",
-    ["global SMART_NAV_INPUT_DIRECTION"] = "Bags.lua NavApi, with \"D-pad to Sort\" pressed On: the stand-in has Blizzard's navigation helpers only when it starts with the Gamepad UI on (they load with it), and these scenarios start with it off",
-    ["global SmartNavigation_AddJumpNavigationOverride"] = "Bags.lua NavApi, with \"D-pad to Sort\" pressed On: the stand-in has Blizzard's navigation helpers only when it starts with the Gamepad UI on (they load with it), and these scenarios start with it off",
-    ["global SmartNavigation_ClearJumpNavigationOverridesInDirection"] = "Bags.lua NavApi, with \"D-pad to Sort\" pressed On: the stand-in has Blizzard's navigation helpers only when it starts with the Gamepad UI on (they load with it), and these scenarios start with it off",
+    ["global SMART_NAV_INPUT_DIRECTION"] = "Bags.lua NavApi, with the Sort button showing: the stand-in has Blizzard's navigation helpers only when it starts with the Gamepad UI on (they load with it), and these scenarios start with it off",
+    ["global SmartNavigation_AddJumpNavigationOverride"] = "Bags.lua NavApi, with the Sort button showing: the stand-in has Blizzard's navigation helpers only when it starts with the Gamepad UI on (they load with it), and these scenarios start with it off",
+    ["global SmartNavigation_ClearJumpNavigationOverridesInDirection"] = "Bags.lua NavApi, with the Sort button showing: the stand-in has Blizzard's navigation helpers only when it starts with the Gamepad UI on (they load with it), and these scenarios start with it off",
 }
 
 -- Frames made by the addon that may keep an OnUpdate script while their
@@ -79,7 +79,7 @@ local CORE_EVENTS = {
     DISPLAY_SIZE_CHANGED = "UI.lua: resizes everything",
 }
 
-local FEATURES = { "questIcons", "questArrow", "bags", "sellJunk", "repair", "chat", "menuBg" }
+local FEATURES = { "questIcons", "questArrow", "bags", "bagWindow", "sellJunk", "repair", "chat", "menuBg" }
 local QUEST_FEATURES = { questIcons = true, questArrow = true }
 
 ---------------------------------------------------------------------------
@@ -631,6 +631,8 @@ local function everythingOn(c, PE, hasQDB)
     -- position buttons are gone from the settings (the page now has "Move the round
     -- button" and "Move the arrow", which sit under "Button size" or open another window): about
     -- 207 with QuestieDB and 103 without.
+    -- 0.8.0 (Bags in two): Bag window is a feature of its own with Bag size and Bag icons,
+    -- and Bag sorter has two toggles: 243 with QuestieDB and 125 without. The floor stays.
     check(presses >= (hasQDB and 195 or 100), "only " .. presses .. " option buttons were pressed")
     c:assertClean("pressing every option")
 

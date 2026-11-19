@@ -25,7 +25,7 @@ local ALL_SCREENS = { "Welcome to Pocket Essentials", "Quest icons", "Quest arro
 local N = #ALL_SCREENS
 local AT = { welcome = 1, questIcons = 2, questArrow = 3, menuBg = 4, bags = 5, vendors = 6, chat = 7, layout = 8, finish = 9 }
 -- The screen each feature's switch is on.
-local SCREEN_OF = { questIcons = 2, questArrow = 3, menuBg = 4, bags = 5, sellJunk = 6, repair = 6, chat = 7 }
+local SCREEN_OF = { questIcons = 2, questArrow = 3, menuBg = 4, bagWindow = 5, bags = 5, sellJunk = 6, repair = 6, chat = 7 }
 
 local function guide(c) return rawget(c.env, "PocketEssentialsSetupPanel") end
 local function settingsPanel(c) return rawget(c.env, "PocketEssentialsSettingsPanel") end
@@ -283,7 +283,8 @@ test("setup: every feature of this build has a switch on some screen, and the ne
         eq(seen[mod.key], 1, "switches for " .. mod.key)
     end
     local joined = table.concat(all, "\n")
-    for _, part in ipairs({ "D-pad to Sort", "Bag icons", "One row at the top", "Chat text size" }) do
+    -- 0.8.0: "D-pad to Sort" is no longer a choice; the Bags screen names Bag sorter's two toggles.
+    for _, part in ipairs({ "Sort button", "Sort stick", "Bag size", "Bag icons", "One row at the top", "Chat text size" }) do
         check(joined:find(part, 1, true), "no screen mentions \"" .. part .. "\"")
     end
     -- Review of 0.4.0, point 7: A on the Sort tab is not device-tested, so it is not stated as fact.
@@ -421,7 +422,7 @@ test("setup: the finish screen lists what is on and what is off", function()
     c:advance(0.1)
     check(hasText(c, "Switched on: Sell junk automatically, Big chat buttons."), "the Switched on line is wrong: "
         .. tostring(textWith(c, "Switched on:")))
-    eq(textWith(c, "Still off:"), "Still off: Quest icons, Quest arrow, Bag sorter, Repair automatically, Menu background.")
+    eq(textWith(c, "Still off:"), "Still off: Quest icons, Quest arrow, Bag sorter, Bag window, Repair automatically, Menu background.")
     check(textWith(c, "\"Setup guide\" button at the bottom of the settings"), "no closing paragraph")
     check(not has(c, "Reload now"), "a reload is offered although nothing asked for one")
     c:assertClean("finish screen")
@@ -1206,7 +1207,9 @@ end
 
 test("options: the test's own reading of the screen list matches the features that have options", function()
     local c, PE = newClient()
-    -- every feature with options has a screen to itself; the others may share one
+    -- every feature with options has a screen to itself; the others may share one. Since 0.8.0
+    -- the Bags screen holds the two bag features (spec 2026-11-18-0.8.0-design, section 2).
+    local SHARED = { [AT.bags] = 2 }
     local perScreen = {}
     for _, mod in ipairs(PE.moduleList) do
         check(SCREEN_OF[mod.key], "no screen known for " .. mod.key)
@@ -1215,7 +1218,7 @@ test("options: the test's own reading of the screen list matches the features th
     local with = modsWithOptions(PE)
     check(#with >= 4, "fewer than four features have options (the test's premise)")
     for _, mod in ipairs(with) do
-        eq(perScreen[SCREEN_OF[mod.key]], 1, "features on the screen of " .. mod.key .. ", which has options")
+        eq(perScreen[SCREEN_OF[mod.key]], SHARED[SCREEN_OF[mod.key]] or 1, "features on the screen of " .. mod.key .. ", which has options")
     end
     open(c, PE)
     for i = 1, N do
@@ -1565,16 +1568,17 @@ end)
 
 test("options: switching a feature on with A keeps the highlight on the switch, and the d-pad then walks its options", function()
     local c, PE = newClient()
-    local sw = goToFeature(c, PE, "bags")
+    -- Bag window: the first switch on the Bags screen since 0.8.0.
+    local sw = goToFeature(c, PE, "bagWindow")
     local panel = guide(c)
     panel:NavSetFocus(nil)
     press(c, "DOWN")
     check(panel.peNavFocus == sw, "DOWN from nothing did not land on the switch")
     press(c, "A")
     c:advance(0.1)
-    check(PE:IsModuleEnabled("bags"), "A did not switch Bag sorter on")
+    check(PE:IsModuleEnabled("bagWindow"), "A did not switch Bag window on")
     check(panel.peNavFocus == sw and T.labelOf(sw) == "ON", "the highlight left the switch")
-    local mod = PE:GetModule("bags")
+    local mod = PE:GetModule("bagWindow")
     local want = {}
     for _, opt in ipairs(mod.options) do
         for _, b in ipairs(choiceButtons(c, panel, opt)) do want[#want + 1] = b end
@@ -1673,8 +1677,8 @@ test("options: every screen draws without error at every size, with every featur
 end)
 
 test("options: with options on screen the guide still has no per-frame code and listens for nothing once closed", function()
-    -- Bag sorter and Big chat buttons: features with options that start no timers of their own.
-    local c, PE = newClient({ on = { "bags", "chat" } })
+    -- Bag sorter, Bag window and Big chat buttons: features with options that start no timers of their own.
+    local c, PE = newClient({ on = { "bags", "bagWindow", "chat" } })
     c:advance(0.5)
     c.stats.addonOnUpdate = 0
     open(c, PE)
@@ -1751,6 +1755,38 @@ test("touch: the guide marks the current answer", function()
     c:advance(0.1)
     check(button(c, "No").peSelected == true and button(c, "Yes").peSelected == false, "No is not marked after No")
     c:assertClean("touch marked")
+end)
+
+-- 0.8.0, spec section 2: the Bags screen holds both bag features.
+test("bags split: the Bags screen has a switch for Bag window and one for Bag sorter", function()
+    local c, PE = newClient()
+    open(c, PE)
+    goTo(c, AT.bags)
+    switch(c, "bagWindow")
+    switch(c, "bags")
+    c:click(switch(c, "bagWindow"))
+    c:advance(0.1)
+    check(PE:IsModuleEnabled("bagWindow"), "the guide's switch did not switch Bag window on")
+    check(has(c, "Extra large") and hasText(c, "Bag size"), "Bag window's options are not under its switch")
+    c:assertClean("bags screen")
+end)
+
+-- 0.8.0, spec section 5: No hides the Sort button through Bag sorter's own "Sort button" row,
+-- so an open bag loses its tab at once, whichever stick is chosen.
+test("touch: No hides the Sort tab of an open bag at once, with either stick chosen", function()
+    local c, PE = newClient({ on = { "bags" } })
+    PE.db.options.bags.sortKey = "r3"
+    c:openBag()
+    c:advance(0.1)
+    local rec = c:find(function(r) return r.addonFile ~= nil and r.type == "Button" and T.labelOf(r.frame) == "Sort"
+        and r.frame:GetParent() == c.UIParent end)
+    check(rec and rec.frame:IsVisible(), "no Sort tab with the bag open (the test's premise)")
+    open(c, PE)
+    c:click(button(c, "No"))
+    c:advance(0.1)
+    eq(PE.db.options.bags.showTab, false)
+    check(not rec.frame:IsVisible(), "the Sort tab still shows after No")
+    c:assertClean("touch no hides tab")
 end)
 
 return { known = KNOWN_FAILURES }

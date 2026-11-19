@@ -1,9 +1,12 @@
--- Pocket Essentials: module "bags" (Bag sorter).
--- Uses Blizzard's own combined bag window (ContainerFrameCombinedBags) and adds
--- a large Sort button, a stick-click shortcut (left, right or none: the "Sort
--- key" choice), a size choice and, as choices of their own, a d-pad route onto
--- the Sort button ("D-pad to Sort") and the bag pictures in one row at the top
--- ("Bag icons").
+-- Pocket Essentials: two features in one file, sharing one engine.
+--   * "bags" (Bag sorter): a large Sort button ("Sort button": On / Off), a
+--     stick-click shortcut ("Sort stick": left or right) and, while the Sort
+--     button shows, a d-pad route onto it.
+--   * "bagWindow" (Bag window): a size choice ("Bag size") and the bag
+--     pictures in one row at the top ("Bag icons").
+-- Both use Blizzard's own combined bag window (ContainerFrameCombinedBags).
+-- The engine (combined bag setting, hooks, layout) runs while either feature
+-- is on; each part checks its own feature, so either one works alone.
 --
 -- Taint rules followed here (item use must never be blocked):
 --   * No field is ever written onto a Blizzard frame or table.
@@ -40,7 +43,7 @@ local FRAME_NAME = "ContainerFrameCombinedBags"
 local LAYOUT_FUNC = "UpdateContainerFrameAnchors"
 local CVAR = "combinedBags"
 local SORT_ATLAS = "bags-button-autosort-up" -- Blizzard's own sort button (ContainerFrame.xml)
--- Stick clicks (Blizzard_SharedXML/Shared/GamepadConstants.lua). "none": no stick is taken.
+-- Stick clicks (Blizzard_SharedXML/Shared/GamepadConstants.lua).
 local SORT_KEYS = { l3 = "PADLSTICK", r3 = "PADRSTICK" }
 local SORT_KEY_LABELS = { l3 = "left stick click", r3 = "right stick click" }
 local KEY_BUTTON_NAME = "PocketEssentialsBagSortKey"
@@ -59,8 +62,12 @@ local CONFIRM_BUTTON_NAME = "PocketEssentialsBagSortConfirm"
 local BAR_NAME = "GamepadBagBar"
 local COLUMNS = 10 -- the combined bag's width in buttons (ContainerFrame.lua, GetColumns)
 
-local mod            -- set by RegisterModule below
-local active = false -- true between OnEnable and OnDisable; every hook checks it
+local mod            -- Bag sorter, set by RegisterModule below. Its options also
+                     -- hold the engine's notes about the combined bag setting.
+local win            -- Bag window, set by RegisterModule below
+local sorterOn = false -- Bag sorter is on (between its OnEnable and OnDisable)
+local windowOn = false -- Bag window is on
+local active = false -- the engine: either feature is on; every hook checks it
 local bagFrame       -- ContainerFrameCombinedBags once found
 local hooksDone = false
 local layoutHooked = false
@@ -110,6 +117,13 @@ end
 
 local function Opts()
     local opts = mod and mod.opts
+    if type(opts) == "table" then return opts end
+    return nil
+end
+
+-- Bag window's options, or nil.
+local function WinOpts()
+    local opts = win and win.opts
     if type(opts) == "table" then return opts end
     return nil
 end
@@ -202,9 +216,25 @@ local function UpdateLogoutWatch()
     end
 end
 
--- Withdraws our "Reload now" request once nothing is waiting for a reload.
+-- The feature that speaks for the engine (its reload request, its problem
+-- lines): Bag sorter while it is on or both are off, else Bag window.
+local function Owner()
+    if sorterOn or not windowOn or not win then return mod end
+    return win
+end
+
+-- Withdraws our "Reload now" request (either feature's) once nothing is waiting for a reload.
 local function CancelReload()
     if mod and mod.CancelReload then mod:CancelReload() end
+    if win and win.CancelReload then win:CancelReload() end
+end
+
+-- Asks for a reload in the name of the feature that is on (one request, never two).
+local function AskReload()
+    local owner = Owner()
+    local other = owner == mod and win or mod
+    if other and other.CancelReload then other:CancelReload() end
+    owner:RequestReload(RELOAD_REASON)
 end
 
 local function ForgetCVar(opts)
@@ -279,10 +309,10 @@ local function WantCombined()
     opts.cvarWant, opts.cvarTried = "1", nil
     UpdateLogoutWatch()
     if PE.debugOn then PE:Debug("bags", "not combined yet: setting is " .. current .. ", change waits for a reload") end
-    mod:RequestReload(RELOAD_REASON)
+    AskReload()
 end
 
--- Module off: put the setting back the way it was found.
+-- Both features off: put the setting back the way it was found.
 local function RestoreCVar()
     local opts = Opts()
     if not opts then return end
@@ -299,7 +329,7 @@ local function RestoreCVar()
     opts.cvarWant, opts.cvarTried = prev, nil
     UpdateLogoutWatch()
     if PE.debugOn then PE:Debug("bags", "switched off: setting goes back to " .. prev .. " at the next reload") end
-    if IsGamepadStyle() then CancelReload() else mod:RequestReload(RELOAD_REASON) end
+    if IsGamepadStyle() then CancelReload() else AskReload() end
 end
 
 ---------------------------------------------------------------------------
@@ -313,7 +343,7 @@ local function DoSort(fromKey)
         PE:Debug("bags", fromKey == "pad" and "Sort pressed: A on the tab"
             or fromKey and "Sort pressed: stick click" or "Sort pressed: the tab")
     end
-    if not active or not BagShown() then -- also covers a stale key binding
+    if not sorterOn or not BagShown() then -- also covers a stale key binding
         if PE.debugOn then PE:Debug("bags", "Sort ignored: bag not open or feature off") end
         return
     end
@@ -409,9 +439,10 @@ local function LayoutButton()
     end
 end
 
--- The "Sort button" choice: shown unless the player hid it (they sort with
--- the stick click instead).
+-- The "Sort button" choice: shown while Bag sorter is on, unless the player
+-- hid it (they sort with the stick click instead).
 local function TabWanted()
+    if not sorterOn then return false end
     local opts = Opts()
     return not (opts and opts.showTab == false)
 end
@@ -426,31 +457,27 @@ local function SyncButton()
     end
 end
 
--- The "Sort key" choice: "l3", "r3" or "none". Anything else reads as "l3".
+-- The "Sort stick" choice: "l3" or "r3". Anything else reads as "l3".
 local function SortKeyChoice()
     local opts = Opts()
     local value = opts and opts.sortKey
-    if value == "none" or SORT_KEYS[value] then return value end
+    if SORT_KEYS[value] then return value end
     return "l3"
 end
 
 -- Only ever run through PE:RunOutOfCombat (bindings cannot change in combat).
 -- The key is never held during a fight: OnCombatStart gives it back.
 -- What the debug log last said about the stick: nil (nothing taken), "l3" or
--- "r3" (that stick is taken), "none" (bag open, Button only). A line is only
--- written when this changes, so fights with the bag closed write nothing.
+-- "r3" (that stick is taken). A line is only written when this changes, so
+-- fights with the bag closed write nothing.
 local stickState
 
 local function NoteStick(state)
     if state == stickState then return end
-    local was = stickState
     stickState = state
     if not PE.debugOn then return end
     if state == nil then
-        if was ~= "none" then PE:Debug("bags", "stick click given back to the game") end
-    elseif state == "none" then
-        if was then PE:Debug("bags", "stick click given back to the game") end
-        PE:Debug("bags", "no stick taken: button only")
+        PE:Debug("bags", "stick click given back to the game")
     else
         PE:Debug("bags", SORT_KEY_LABELS[state] .. " taken for Sort (bag open)")
     end
@@ -462,14 +489,10 @@ local function ApplyBinding()
     -- Always hand back whatever was taken before, so a changed choice never
     -- leaves the old stick taken.
     ClearOverrideBindings(keyButton)
-    if active and BagShown() then
+    if sorterOn and BagShown() then
         local choice = SortKeyChoice()
-        if SORT_KEYS[choice] then
-            SetOverrideBindingClick(keyButton, true, SORT_KEYS[choice], KEY_BUTTON_NAME, "LeftButton")
-            NoteStick(choice)
-        else
-            NoteStick("none")
-        end
+        SetOverrideBindingClick(keyButton, true, SORT_KEYS[choice], KEY_BUTTON_NAME, "LeftButton")
+        NoteStick(choice)
     else
         NoteStick(nil)
     end
@@ -480,8 +503,9 @@ local function SyncBinding()
 end
 
 ---------------------------------------------------------------------------
--- "D-pad to Sort": a Left jump from the bag's first column onto the Sort
--- tab, and the A button while the cursor is on it.
+-- The d-pad route: a Left jump from the bag's first column onto the Sort
+-- tab, and the A button while the cursor is on it. There whenever the Sort
+-- tab is wanted (Bag sorter on, "Sort button" On).
 --
 -- Blizzard's cursor looks for a "jump override" on the current button before
 -- anything else and goes to that frame if it is visible, whether or not the
@@ -494,11 +518,6 @@ end
 -- key has one binding. So A is taken with our own override binding while the
 -- cursor is on the tab, the way the stick click is taken.
 ---------------------------------------------------------------------------
-
-local function DpadWanted()
-    local opts = Opts()
-    return opts ~= nil and opts.dpad == true
-end
 
 -- Blizzard's two setters and its table of directions, or nil and why not.
 local function NavApi()
@@ -581,7 +600,7 @@ end
 -- An override is only cleared if it is still ours, and one that is already
 -- there and not ours is left alone.
 local function ApplyRoute()
-    local wanted = active and DpadWanted()
+    local wanted = TabWanted()
     local hadRoute = next(routed) ~= nil or tabRight ~= nil
     if not wanted and not hadRoute then
         navNote = nil
@@ -606,7 +625,7 @@ local function ApplyRoute()
     local leftKey, rightKey = NAV_KEY .. dirs.LEFT.dirKey, NAV_KEY .. dirs.RIGHT.dirKey
 
     local cols
-    if wanted and not reason and sortButton and TabWanted() and BagShown() then
+    if wanted and not reason and sortButton and BagShown() then
         local why
         cols, why = FirstColumn()
         if not cols then reason = why end
@@ -669,15 +688,15 @@ end
 
 -- Clears the Left jumps that no longer belong and puts them on whatever item
 -- buttons are in the bag's first column now (and takes them all away when the
--- choice, the tab or the bag is not there). Call it after anything that moves
+-- feature, the tab or the bag is not there). Call it after anything that moves
 -- the bag's buttons. In a fight it waits for the fight to end.
 local function RefreshSortJump()
-    local wanted = active and DpadWanted()
+    local wanted = TabWanted()
     if not wanted and next(routed) == nil and tabRight == nil then
         navNote = nil
         return
     end
-    if wanted and PE:InCombat() and next(routed) == nil and BagShown() and TabWanted() then
+    if wanted and PE:InCombat() and next(routed) == nil and BagShown() then
         NoteNav("not set up: waiting for the fight to end")
     end
     PE:RunOutOfCombat("bags:dpad", ApplyRoute)
@@ -688,7 +707,7 @@ local function ConfirmKey()
 end
 
 local function ConfirmWanted()
-    return active and DpadWanted() and tabFocused and BagShown()
+    return TabWanted() and tabFocused and BagShown()
         and sortButton ~= nil and sortButton:IsVisible() and true or false
 end
 
@@ -753,7 +772,7 @@ end
 -- (ContainerFrame.lua, ContainerFrameCombinedBagsMixin:Update), so ours is
 -- set again after each one, but only while the cursor is on the tab.
 local function OnBagUpdate()
-    if not active then return end
+    if not sorterOn then return end
     SyncConfirm()
 end
 
@@ -768,8 +787,8 @@ local function WatchBag(want)
     end
 end
 
--- The cursor has left the tab in any way (moved off, bag closed, choice or
--- feature switched off).
+-- The cursor has left the tab in any way (moved off, bag closed, Sort button
+-- or feature switched off).
 local function DropFocus()
     local was = tabFocused
     tabFocused = false
@@ -781,7 +800,7 @@ end
 -- Blizzard's cursor calls these two on the button it arrives on and leaves
 -- (SmartNavigation.lua, SelectButton), each behind its own taint barrier.
 local function OnTabFocused()
-    if not active or not DpadWanted() then return end
+    if not TabWanted() then return end
     tabFocused = true
     if PE.debugOn then PE:Debug("bags", "d-pad: on the Sort tab") end
     WatchBag(true)
@@ -810,7 +829,7 @@ local function OnCombatStart()
     if not keyButton or not ClearOverrideBindings then return end
     if InCombatLockdown and InCombatLockdown() then return end
     pcall(ClearOverrideBindings, keyButton)
-    if stickState ~= "none" then NoteStick(nil) end    -- Button only: nothing was taken, nothing to say
+    NoteStick(nil)
     if confirmHeld and confirmButton then
         pcall(ClearOverrideBindings, confirmButton)
         confirmHeld = false
@@ -915,8 +934,9 @@ local function ApplyScaleNow(frame)
         base.scale, base.x, base.y = current, x, y
     end
 
-    local opts = Opts()
-    local factor = (opts and SIZE_FACTOR[opts.size]) or 1
+    -- Bag size is Bag window's; with it off the bag keeps the game's own size.
+    local wopts = windowOn and WinOpts()
+    local factor = (wopts and SIZE_FACTOR[wopts.size]) or 1
     local pw, ph = Plain(parent:GetWidth()), Plain(parent:GetHeight())
     local fw, fh = Plain(frame:GetWidth()), Plain(frame:GetHeight())
     local parentScale = Plain(parent:GetEffectiveScale())
@@ -961,7 +981,7 @@ local function ApplyScaleNow(frame)
     end
 end
 
--- Module off: put back exactly what Blizzard's layout pass had set. (Calling
+-- Both features off: put back exactly what Blizzard's layout pass had set. (Calling
 -- the layout pass ourselves would run Blizzard's code in our name.)
 local function RestoreScaleNow(frame)
     clamped = false
@@ -1015,8 +1035,8 @@ end
 ---------------------------------------------------------------------------
 
 local function IconRowWanted()
-    local opts = Opts()
-    return active and opts ~= nil and opts.iconRow == true
+    local opts = windowOn and WinOpts()
+    return opts and opts.iconRow == true or false
 end
 
 local function NoteIcons(text)
@@ -1194,8 +1214,8 @@ local function SyncIconsAfterFight()
 end
 
 -- The single place that moves the bag's buttons: into the row when the choice
--- is on, back to the places Blizzard gave them when it is not (also when the
--- feature is switched off). `announce`: say so in the debug log when there
+-- is on, back to the places Blizzard gave them when it is not (also when Bag
+-- window is switched off). `announce`: say so in the debug log when there
 -- was nothing to put back.
 SyncIcons = function(announce)
     local wanted = IconRowWanted()
@@ -1284,7 +1304,7 @@ SyncIcons = function(announce)
 end
 
 ---------------------------------------------------------------------------
--- Hooks (installed once, no-ops while the module is off)
+-- Hooks (installed once, no-ops while both features are off)
 ---------------------------------------------------------------------------
 
 local function OnLayoutPass()
@@ -1347,14 +1367,21 @@ local function Start()
 end
 
 local function OnAddonLoaded(self)
-    if bagFrame or not active then return end
-    if Setup() then
+    if not active then return end
+    if bagFrame then
         self:UnregisterEvent("ADDON_LOADED")
+        return
+    end
+    if Setup() then
+        -- Either feature may have been waiting for the bag: neither waits any longer.
+        mod:UnregisterEvent("ADDON_LOADED")
+        if win then win:UnregisterEvent("ADDON_LOADED") end
         Start()
         self:RefreshPanel()
     end
 end
 
+-- Registered by each feature that is on; every step is safe to run twice.
 local function OnStyleChanged(self)
     -- Let Blizzard finish switching between its mouse and gamepad styles first.
     self:After(1, function()
@@ -1370,80 +1397,196 @@ local function OnStyleChanged(self)
     end)
 end
 
+-- One feature switched on. The engine starts with the first of the two; the
+-- second only brings its own parts in.
+local function FeatureOn(self, sorter)
+    local running = active
+    if sorter then sorterOn = true else windowOn = true end
+    active = true
+    if Setup() then
+        if running then
+            SyncButton()
+            SyncBinding()
+            SyncIcons()
+            SyncScale()
+            RefreshSortJump()
+            -- A reload request moves to the feature that speaks for the pair.
+            WantCombined()
+        else
+            Start()
+        end
+    else
+        -- Blizzard's bag code is not loaded (yet): wait for it, do nothing else.
+        if PE.debugOn then PE:Debug("bags", "combined bag window not found yet: waiting for it to load") end
+        self:RegisterEvent("ADDON_LOADED", OnAddonLoaded)
+    end
+    self:RegisterEvent("INPUT_DEVICE_INTERFACE_TRANSITION", OnStyleChanged)
+end
+
+-- One feature switched off (also the rollback of a half-finished OnEnable).
+-- Only its own parts come down; the engine stops once both are off.
+local function FeatureOff(sorter)
+    -- "Bag icons" says so in the debug log when Bag window goes off with it on.
+    local wopts = WinOpts()
+    local announce = not sorter and windowOn and wopts ~= nil and wopts.iconRow == true
+    if sorter then sorterOn = false else windowOn = false end
+    active = sorterOn or windowOn
+    SyncButton()
+    SyncBinding()
+    -- The bag's buttons go back to the game's own places (with the bag open;
+    -- closed, the game lays them out afresh at the next opening).
+    SyncIcons(announce)
+    SyncScale()
+    -- A goes back now; the jumps come off now, or after the fight (until
+    -- then they point at a hidden tab, which the cursor never goes to).
+    DropFocus()
+    RefreshSortJump()
+    if active then WantCombined() else RestoreCVar() end
+end
+
 ---------------------------------------------------------------------------
--- The module
+-- The two features
 ---------------------------------------------------------------------------
 
-local function Status(self)
-    if not FindFrame() then return "This client has no combined bag." end
+-- With both features off: the one line about a setting waiting to go back.
+local function OffStatus()
+    if active then return nil end
     local opts = Opts()
-    local gamepad = IsGamepadStyle()
     local current = ReadCVar()
-    if not self:IsEnabled() then
-        if opts and opts.cvarWant ~= nil and current ~= nil and current ~= opts.cvarWant and not gamepad then
-            return "Reload to go back to separate bags."
-        end
-        return nil
+    if opts and opts.cvarWant ~= nil and current ~= nil and current ~= opts.cvarWant and not IsGamepadStyle() then
+        return "Reload to go back to separate bags."
     end
-    if not gamepad then
-        if current == nil then return "This client has no combined bag." end
-        if current ~= "1" then
-            if opts and opts.cvarWant == "1" then return "Reload to switch to the combined bag." end
-            if not (opts and opts.cvarFailed) then
-                return "You switched back to separate bags in the game's bag menu."
-            end
+    return nil
+end
+
+-- With a feature on: what stands between it and the combined bag, or nil.
+-- Only the feature that speaks for the pair says it, so it is never said twice.
+local function CombinedProblem(self)
+    if IsGamepadStyle() then return nil end
+    local opts = Opts()
+    local current = ReadCVar()
+    local problem
+    if current == nil then
+        problem = "This client has no combined bag."
+    elseif current ~= "1" then
+        if opts and opts.cvarWant == "1" then
+            problem = "Reload to switch to the combined bag."
+        elseif not (opts and opts.cvarFailed) then
+            problem = "You switched back to separate bags in the game's bag menu."
+        else
             local item = type(BAG_COMMAND_CONVERT_TO_COMBINED) == "string" and BAG_COMMAND_CONVERT_TO_COMBINED
                 or "Convert to Combined Bag"
-            return "Could not switch the bags for you. Open a bag, tap its picture and choose \"" .. item .. "\"."
+            problem = "Could not switch the bags for you. Open a bag, tap its picture and choose \"" .. item .. "\"."
         end
     end
+    if problem == nil then return nil end
+    if self ~= Owner() then return false end -- the other feature says it
+    return problem
+end
+
+local function SorterStatus(self)
+    if not FindFrame() then return "This client has no combined bag." end
+    if not self:IsEnabled() then return OffStatus() end
+    local problem = CombinedProblem(self)
+    if problem then return problem end
+    if problem == false then return nil end
     local lines = {}
-    local choice = SortKeyChoice()
-    if SORT_KEYS[choice] then
-        lines[1] = "Controller: click the " .. (choice == "l3" and "left" or "right") .. " stick to sort while the bag is open."
-    else
-        lines[1] = "Sort with the Sort button; no stick is taken."
-    end
-    if opts and opts.showTab == false then
-        lines[#lines + 1] = "The Sort button is hidden; pick a way with \"Button\" in How to sort to bring it back."
-    end
-    if DpadWanted() and gamepad then
+    lines[1] = "Controller: click the " .. (SortKeyChoice() == "l3" and "left" or "right") .. " stick to sort while the bag is open."
+    if not TabWanted() then
+        lines[#lines + 1] = "The Sort button is hidden; turn Sort button On to bring it back."
+    elseif IsGamepadStyle() then
         if NavApi() then
             lines[#lines + 1] = "D-pad: press Left from the first column to reach Sort, then A."
         else
             lines[#lines + 1] = "This client has no way to reach Sort with the d-pad."
         end
     end
-    if opts and opts.iconRow == true then
-        lines[#lines + 1] = gamepad and "Bag icons are in one row at the top of the bag."
-            or "Bag icons: only in the controller style."
-    end
-    if clamped then lines[#lines + 1] = "The bag is as big as the screen allows." end
     return lines
 end
 
--- "How to sort": each way, and the two saved values it stands for.
-local HOW_TO_SORT = {
-    { value = "l3", label = "Button + left stick" },
-    { value = "r3", label = "Button + right stick" },
-    { value = "none", label = "Button only" },
-    { value = "l3only", label = "Left stick only" },
-    { value = "r3only", label = "Right stick only" },
-}
-local HOW_TO_SORT_WAYS = {
-    l3 = { sortKey = "l3", showTab = true },
-    r3 = { sortKey = "r3", showTab = true },
-    none = { sortKey = "none", showTab = true },
-    l3only = { sortKey = "l3", showTab = false },
-    r3only = { sortKey = "r3", showTab = false },
-}
+local function WindowStatus(self)
+    if not FindFrame() then return "This client has no combined bag." end
+    if not self:IsEnabled() then return OffStatus() end
+    local problem = CombinedProblem(self)
+    if problem then return problem end
+    if problem == false then return nil end
+    local lines = {}
+    local opts = WinOpts()
+    if opts and opts.iconRow == true then
+        lines[#lines + 1] = IsGamepadStyle() and "Bag icons are in one row at the top of the bag."
+            or "Bag icons: only in the controller style."
+    end
+    if clamped then lines[#lines + 1] = "The bag is as big as the screen allows." end
+    if #lines == 0 then return nil end
+    return lines
+end
 
 mod = PE:RegisterModule({
     key = "bags",
     label = "Bag sorter",
     desc = "Sort your bags with a big button or a stick click.",
     order = 30,
-    defaults = { size = "normal", showTab = true, sortKey = "l3", dpad = false, iconRow = false },
+    -- 0.8.0: the old keys size, iconRow and dpad may still be in a saved
+    -- table; they are left there and not read (Bag window has its own).
+    defaults = { showTab = true, sortKey = "l3" },
+
+    -- Two toggles side by side. The stick always sorts; the d-pad route
+    -- onto the Sort button is there whenever the button shows.
+    options = {
+        { key = "showTab", label = "Sort button", toggle = true,
+          choices = {
+              { value = false, label = "Off" },
+              { value = true, label = "On" },
+          },
+          -- The bag may now grow into the tab's space, or make room for it;
+          -- the d-pad route and A follow the tab.
+          OnChange = function()
+              if PE.debugOn then PE:Debug("bags", TabWanted() and "Sort tab choice: show" or "Sort tab choice: hide") end
+              if not TabWanted() then DropFocus() end
+              if sorterOn then SyncScale() end
+              SyncConfirm()
+              RefreshSortJump()
+          end },
+        { key = "sortKey", label = "Sort stick", toggle = true,
+          choices = {
+              { value = "l3", label = "Left" },
+              { value = "r3", label = "Right" },
+          },
+          -- Hands the old stick back before the new one is taken (ApplyBinding).
+          OnChange = function()
+              if PE.debugOn then PE:Debug("bags", "sort key choice: " .. SortKeyChoice()) end
+              if sorterOn then SyncBinding() end
+          end },
+    },
+
+    status = SorterStatus,
+
+    OnLoad = function(self)
+        local opts = self.opts
+        if type(opts) ~= "table" then return end
+        if type(opts.showTab) ~= "boolean" then opts.showTab = true end
+        -- "Button only" ("none", before 0.8.0) and anything unknown: the left stick.
+        if not SORT_KEYS[opts.sortKey] then opts.sortKey = "l3" end
+        ResolvePendingCVar()
+    end,
+
+    OnEnable = function(self)
+        FeatureOn(self, true)
+        self:RegisterEvent("PLAYER_REGEN_DISABLED", OnCombatStart)
+        self:RegisterEvent("PLAYER_REGEN_ENABLED", OnCombatEnd)
+    end,
+
+    OnDisable = function()
+        FeatureOff(true)
+    end,
+})
+
+win = PE:RegisterModule({
+    key = "bagWindow",
+    label = "Bag window",
+    desc = "Makes the bag window bigger and tidier.",
+    order = 31,
+    defaults = { size = "normal", iconRow = false },
 
     options = {
         { key = "size", label = "Bag size",
@@ -1454,116 +1597,61 @@ mod = PE:RegisterModule({
           },
           OnChange = function()
               if PE.debugOn then
-                  local opts = Opts()
+                  local opts = WinOpts()
                   PE:Debug("bags", "size choice: " .. tostring(opts and opts.size))
               end
-              if active then SyncScale() end
+              if windowOn then SyncScale() end
           end },
-        -- One choice for the two saved values `sortKey` and `showTab` (0.6.0),
-        -- so there is always a way to sort: no "Button only" with the button hidden.
-        { label = "How to sort",
-          choices = HOW_TO_SORT,
-          get = function()
-              local key = SortKeyChoice()
-              if TabWanted() then return key end
-              if key == "none" then return "none" end -- repaired at load; reads as Button only
-              return key .. "only"
-          end,
-          set = function(self, value)
-              local way = HOW_TO_SORT_WAYS[value]
-              if not way then return end
-              self.opts.sortKey, self.opts.showTab = way.sortKey, way.showTab
-          end,
-          -- Hands the old stick back before the new one is taken (ApplyBinding);
-          -- the bag may now grow into the tab's space, or make room for it.
-          OnChange = function()
-              if PE.debugOn then
-                  PE:Debug("bags", "sort key choice: " .. SortKeyChoice())
-                  PE:Debug("bags", TabWanted() and "Sort tab choice: show" or "Sort tab choice: hide")
-              end
-              if active then
-                  SyncBinding()
-                  SyncScale()
-                  SyncConfirm()
-                  RefreshSortJump()
-              end
-          end },
-        -- Its own choice, off until it has passed a device test: it is the one
-        -- part of this feature that has a value stored on Blizzard's item
-        -- buttons (by Blizzard's own setter).
-        { key = "dpad", label = "D-pad to Sort", toggle = true,
-          choices = {
-              { value = false, label = "Off" },
-              { value = true, label = "On" },
-          },
-          OnChange = function()
-              if PE.debugOn then PE:Debug("bags", DpadWanted() and "d-pad choice: on" or "d-pad choice: off") end
-              if not DpadWanted() then DropFocus() end
-              SyncConfirm()
-              RefreshSortJump()
-          end },
-        -- Its own choice, off until it has passed a device test: it moves the
-        -- bag's own buttons (their places only).
+        -- Off until it has passed a device test: it moves the bag's own
+        -- buttons (their places only).
         { key = "iconRow", label = "Bag icons", toggle = true,
           choices = {
               { value = false, label = "In the grid" },
               { value = true, label = "One row at the top" },
           },
           OnChange = function()
-              local opts = Opts()
+              local opts = WinOpts()
               local row = opts ~= nil and opts.iconRow == true
               if PE.debugOn then PE:Debug("bags", row and "bag icons choice: row" or "bag icons choice: grid") end
               lastIconLine = nil
-              if active then
+              if windowOn then
                   SyncIcons(true)
                   RefreshSortJump() -- the first column may be other buttons now
               end
           end },
     },
 
-    status = Status,
+    status = WindowStatus,
 
+    -- Runs after Bag sorter's OnLoad (order 31 after 30), before either is switched on.
     OnLoad = function(self)
         local opts = self.opts
         if type(opts) ~= "table" then return end
+        local db = PE.db
+        local old = type(db) == "table" and type(db.options) == "table" and db.options.bags
+        if type(old) == "table" and (old.size ~= nil or old.iconRow ~= nil)
+            and type(db.enabled) == "table" and db.enabled.bagWindow == nil then
+            -- The first load of 0.8.0 over a save from before it (Bag sorter's
+            -- table still has its old size or icons; Bag window has never been
+            -- saved): Bag window takes over Bag sorter's switch, size and
+            -- icons. The saved switch is written now, so this happens once. A
+            -- fresh install has neither key and is left alone (both off).
+            db.enabled.bagWindow = db.enabled.bags == true
+            opts.size, opts.iconRow = old.size, old.iconRow
+            if PE.debugOn then
+                PE:Debug("bags", "Bag window set up from Bag sorter's saved choices: "
+                    .. (db.enabled.bagWindow and "on" or "off"))
+            end
+        end
         if not SIZE_FACTOR[opts.size] then opts.size = "normal" end
-        if type(opts.showTab) ~= "boolean" then opts.showTab = true end
-        if opts.sortKey ~= "none" and not SORT_KEYS[opts.sortKey] then opts.sortKey = "l3" end
-        -- "Button only" with the button hidden left no way to sort (before 0.6.0).
-        if opts.sortKey == "none" and opts.showTab == false then opts.showTab = true end
-        if type(opts.dpad) ~= "boolean" then opts.dpad = false end
         if type(opts.iconRow) ~= "boolean" then opts.iconRow = false end
-        ResolvePendingCVar()
     end,
 
     OnEnable = function(self)
-        active = true
-        if Setup() then
-            Start()
-        else
-            -- Blizzard's bag code is not loaded (yet): wait for it, do nothing else.
-            if PE.debugOn then PE:Debug("bags", "combined bag window not found yet: waiting for it to load") end
-            self:RegisterEvent("ADDON_LOADED", OnAddonLoaded)
-        end
-        self:RegisterEvent("INPUT_DEVICE_INTERFACE_TRANSITION", OnStyleChanged)
-        self:RegisterEvent("PLAYER_REGEN_DISABLED", OnCombatStart)
-        self:RegisterEvent("PLAYER_REGEN_ENABLED", OnCombatEnd)
+        FeatureOn(self, false)
     end,
 
-    -- Also runs as the rollback of a half-finished OnEnable.
     OnDisable = function()
-        active = false
-        SyncButton()
-        SyncBinding()
-        -- The bag's buttons go back to the game's own places (with the bag open;
-        -- closed, the game lays them out afresh at the next opening).
-        local opts = Opts()
-        SyncIcons(opts ~= nil and opts.iconRow == true)
-        SyncScale()
-        -- A goes back now; the jumps come off now, or after the fight (until
-        -- then they point at a hidden tab, which the cursor never goes to).
-        DropFocus()
-        RefreshSortJump()
-        RestoreCVar()
+        FeatureOff(false)
     end,
 })
