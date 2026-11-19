@@ -945,5 +945,48 @@ test("number: a suffix follows a number but never Off or All", function()
     check(textRegionOf(c3, "All") and not textRegionOf(c3, "All%"), "All wrong")
 end)
 
+-- 0.8.0 fix: with touch off there are no scroll tabs, so the d-pad itself pages a list
+-- that has no stops below the top (UI.lua NavMove).
+local function dpadKey(c, key)
+    local nav = rawget(c.env, NAV_NAME)
+    c:script(nav, "OnClick", key, true)
+    c:script(nav, "OnClick", key, false)
+end
+
+test("nav: touch off, the Errors page can be read to the bottom with the d-pad Down", function()
+    local c, PE = T.new({})
+    PE:SetUISetting("touch", false)
+    for i = 1, 40 do PE:LogError("probe", "problem number " .. i .. " with a fairly long message to fill the line", "stack " .. i) end
+    openSettings(c, PE)
+    PE:OpenSettings("errors")
+    c:advance(0.2)
+    local panel = settingsPanel(c)
+    local area = panel.peNavArea
+    check(area and area:GetRange() > 100, "the Errors page does not scroll")
+    for _ = 1, 80 do
+        dpadKey(c, "DOWN")
+        if area.offset >= area:GetRange() - 0.5 then break end
+    end
+    check(area.offset >= area:GetRange() - 0.5, "the d-pad never reached the bottom: " .. area.offset .. " of " .. area:GetRange())
+    for _ = 1, 80 do
+        dpadKey(c, "UP")
+        if area.offset <= 0.5 then break end
+    end
+    check(area.offset <= 0.5, "the d-pad Up never got back to the top")
+end)
+
+test("nav: touch on, the d-pad Down does not page the Errors page", function()
+    local c, PE = T.new({})
+    PE:SetUISetting("touch", true)
+    for i = 1, 40 do PE:LogError("probe", "problem number " .. i .. " with a fairly long message to fill the line", "stack " .. i) end
+    openSettings(c, PE)
+    PE:OpenSettings("errors")
+    c:advance(0.2)
+    local area = settingsPanel(c).peNavArea
+    check(area and area:GetRange() > 100, "the Errors page does not scroll")
+    for _ = 1, 6 do dpadKey(c, "DOWN") end
+    eq(area.offset, 0, "the d-pad paged with touch on")
+end)
+
 
 return { known = KNOWN_FAILURES }

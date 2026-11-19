@@ -1200,6 +1200,7 @@ local function Build()
     header.clear:SetScript("OnClick", PE:Wrap("core", function() PE:ClearErrors() end))
 
     UI:AttachNav(panel, function() return navList end)
+    panel.peNavArea = area   -- lets the d-pad page the list when touch is off (UI.lua NavMove)
     panel.navOnFocus = function(btn)
         if btn.peScrollTop then area:ScrollIntoView(btn) end
     end

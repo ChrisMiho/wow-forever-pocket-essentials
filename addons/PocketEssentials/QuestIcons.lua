@@ -1244,7 +1244,7 @@ local function SlashCommand(msg)
         if number ~= number then number = DEFAULT_CLUSTER end
         opts.cluster = floor(max(0, min(MAX_CLUSTER, number)))
         changed = "cluster"
-        PE:Print("Merge icons closer than: " .. (opts.cluster == 0 and "off" or tostring(opts.cluster)) .. ".")
+        PE:Print("Merge icons closer than: " .. (opts.cluster == 0 and "off" or (tostring(opts.cluster) .. "%")) .. ".")
     elseif cmd == "spots" and (SPOTS_WORDS[value] or SpotsNumber(value)) then
         opts.spots = SPOTS_WORDS[value] or SpotsNumber(value)
         changed = "spots"

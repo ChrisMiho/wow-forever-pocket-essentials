@@ -141,6 +141,8 @@ local SCREENS = {
           .. "\n\nIn the settings you can choose how big all Pocket Essentials buttons are: Small, Medium or "
           .. "Large. \"Move the round button\" there, and \"Move the arrow\" in the quest arrow's options, open "
           .. "\"Move on screen\"."
+          .. "\n\nButton colour in the settings paints the round button Gold, Horde or Alliance. Touch screen: "
+          .. "No hides the scroll bar's arrows, and the d-pad scrolls long pages by itself."
           .. "\n\n\"Move on screen\", also in the bottom row of the settings, lets you nudge the quest arrow, the "
           .. "\"Press A to type\" text and the round button to exactly where you want them, with on-screen "
           .. "arrows or the d-pad." },
@@ -663,6 +665,7 @@ local function Build()
     reloadButton:SetScript("OnClick", function() PE:Safe("core", ReloadClicked) end)
 
     UI:AttachNav(panel, function() return navList end)
+    panel.peNavArea = area   -- lets the d-pad page the list when touch is off (UI.lua NavMove)
     panel.navOnFocus = function(btn)
         if btn.peScrollTop then area:ScrollIntoView(btn) end
     end

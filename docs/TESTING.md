@@ -1012,17 +1012,21 @@ the debug log on (settings, Errors page).
    the Sort button Off, it should not.
 8. **Button colour** (in the main settings): tap Gold, Horde and Alliance.
    The round button changes colour at once each time.
-9. **Merge icons closer than 3%** shows "of map" under the number. Step it
+9. **Merge icons closer than N%** (for example 2%) shows "of map" under the number. Step it
    and look at a crowded spot on the map: a bigger number means fewer
    icons.
 10. Open the **Setup guide** (settings bottom row). The d-pad highlight
     starts on **Start**, not Close or Skip.
 11. The first page asks whether you use the touch screen. Answer **No**: the
-    scroll bar and the Sort button go away. Go back and answer **Yes**: the
-    scroll bar returns.
+    scroll bar and the Sort button go away. Open the bag (no Sort button)
+    and a long settings page (no scroll bar). Go back in the same guide and
+    answer **Yes**: the scroll bar and the Sort button come back.
 12. Open a long settings page. The slim scroll bar shows an arrow at each
     end and a marker. Tap the arrows to move, tap the track to page, and say
     whether the marker follows where you are. **Touch screen: Yes / No** in
     the settings does the same as the guide's question.
-13. Reload. Everything you changed should still be as you left it. Send the
+13. With **Touch screen: No**, open the **Errors** page from the settings
+    (or any long page) and press d-pad Down repeatedly: the page should
+    scroll all the way to the bottom, and Up should bring it back.
+14. Reload. Everything you changed should still be as you left it. Send the
     saved `PocketEssentials.lua` file.

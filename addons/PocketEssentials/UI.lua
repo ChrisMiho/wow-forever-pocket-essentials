@@ -792,6 +792,21 @@ local function NavMove(panel, step, byRow)
             while index > 1 and SameRow(list[index - 1], list[index]) do index = index - 1 end
         end
     end
+    -- Touch off: the scroll bar's tabs are hidden, so a list with no stops
+    -- below the top (plain text) could not be scrolled. When the next stop is
+    -- outside the list (or the move wraps), the d-pad pages the list instead.
+    local area = panel.peNavArea
+    if byRow and current and area and area.GetRange and not PE:UsesTouch() then
+        local target = list[index]
+        local outside = not (target and target.peScrollTop)
+        if outside then
+            if step > 0 and index > current and area:GetRange() > area.offset + 0.5 then
+                return area:PageDown()
+            elseif step < 0 and area.offset > 0.5 then
+                return area:PageUp()
+            end
+        end
+    end
     NavFocus(panel, list[index], index)
 end
 

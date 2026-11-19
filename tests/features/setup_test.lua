@@ -1789,4 +1789,28 @@ test("touch: No hides the Sort tab of an open bag at once, with either stick cho
     c:assertClean("touch no hides tab")
 end)
 
+-- 0.8.0 fix: touch off, a tall screen with no list buttons is paged by the d-pad.
+test("touch: with touch off the d-pad Down pages a tall finish screen to its bottom", function()
+    local c, PE = newClient({ on = { "bags" } })
+    PE:SetUISetting("touch", false)
+    open(c, PE)
+    for _ = 1, 40 do
+        if has(c, "Finish") then break end
+        c:click(nextButton(c))
+        c:advance(0.1)
+    end
+    check(has(c, "Finish"), "never reached the last screen")
+    local area = guide(c).peNavArea
+    area:SetContentHeight(area.viewHeight * 3)   -- a screen taller than the view
+    check(area:GetRange() > 20, "the finish screen does not scroll")
+    local key = rawget(c.env, NAV_NAME)
+    for _ = 1, 40 do
+        c:script(key, "OnClick", "DOWN", true)
+        c:script(key, "OnClick", "DOWN", false)
+        if area.offset >= area:GetRange() - 0.5 then break end
+    end
+    check(area.offset >= area:GetRange() - 0.5, "the d-pad never reached the bottom: " .. area.offset .. " of " .. area:GetRange())
+    c:assertClean("finish d-pad")
+end)
+
 return { known = KNOWN_FAILURES }

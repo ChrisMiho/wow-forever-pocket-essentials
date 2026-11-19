@@ -28,7 +28,7 @@ device. Your saved choices carry over as they are.
   - The first time 0.8.0 loads, **Bag window** is switched on if you used
     **Bag sorter**, with your size and icons as they were.
 - **Button colour:** Gold, Horde or Alliance for the round button.
-- **Merge icons closer than 3%** (of the map) replaces the old number, with
+- **Merge icons closer than N%** (for example 2%, of the map) replaces the old number, with
   "of map" under it.
 - **Setup guide, first page:** the highlight starts on **Start**. A new
   question asks whether you use the touch screen. **No** turns off the Sort
