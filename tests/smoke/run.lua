@@ -627,7 +627,11 @@ local function everythingOn(c, PE, hasQDB)
     -- 0.8.0: the run presses "Touch screen" (turning the scroll bar off for the rest of
     -- the run), so the bar's two arrow tabs are no longer pressed as options on each
     -- scrolling page: 11 fewer without QuestieDB (138 before).
-    check(presses >= (hasQDB and 205 or 127), "only " .. presses .. " option buttons were pressed")
+    -- 0.8.0 (Move on screen): the six round button position buttons and the five arrow
+    -- position buttons are gone from the settings (the page now has "Move the round
+    -- button" and "Move the arrow", which sit under "Button size" or open another window): about
+    -- 207 with QuestieDB and 103 without.
+    check(presses >= (hasQDB and 195 or 100), "only " .. presses .. " option buttons were pressed")
     c:assertClean("pressing every option")
 
     local states = moduleStates(PE)

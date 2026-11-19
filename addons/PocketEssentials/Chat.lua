@@ -244,7 +244,7 @@ local function PromptBuild()
 end
 
 -- The prompt's size, text width, padding and anchor offset (the moved offset
--- included). Shared by PromptLayout and the "Move things" outline.
+-- included). Shared by PromptLayout and the "Move on screen" outline.
 local function PromptGeometry()
     local UI = PE.UI
     local pad = UI:Px(14)
@@ -1001,7 +1001,7 @@ mod = PE:RegisterModule({
     end,
 })
 
--- "Move things": the prompt's backdrop can be nudged from its usual spot.
+-- "Move on screen": the prompt's backdrop can be nudged from its usual spot.
 if PE.Move and PE.Move.Register then
     PE.Move:Register({
         key = PROMPT_KEY, label = "Chat prompt", order = 20,

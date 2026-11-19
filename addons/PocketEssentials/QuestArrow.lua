@@ -566,7 +566,7 @@ local function PlaceDistText()
 end
 
 -- The sizes of the whole block (arrow box, distance line and quest name) and
--- where it sits, offset included. Shared by Layout and by the "Move things"
+-- where it sits, offset included. Shared by Layout and by the "Move on screen"
 -- outline, so the outline is right even before anything has been built.
 -- Returns box, gap, fontSize, textWidth, width, height, point, relPoint, x, y.
 local function Geometry()
@@ -833,19 +833,9 @@ mod = PE:RegisterModule({
     defaults = { position = DEFAULTS.position, size = DEFAULTS.size },
 
     options = {
-        { key = "position", label = "Arrow position",
-          choices = {
-              { value = "top", label = "Top" },
-              { value = "upper", label = "Upper middle" },
-              { value = "lower", label = "Lower middle" },
-              { value = "left", label = "Left" },
-              { value = "right", label = "Right" },
-          },
-          OnChange = function()
-              -- A preset puts the block back at its spot; a moved offset goes.
-              local Move = PE.Move
-              if Move and Move.ClearOffset then Move:ClearOffset(KEY) end
-              Relayout()
+        { label = "Move the arrow",
+          action = function()
+              if PE.Move and PE.Move.Open then PE.Move:Open(KEY) end
           end },
         { key = "size", label = "Arrow size",
           choices = {
@@ -930,12 +920,16 @@ SafeUpdate = mod:Wrap(Update)
 SafeOnUpdate = mod:Wrap(OnUpdate)
 SafeOnData = mod:Wrap(OnData)
 
--- "Move things": the whole block can be nudged from the preset spot.
+-- "Move on screen": the whole block can be nudged from the preset spot.
 if PE.Move and PE.Move.Register then
     PE.Move:Register({
         key = KEY, label = "Quest arrow", order = 10,
         available = function() return mod ~= nil and mod:IsEnabled() end,
         apply = function() Layout() end,       -- does nothing until the frames are built
+        reset = function()
+            local o = mod and mod.opts
+            if o then o.position = "top" end
+        end,
         outline = function(box)
             local _, _, _, _, width, height, point, relPoint, x, y = Geometry()
             box:ClearAllPoints()

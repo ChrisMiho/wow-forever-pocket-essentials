@@ -647,15 +647,13 @@ local SIZE_CHOICES = {
     { value = "large", label = "Large" },
 }
 
--- The settings that belong to no feature: "Button size", "Round button
--- position" and "Touch screen". Returns the new y.
+-- The settings that belong to no feature: "Button size", "Move the round
+-- button" and "Touch screen". Returns the new y.
 function Drawer:CoreChoices(y, width)
     local x = M.pad * 2
     local innerWidth = width - x - M.gap
     local ui = PE.db and PE.db.ui or {}
-    local positions = PE.Hub and PE.Hub.POSITIONS
-    local labelWidth = self:LabelColumn(type(positions) == "table" and { "Button size", "Round button position" }
-        or { "Button size" }, innerWidth)
+    local labelWidth = self:LabelColumn({ "Button size" }, innerWidth)
 
     local items = {}
     for i, choice in ipairs(SIZE_CHOICES) do
@@ -668,17 +666,11 @@ function Drawer:CoreChoices(y, width)
     end
     y = self:LabeledRow("Button size", items, x, y, innerWidth, labelWidth) + M.gap
 
-    if type(positions) == "table" then
-        items = {}
-        for i, choice in ipairs(positions) do
-            local value = choice.value
-            items[i] = {
-                label = choice.label,
-                selected = (ui.hubPos == value),
-                onClick = PE:Wrap("core", function() PE:SetUISetting("hubPos", value) end),
-            }
-        end
-        y = self:LabeledRow("Round button position", items, x, y, innerWidth, labelWidth) + M.gap
+    if PE.Move and PE.Move.Open then
+        y = self:Flow({ {
+            label = "Move the round button",
+            onClick = PE:Wrap("core", function() PE.Move:Open("hub") end),
+        } }, x, y, innerWidth) + M.gap
     end
 
     -- Shows or hides the scroll bar's Up and Down tabs in every window.
@@ -870,7 +862,7 @@ local function BuildCoreSection(y, width)
     -- Last in the row, so the buttons before it keep their places.
     if PE.Move and PE.Move.Open then
         items[#items + 1] = {
-            label = "Move things",
+            label = "Move on screen",
             onClick = PE:Wrap("core", function() PE.Move:Open() end),
         }
     end

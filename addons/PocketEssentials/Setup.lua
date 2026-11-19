@@ -137,11 +137,12 @@ local SCREENS = {
     { id = "layout", title = "The round button and moving things",
       text = "The round PE button is always on screen. Tap it to open the settings (or the chat window, when Big "
           .. "chat buttons is on). Hold it for a moment to always open the settings."
-          .. "\n\nIn the settings you can choose where the round button sits and how big all Pocket Essentials "
-          .. "buttons are: Small, Medium or Large."
-          .. "\n\n\"Move things\", in the bottom row of the settings, lets you nudge the quest arrow, the \"Press "
-          .. "A to type\" text and the round button to exactly where you want them, with on-screen arrows or "
-          .. "the d-pad." },
+          .. "\n\nIn the settings you can choose how big all Pocket Essentials buttons are: Small, Medium or "
+          .. "Large. \"Move the round button\" there, and \"Move the arrow\" in the quest arrow's options, open "
+          .. "\"Move on screen\"."
+          .. "\n\n\"Move on screen\", also in the bottom row of the settings, lets you nudge the quest arrow, the "
+          .. "\"Press A to type\" text and the round button to exactly where you want them, with on-screen "
+          .. "arrows or the d-pad." },
 
     { id = "finish", title = "All set",
       text = "You can change all of this at any time. Tap the round PE button to open the settings (hold it if "

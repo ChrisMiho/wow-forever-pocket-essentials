@@ -188,7 +188,9 @@ test("quest arrow: the five positions and two sizes put the block where QuestArr
     local function choose(key, value)
         mod.opts[key] = value
         for _, opt in ipairs(mod.options) do
-            if opt.key == key then PE:Safe(mod.key, opt.OnChange, mod, value) end
+            -- The position has no option row any more (0.8.0); a saved one is
+            -- still drawn, so changing it redraws through the size option.
+            if opt.key == key or (key == "position" and opt.key == "size") then PE:Safe(mod.key, opt.OnChange, mod, value) end
         end
     end
     local Px = function(n) return PE.UI:Px(n) end
@@ -624,7 +626,7 @@ test("debug log: a quest-log change with no quest focused writes no driver start
 end)
 
 ---------------------------------------------------------------------------
--- Move things: the quest arrow as a movable piece (docs/superpowers/specs/2026-11-17-move-things.md)
+-- Move on screen: the quest arrow as a movable piece (docs/superpowers/specs/2026-11-17-move-things.md)
 ---------------------------------------------------------------------------
 
 local function movePanel(c) return rawget(c.env, "PocketEssentialsMovePanel") end
@@ -648,7 +650,7 @@ end
 local function openMove(c, PE)
     PE.Move:Open()
     c:advance(0.1)
-    check(movePanel(c) and movePanel(c):IsShown(), "the Move things panel did not open")
+    check(movePanel(c) and movePanel(c):IsShown(), "the Move on screen panel did not open")
 end
 local function nudge(c, label)
     local b = moveButton(c, label)
@@ -727,17 +729,53 @@ test("quest arrow: move: the outline works while the arrow is hidden (no quest f
     check(sameRect(rect(c, outline), rect(c, parts(c).display.frame)), "outline and block differ after a move")
 end)
 
-test("quest arrow: move: choosing an Arrow position clears the offset", function()
+test("quest arrow: no Arrow position row; a Move the arrow action row instead", function()
     local c, PE = newArrow(focusOne())
+    local mod = PE:GetModule("questArrow")
+    local action
+    for _, opt in ipairs(mod.options) do
+        check(opt.label ~= "Arrow position", "the Arrow position row is still there")
+        if opt.label == "Move the arrow" then action = opt end
+    end
+    check(action and type(action.action) == "function", "no Move the arrow action row")
+end)
+
+test("quest arrow: Move the arrow opens Move on screen with the arrow selected", function()
+    local c, PE = newArrow(focusOne())
+    local mod = PE:GetModule("questArrow")
+    for _, opt in ipairs(mod.options) do
+        if opt.label == "Move the arrow" then PE:Safe(mod.key, opt.action, mod) end
+    end
+    c:advance(0.1)
+    check(movePanel(c) and movePanel(c):IsShown(), "the Move on screen panel did not open")
+    local outline = moveOutline(c)
+    check(outline and outline:IsShown(), "no outline")
+    check(sameRect(rect(c, outline), rect(c, parts(c).display.frame)), "the outline is not over the arrow")
+end)
+
+test("quest arrow: move: Reset clears the offset and sets the position back to top", function()
+    local c, PE = newArrow(focusOne())
+    local mod = PE:GetModule("questArrow")
+    mod.opts.position = "left"
     arrowSelected(c, PE)
     nudge(c, "Right")
     check(PE.db.ui.moved.questArrow, "no offset saved")
-    local mod = PE:GetModule("questArrow")
-    for _, opt in ipairs(mod.options) do
-        if opt.key == "position" then PE:Safe(mod.key, opt.OnChange, mod, "lower") end
-    end
+    c:click(moveButton(c, "Reset"))
     eq(PE.db.ui.moved.questArrow, nil)
-    eq({ PE.Move:GetOffset("questArrow") }, { 0, 0 })
+    eq(mod.opts.position, "top")
+    c:assertClean("reset")
+end)
+
+test("quest arrow: an old saved position = left with an offset is still drawn at left plus the offset", function()
+    local c, PE = newArrow(focusOne())
+    local mod = PE:GetModule("questArrow")
+    mod.opts.position = "left"
+    PE.db.ui.moved.questArrow = { x = 10, y = 4 }
+    for _, opt in ipairs(mod.options) do
+        if opt.key == "size" then PE:Safe(mod.key, opt.OnChange, mod, mod.opts.size) end
+    end
+    local _, _, _, x, y = parts(c).display.frame:GetPoint(1)
+    check(math.abs(x - PE.UI:Px(-230 + 10)) < 0.01 and math.abs(y - PE.UI:Px(60 + 4)) < 0.01, "drawn at " .. x .. "," .. y)
 end)
 
 test("quest arrow: move: a hold-free update tick does nothing new (same driver, no extra OnUpdate)", function()

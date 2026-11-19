@@ -1,4 +1,4 @@
--- Pocket Essentials: Move things (PE.Move).
+-- Pocket Essentials: Move on screen (PE.Move).
 -- A small window of our own that nudges on-screen pieces (the round button,
 -- and others that register here) with four arrow buttons. A press moves the
 -- chosen piece 2 pixels; holding repeats and speeds up. Works by touch and
@@ -12,8 +12,10 @@
 --
 -- A piece registers once, when its file loads:
 --   PE.Move:Register({ key =, label =, order =, available = function() -> bool,
---       apply = function(), outline = function(box) })
+--       apply = function(), outline = function(box), reset = function() })
 --   apply() lays the real piece out again (its own layout adds the offset);
+--   reset() (optional) also puts back the piece's chosen preset spot when the
+--   window's Reset is pressed;
 --   outline(box) places and sizes `box` exactly over where the piece sits,
 --   whether the piece is showing or not.
 -- A piece reads its offset in its own layout code, and works without this
@@ -28,7 +30,7 @@ local max, min, abs, format = math.max, math.min, math.abs, string.format
 
 local PANEL_NAME = "PocketEssentialsMovePanel"
 local OUTLINE_NAME = "PocketEssentialsMoveOutline"
-local TITLE = "Move things"
+local TITLE = "Move on screen"
 
 local STEP = 2           -- pixels a press
 local BIG_STEP = 6       -- pixels a step once held long enough
@@ -87,6 +89,7 @@ function Move:Register(def)
         order = type(def.order) == "number" and def.order or 100,
         available = type(def.available) == "function" and def.available or nil,
         apply = type(def.apply) == "function" and def.apply or nil,
+        reset = type(def.reset) == "function" and def.reset or nil,
         outline = def.outline,
     }
     local old = byKey[entry.key]
@@ -430,7 +433,13 @@ end
 local function Reset()
     if not selected then return end
     StopHold()
-    Move:ClearOffset(selected.key)
+    local piece = selected
+    Move:ClearOffset(piece.key)
+    if piece.reset then
+        PE:Safe("core", piece.reset)
+        Apply(piece)
+        if built and panel:IsShown() and selected == piece then ShowOutline() end
+    end
     Debug(selected.key .. " reset")
 end
 
@@ -526,10 +535,12 @@ end
 -- Public
 ---------------------------------------------------------------------------
 
-function Move:Open()
+-- key (optional): the piece to select when the window opens, if it is
+-- registered and available.
+function Move:Open(key)
     if PE:InCombat() then
         Debug("not opened: in a fight")
-        PE:Print("Move things cannot be opened during a fight. Try again afterwards.")
+        PE:Print("Move on screen cannot be opened during a fight. Try again afterwards.")
         return false
     end
     if not built and not buildFailed then
@@ -542,7 +553,7 @@ function Move:Open()
         end
     end
     if not built then
-        PE:Print("Move things could not be opened. See Errors in the settings.")
+        PE:Print("Move on screen could not be opened. See Errors in the settings.")
         return false
     end
     -- Never on top of another Pocket Essentials window.
@@ -560,7 +571,16 @@ function Move:Open()
     if not panel:IsShown() then panel:Show() end
     panel:Raise()
     Debug("panel opened")
-    if listed[1] then
+    local want = type(key) == "string" and byKey[key] or nil
+    local wanted = false
+    if want then
+        for i = 1, #listed do
+            if listed[i] == want then wanted = true end
+        end
+    end
+    if wanted then
+        Select(want)
+    elseif listed[1] then
         Select(listed[1])
     else
         ShowOutline()

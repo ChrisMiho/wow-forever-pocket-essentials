@@ -1,4 +1,4 @@
--- Rules for "Move things" (Move.lua) and the round button as its first piece.
+-- Rules for "Move on screen" (Move.lua) and the round button as its first piece.
 -- Source: docs/superpowers/specs/2026-11-17-move-things.md ("What the player
 -- sees", "Rules" and "Tests"). Fresh client and addon per test.
 local T = ...
@@ -42,7 +42,7 @@ end
 
 local function button(c, label)
     local list = shownButtons(c, movePanel(c), label)
-    check(#list == 1, "expected one shown button '" .. label .. "' in the Move things panel, found " .. #list)
+    check(#list == 1, "expected one shown button '" .. label .. "' in the Move on screen panel, found " .. #list)
     return list[1]
 end
 
@@ -73,7 +73,7 @@ end
 local function openMove(c, PE)
     PE.Move:Open()
     c:advance(0.1)
-    check(movePanel(c) and movePanel(c):IsShown(), "the Move things panel did not open")
+    check(movePanel(c) and movePanel(c):IsShown(), "the Move on screen panel did not open")
 end
 
 -- A press of one of the panel's buttons by touch, held for `seconds` (0: a tap).
@@ -180,13 +180,13 @@ end)
 -- Opening and the list of pieces
 ---------------------------------------------------------------------------
 
-test("move: the settings' bottom row has Move things after Errors; it closes the settings and opens the panel", function()
+test("move: the settings' bottom row has Move on screen after Errors; it closes the settings and opens the panel", function()
     local c, PE = T.new({})
     PE:OpenSettings()
     c:advance(0.2)
     local settings = settingsPanel(c)
-    local moveBtn = shownButtons(c, settings, "Move things")
-    eq(#moveBtn, 1, "no Move things button in the settings")
+    local moveBtn = shownButtons(c, settings, "Move on screen")
+    eq(#moveBtn, 1, "no Move on screen button in the settings")
     local errorsBtn
     for _, b in ipairs(shownButtons(c, settings)) do
         if T.labelOf(b):find("^Errors") then errorsBtn = b end
@@ -195,15 +195,15 @@ test("move: the settings' bottom row has Move things after Errors; it closes the
     local ml = moveBtn[1]:GetCenter()
     local _, ey = errorsBtn:GetCenter()
     local _, my = moveBtn[1]:GetCenter()
-    check(ml > el or my < ey, "Move things is not after Errors")
+    check(ml > el or my < ey, "Move on screen is not after Errors")
     c:click(moveBtn[1])
     c:advance(0.2)
     check(not settings:IsShown(), "the settings stayed open")
-    check(movePanel(c) and movePanel(c):IsShown(), "the Move things panel did not open")
+    check(movePanel(c) and movePanel(c):IsShown(), "the Move on screen panel did not open")
     for _, label in ipairs({ "Up", "Down", "Left", "Right", "Reset", "Close", "Round button" }) do
         button(c, label)
     end
-    eq(movePanel(c).peTitle:GetText(), "Move things")
+    eq(movePanel(c).peTitle:GetText(), "Move on screen")
     check(button(c, "Round button").peSelected, "the round button is not selected")
     c:assertClean("open from settings")
 end)
@@ -425,19 +425,41 @@ test("move: Reset puts the piece back on its preset", function()
     c:assertClean("reset")
 end)
 
-test("move: choosing a Round button position clears the round button's offset", function()
+test("move: settings has Move the round button and no Round button position row", function()
     local c, PE = T.new({ saved = { version = 1, enabled = {}, options = {}, ui = { size = "medium", hubPos = "LEFT", moved = { hub = { x = 40, y = 40 } } }, errors = {} } })
     PE:OpenSettings()
     c:advance(0.2)
-    local right = shownButtons(c, settingsPanel(c), "Right")
-    eq(#right, 1)
-    c:click(right[1])
+    eq(#shownButtons(c, settingsPanel(c), "Right"), 0, "a position button is still drawn")
+    local b = shownButtons(c, settingsPanel(c), "Move the round button")
+    eq(#b, 1)
+    c:click(b[1])
     c:advance(0.2)
-    eq(PE.db.ui.hubPos, "RIGHT")
+    check(movePanel(c) and movePanel(c):IsShown(), "the Move on screen panel did not open")
+    c:assertClean("move the round button")
+end)
+
+test("move: Move:Open(key) selects that piece; an unknown key falls back to the first", function()
+    local c, PE = T.new({})
+    PE.Move:Register({ key = "zzfirst", label = "Aaa piece", order = 1, outline = function(box) box:ClearAllPoints(); box:SetPoint("CENTER", UIParent, "CENTER", 0, 0); box:SetSize(20, 20) end })
+    PE.Move:Open("hub")
+    c:advance(0.1)
+    local outline = rawget(c.env, "PocketEssentialsMoveOutline")
+    check(outline and outline:IsShown(), "no outline")
+    local l, r = c._rect(outline)
+    check(r - l > 30, "the first piece was selected, not the round button")
+    PE.Move:Close("test")
+    PE.Move:Open("nope")
+    c:advance(0.1)
+    l, r = c._rect(outline)
+    check(r - l <= 30, "an unknown key did not fall back to the first piece")
+end)
+
+test("move: Reset also sets the round button back to its left preset", function()
+    local c, PE = T.new({ saved = { version = 1, enabled = {}, options = {}, ui = { size = "medium", hubPos = "RIGHT", moved = { hub = { x = 4, y = 4 } } }, errors = {} } })
+    openMove(c, PE)
+    c:click(button(c, "Reset"))
+    eq(PE.db.ui.hubPos, "LEFT")
     eq(savedHub(PE), nil)
-    local point, x, y = hubPoint(PE)
-    eq(point, "RIGHT"); near(x, -PE.UI:Px(10)); near(y, 0)
-    c:assertClean("preset clears")
 end)
 
 ---------------------------------------------------------------------------

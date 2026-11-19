@@ -1330,7 +1330,7 @@ test("settings: a feature that is off with no always row has no fold button", fu
 end)
 
 ---------------------------------------------------------------------------
--- Move things: the chat prompt as a movable piece (docs/superpowers/specs/2026-11-17-move-things.md)
+-- Move on screen: the chat prompt as a movable piece (docs/superpowers/specs/2026-11-17-move-things.md)
 ---------------------------------------------------------------------------
 
 local function movePanel(c) return rawget(c.env, "PocketEssentialsMovePanel") end
@@ -1354,7 +1354,7 @@ end
 local function openMove(c, PE)
     PE.Move:Open()
     c:advance(0.1)
-    check(movePanel(c) and movePanel(c):IsShown(), "the Move things panel did not open")
+    check(movePanel(c) and movePanel(c):IsShown(), "the Move on screen panel did not open")
 end
 local function nudge(c, label)
     local b = moveButton(c, label)

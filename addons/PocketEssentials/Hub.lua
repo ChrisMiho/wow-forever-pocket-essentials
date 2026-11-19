@@ -42,7 +42,7 @@ Hub.POSITIONS = {
     { value = "BOTTOMRIGHT", label = "Lower right" },
 }
 
-local MOVE_KEY = "hub" -- its name in "Move things" (Move.lua)
+local MOVE_KEY = "hub" -- its name in "Move on screen" (Move.lua)
 
 local COLOR_RING = { 1, 0.82, 0 }
 local COLOR_FILL = { 0.07, 0.07, 0.10 }
@@ -86,7 +86,7 @@ local function UpdateBadge()
 end
 
 -- Where the button goes: anchor point on UIParent, x, y and size (UI units),
--- from the chosen position plus the offset saved by "Move things".
+-- from the chosen position plus the offset saved by "Move on screen".
 local function Placement()
     local UI = PE.UI
     local size = UI:Metrics().hub
@@ -191,7 +191,7 @@ end
 
 if PE.OnCoreLogin then PE:OnCoreLogin(Create) end
 
--- Movable from "Move things". Always listed; the box covers the whole button.
+-- Movable from "Move on screen". Always listed; the box covers the whole button.
 if PE.Move and PE.Move.Register then
     PE.Move:Register({
         key = MOVE_KEY,
@@ -199,6 +199,7 @@ if PE.Move and PE.Move.Register then
         order = 30,
         available = function() return true end,
         apply = function() Hub:Refresh() end,
+        reset = function() PE:SetUISetting("hubPos", "LEFT") end,
         outline = function(box)
             local point, x, y, size = Placement()
             box:ClearAllPoints()

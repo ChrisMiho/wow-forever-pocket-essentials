@@ -595,7 +595,7 @@ local function InitDB()
     if not SIZES[db.ui.size] then db.ui.size = "medium" end
     if type(db.ui.hubPos) ~= "string" then db.ui.hubPos = "LEFT" end
     if type(db.ui.folded) ~= "table" then db.ui.folded = {} end
-    if type(db.ui.moved) ~= "table" then db.ui.moved = {} end -- "Move things" offsets, by piece
+    if type(db.ui.moved) ~= "table" then db.ui.moved = {} end -- "Move on screen" offsets, by piece
     db.errors = MergeErrors(db.errors)
     PE.errors = db.errors
     local dbg = db.debug
@@ -1201,7 +1201,7 @@ end
 
 -- Size preset and hub position, shared by the panel and /pe reset.
 -- Choosing a hub position puts the round button exactly there: the offset
--- saved by "Move things" is cleared.
+-- saved by "Move on screen" is cleared.
 function PE:SetUISetting(key, value)
     EnsureDB()
     self.db.ui[key] = value
