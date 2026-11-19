@@ -880,4 +880,70 @@ test("touch off: the settings list is full width and the d-pad reaches the last 
     c:assertClean("touch off d-pad")
 end)
 
+
+---------------------------------------------------------------------------
+-- 0.8.0 spec section 3: round button colour themes; section 4: number suffix.
+---------------------------------------------------------------------------
+
+local function hubColors(c, PE)
+    local H = PE.Hub
+    return { ring = c._state(H.ring.texture).vertexColor, fill = c._state(H.fill.texture).vertexColor,
+             label = c._state(H.label).textColor }
+end
+
+local function near(a, b)
+    for i = 1, 3 do if math.abs(a[i] - b[i]) > 1e-6 then return false end end
+    return true
+end
+
+local THEME_CASES = {
+    { "gold", { 1, 0.82, 0 }, { 0.07, 0.07, 0.10 } },
+    { "horde", { 0.85, 0.15, 0.10 }, { 0.18, 0.03, 0.03 } },
+    { "alliance", { 0.35, 0.62, 1.00 }, { 0.03, 0.08, 0.24 } },
+    { "nonsense", { 1, 0.82, 0 }, { 0.07, 0.07, 0.10 } },   -- unknown draws gold
+}
+
+test("hub: each colour theme sets the ring, fill and label at once, an unknown one draws gold", function()
+    local c, PE = T.new({})
+    for _, case in ipairs(THEME_CASES) do
+        PE:SetUISetting("hubColor", case[1])
+        local got = hubColors(c, PE)
+        check(near(got.ring, case[2]), case[1] .. " ring")
+        check(near(got.label, case[2]), case[1] .. " label")
+        check(near(got.fill, case[3]), case[1] .. " fill")
+    end
+    c:assertClean("hub themes")
+end)
+
+test("hub: the pressed colour follows the theme", function()
+    local c, PE = T.new({})
+    PE:SetUISetting("hubColor", "alliance")
+    c:script(PE.Hub.button, "OnMouseDown", "LeftButton")
+    check(near(hubColors(c, PE).fill, { 0.10, 0.25, 0.55 }), "alliance pressed")
+    PE:SetUISetting("hubColor", "horde")
+    check(near(hubColors(c, PE).fill, { 0.18, 0.03, 0.03 }) or near(hubColors(c, PE).fill, { 0.45, 0.07, 0.05 }), "horde fill")
+    c:assertClean("hub pressed theme")
+end)
+
+test("settings: the Button colour row has Gold, Horde and Alliance, and a tap repaints the round button", function()
+    local c, PE = T.new({})
+    openSettings(c, PE)
+    check(textRegionOf(c, "Button colour"), "no Button colour heading")
+    check(shownButtons(c, "Gold")[1] and shownButtons(c, "Alliance")[1], "buttons missing")
+    press(c, "Horde")
+    eq(PE.db.ui.hubColor, "horde")
+    check(near(hubColors(c, PE).ring, { 0.85, 0.15, 0.10 }), "ring not red")
+    c:assertClean("button colour row")
+end)
+
+test("number: a suffix follows a number but never Off or All", function()
+    local c, PE = numberRow({ n = 3 }, { min = 0, suffix = "%", offLabel = "Off", all = false })
+    check(textRegionOf(c, "3%"), "no 3%")
+    local c2 = numberRow({ n = 0 }, { min = 0, suffix = "%", offLabel = "Off", all = false })
+    check(textRegionOf(c2, "Off") and not textRegionOf(c2, "Off%") and not textRegionOf(c2, "0%"), "Off wrong")
+    local c3 = numberRow({ n = 0 }, { suffix = "%" })
+    check(textRegionOf(c3, "All") and not textRegionOf(c3, "All%"), "All wrong")
+end)
+
+
 return { known = KNOWN_FAILURES }

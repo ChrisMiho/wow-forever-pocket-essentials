@@ -44,9 +44,18 @@ Hub.POSITIONS = {
 
 local MOVE_KEY = "hub" -- its name in "Move on screen" (Move.lua)
 
-local COLOR_RING = { 1, 0.82, 0 }
-local COLOR_FILL = { 0.07, 0.07, 0.10 }
-local COLOR_PRESSED = { 0.45, 0.36, 0.06 }
+-- Colour themes for the round button, picked by the "Button colour" setting
+-- (ui.hubColor). Gold is the original look. Pure colour only, no art.
+local THEMES = {
+    gold = { ring = { 1, 0.82, 0 }, fill = { 0.07, 0.07, 0.10 }, pressed = { 0.45, 0.36, 0.06 } },
+    horde = { ring = { 0.85, 0.15, 0.10 }, fill = { 0.18, 0.03, 0.03 }, pressed = { 0.45, 0.07, 0.05 } },
+    alliance = { ring = { 0.35, 0.62, 1.00 }, fill = { 0.03, 0.08, 0.24 }, pressed = { 0.10, 0.25, 0.55 } },
+}
+
+local function Theme()
+    local key = PE.db and PE.db.ui and PE.db.ui.hubColor
+    return THEMES[key] or THEMES.gold
+end
 
 local button, ring, fill, label, badge
 local clickHandler, badgeText
@@ -54,7 +63,8 @@ local pressedAt, pressSerial = nil, 0
 
 local function SetPressed(pressed)
     if not fill then return end
-    local c = pressed and COLOR_PRESSED or COLOR_FILL
+    local theme = Theme()
+    local c = pressed and theme.pressed or theme.fill
     fill:SetColor(c[1], c[2], c[3], 1)
 end
 
@@ -105,6 +115,10 @@ end
 -- Size and place the button from the current settings.
 function Hub:Refresh()
     if not button then return end
+    local theme = Theme()
+    ring:SetColor(theme.ring[1], theme.ring[2], theme.ring[3], 1)
+    label:SetTextColor(theme.ring[1], theme.ring[2], theme.ring[3], 1)
+    SetPressed(false)
     local UI = PE.UI
     local point, x, y, size = Placement()
     button:SetSize(size, size)
@@ -138,15 +152,13 @@ local function Create()
     button:SetClampedToScreen(true)
 
     ring = UI:CreateDisc(button, "BACKGROUND", 0, 24)
-    ring:SetColor(COLOR_RING[1], COLOR_RING[2], COLOR_RING[3], 1)
     fill = UI:CreateDisc(button, "BORDER", 0, 24)
-    fill:SetColor(COLOR_FILL[1], COLOR_FILL[2], COLOR_FILL[3], 1)
 
     label = button:CreateFontString(nil, "OVERLAY", m.font)
     if not label:GetFont() and GameFontHighlight then label:SetFontObject(GameFontHighlight) end
     label:SetPoint("CENTER", button, "CENTER", 0, 0)
-    label:SetTextColor(COLOR_RING[1], COLOR_RING[2], COLOR_RING[3], 1)
     label:SetText("PE")
+    Hub.ring, Hub.fill, Hub.label = ring, fill, label
 
     button:SetScript("OnMouseDown", function()
         pressedAt = GetTime and GetTime() or nil

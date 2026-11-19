@@ -1159,8 +1159,8 @@ mod = PE:RegisterModule({
           OnChange = OptionChanged("size") },
         -- Number controls (0.7.0). The saved values are the same as before:
         -- cluster in % of the map (0 = off), spots 0 = all.
-        { key = "cluster", label = "Merge nearby icons",
-          number = { min = 0, max = MAX_CLUSTER, default = DEFAULT_CLUSTER, unit = "merge", offLabel = "Off" },
+        { key = "cluster", label = "Merge icons closer than",
+          number = { min = 0, max = MAX_CLUSTER, default = DEFAULT_CLUSTER, unit = "of map", suffix = "%", offLabel = "Off" },
           OnChange = OptionChanged("cluster") },
         { key = "spots", label = "Spots per objective",
           number = { min = 1, max = MAX_SPOTS, default = DEFAULT_SPOTS, unit = "spots", all = 0, allLabel = "All" },
@@ -1244,7 +1244,7 @@ local function SlashCommand(msg)
         if number ~= number then number = DEFAULT_CLUSTER end
         opts.cluster = floor(max(0, min(MAX_CLUSTER, number)))
         changed = "cluster"
-        PE:Print("Merge nearby icons: " .. (opts.cluster == 0 and "off" or tostring(opts.cluster)) .. ".")
+        PE:Print("Merge icons closer than: " .. (opts.cluster == 0 and "off" or tostring(opts.cluster)) .. ".")
     elseif cmd == "spots" and (SPOTS_WORDS[value] or SpotsNumber(value)) then
         opts.spots = SPOTS_WORDS[value] or SpotsNumber(value)
         changed = "spots"

@@ -410,7 +410,7 @@ end
 local function NumberText(n, v)
     if n.all ~= nil and n.all ~= false and v == n.all then return n.allLabel or "All" end
     if v == 0 and n.offLabel then return n.offLabel end
-    return tostring(v)
+    return tostring(v) .. (n.suffix or "")
 end
 
 -- The tap on a choice: save it (through `set`, or as mod.opts[key]), run
@@ -456,7 +456,7 @@ end
 --            as a short text at that place in the row instead of a button.
 --            A button entry with style = "disabled" is drawn dim (it has
 --            nothing to do right now); it can still be pressed.
---   number:  { key, label, number = { min, max, default, unit, all,
+--   number:  { key, label, number = { min, max, default, unit, suffix, all,
 --            allLabel, offLabel }, OnChange }
 --            the number control "- value +" (NumberBox); each end saves
 --            mod.opts[key] one step down or up. `all` (optional) is the
@@ -647,13 +647,19 @@ local SIZE_CHOICES = {
     { value = "large", label = "Large" },
 }
 
--- The settings that belong to no feature: "Button size", "Move the round
+local COLOR_CHOICES = {
+    { value = "gold", label = "Gold" },
+    { value = "horde", label = "Horde" },
+    { value = "alliance", label = "Alliance" },
+}
+
+-- The settings that belong to no feature: "Button size", "Button colour", "Move the round
 -- button" and "Touch screen". Returns the new y.
 function Drawer:CoreChoices(y, width)
     local x = M.pad * 2
     local innerWidth = width - x - M.gap
     local ui = PE.db and PE.db.ui or {}
-    local labelWidth = self:LabelColumn({ "Button size" }, innerWidth)
+    local labelWidth = self:LabelColumn({ "Button size", "Button colour" }, innerWidth)
 
     local items = {}
     for i, choice in ipairs(SIZE_CHOICES) do
@@ -665,6 +671,18 @@ function Drawer:CoreChoices(y, width)
         }
     end
     y = self:LabeledRow("Button size", items, x, y, innerWidth, labelWidth) + M.gap
+
+    local current = ui.hubColor or "gold"
+    local colors = {}
+    for i, choice in ipairs(COLOR_CHOICES) do
+        local value = choice.value
+        colors[i] = {
+            label = choice.label,
+            selected = (current == value),
+            onClick = PE:Wrap("core", function() PE:SetUISetting("hubColor", value) end),
+        }
+    end
+    y = self:LabeledRow("Button colour", colors, x, y, innerWidth, labelWidth) + M.gap
 
     if PE.Move and PE.Move.Open then
         y = self:Flow({ {
