@@ -278,6 +278,50 @@ end
 -- Drawing one screen
 ---------------------------------------------------------------------------
 
+-- True while the guide's first page has not yet put the highlight on Start.
+local focusStart = false
+-- True when a No press in this guide session hid Bag sorter's Sort button, so a
+-- later Yes may bring it back. Not saved.
+local noHidSortButton = false
+
+-- The answer to "Do you use the touch screen?". No also hides the Sort button
+-- (a touch player taps it; a controller player has the stick click); Yes brings
+-- it back only if a No in this session hid it.
+local function AnswerTouch(yes)
+    PE:SetUISetting("touch", yes)
+    local bags = PE:GetModule("bags")
+    local opts = bags and (bags.opts or (PE.db and PE.db.options and PE.db.options.bags))
+    if type(opts) ~= "table" then return end
+    local want
+    if not yes and opts.showTab ~= false and opts.sortKey ~= "none" then
+        -- With no stick key chosen the button is the only way to sort: leave it.
+        want = false
+        noHidSortButton = true
+    elseif yes and noHidSortButton then
+        want = true
+        noHidSortButton = false
+    end
+    if want == nil then return end
+    opts.showTab = want
+    -- Let Bag sorter apply it the way its own "How to sort" choice does.
+    for _, opt in ipairs(bags.options or {}) do
+        if opt.label == "How to sort" and type(opt.OnChange) == "function" then
+            PE:Safe("bags", opt.OnChange, bags, want)
+        end
+    end
+end
+
+-- The question row under the Welcome text. Returns the new y.
+local function DrawTouchQuestion(x, y, width)
+    local yes = PE:UsesTouch()
+    local items = {
+        { label = "Yes", selected = yes, onClick = PE:Wrap("core", function() AnswerTouch(true) end) },
+        { label = "No", selected = not yes, onClick = PE:Wrap("core", function() AnswerTouch(false) end) },
+    }
+    y = y + M.gap
+    return list:LabeledRow("Do you use the touch screen?", items, x, y, width, 0) + M.gap
+end
+
 -- Heading, lead text, then one block per feature: name left, switch right,
 -- the explanation under the name, and under that the feature's options, by
 -- the settings window's own rule (all of them while the feature is on, only
@@ -288,6 +332,7 @@ local function DrawScreen(entry, width)
     local y = M.gap * 0.5
     y = y + PlaceText("title", screen.title, x, y, width - x * 2) + M.gap
     y = PlaceParagraphs("font", screen.text, x, y, width - x * 2)
+    if screen.id == "welcome" then y = DrawTouchQuestion(x, y, width - x * 2) end
 
     local toggleWidth = M.button * 2.8
     local textWidth = width - toggleWidth - x - M.pad
@@ -443,7 +488,10 @@ local function DoDraw()
     -- The highlighted button went away with the screen (Back on the first
     -- screen): the highlight goes to Next.
     local focus = panel.peNavFocus
-    if focus then
+    if focusStart and isFirst then
+        focusStart = false
+        panel:NavSetFocus(nextButton)
+    elseif focus then
         local still = false
         for i = 1, #navList do
             if navList[i] == focus then still = true end
@@ -678,6 +726,8 @@ function Setup:Open(how)
     end
     resumeIndex = nil
     closeWhy = nil
+    focusStart = index == 1
+    noHidSortButton = false
     area.offset = 0
     -- The watch for a fight starts in OnShown. Asked for by hand while the
     -- game's whole interface is hidden, the guide is out of sight and OnShown
