@@ -60,7 +60,7 @@ local INDIRECT = {
     { "namespace", "ChatFrameUtil.GetActiveWindow", "Chat.lua", "util.GetActiveWindow" },
     { "namespace", "ChatFrameUtil.ResolveChannelName", "Chat.lua", "ChatFrameUtil.ResolveChannelName" },
     -- Real widget methods whose names the addon also defines on its own objects.
-    { "method", "SetShown", "Chat.lua", ":SetShown(" },
+    { "method", "SetShown", "UI.lua", ":SetShown(" },
     { "method", "IsEnabled", "UI.lua", "btn:IsEnabled()" },
     -- The addon no longer uses these (the Layout helper went in 0.3.0); the stand-in client offers
     -- them only for the restriction probe's tests, so they are checked against the probe's file.

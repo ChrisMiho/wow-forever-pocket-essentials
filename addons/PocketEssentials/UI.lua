@@ -524,7 +524,8 @@ function UI:CreatePanel(globalName, title, width, height)
 end
 
 ---------------------------------------------------------------------------
--- Scroll area: a clipped list with two big paging buttons on the right.
+-- Scroll area: a clipped list with a slim scroll bar on the right (an up tab,
+-- a track with a marker, a down tab).
 --   local area = PE.UI:CreateScrollArea(parent); area:SetPoint(...)
 --   area:Layout(width, height)      -- call again when sizes change
 --   put content in area.child (its width is area.viewWidth), then
@@ -542,8 +543,33 @@ function AreaMethods:ScrollTo(offset)
     offset = min(max(offset or 0, 0), range)
     self.offset = offset
     self.scrollFrame:SetVerticalScroll(offset)
-    self.upButton:SetStyle(offset > 0.5 and "normal" or "disabled")
-    self.downButton:SetStyle(offset < range - 0.5 and "normal" or "disabled")
+    self.upButton:SetStyle(offset > 0.5 and "step" or "stepDim")
+    self.downButton:SetStyle(offset < range - 0.5 and "step" or "stepDim")
+    self:PlaceThumb()
+end
+
+-- The marker: as tall as the share of the list in view (never thinner than
+-- half a button), and as far down the track as the list is scrolled.
+function AreaMethods:PlaceThumb()
+    local trackHeight = self.trackHeight or 1
+    local ratio = min(self.viewHeight / max(self.contentHeight, 1), 1)
+    local thumbHeight = min(max(trackHeight * ratio, UI:Metrics().button * 0.5), trackHeight)
+    local range = self:GetRange()
+    local fraction = range > 0 and (self.offset / range) or 0
+    self.thumb:SetHeight(thumbHeight)
+    self.thumb:ClearAllPoints()
+    self.thumb:SetPoint("TOPLEFT", self.track, "TOPLEFT", 0, -(trackHeight - thumbHeight) * fraction)
+    self.thumb:SetPoint("TOPRIGHT", self.track, "TOPRIGHT", 0, -(trackHeight - thumbHeight) * fraction)
+end
+
+-- Shows or hides the whole bar. It stays hidden while the player does not use
+-- the touch screen.
+function AreaMethods:SetBarShown(shown)
+    shown = shown and PE:UsesTouch() or false
+    self.barShown = shown
+    self.upButton:SetShown(shown)
+    self.downButton:SetShown(shown)
+    self.track:SetShown(shown)
 end
 
 function AreaMethods:ScrollBy(delta)
@@ -588,28 +614,32 @@ function AreaMethods:SetContentHeight(height)
     self:ScrollTo(self.offset)
 end
 
--- noPaging: for a list known to fit. The two paging buttons are hidden and
--- the list takes the whole width.
+-- noPaging: for a list known to fit. The scroll bar is hidden and the list
+-- takes the whole width. It is hidden too while the player does not use the
+-- touch screen (PE:UsesTouch), which is read on every call.
 function AreaMethods:Layout(width, height, noPaging)
     local m = UI:Metrics()
-    local column = m.button * 1.4
+    local column = m.button * 0.75
+    local bar = not noPaging and PE:UsesTouch()
     width, height = max(width or 0, column + m.gap + 10), max(height or 0, 10)
-    self.viewWidth = noPaging and width or (width - column - m.gap)
-    self.upButton:SetShown(not noPaging)
-    self.downButton:SetShown(not noPaging)
+    self.viewWidth = bar and (width - column - m.gap) or width
+    self:SetBarShown(bar)
     self.viewHeight = height
     self:SetSize(width, height)
     self.scrollFrame:ClearAllPoints()
     self.scrollFrame:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
     self.scrollFrame:SetSize(self.viewWidth, self.viewHeight)
     self.child:SetWidth(self.viewWidth)
-    local buttonHeight = max((height - m.gap) / 2, 1)
     self.upButton:ClearAllPoints()
     self.upButton:SetPoint("TOPRIGHT", self, "TOPRIGHT", 0, 0)
-    self.upButton:SetSize(column, buttonHeight)
+    self.upButton:SetSize(column, m.button)
     self.downButton:ClearAllPoints()
     self.downButton:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 0)
-    self.downButton:SetSize(column, buttonHeight)
+    self.downButton:SetSize(column, m.button)
+    self.trackHeight = max(height - 2 * (m.button + m.gap), 1)
+    self.track:ClearAllPoints()
+    self.track:SetPoint("TOPRIGHT", self, "TOPRIGHT", 0, -(m.button + m.gap))
+    self.track:SetSize(column, self.trackHeight)
     self:ScrollTo(self.offset)
 end
 
@@ -621,11 +651,41 @@ function UI:CreateScrollArea(parent)
     area.scrollFrame:SetScrollChild(area.child)
     area.offset, area.contentHeight, area.viewWidth, area.viewHeight = 0, 1, 10, 10
 
-    area.upButton = self:CreateButton(area, "Up")
-    area.downButton = self:CreateButton(area, "Down")
+    -- Plain letters as the arrows: any game font draws them.
+    area.upButton = self:CreateButton(area, "^")
+    area.downButton = self:CreateButton(area, "v")
     for name, fn in pairs(AreaMethods) do area[name] = fn end
     area.upButton:SetScript("OnClick", function() area:PageUp() end)
     area.downButton:SetScript("OnClick", function() area:PageDown() end)
+    area.upButton:SetStyle("stepDim")
+    area.downButton:SetStyle("stepDim")
+
+    -- The track is a plain frame, not a button: it is no d-pad stop.
+    area.track = CreateFrame("Frame", nil, area)
+    area.track:EnableMouse(true)
+    area.trackBorder = area.track:CreateTexture(nil, "BACKGROUND")
+    area.trackBorder:SetAllPoints(area.track)
+    area.trackBorder:SetColorTexture(0.62, 0.52, 0.22, 1)
+    area.trackFill = area.track:CreateTexture(nil, "BORDER")
+    area.trackFill:SetPoint("TOPLEFT", area.track, "TOPLEFT", 1, -1)
+    area.trackFill:SetPoint("BOTTOMRIGHT", area.track, "BOTTOMRIGHT", -1, 1)
+    area.trackFill:SetColorTexture(0.03, 0.03, 0.04, 1)
+    area.thumb = CreateFrame("Frame", nil, area.track)
+    area.thumbFill = area.thumb:CreateTexture(nil, "ARTWORK")
+    area.thumbFill:SetAllPoints(area.thumb)
+    area.thumbFill:SetColorTexture(1, 0.82, 0, 1)
+    area.track:SetScript("OnMouseDown", PE:Wrap("core", function()
+        local ok, cx, cy = pcall(GetCursorPosition)
+        local scale = area.track:GetEffectiveScale()
+        if not (ok and type(cy) == "number" and type(scale) == "number" and scale > 0) then return end
+        local y = cy / scale
+        local top, bottom = area.thumb:GetTop(), area.thumb:GetBottom()
+        if type(top) ~= "number" or type(bottom) ~= "number" then return end
+        if y > top then area:PageUp() elseif y < bottom then area:PageDown() end
+    end))
+    area.track:Hide()
+    area.upButton:Hide()
+    area.downButton:Hide()
 
     -- No wheel on the handheld; this is for testing on a desktop.
     area.scrollFrame:EnableMouseWheel(true)

@@ -1192,6 +1192,13 @@ function PE:CloseSettings() end
 function PE:ToggleSettings() SettingsMissing() end
 function PE:RefreshSettings() end
 
+-- Whether the player uses the touch screen. Not asked yet (nil) reads as yes.
+-- The scroll bar's Up and Down tabs show only while this is true.
+function PE:UsesTouch()
+    local ui = self.db and self.db.ui
+    return not (type(ui) == "table" and ui.touch == false)
+end
+
 -- Size preset and hub position, shared by the panel and /pe reset.
 -- Choosing a hub position puts the round button exactly there: the offset
 -- saved by "Move things" is cleared.

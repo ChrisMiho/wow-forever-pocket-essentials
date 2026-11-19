@@ -647,8 +647,8 @@ local SIZE_CHOICES = {
     { value = "large", label = "Large" },
 }
 
--- The two choices that belong to no feature: "Button size" and "Round button
--- position". Returns the new y.
+-- The settings that belong to no feature: "Button size", "Round button
+-- position" and "Touch screen". Returns the new y.
 function Drawer:CoreChoices(y, width)
     local x = M.pad * 2
     local innerWidth = width - x - M.gap
@@ -680,6 +680,14 @@ function Drawer:CoreChoices(y, width)
         end
         y = self:LabeledRow("Round button position", items, x, y, innerWidth, labelWidth) + M.gap
     end
+
+    -- Shows or hides the scroll bar's Up and Down tabs in every window.
+    local touch = PE:UsesTouch()
+    y = self:Flow({ {
+        label = "Touch screen: " .. (touch and "Yes" or "No"),
+        style = touch and "on" or "off",
+        onClick = PE:Wrap("core", function() PE:SetUISetting("touch", not touch) end),
+    } }, x, y, innerWidth) + M.gap
     return y
 end
 
@@ -1102,9 +1110,9 @@ local function DoRefresh()
     list:End()
     area:SetContentHeight(total)
 
-    if page ~= "main" then
+    if page ~= "main" and area.upButton:IsShown() then
         -- Little or nothing in these lists can take the controller
-        -- highlight, so the paging buttons do.
+        -- highlight, so the scroll bar's tabs do.
         navList[#navList + 1] = area.upButton
         navList[#navList + 1] = area.downButton
     end

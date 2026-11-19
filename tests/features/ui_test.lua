@@ -741,4 +741,143 @@ test("number: at every size in a narrow window the three pieces stay on one line
     end
 end)
 
+---------------------------------------------------------------------------
+-- 0.8.0: the slim scroll bar (spec section 6) and the touch setting (section 5)
+---------------------------------------------------------------------------
+
+-- A scroll area of our own in the settings window, sized by hand.
+local function bareArea(c, PE, touch, contentHeight, noPaging)
+    PE:SetUISetting("touch", touch)
+    local UI = PE.UI
+    local m = UI:Metrics()
+    local area = UI:CreateScrollArea(rawget(c.env, "UIParent"))
+    area:SetPoint("CENTER", rawget(c.env, "UIParent"), "CENTER", 0, 0)
+    area:Layout(400, m.button * 8, noPaging)
+    area:SetContentHeight(contentHeight)
+    return area, m
+end
+
+test("scroll bar: shows for a list that does not fit with touch on, and not for a list that fits", function()
+    local c, PE = T.new({})
+    local area = bareArea(c, PE, true, 4000)
+    check(area.upButton:IsShown() and area.downButton:IsShown() and area.track:IsShown(), "no bar on a long list")
+    check(area.viewWidth < 400, "no room kept for the bar")
+    local fits = bareArea(c, PE, true, 100, true)
+    check(not fits.upButton:IsShown() and not fits.downButton:IsShown() and not fits.track:IsShown(), "a bar on a list that fits")
+    eq(fits.viewWidth, 400)
+    c:assertClean("scroll bar shown")
+end)
+
+test("scroll bar: the marker is the share of the list in view, and at least half a button", function()
+    local c, PE = T.new({})
+    local area, m = bareArea(c, PE, true, 4000)
+    local want = area.trackHeight * (area.viewHeight / 4000)
+    eq(math.abs(area.thumb:GetHeight() - math.max(want, m.button * 0.5)) < 0.01, true, "thumb height " .. area.thumb:GetHeight())
+    area:SetContentHeight(area.viewHeight * 400)
+    eq(math.abs(area.thumb:GetHeight() - m.button * 0.5) < 0.01, true, "a very long list: the marker is thinner than half a button")
+    area:SetContentHeight(area.viewHeight * 2)
+    eq(math.abs(area.thumb:GetHeight() - area.trackHeight * 0.5) < 0.01, true, "half in view: the marker is half the track")
+    c:assertClean("scroll bar marker")
+end)
+
+test("scroll bar: the marker is at the track top at offset 0 and at its bottom at the full range", function()
+    local c, PE = T.new({})
+    local area = bareArea(c, PE, true, 4000)
+    local _, _, trackTop, trackBottom = c._rect(area.track)
+    local _, _, top = c._rect(area.thumb)
+    eq(math.abs(top - trackTop) < 0.01, true, "not at the top")
+    area:ScrollTo(area:GetRange())
+    local _, _, _, bottom = c._rect(area.thumb)
+    eq(math.abs(bottom - trackBottom) < 0.01, true, "not at the bottom")
+    area:ScrollTo(area:GetRange() / 2)
+    local _, _, midTop, midBottom = c._rect(area.thumb)
+    eq(math.abs((midTop + midBottom) / 2 - (trackTop + trackBottom) / 2) < 0.01, true, "not in the middle")
+end)
+
+test("scroll bar: a tap on the track above the marker pages up, below it pages down", function()
+    local c, PE = T.new({})
+    local area = bareArea(c, PE, true, 4000)
+    area:ScrollTo(1000)
+    local scale = area.track:GetEffectiveScale()
+    local _, _, top, bottom = c._rect(area.thumb)
+    c.world.cursor = { 10, (bottom - 5) * scale }
+    local before = area.offset
+    c:script(area.track, "OnMouseDown", "LeftButton")
+    check(area.offset > before, "a tap below the marker did not page down")
+    _, _, top, bottom = c._rect(area.thumb)
+    c.world.cursor = { 10, (top + 5) * scale }
+    before = area.offset
+    c:script(area.track, "OnMouseDown", "LeftButton")
+    check(area.offset < before, "a tap above the marker did not page up")
+    c:assertClean("scroll bar taps")
+end)
+
+test("scroll bar: the arrow tabs dim at the ends and page like Up and Down did", function()
+    local c, PE = T.new({})
+    local area = bareArea(c, PE, true, 4000)
+    eq(area.upButton.peStyle, "stepDim")
+    eq(area.downButton.peStyle, "step")
+    c:click(area.downButton)
+    check(area.offset > 0, "the down tab did not page")
+    eq(area.upButton.peStyle, "step")
+    area:ScrollTo(area:GetRange())
+    eq(area.downButton.peStyle, "stepDim")
+    c:click(area.upButton)
+    check(area.offset < area:GetRange(), "the up tab did not page")
+    c:assertClean("scroll bar tabs")
+end)
+
+test("touch: not asked yet reads as yes; only an explicit no hides the bar", function()
+    local c, PE = T.new({})
+    eq(PE.db.ui.touch, nil)
+    eq(PE:UsesTouch(), true)
+    PE:SetUISetting("touch", false)
+    eq(PE:UsesTouch(), false)
+    local area = bareArea(c, PE, false, 4000)
+    check(not area.upButton:IsShown() and not area.track:IsShown(), "the bar shows with touch off")
+    eq(area.viewWidth, 400, "the list is not full width")
+end)
+
+test("touch: the toggle in the settings flips ui.touch and the window redraws at once", function()
+    local c, PE = T.new({})
+    openSettings(c, PE)
+    check(#shownButtons(c, "Touch screen: Yes") == 1, "no 'Touch screen: Yes' button")
+    local btn = shownButtons(c, "Touch screen: Yes")[1]
+    eq(btn.peStyle, "on")
+    c:click(btn)
+    c:advance(0.2)
+    eq(PE.db.ui.touch, false)
+    check(#shownButtons(c, "Touch screen: No") == 1, "the toggle did not change its label")
+    eq(shownButtons(c, "Touch screen: No")[1].peStyle, "off")
+    c:click(shownButtons(c, "Touch screen: No")[1])
+    c:advance(0.2)
+    eq(PE.db.ui.touch, true)
+    check(#shownButtons(c, "Touch screen: Yes") == 1, "the toggle did not come back")
+    c:assertClean("touch toggle")
+end)
+
+test("touch off: the settings list is full width and the d-pad reaches the last settings button", function()
+    local c, PE = T.new({})
+    PE:SetUISetting("touch", false)
+    openSettings(c, PE)
+    local panel = settingsPanel(c)
+    local area
+    walkAll(c, panel, function(w) if w.upButton and w.downButton then area = w end end)
+    check(area, "no scroll area")
+    check(not area.upButton:IsShown(), "the bar is shown with touch off")
+    eq(area.viewWidth, panel.contentWidth, "the list is not full width")
+    -- Every button of the list, in reading order; the last one must be reachable.
+    local last
+    walkAll(c, area.child, function(w)
+        if c._state(w).type == "Button" and w:IsVisible() then
+            local _, _, top = c._rect(w)
+            if not last or top < select(3, c._rect(last)) then last = w end
+        end
+    end)
+    check(last, "no button in the list")
+    dpadTo(c, last)
+    eq(panel.peNavFocus, last)
+    c:assertClean("touch off d-pad")
+end)
+
 return { known = KNOWN_FAILURES }

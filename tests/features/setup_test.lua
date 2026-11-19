@@ -801,7 +801,7 @@ test("setup: the d-pad reaches every button; A presses; B closes", function()
         count = count + 1
     end
     for _, b in ipairs(shownButtons(c, panel)) do
-        local paging = T.labelOf(b) == "Up" or T.labelOf(b) == "Down"
+        local paging = T.labelOf(b) == "^" or T.labelOf(b) == "v"
         check(reached[b] or paging, "the d-pad never reached " .. T.labelOf(b))
     end
     eq(count, 6, "buttons in the d-pad's round: two switches, Back, Skip, Next, Close")
@@ -942,7 +942,7 @@ test("setup: Up and Down show only on a screen too long to fit, and a screen tha
         c:advance(0.2)
         open(c, PE)
         for i = 1, N do
-            local up, down = shownButtons(c, guide(c), "Up"), shownButtons(c, guide(c), "Down")
+            local up, down = shownButtons(c, guide(c), "^"), shownButtons(c, guide(c), "v")
             eq(#up, #down, size .. ", screen " .. i .. ": Up and Down go together")
             if #up > 0 then
                 withPaging = withPaging + 1
@@ -962,7 +962,7 @@ test("setup: Up and Down show only on a screen too long to fit, and a screen tha
     PE:SetUISetting("size", "medium")
     c:advance(0.2)
     open(c, PE)
-    check(not has(c, "Up") and not has(c, "Down"), "the welcome screen shows paging buttons")
+    check(not has(c, "^") and not has(c, "v"), "the welcome screen shows paging buttons")
     c:assertClean("paging")
 end)
 
@@ -1197,7 +1197,7 @@ end
 local function areaOf(btn) return btn:GetParent():GetParent():GetParent() end
 
 local function pagingShown(c)
-    local up, down = shownButtons(c, guide(c), "Up"), shownButtons(c, guide(c), "Down")
+    local up, down = shownButtons(c, guide(c), "^"), shownButtons(c, guide(c), "v")
     eq(#up, #down, "Up and Down go together")
     return #up > 0
 end

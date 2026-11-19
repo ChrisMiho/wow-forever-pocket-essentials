@@ -562,8 +562,7 @@ local function DoRefresh()
         -- window and the (hidden) paging buttons sit outside it.
         area:Layout(width + (width - narrowWidth), height)
     end
-    area.upButton:SetShown(scroll)
-    area.downButton:SetShown(scroll)
+    area:SetBarShown(scroll)
     local viewWidth = scroll and narrowWidth or min(area.viewWidth, width)
     local colWidth = max((viewWidth - (cols - 1) * gap) / cols, 1)
 
@@ -613,7 +612,7 @@ local function DoRefresh()
     for i = used + 1, #targetButtons do targetButtons[i]:Hide() end
     area:SetContentHeight(max(y - gap, 1))
 
-    if scroll then
+    if scroll and area.upButton:IsShown() then
         navList[#navList + 1] = area.upButton
         navList[#navList + 1] = area.downButton
     end

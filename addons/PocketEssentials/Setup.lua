@@ -427,7 +427,7 @@ local function DoDraw()
 
     -- Reading order for the d-pad: what is in the list, the paging buttons
     -- when there is something to page, the bottom row, Close.
-    if area:GetRange() > 0 then
+    if area:GetRange() > 0 and area.upButton:IsShown() then
         navList[#navList + 1] = area.upButton
         navList[#navList + 1] = area.downButton
     end
