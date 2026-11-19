@@ -4,6 +4,39 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-11-18
+
+Twentieth test build. From the owner, after trying 0.7.0: "do the next 3, and
+call the release 0.8.0", plus fixes for Merge nearby icons, the setup guide's
+first page and the ugly Up and Down buttons. Spec
+`docs/superpowers/specs/2026-11-18-0.8.0-design.md`. Not yet tested on a
+device. Your saved choices carry over as they are.
+
+### Changed
+
+- **Move the arrow** (in Quest arrow) and **Move the round button** (in the
+  main settings) replace the position buttons. Each opens **Move on screen**
+  with that piece picked. **Reset** puts the piece back to the starting
+  spot. Nothing you already placed moves.
+- **"Move things" is now "Move on screen".**
+- **Bags is now two features.**
+  - **Bag window:** **Bag size** and **Bag icons**.
+  - **Bag sorter:** **Sort button** (On / Off) and **Sort stick** (Left /
+    Right).
+  - **D-pad to Sort** is now automatic whenever the Sort button shows.
+  - **Button only** is gone: a saved one now sorts with the left stick too.
+  - The first time 0.8.0 loads, **Bag window** is switched on if you used
+    **Bag sorter**, with your size and icons as they were.
+- **Button colour:** Gold, Horde or Alliance for the round button.
+- **Merge icons closer than 3%** (of the map) replaces the old number, with
+  "of map" under it.
+- **Setup guide, first page:** the highlight starts on **Start**. A new
+  question asks whether you use the touch screen. **No** turns off the Sort
+  button and the scroll bar.
+- **A slim scroll bar** replaces the big Up and Down buttons: an arrow at
+  each end and a marker showing where you are in the list. Tap the track to
+  page. A new **Touch screen: Yes / No** setting turns it on or off.
+
 ## [0.7.0] - 2026-11-18
 
 Nineteenth test build. From the owner, after trying 0.6.0: fine-tune the

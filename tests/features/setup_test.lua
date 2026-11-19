@@ -21,7 +21,7 @@ local ALL_KEYS = { PADDUP = NAV_NAME, PADDDOWN = NAV_NAME, PADDLEFT = NAV_NAME, 
 local TITLE = "Pocket Essentials - Setup guide"
 -- Since 0.5.0 (the spec's amendment of 2026-11-18): one screen per feature that has options.
 local ALL_SCREENS = { "Welcome to Pocket Essentials", "Quest icons", "Quest arrow", "Menu background", "Bags", "Vendors",
-    "Chat", "The round button and moving things", "All set" }
+    "Chat", "The round button and Move on screen", "All set" }
 local N = #ALL_SCREENS
 local AT = { welcome = 1, questIcons = 2, questArrow = 3, menuBg = 4, bags = 5, vendors = 6, chat = 7, layout = 8, finish = 9 }
 -- The screen each feature's switch is on.
@@ -287,10 +287,10 @@ test("setup: every feature of this build has a switch on some screen, and the ne
     for _, part in ipairs({ "Sort button", "Sort stick", "Bag size", "Bag icons", "One row at the top", "Chat text size" }) do
         check(joined:find(part, 1, true), "no screen mentions \"" .. part .. "\"")
     end
-    -- Review of 0.4.0, point 7: A on the Sort tab is not device-tested, so it is not stated as fact.
-    check(not joined:find("then A to sort", 1, true), "the Bags screen promises that A sorts")
-    check(joined:find("then A should press it (this is new and untested; if A does nothing, tap it)", 1, true),
-        "the Bags screen does not say that A on the Sort button is untested")
+    -- The owner tested the d-pad route in 0.6.0 and it works, so the text no longer calls it untested.
+    check(not joined:find("untested", 1, true), "the Bags screen still calls the d-pad route untested")
+    check(joined:find("Whenever the Sort button shows, press Left", 1, true),
+        "the Bags screen does not say the d-pad route works whenever the Sort button shows")
 end)
 
 test("setup: a switch calls the same path as the settings switch", function()
@@ -396,7 +396,7 @@ test("setup: a row whose feature is not registered is left out, and an empty scr
             if i < N - 1 then goTo(c, 2) end
         end
         eq(headings, { "Welcome to Pocket Essentials", "Quest icons", "Quest arrow", "Menu background", "Bags", "Chat",
-            "The round button and moving things", "All set" })
+            "The round button and Move on screen", "All set" })
         eq(T.labelOf(nextButton(c)), "Finish")
         c:assertClean("a build without the vendor features")
     end)

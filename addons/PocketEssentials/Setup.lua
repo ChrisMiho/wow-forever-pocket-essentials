@@ -106,8 +106,8 @@ local SCREENS = {
           { key = "bags",
             text = "Adds a big Sort button to the bag window (\"Sort button\"). A click on the stick you pick in "
                 .. "\"Sort stick\" sorts too, while the bag is open."
-                .. "\n\nWith the Sort button on, press Left from the bag's first column to reach it, then A "
-                .. "should press it (this is new and untested; if A does nothing, tap it)." },
+                .. "\n\nWhenever the Sort button shows, press Left from the bag's first column to reach it, then A "
+                .. "presses it. This works with the controller style on." },
       } },
 
     { id = "vendors", title = "Vendors",
@@ -135,7 +135,7 @@ local SCREENS = {
                 .. "\n\nChat text size is for every chat window. It works whether this switch is on or off." },
       } },
 
-    { id = "layout", title = "The round button and moving things",
+    { id = "layout", title = "The round button and Move on screen",
       text = "The round PE button is always on screen. Tap it to open the settings (or the chat window, when Big "
           .. "chat buttons is on). Hold it for a moment to always open the settings."
           .. "\n\nIn the settings you can choose how big all Pocket Essentials buttons are: Small, Medium or "

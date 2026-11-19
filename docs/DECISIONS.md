@@ -15,7 +15,9 @@ safer option. Any of them can be reversed.
 - A feature's extra choices only show while that feature is on, to keep the
   list short.
 - Settings rows live in a list paged with two big Up/Down buttons (there is
-  no mouse wheel on the device); the d-pad also scrolls it.
+  no mouse wheel on the device); the d-pad also scrolls it. (Changed in
+  0.8.0: a slim scroll bar with arrows and a marker replaces the Up/Down
+  buttons; "Touch screen: No" hides it.)
 - Holding the round button for half a second always opens settings, so a
   problem in the chat picker can never lock the player out.
 - Controller navigation arms once when a window opens and never fights
@@ -139,7 +141,7 @@ they are away.
 
 Made without the owner:
 - The Layout helper counts as out of scope: never tested, the game switches
-  to its Gamepad layout by itself, and "Move things" covers placing our own
+  to its Gamepad layout by itself, and "Move things" (renamed "Move on screen" in 0.8.0) covers placing our own
   pieces. The bundled handheld layout goes with it (now a non-goal).
 - Saved leftovers of the Layout helper are ignored, not cleaned.
 - The next feature is the arrow into other zones (top of "Parked ideas",
@@ -182,6 +184,7 @@ Said by the owner on 2026-11-17:
   turned on and how it works." Nothing is switched on for the player; the
   setup guide is how a player learns what exists. This replaces the PRD's
   earlier "flip each default to on after its device test".
+- (Changed in 0.7.0: the stepper became a "- number +" box.)
 - **Chat text size is one small stepper, not a button per size** ("that's a
   lot of buttons"): Smaller, the size, Bigger. One press is one step through
   the game's own sizes (12, 14, 16, 18, 20, 24, 27) and then 30 and 34. The
@@ -194,7 +197,9 @@ Said by the owner on 2026-11-17:
 
 Made without the owner:
 - "D-pad to Sort" and "Bag icons" are choices inside "Bag sorter", and both
-  start on the game's own behaviour (Off, "In the grid").
+  start on the game's own behaviour (Off, "In the grid"). (Changed in 0.8.0:
+  "Bag icons" moved to the new "Bag window" feature; "D-pad to Sort" is no
+  longer a choice, it is on whenever the Sort button shows.)
 - "Menu background" is its own switch, off by default. In the setup guide it
   sits on the Quests screen, because the quest log's menu is where it is
   needed.
@@ -274,7 +279,9 @@ Made without the owner:
   buttons, not more.
 - No "Hide options" buttons in the guide, and a fold saved in the settings
   does not hide anything in the guide.
-- **Button size** and **Round button position** are not in the guide. They
+- **Button size** and **Round button position** are not in the guide. (Changed
+  in 0.8.0: the position buttons are gone; "Move the round button" opens Move
+  on screen.) They
   are in the settings and the owner's words could be read to cover them, but
   they belong to no feature, and the 0.4.0 spec lists exactly this as
   "proposed, needs the maintainer's yes" (PRD rule 4). The round-button

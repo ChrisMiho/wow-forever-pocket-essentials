@@ -12,7 +12,7 @@ addons/PocketEssentials/
   PocketEssentials.toc   interface 16001, one saved table PocketEssentialsDB, QuestieDB as optional dependency
   Core.lua        feature registry, saved settings, error catching and log, debug log, combat queue, /pe
   UI.lua          sizes for touch, big buttons, windows, controller navigation
-  Move.lua        "Move things": saved offsets for our on-screen pieces, the small panel that nudges them
+  Move.lua        "Move on screen" (was "Move things" until 0.8.0): saved offsets for our on-screen pieces, the small panel that nudges them
   Hub.lua         the round button and the minimap addon-list entry
   Settings.lua    the settings window and Errors page; the list drawer both windows draw options with
   Setup.lua       the setup guide: screens that explain each feature with its switch and options (no switch of its own)
@@ -50,7 +50,7 @@ How the pieces protect each other:
   them (except the spot the arrow points at), while the arrow reads them all.
   The two ticks are unchanged.
 - Our own on-screen pieces (quest arrow, chat prompt, round button) can be
-  moved with the "Move things" panel (0.2.0). `Move.lua` keeps one offset per
+  moved with the "Move on screen" panel (0.2.0 as "Move things"; renamed in 0.8.0; the position presets were replaced in 0.8.0 by "Move the arrow" and "Move the round button", which open it). `Move.lua` keeps one offset per
   piece in `PocketEssentialsDB.ui.moved[key] = { x, y }` (720p pixels from the
   piece's preset) and a list of pieces; each piece adds its offset in its own
   layout and registers `{ key, label, order, available, apply, outline }`
@@ -112,7 +112,7 @@ How the pieces protect each other:
      buttons = {{label, action = function(mod)}, ...}}` (0.1.0, used by "Chat
      text size"; `buttons` may also be a function returning the list). An
      entry `{text = ...}` in that list is drawn as a short text at that place
-     instead of a button (0.4.0: the number between "Smaller" and "Bigger").
+     instead of a button (0.4.0: the number between "Smaller" and "Bigger"; since 0.7.0 the number sits between "-" and "+").
      Any row may carry `always = true`: it is then also drawn while the
      feature is not on, so it must not need the feature (0.4.0, "Chat text
      size").

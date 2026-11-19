@@ -585,6 +585,10 @@ local function everythingOn(c, PE, hasQDB)
         c:advance(0.2)
         presses = presses + pressAll(c, PE, "main", skip)
     end
+    -- "Touch screen" flips once per size (three times), which would leave touch off; put it
+    -- back so the pages after this are drawn with the scroll bar again.
+    PE:SetUISetting("touch", true)
+    c:advance(0.2)
     PE:CloseSettings()
     c:advance(0.2)
     if os.getenv("SMOKE_VERBOSE") then print("  option presses: " .. presses) end
@@ -624,9 +628,9 @@ local function everythingOn(c, PE, hasQDB)
     -- The counts at 0.6.0 are 205 with QuestieDB and 138 without (SMOKE_VERBOSE=1 prints them):
     -- fewer buttons (toggles, one "Icons on", one "How to sort"), and the chat
     -- text size buttons are no longer counted again for each size they show.
-    -- 0.8.0: the run presses "Touch screen" (turning the scroll bar off for the rest of
-    -- the run), so the bar's two arrow tabs are no longer pressed as options on each
-    -- scrolling page: 11 fewer without QuestieDB (138 before).
+    -- 0.8.0: "Touch screen" is pressed once per button size and flips the scroll bar, so on
+    -- some pages the bar's arrow tabs are not there to be pressed; touch is switched back
+    -- on after the loop. The floors below are kept below the counts on purpose.
     -- 0.8.0 (Move on screen): the six round button position buttons and the five arrow
     -- position buttons are gone from the settings (the page now has "Move the round
     -- button" and "Move the arrow", which sit under "Button size" or open another window): about

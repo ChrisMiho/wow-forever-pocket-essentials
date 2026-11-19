@@ -981,3 +981,48 @@ them. Keep the debug log on (settings, Errors page).
     the same boxes, and a change in one window shows in the other.
 12. Reload. Everything you changed should still be the way you left it.
     Send the saved `PocketEssentials.lua` file.
+
+### 16. Version 0.8.0: Move on screen, Bags in two, button colours, touch question
+
+Older sections describe older builds: where they mention "How to sort",
+"D-pad to Sort", "Move things" or the position buttons, follow the steps
+below instead.
+
+Install the 0.8.0 zip (only the `PocketEssentials` folder) and log in. Keep
+the debug log on (settings, Errors page).
+
+1. Open the settings. If you used **Bag sorter** before, **Bag window** is on
+   now, with the size and icons you had.
+2. In **Quest arrow**, tap **Move the arrow**. **Move on screen** opens with
+   the arrow picked. Nudge it, close, reload: it stays where you put it.
+   Tap **Reset**: the arrow goes to the top-centre starting spot.
+3. In the main settings, tap **Move the round button**. Same checks: it
+   opens with the round button picked, a moved button stays after a reload,
+   and **Reset** sends it to the left starting spot.
+4. Say whether the name **Move on screen** reads right in the window title,
+   the settings' bottom row and the setup guide.
+5. Open your bag. With **Bag window** on, try **Bag size** and **Bag icons**.
+   Turn **Bag sorter** off: the bag keeps its size and icons. Turn
+   **Bag window** off and **Bag sorter** on: the Sort button still works.
+6. In **Bag sorter**, **Sort button** On shows the big Sort button, Off
+   hides it. **Sort stick** Left or Right sorts with that stick's click
+   while the bag is open.
+7. With the Sort button showing, press Left on the d-pad from the bag's
+   first column: the highlight reaches the Sort button, and A sorts. With
+   the Sort button Off, it should not.
+8. **Button colour** (in the main settings): tap Gold, Horde and Alliance.
+   The round button changes colour at once each time.
+9. **Merge icons closer than 3%** shows "of map" under the number. Step it
+   and look at a crowded spot on the map: a bigger number means fewer
+   icons.
+10. Open the **Setup guide** (settings bottom row). The d-pad highlight
+    starts on **Start**, not Close or Skip.
+11. The first page asks whether you use the touch screen. Answer **No**: the
+    scroll bar and the Sort button go away. Go back and answer **Yes**: the
+    scroll bar returns.
+12. Open a long settings page. The slim scroll bar shows an arrow at each
+    end and a marker. Tap the arrows to move, tap the track to page, and say
+    whether the marker follows where you are. **Touch screen: Yes / No** in
+    the settings does the same as the guide's question.
+13. Reload. Everything you changed should still be as you left it. Send the
+    saved `PocketEssentials.lua` file.
