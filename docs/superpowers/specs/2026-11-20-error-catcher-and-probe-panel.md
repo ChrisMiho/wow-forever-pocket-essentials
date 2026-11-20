@@ -23,7 +23,9 @@ Research is in this session's notes. The sources are `Blizzard_ScriptErrors.lua:
 - `/probe` and the small "Probe" button open the panel.
 
 **The panel** stays standalone: no Pocket Essentials code. It copies only PE's sizes and colours, so it looks the same.
-- **Window:** 1000 × 600 (720p units), centred, titled "Pocket Probe 0.3.0", with Close.
+- **No scroll bar** (owner, 2026-11-20: "id really like to avoid having a scroll bar on the screen if possible, the side pannel really helps avoid that"). An area with more trials than fit becomes two tabs; it never scrolls.
+- **Window:** the same size as the Settings window (`min(screenW*0.96, Px(1180))` × `screenH*0.92`), centred, titled "Pocket Probe 0.3.0", with Close.
+- **Rows:** `button + gap*0.3` tall, with one border between them.
 - **Left:** area tabs.
   - The existing areas: Our own windows, Blizzard windows, Chat box, Bags, Vendor, Controller, Layout, Settings, Values.
   - New: **Errors** and **Graphics**.
@@ -60,7 +62,9 @@ Research is in this session's notes. The sources are `Blizzard_ScriptErrors.lua:
 
 ## Part 2: Error catcher (Pocket Essentials feature, built after Part 1's device run)
 
-**The feature:** key `errors`, name **Catch all errors**, line "Keeps every Lua error, from the game and other addons, in one list here." It sits on the Errors tab, first card, and is off by default.
+**The feature:** key `errors`, name **Catch all errors**, line "Keeps every Lua error, from the game and other addons, in one list here." It is the Errors tab's first card, and is off by default.
+
+**Debug log is a separate feature** with its own tab, **Debug log**, after Errors (owner, 2026-11-20). It holds today's debug log card unchanged: the switch, the help line, the line count, and Save the log / Empty the log. The Errors tab holds only the catcher and the viewer. The settings now have 9 tabs; tab height is `min(button, (contentHeight − 8*border) / 9)`.
 
 **Standing aside:**
 - At login, if BugGrabber, BugSack or Swatter is loaded (or the error handler was replaced by someone), it does nothing.
@@ -80,7 +84,7 @@ Research is in this session's notes. The sources are `Blizzard_ScriptErrors.lua:
 - The page: the source in gold, "x3 · 23:11" on the right, the message (white, wraps), and the stack (dim, small).
 - The bottom row: **◀ Previous**, "3 of 12", **Next ▶**, and **Clear all**. With the d-pad, Left and Right move between errors.
 - When empty: "No errors recorded."
-- The debug log card stays below.
+- **No scroll bar:** the message shows at most 3 lines and the stack at most 6 lines. Longer text is cut at the edge, and the full text stays in the saved file. The Errors page must fit at every button size without the scroll bar.
 
 **Reading:**
 - `read-log.sh` prints the others' list grouped by source.

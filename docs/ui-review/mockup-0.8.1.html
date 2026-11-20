@@ -722,7 +722,7 @@ function pFeature(d,f,x,y,w,setup,onlyKeys){
   });
 }
 const PTABS=[['questIcons','Quest icons',['questIcons']],['questArrow','Quest arrow',['questArrow']],['bags','Bags',['bagWindow','bags']],
- ['vendors','Vendors',['sellJunk','repair']],['chat','Chat',['chat']],['menuBg','Menu background',['menuBg']],['general','General',[]],['errors','Errors',[]]];
+ ['vendors','Vendors',['sellJunk','repair']],['chat','Chat',['chat']],['menuBg','Menu background',['menuBg']],['general','General',[]],['errors','Errors',[]],['debug','Debug log',[]]];
 function pSettings(scr){
   const [w,h]=settingsSize(); const p=panel(scr,'Pocket Essentials',w,h); const c=p.content;
   const nw=M.button*5, b=M.border, n=PTABS.length; const th=Math.min(M.button,(c.h-(n-1)*b)/n);
@@ -755,8 +755,8 @@ function pSettings(scr){
         yy=pOptionRow(d,null,{label:'Reload the interface',act:'Reload'},ix,yy,iw);
         return yy; });
     }
-    if(cur==='errors'){
-      y=drawCatcher(d,width,y);
+    if(cur==='errors') y=drawCatcher(d,width,y);
+    if(cur==='debug'){
       y=pCard(d,0,y,width,(ix,iy,iw)=>{ let yy=iy; const sw=M.button*2;
         let ty=yy; ty+=text(d.c,'font','Debug log',ix,ty,iw-sw-M.gap)+M.gap*.2;
         ty+=text(d.c,'small','Turn it on, play until the problem happens, then tap Save. Send the file SavedVariables/PocketEssentials.lua.',ix,ty,iw-sw-M.gap);
@@ -979,8 +979,15 @@ function drawCatcher(d,width,y){
     const i=Math.min(S.errIdx,list.length-1), e=list[i];
     const meta='x'+e.count+' · '+e.when; const mw=measure('small',meta)+M.gap;
     text(d.c,'font',e.src,ix,yy,iw-mw,C(1,.82,0)); text(d.c,'small',meta,ix+iw-mw,yy+(M.font-M.small)*.6,mw,COL.dim); yy+=M.font*1.15+M.gap*.4;
-    yy+=text(d.c,'small',e.msg,ix,yy,iw,C(.95,.95,.95))+M.gap*.4;
-    yy+=text(d.c,'small',e.stack,ix,yy,iw,COL.dim)+M.gap;
+    // No scroll bar: the message shows at most 3 lines, the stack at most 5
+    // (the full text is in the saved file).
+    const mh=text(d.c,'small',e.msg,ix,yy,iw,C(.95,.95,.95)); const mEl=d.c.lastChild;
+    const cap=M.small*1.15*3; if(mh>cap+0.5){ Object.assign(mEl.style,{maxHeight:u(cap),overflow:'hidden'}); }
+    yy+=Math.min(mh,cap)+M.gap*.4;
+    const sl=e.stack.split('\n'); const st=sl.length>5?sl.slice(0,5).join('\n')+'\n…':e.stack;
+    const sh=text(d.c,'small',st,ix,yy,iw,COL.dim); const sEl=d.c.lastChild, scap=M.small*1.15*6;
+    if(sh>scap+0.5) Object.assign(sEl.style,{maxHeight:u(scap),overflow:'hidden'});
+    yy+=Math.min(sh,scap)+M.gap;
     const bw=M.button*3.2;
     button(d.c,'◀ Previous',ix,yy,bw,M.button,i>0?'normal':'disabled',false,()=>{S.errIdx=Math.max(0,i-1);});
     text(d.c,'font',(i+1)+' of '+list.length,ix+bw+M.gap,yy+(M.button-M.font*1.15)/2,bw,C(.92,.92,.92),'center');
@@ -1004,7 +1011,8 @@ function chip(parent,x,y,w,h,res){ const col=res==='Allowed'?[C(.07,.40,.13),C(.
   const c=rect(parent,x,y,w,h,col[1]); rect(c,M.border,M.border,w-2*M.border,h-2*M.border,col[0]);
   el('div',c,{left:u(M.gap*.4),width:u(w-M.gap*.8),top:0,height:u(h),lineHeight:u(h),fontSize:u(M.small),color:'#fff',textShadow:shadow()},'lbl').textContent=res; }
 function pProbe(scr){
-  const w=1000,h=600; const p=panel(scr,'Pocket Probe 0.3.0',w,h); const c=p.content;
+  // Same size as Settings, so the lists fit without a scroll bar.
+  const [w,h]=settingsSize(); const p=panel(scr,'Pocket Probe 0.3.0',w,h); const c=p.content;
   const fh=M.button, foot=c.y+c.h-fh; const tw=M.button*4.4, b=M.border;
   const cur=S.probeArea||'errors';
   PROBE_AREAS.forEach(([id,label,rows],i)=>{ const ty=c.y+i*(M.button+b); const sel=cur===id;
@@ -1017,13 +1025,14 @@ function pProbe(scr){
   const px=c.x+tw+M.gap, pw=c.w-tw-M.gap, area=PROBE_AREAS.find(a=>a[0]===cur);
   const listH=foot-M.gap-c.y-(M.small*2.6+M.gap);
   scrollArea(p.el,px,c.y,pw,listH,'probe-'+cur,(d,width)=>{ let y=0;
-    area[2].forEach(([label,kind,res],i)=>{ const sel=(S.probeSel||0)===i; const rh=M.button+M.gap*.6;
+    area[2].forEach(([label,kind,res],i)=>{ const sel=(S.probeSel||0)===i; const rh=M.button+M.gap*.3;
       const bg=rect(d.c,0,y,width,rh,sel?C(.13,.12,.09):PC.card); bg.classList.add('press'); bg.onclick=()=>{S.probeSel=i;render();};
       const rw=M.button*2.2, cw=M.button*3.6; const ly=y+(rh-M.font*1.15)/2;
       text(d.c,'font',label,M.pad,ly,width-rw-cw-M.pad*3,kind==='risky'&&!S.probeRisky?C(.5,.5,.5):C(.92,.92,.92));
-      if(kind==='guided'){ const gw=(rw+cw+M.gap)/2-M.gap/2; res.forEach((g,k)=>button(d.c,g,width-M.pad-(rw+cw+M.gap)+k*(gw+M.gap),y+M.gap*.3,gw,M.button,'normal',false,()=>{})); }
-      else { chip(d.c,width-M.pad-rw-M.gap-cw,y+M.gap*.3,cw,M.button,res);
-        button(d.c,'Run',width-M.pad-rw,y+M.gap*.3,rw,M.button,kind==='risky'&&!S.probeRisky?'disabled':'normal',false,()=>{}); }
+      const cy=y+M.gap*.15;
+      if(kind==='guided'){ const gw=(rw+cw+M.gap)/2-M.gap/2; res.forEach((g,k)=>button(d.c,g,width-M.pad-(rw+cw+M.gap)+k*(gw+M.gap),cy,gw,M.button,'normal',false,()=>{})); }
+      else { chip(d.c,width-M.pad-rw-M.gap-cw,cy,cw,M.button,res);
+        button(d.c,'Run',width-M.pad-rw,cy,rw,M.button,kind==='risky'&&!S.probeRisky?'disabled':'normal',false,()=>{}); }
       y+=rh+M.border; });
     return y; },'twopass');
   const sel=area[2][S.probeSel||0]; const dy=c.y+listH+M.gap*.5;
@@ -1044,8 +1053,8 @@ const NOTES_P={
  arrow:{what:['One size control (50% to 150%, in steps of 10) sets the arrow and its text together. It no longer follows Button size, and there are no fixed Small/Normal/Large choices.','Change it in Move on screen while you watch the arrow, or in the settings under Quest arrow.','The quest line is smaller and starts with "Quest:", the same way turn-ins start with "Turn in:".','Turn around shows no arrow: just "Turn around" with the quest line under it, so there is no gap.','"No location" now reads "No map data for this quest".','In a city or inn with no quest focused, the hint is hidden (a choice in the settings).'],fix:[[7,'"Here" is green in both the arrow and the text'],[25,'the old fixed positions and sizes go']]},
  settings:{what:['Tabs on the left, one page at a time on the right. Bags and Vendors each hold their two helpers, matching the setup guide.','Every row is the same: the name on the left, one control of one width on the right. A green dot on a tab means a helper there is on.','Only one tab is drawn at a time, so less is built and kept on screen: lighter for the handheld.','Feature names are suggestions (Bigger bag, Bag sorting, Sell junk, Repair gear, Chat picker); say which you prefer.','Bigger bag always puts the bag pictures in one row at the top, so its "Bag pictures" choice is gone. Off, the game shows its own bag.','The choices explain themselves ("Show, to tap" / "Hide", "Left stick" / "Right stick"), and each section has one plain line under its name.','General: "I play with: Touch controls / Controller" takes the place of "Touch screen: Yes/No". It is the same question the setup guide asks.','A row can still have one short grey line when it needs it (Chat text size).'],fix:[[5,'switches are On/Off only; two-way choices are segmented, so green no longer means "the second choice"'],[8,'sentence case everywhere'],[9,'one switch shape for every helper'],[10,'tab names match the setup guide'],[15,'one Reload, under General'],[16,'Save, Empty the log and Clear errors are on separate rows'],[17,'the "press and hold" tip is gone'],[18,'Chat text size has its own tab, so it no longer forces options to show'],[21,'every control has the same width'],[23,'the scroll bar shows only when a page is too long'],[24,'names always sit left of their control']]},
  setup:{what:['9 screens, each about as full as the next: Welcome, Quest icons, Quest icon details, Quest arrow, Bags, Vendors and menus, Round button and chat, Your screen, All set.','Every choice a helper has is now in the guide. Quest icons is split across two screens so neither is crammed; the second one also shows what the icons mean, and is skipped when Quest icons is off.','The small ones are joined: Auto sell junk, Auto repair and Menu background share a screen; the round button\'s look shares a screen with Chat picker.','Welcome asks "How do you play? Touch controls / Controller", then shows controller-button pictures for getting around the windows.','Round button: pick its colour and the size of all buttons, with the button drawn beside so you see it change.','Your screen: a small picture of the screen with a gold box where each piece starts, and a "Move things now" button.','All set: what is on and off, then three tip tiles of the same size, with pictures, titles and text on shared lines.','Menu background moved onto the Quests screen, since it is mostly for the quest log menu.'],fix:[[6,'helper names look the same as in the settings'],[10,'screens are named like the settings tabs'],[19,'the 4-paragraph screen is now three tips on All set'],[20,'"Controller only" says it hides the Sort button']]},
- catcher:{what:['Draft, not built. The Errors tab gets a new first card, "Catch all errors": every Lua error from the game and other addons lands here, not only ours. Off to start with.','"The game\'s error box: Show / Hide" keeps Blizzard\'s small popup from jumping up and taking the controller.','One error per page, as in BugSack: who caused it (gold), how often and when, the message, then the stack. Previous / Next (d-pad Left / Right) and "3 of 12". The filter row picks All, Pocket Essentials, Blizzard or Other addons.','If BugSack (or another error addon) is loaded, Pocket Essentials steps aside and says so. It never switches another addon off. Try "Another error addon: Yes" above.','The examples include the map error from your screenshot. "ExampleAddon" is made up.','The debug log card stays below.'],fix:[]},
- probe:{what:['Draft, not built. Pocket Probe gets its own window, and nothing runs by itself at login any more (Auto is Off).','Tabs down the left for each area, with a count of how many trials have run. Each row has a result chip (Allowed, Blocked, Not run, or the value read) and its own Run button.','New areas: Errors (can we see the game\'s errors, hide the box, spot other addons) and Graphics (why the sparkles do not show: outline support, the hidden outline settings, a guided "outlines off, restart, look at a corpse" test you answer with two buttons).','Risky trials stay dimmed until Risky is On. Save writes the results file for me to read.','It stays a separate testing-only addon (PocketProbe.zip), in the same look as Pocket Essentials.'],fix:[]},
+ catcher:{what:['Draft, not built. The Errors tab gets a new first card, "Catch all errors": every Lua error from the game and other addons lands here, not only ours. Off to start with.','"The game\'s error box: Show / Hide" keeps Blizzard\'s small popup from jumping up and taking the controller.','One error per page, as in BugSack: who caused it (gold), how often and when, the message, then the stack. Previous / Next (d-pad Left / Right) and "3 of 12". The filter row picks All, Pocket Essentials, Blizzard or Other addons.','If BugSack (or another error addon) is loaded, Pocket Essentials steps aside and says so. It never switches another addon off. Try "Another error addon: Yes" above.','The examples include the map error from your screenshot. "ExampleAddon" is made up.','No scroll bar: the message shows at most 3 lines and the stack at most 6 (the full text is in the saved file). Debug log is now its own tab, below Errors.'],fix:[]},
+ probe:{what:['Draft, not built. Pocket Probe gets its own window, and nothing runs by itself at login any more (Auto is Off).','Tabs down the left for each area, with a count of how many trials have run. Each row has a result chip (Allowed, Blocked, Not run, or the value read) and its own Run button.','New areas: Errors (can we see the game\'s errors, hide the box, spot other addons) and Graphics (why the sparkles do not show: outline support, the hidden outline settings, a guided "outlines off, restart, look at a corpse" test you answer with two buttons).','Risky trials stay dimmed until Risky is On. Save writes the results file for me to read.','It stays a separate testing-only addon (PocketProbe.zip), in the same look as Pocket Essentials.','No scroll bar: the window is the same size as Settings and rows are tight; an area with too many trials becomes two tabs instead of scrolling.'],fix:[]},
  bag:{what:['The same size, so it stays easy to hit, but one soft shape: rounded on the outer side, joined to the bag edge, with one gold edge.','The sort picture and the word "Sort" sit together in the middle, in place of the stacked S-o-r-t letters.','The rounded corners need one small picture file in the addon (a few KB). Square corners need nothing.','The three gold bars are a stand-in for the game\'s own sort picture, which the real tab uses.'],fix:[[1,'the tab uses the same gold edge as the windows'],[2,'one less gold shade']]},
  move:{what:['All three pieces are always listed. One whose helper is off is dimmed and says "(off)", so nothing seems to be missing.','The second piece is now named "Press A to type", the text you actually see.','With the quest arrow picked, a Size row sits under the arrows.'],fix:[]},
  chat:{what:['The window has its own size control (70% to 150%), under Chat in the settings, the same kind as the quest arrow\'s. The slider above changes it here.','The window is only as big as its buttons, centred, 3 columns. "Three-finger tap for the keyboard" is gone.','Tapping a button picks the target and shows "Press A to type", as today.','Unanswered whispers keep the amber colour and get a round red dot, like the round button\'s badge.'],fix:[[3,'one round badge shape everywhere']]},
