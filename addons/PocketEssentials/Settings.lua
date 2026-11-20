@@ -625,7 +625,7 @@ function Drawer:OptionRow(mod, opt, x, y, innerWidth)
 end
 
 -- The rows of a feature to draw. opts: { only = { keys }, setup = bool,
--- onlyAlways = bool }. Without onlyAlways, it follows the feature's state:
+-- onlyAlways = bool }. A row without a key is picked in `only` by its label. Without onlyAlways, it follows the feature's state:
 -- all rows while it is on, only `always` rows while it is not.
 function Drawer:OptionList(mod, opts)
     opts = opts or {}
@@ -640,7 +640,7 @@ function Drawer:OptionList(mod, opts)
     for _, opt in ipairs(type(mod.options) == "table" and mod.options or {}) do
         if type(opt) == "table"
             and (not onlyAlways or opt.always == true)
-            and (not only or (opt.key ~= nil and only[opt.key]))
+            and (not only or (opt.key ~= nil and only[opt.key]) or (opt.key == nil and opt.label ~= nil and only[opt.label]))
             and not (opts.setup and opt.page ~= nil) then
             rows[#rows + 1] = opt
         end

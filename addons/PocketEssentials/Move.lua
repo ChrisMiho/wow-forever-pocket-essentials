@@ -1,6 +1,8 @@
 -- Pocket Essentials: Move on screen (PE.Move).
 -- A small window of our own that nudges on-screen pieces (the round button,
--- and others that register here) with four arrow buttons. A press moves the
+-- and others that register here) with four arrow buttons. Every registered
+-- piece is listed; one whose helper is off reads "<name> (off)", is dimmed
+-- and a tap on it does nothing. A press moves the
 -- chosen piece 2 pixels; holding repeats and speeds up. Works by touch and
 -- with the controller (the d-pad picks a button, A presses or holds it, B
 -- closes). The game's Edit Mode is not used: every frame here is our own.
@@ -13,6 +15,7 @@
 -- A piece registers once, when its file loads:
 --   PE.Move:Register({ key =, label =, order =, available = function() -> bool,
 --       apply = function(), outline = function(box), reset = function() })
+--   available() says whether the piece's helper is on (missing: always);
 --   apply() lays the real piece out again (its own layout adds the offset);
 --   reset() (optional) also puts back the piece's chosen preset spot when the
 --   window's Reset is pressed;
@@ -20,6 +23,9 @@
 --   whether the piece is showing or not.
 -- A piece reads its offset in its own layout code, and works without this
 -- file:  local dx, dy = 0, 0; if PE.Move and PE.Move.GetOffset then dx, dy = PE.Move:GetOffset(key) end
+--
+-- Opened while the setup guide is showing, the guide goes away and comes back
+-- on the same screen when this window closes (Setup:BackFromMove).
 local ADDON_NAME, PE = ...
 
 local Move = {}
@@ -43,6 +49,10 @@ local TINY = 1e-6
 
 local OUTLINE_COLOR = { 1, 0.82, 0 }
 
+-- Pieces with a Size row under the cross while they are picked: the piece key
+-- (also its feature's key) and the key of that feature's number option.
+local SIZE_OPTION = { questArrow = "scale" }
+
 local pieces = {}        -- registered pieces, sorted by order
 local byKey = {}
 
@@ -51,6 +61,9 @@ local panel, box, boxLabel, driver
 local pieceButtons = {}  -- one per listed piece, reused
 local arrows = {}        -- [label] = button
 local resetButton
+local sizeLabel, sizeNumber -- the Size row (SIZE_OPTION)
+local probe              -- a hidden frame that Move:PieceRect places like the outline
+local backToGuide = false -- the setup guide was open when this window opened
 local navList = {}
 local listed = {}        -- the pieces listed right now, in order
 local selected           -- the selected piece (a def)
@@ -341,8 +354,61 @@ end
 -- The window
 ---------------------------------------------------------------------------
 
+-- The Size row of a piece: its feature, the number option and the value
+-- shown now. nil when the piece has none.
+local function SizeRow(piece)
+    local optKey = piece and SIZE_OPTION[piece.key]
+    if not optKey then return nil end
+    local mod = PE:GetModule(piece.key)
+    if not (mod and type(mod.opts) == "table" and type(mod.options) == "table") then return nil end
+    for _, opt in ipairs(mod.options) do
+        local n = type(opt) == "table" and opt.number
+        if opt.key == optKey and type(n) == "table" and type(n.min) == "number" and type(n.max) == "number" then
+            local v = mod.opts[optKey]
+            if type(v) ~= "number" or v < n.min or v > n.max then
+                v = type(n.default) == "number" and n.default or n.min
+            end
+            return mod, opt, v
+        end
+    end
+    return nil
+end
+
+local QueueNav -- defined below
+
+-- One step of the Size row: saved in the feature's options, applied through
+-- the option's own OnChange, then the outline follows.
+local function SizeStep(dir)
+    local mod, opt, v = SizeRow(selected)
+    if not mod then return end
+    local n = opt.number
+    local step = (type(n.step) == "number" and n.step > 0) and n.step or 1
+    local new = min(max(v + dir * step, n.min), n.max)
+    if new == v then return end
+    mod.opts[opt.key] = new
+    if type(opt.OnChange) == "function" then PE:Safe(mod.key, opt.OnChange, mod, new) end
+    Debug(format("%s size %s", mod.key, tostring(new)))
+    QueueNav()
+    if PE.RefreshSettings then PE:RefreshSettings() end
+end
+
+-- Sets up the Size row's control for the picked piece. False when it has none.
+local function FillSize()
+    local mod, opt, v = SizeRow(selected)
+    if not mod then return false end
+    local n = opt.number
+    sizeNumber.peBox = {
+        text = tostring(v) .. (n.suffix or ""),
+        unit = n.unit,
+        down = v > n.min and PE:Wrap("core", function() SizeStep(-1) end) or nil,
+        up = v < n.max and PE:Wrap("core", function() SizeStep(1) end) or nil,
+        noStep = function() end,
+    }
+    return true
+end
+
 local function Select(piece)
-    if not piece then return end
+    if not piece or not IsAvailable(piece) then return end
     StopHold()
     selected = piece
     for i = 1, #pieceButtons do
@@ -350,18 +416,20 @@ local function Select(piece)
         btn:SetSelected(btn:IsShown() and btn.pePiece == piece)
     end
     Debug(piece.key .. " selected")
-    ShowOutline()
+    QueueNav()
 end
 
+-- Returns true when the Size row shows.
 local function Layout()
     M = UI:Metrics()
     local b, gap, pad = M.border, M.gap, M.pad
     local bh = M.button
-    local pieceWidth = bh * 3.4
+    local pieceWidth = bh * 4.2
     local cell = bh * 1.8
     local crossWidth = cell * 3 + gap * 2
     local rows = max(#listed, 3)
-    local contentHeight = max(rows * bh + (rows - 1) * gap, 3 * bh + 2 * gap)
+    local sized = FillSize()
+    local contentHeight = rows * bh + (rows - 1) * gap + (sized and (bh + gap) or 0)
     local width = pad * 2 + pieceWidth + gap * 2 + crossWidth
     local titleHeight = bh + gap
     local height = b + titleHeight + gap + contentHeight + pad
@@ -388,6 +456,24 @@ local function Layout()
     Cell(arrows.Right, 2, 1)
     Cell(arrows.Down, 1, 2)
 
+    -- The Size row: under the cross, its name beside it in the pieces column.
+    if sized then
+        local y = rows * (bh + gap)
+        sizeNumber:ClearAllPoints()
+        sizeNumber:SetPoint("TOPLEFT", content, "TOPLEFT", x0, -y)
+        sizeNumber:Set(crossWidth, sizeNumber.peBox)
+        sizeNumber:Show()
+        sizeLabel:SetWidth(pieceWidth)
+        sizeLabel:SetText("Size")
+        local h = UI:TextHeight(sizeLabel, "font")
+        sizeLabel:ClearAllPoints()
+        sizeLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -(y + max((bh - h) * 0.5, 0)))
+        sizeLabel:Show()
+    else
+        sizeNumber:Hide()
+        sizeLabel:Hide()
+    end
+
     if box then
         local t = max(UI:Px(3), 2)
         local e = box.peEdges
@@ -396,38 +482,68 @@ local function Layout()
         e[3]:ClearAllPoints(); e[3]:SetPoint("TOPLEFT", box, "TOPLEFT", -t, t); e[3]:SetPoint("BOTTOMLEFT", box, "BOTTOMLEFT", -t, -t); e[3]:SetWidth(t)
         e[4]:ClearAllPoints(); e[4]:SetPoint("TOPRIGHT", box, "TOPRIGHT", t, t); e[4]:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", t, -t); e[4]:SetWidth(t)
     end
+    return sized
 end
 
--- The list of available pieces, the buttons and the controller's reading order.
+-- The controller's reading order: the pieces that can be picked, the cross,
+-- the Size row's two ends while it shows, Close.
+local function NavFill(sized)
+    for i = #navList, 1, -1 do navList[i] = nil end
+    for i = 1, #listed do
+        local btn = pieceButtons[i]
+        if not btn.peOff then navList[#navList + 1] = btn end
+    end
+    navList[#navList + 1] = arrows.Up
+    navList[#navList + 1] = arrows.Left
+    navList[#navList + 1] = resetButton
+    navList[#navList + 1] = arrows.Right
+    navList[#navList + 1] = arrows.Down
+    if sized then
+        navList[#navList + 1] = sizeNumber.peMinus
+        navList[#navList + 1] = sizeNumber.pePlus
+    end
+    navList[#navList + 1] = panel.closeButton
+end
+
+-- After a pick or a size step: the panel's size, the outline, the d-pad list.
+QueueNav = function()
+    if not built then return end
+    local sized = Layout()
+    NavFill(sized)
+    if panel:IsShown() then
+        ShowOutline()
+        panel:NavRefresh()
+    end
+end
+
+-- Every registered piece, in order, and its button. A piece whose helper is
+-- off reads "<name> (off)", is dimmed, and a tap on it does nothing.
 local function Fill()
     for i = #listed, 1, -1 do listed[i] = nil end
-    for i = 1, #pieces do
-        if IsAvailable(pieces[i]) then listed[#listed + 1] = pieces[i] end
-    end
+    for i = 1, #pieces do listed[#listed + 1] = pieces[i] end
     for i = 1, #listed do
         local btn = pieceButtons[i]
         if not btn then
             btn = UI:CreateButton(panel.content, "")
-            btn:SetScript("OnClick", PE:Wrap("core", function(self) Select(self.pePiece) end))
+            btn:SetScript("OnClick", PE:Wrap("core", function(self)
+                if self.peOff then return end
+                Select(self.pePiece)
+            end))
             pieceButtons[i] = btn
         end
+        local on = IsAvailable(listed[i])
         btn.pePiece = listed[i]
-        btn:SetLabel(listed[i].label)
+        btn.peOff = not on
+        btn:SetLabel(on and listed[i].label or (listed[i].label .. " (off)"))
+        btn:SetStyle(on and "normal" or "disabled")
+        btn:SetSelected(false)
         btn:Show()
     end
     for i = #listed + 1, #pieceButtons do
         pieceButtons[i].pePiece = nil
         pieceButtons[i]:Hide()
     end
-    for i = #navList, 1, -1 do navList[i] = nil end
-    for i = 1, #listed do navList[#navList + 1] = pieceButtons[i] end
-    navList[#navList + 1] = arrows.Up
-    navList[#navList + 1] = arrows.Left
-    navList[#navList + 1] = resetButton
-    navList[#navList + 1] = arrows.Right
-    navList[#navList + 1] = arrows.Down
-    navList[#navList + 1] = panel.closeButton
-    Layout()
+    NavFill(Layout())
 end
 
 local function Reset()
@@ -443,12 +559,27 @@ local function Reset()
     Debug(selected.key .. " reset")
 end
 
+-- The setup guide comes back one frame later, so a window that closed this
+-- one by opening is on the screen by then and the guide stays away.
+local function GuideBack()
+    local Setup = PE.Setup
+    if Setup and Setup.BackFromMove then Setup:BackFromMove() end
+end
+
 local function OnHidden()
     StopHold()
     if box then box:Hide() end
     PE:UnregisterCoreEvent("PLAYER_REGEN_DISABLED", "move")
     Debug("panel closed (" .. (closeWhy or "B, Escape or another window") .. ")")
     closeWhy = nil
+    if backToGuide then
+        backToGuide = false
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0, PE:Wrap("core", GuideBack))
+        else
+            PE:Safe("core", GuideBack)
+        end
+    end
 end
 
 -- An arrow button: touch uses its own mouse down and up, the controller its
@@ -515,14 +646,18 @@ local function Build()
     MakeArrow("Right", 1, 0)
     resetButton = UI:CreateButton(panel.content, "Reset")
     resetButton:SetScript("OnClick", PE:Wrap("core", Reset))
+    sizeLabel = UI:CreateText(panel.content, "font")
+    sizeLabel:SetTextColor(0.92, 0.92, 0.92, 1)
+    sizeLabel:Hide()
+    sizeNumber = UI:CreateNumber(panel.content)
+    sizeNumber:Hide()
 
     UI:AttachNav(panel, function() return navList end)
     panel:HookScript("OnHide", PE:Wrap("core", OnHidden))
 
     UI:OnMetricsChanged(PE:Wrap("core", function()
         if not built then return end
-        Layout()
-        if panel:IsShown() then ShowOutline() end
+        QueueNav()
     end))
 end
 
@@ -536,7 +671,7 @@ end
 ---------------------------------------------------------------------------
 
 -- key (optional): the piece to select when the window opens, if it is
--- registered and available.
+-- registered and its helper is on; otherwise the round button.
 function Move:Open(key)
     if PE:InCombat() then
         Debug("not opened: in a fight")
@@ -556,6 +691,11 @@ function Move:Open(key)
         PE:Print("Move on screen could not be opened. See Errors in the settings.")
         return false
     end
+    -- From the setup guide: it goes away now and comes back when this closes.
+    local Setup = PE.Setup
+    local fromGuide = Setup and Setup.IsOpen and Setup:IsOpen() or false
+    if fromGuide then PE:Safe("core", Setup.Close, Setup, "move") end
+    backToGuide = fromGuide or (backToGuide and panel:IsShown())
     -- Never on top of another Pocket Essentials window.
     PE:CloseSettings()
     if type(UISpecialFrames) == "table" then
@@ -572,18 +712,17 @@ function Move:Open(key)
     panel:Raise()
     Debug("panel opened")
     local want = type(key) == "string" and byKey[key] or nil
-    local wanted = false
-    if want then
+    if want and not IsAvailable(want) then want = byKey.hub end
+    if not (want and IsAvailable(want)) then
+        want = nil
         for i = 1, #listed do
-            if listed[i] == want then wanted = true end
+            if not want and IsAvailable(listed[i]) then want = listed[i] end
         end
     end
-    if wanted then
+    if want then
         Select(want)
-    elseif listed[1] then
-        Select(listed[1])
     else
-        ShowOutline()
+        QueueNav()
     end
     panel:NavRefresh()
     return true
@@ -610,4 +749,33 @@ function Move:ClearOffset(key)
     local piece = byKey[key]
     Apply(piece)
     if built and panel:IsShown() and selected == piece then ShowOutline() end
+end
+
+-- The registered pieces, in order: { { key =, label =, on = bool }, ... }.
+function Move:Pieces()
+    local out = {}
+    for i = 1, #pieces do
+        out[i] = { key = pieces[i].key, label = pieces[i].label, on = IsAvailable(pieces[i]) }
+    end
+    return out
+end
+
+-- Where a piece sits now, whether it is showing or not: left, bottom, width,
+-- height in UIParent's units. nil when it cannot be worked out.
+function Move:PieceRect(key)
+    local piece = byKey[key]
+    if not piece then return nil end
+    if not probe then
+        probe = CreateFrame("Frame", nil, UIParent)
+        probe:EnableMouse(false)
+        probe:SetAlpha(0)
+    end
+    probe:Hide()
+    if not PE:Safe("core", piece.outline, probe) then return nil end
+    -- Shown for the reading only (fully see-through), so the game works out its place.
+    probe:Show()
+    local l, r, t, b = probe:GetLeft(), probe:GetRight(), probe:GetTop(), probe:GetBottom()
+    probe:Hide()
+    if not (l and r and t and b) then return nil end
+    return l, b, r - l, t - b
 end

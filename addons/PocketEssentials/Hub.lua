@@ -62,6 +62,12 @@ local function Theme()
     return THEMES[key] or THEMES.gold
 end
 
+-- The colours of the chosen theme ({ ring =, fill =, pressed = }), for the
+-- setup guide's pictures of the button.
+function Hub:Colors()
+    return Theme()
+end
+
 local button, ring, fill, label, badge
 local clickHandler, badgeText
 local pressedAt, pressSerial = nil, 0

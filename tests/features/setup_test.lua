@@ -1,9 +1,9 @@
 -- Rules for the setup guide (Setup.lua).
--- Source: docs/superpowers/specs/2026-11-17-0.4.0-handheld-batch.md, section
--- "5. Setup guide" ("What the player sees", "Rules", "Debug-log lines") as
--- amended on 2026-11-18 (options in the guide, rules 13 to 18) and its
--- "Rulings"; the plan's test list in
--- docs/superpowers/plans/2026-11-17-0.4.0-handheld-batch.md (Task 5, 2.9).
+-- Source: docs/superpowers/specs/2026-11-20-0.9.0-ui-redesign.md, section
+-- "Setup guide" (nine screens, the Quest icon details screen only while Quest
+-- icons is on, step dots, feature cards, "Move things now"), and the first-run
+-- rules it keeps from docs/superpowers/specs/2026-11-17-0.4.0-handheld-batch.md,
+-- section "5. Setup guide" (opening once, Skip and Finish saving, fights).
 -- Fresh client and addon per test. Tests that need the guide to open by itself
 -- pass firstRun = true to T.new (without it T.new marks setup as skipped).
 --
@@ -18,22 +18,41 @@ local KNOWN_FAILURES = {
 
 local NAV_NAME = "PocketEssentialsNavButton"
 local ALL_KEYS = { PADDUP = NAV_NAME, PADDDOWN = NAV_NAME, PADDLEFT = NAV_NAME, PADDRIGHT = NAV_NAME, PAD1 = NAV_NAME, PAD2 = NAV_NAME }
-local TITLE = "Pocket Essentials - Setup guide"
--- Since 0.5.0 (the spec's amendment of 2026-11-18): one screen per feature that has options.
-local ALL_SCREENS = { "Welcome to Pocket Essentials", "Quest icons", "Quest arrow", "Menu background", "Bags", "Vendors",
-    "Chat", "The round button and Move on screen", "All set" }
+local TITLE = "Setup"
+-- The screens while Quest icons is off: "Quest icon details" is skipped.
+local ALL_SCREENS = { "Welcome", "Quest icons", "Quest arrow", "Bags", "Vendors and menus", "Round button and chat",
+    "Your screen", "All set" }
+local IDS = { "welcome", "questIcons", "questArrow", "bags", "vendors", "chat", "layout", "finish" }
 local N = #ALL_SCREENS
-local AT = { welcome = 1, questIcons = 2, questArrow = 3, menuBg = 4, bags = 5, vendors = 6, chat = 7, layout = 8, finish = 9 }
--- The screen each feature's switch is on.
-local SCREEN_OF = { questIcons = 2, questArrow = 3, menuBg = 4, bagWindow = 5, bags = 5, sellJunk = 6, repair = 6, chat = 7 }
+local AT = { welcome = 1, questIcons = 2, questArrow = 3, bags = 4, vendors = 5, chat = 6, layout = 7, finish = 8 }
+-- The screen each feature's switch is on (Quest icons off).
+local SCREEN_OF = { questIcons = 2, questArrow = 3, bagWindow = 4, bags = 4, sellJunk = 5, repair = 5, menuBg = 5, chat = 6 }
+-- The settings tab of each feature.
+local TAB_OF = { questIcons = "questIcons", questArrow = "questArrow", bagWindow = "bags", bags = "bags",
+    sellJunk = "vendors", repair = "vendors", chat = "chat", menuBg = "menuBg" }
+-- Quest icons' rows in the guide: three on its own screen, three on the details screen.
+local QUEST_SCREEN_ROWS = { ["Show icons for"] = true, ["Icons on"] = true, ["Icon size"] = true }
+local QUEST_DETAIL_ROWS = { ["Merge icons closer than"] = true, ["Spots per objective"] = true, ["Blizzard blue quest haze"] = true }
 
 local function guide(c) return rawget(c.env, "PocketEssentialsSetupPanel") end
 local function settingsPanel(c) return rawget(c.env, "PocketEssentialsSettingsPanel") end
+local function movePanel(c) return rawget(c.env, "PocketEssentialsMovePanel") end
 local function chatPanel(c) return rawget(c.env, "PocketEssentialsChatPanel") end
 local function nav(c) return rawget(c.env, NAV_NAME) end
 local function isOpen(c) return guide(c) ~= nil and guide(c):IsShown() end
+local function moveOpen(c) return movePanel(c) ~= nil and movePanel(c):IsShown() end
 local function bindings(c) return c._state(guide(c)).bindings end
 local function title(c) return guide(c).peTitle:GetText() end
+
+-- "pos of count" for the screen showing.
+local function at(PE)
+    local _, pos, count = PE.Setup:Screen()
+    return pos .. " of " .. count
+end
+
+local function screenId(PE)
+    return (PE.Setup:Screen())
+end
 
 local function walk(c, w, fn, seen)
     seen = seen or {}
@@ -72,10 +91,10 @@ local function nextButton(c)
     error("no Start / Next / Finish button in the setup guide", 2)
 end
 
--- The visible texts of the guide that are not button labels.
-local function texts(c)
+-- The visible texts of a window that are not button labels.
+local function textsOf(c, top)
     local out = {}
-    walk(c, guide(c), function(w)
+    walk(c, top, function(w)
         if c._state(w).type ~= "Button" then
             for _, r in ipairs(c._state(w).regions) do
                 local st = c._state(r)
@@ -85,6 +104,8 @@ local function texts(c)
     end)
     return out
 end
+
+local function texts(c) return textsOf(c, guide(c)) end
 
 local function hasText(c, text)
     for _, t in ipairs(texts(c)) do
@@ -119,7 +140,7 @@ local function open(c, PE, how)
     check(isOpen(c), "the setup guide is not shown", 2)
 end
 
--- From the first screen to screen n.
+-- n - 1 presses of Next / Start (from the first screen: to screen n).
 local function goTo(c, n)
     for _ = 2, n do
         c:click(nextButton(c))
@@ -154,8 +175,17 @@ local function saved(enabled, setup)
     return { version = 1, enabled = enabled or {}, options = {}, ui = { size = "medium", hubPos = "LEFT" }, errors = {}, setup = setup }
 end
 
+-- The two Open buttons of the settings' General tab, top to bottom: Move things on screen, Setup guide.
+local function generalOpenButtons(c, PE)
+    PE:OpenSettings("general")
+    c:advance(0.2)
+    local open = shownButtons(c, settingsPanel(c), "Open")
+    table.sort(open, function(a, b) return select(2, a:GetCenter()) > select(2, b:GetCenter()) end)
+    return open
+end
+
 ---------------------------------------------------------------------------
--- Opening by itself (rule 1, rule 6)
+-- Opening by itself (first-run rules)
 ---------------------------------------------------------------------------
 
 test("setup: opens by itself after the first loading screen on a fresh install", function()
@@ -165,8 +195,9 @@ test("setup: opens by itself after the first loading screen on a fresh install",
     check(guide(c) == nil, "the guide opened before the loading screen had settled")
     c:advance(1)
     check(isOpen(c), "the guide did not open by itself")
-    eq(title(c), TITLE .. " (1 of " .. N .. ")")
-    check(hasText(c, "Welcome to Pocket Essentials"), "the first screen is not Welcome")
+    eq(title(c), TITLE)
+    eq(at(PE), "1 of " .. N)
+    check(hasText(c, "Welcome"), "the first screen is not Welcome")
     button(c, "Skip"); button(c, "Start")
     check(not has(c, "Back"), "Back is on the first screen")
     eq(PE.db.setup, nil)
@@ -201,7 +232,7 @@ test("setup: waits for the end of a fight at login", function()
     c:leaveCombat()
     c:advance(0.1)
     check(isOpen(c), "the guide did not open when the fight ended")
-    eq(title(c), TITLE .. " (1 of " .. N .. ")")
+    eq(at(PE), "1 of " .. N)
     eq(bindings(c), ALL_KEYS, "the controller keys were not taken")
     c:assertClean("fight at login") -- a binding call in a fight would be recorded as blocked
 end)
@@ -225,11 +256,11 @@ test("setup: existing settings are kept and shown", function()
     c:advance(2)
     check(isOpen(c), "an existing player did not get the guide once")
     goTo(c, AT.vendors)
-    check(hasText(c, "Vendors"), "screen " .. AT.vendors .. " is not Vendors")
-    eq(T.labelOf(switch(c, "sellJunk")), "ON")
-    eq(T.labelOf(switch(c, "repair")), "OFF")
+    check(hasText(c, "Vendors and menus"), "screen " .. AT.vendors .. " is not Vendors and menus")
+    eq(T.labelOf(switch(c, "sellJunk")), "On")
+    eq(T.labelOf(switch(c, "repair")), "Off")
     goTo(c, 2)
-    eq(T.labelOf(switch(c, "chat")), "ON")
+    eq(T.labelOf(switch(c, "chat")), "On")
     c:click(button(c, "Skip"))
     eq(PE.db.enabled, { sellJunk = true, chat = true })
     eq(PE.db.setup, "skipped")
@@ -237,32 +268,89 @@ test("setup: existing settings are kept and shown", function()
 end)
 
 ---------------------------------------------------------------------------
--- Screens and switches (rules 5 and 7)
+-- Screens, dots and switches
 ---------------------------------------------------------------------------
 
-test("setup: the screens are welcome, quest icons, quest arrow, menu background, bags, vendors, chat, layout, finish", function()
+test("setup: the window is titled Setup; the screens are welcome, quest icons, quest arrow, bags, vendors and menus, round button and chat, your screen, all set", function()
     local c, PE = T.new({})
     open(c, PE)
-    local headings = {}
     for i = 1, N do
-        eq(title(c), TITLE .. " (" .. i .. " of " .. N .. ")")
-        for _, name in ipairs(ALL_SCREENS) do
-            if hasText(c, name) then headings[#headings + 1] = name end
-        end
+        eq(title(c), TITLE)
+        eq(at(PE), i .. " of " .. N)
+        eq(screenId(PE), IDS[i])
+        check(hasText(c, ALL_SCREENS[i]), "screen " .. i .. " has no title " .. ALL_SCREENS[i])
         eq(has(c, "Back"), i > 1, "Back on screen " .. i)
         eq(has(c, "Skip"), i < N, "Skip on screen " .. i)
         eq(T.labelOf(nextButton(c)), i == 1 and "Start" or i == N and "Finish" or "Next")
         if i < N then goTo(c, 2) end
     end
-    eq(headings, ALL_SCREENS)
+    check(not hasText(c, "Quest icon details"), "the details screen was shown with Quest icons off")
     eq(nextButton(c).peStyle, "on", "Finish is not green")
     c:click(button(c, "Back"))
     c:advance(0.1)
-    eq(title(c), TITLE .. " (" .. (N - 1) .. " of " .. N .. ")")
+    eq(at(PE), (N - 1) .. " of " .. N)
     c:assertClean("screens")
 end)
 
-test("setup: every feature of this build has a switch on some screen, and the new choices are explained", function()
+-- One dot per screen between Skip and Next, the current one gold.
+local function dots(c)
+    local out = {}
+    for _, ch in ipairs(c._state(guide(c).content).children) do
+        if ch.disc and ch:IsShown() then out[#out + 1] = ch end
+    end
+    return out
+end
+
+test("setup: one dot per screen between Skip and Next, the current one gold", function()
+    local c, PE = T.new({})
+    open(c, PE)
+    for i = 1, N do
+        local list = dots(c)
+        eq(#list, N, "dots on screen " .. i)
+        for k, dot in ipairs(list) do eq(dot.peCurrent == true, k == i, "dot " .. k .. " on screen " .. i) end
+        local _, _, dotTop = c._rect(list[1])
+        local _, _, _, nextBottom = c._rect(nextButton(c))
+        check(dotTop > nextBottom, "the dots are not on the bottom row")
+        if i < N then goTo(c, 2) end
+    end
+    c:assertClean("dots")
+end)
+
+-- The spec's skip: "Quest icon details" only while Quest icons is on.
+test("setup: the Quest icon details screen shows only while Quest icons is on, as screen 3 of 9", function()
+    if not T.questieDB then return end
+    local c, PE = T.new({ quest = true })
+    open(c, PE)
+    eq(at(PE), "1 of 8")
+    goTo(c, 2)
+    eq(screenId(PE), "questIcons")
+    c:click(switch(c, "questIcons"))
+    c:advance(0.1)
+    eq(at(PE), "2 of 9", "switching Quest icons on did not add the details screen")
+    eq(#dots(c), 9)
+    goTo(c, 2)
+    eq(screenId(PE), "questDetails")
+    check(hasText(c, "Quest icon details"), "no details title")
+    for _, name in ipairs({ "Merge icons closer than", "Spots per objective", "Blizzard blue quest haze", "What the icons mean",
+        "Kill", "Loot", "Use", "Explore", "Turn in" }) do
+        check(textWith(c, name), "the details screen has no " .. name)
+    end
+    check(not textWith(c, "Show icons for"), "a first-screen row is on the details screen")
+    check(not has(c, "Open"), "the Icon key row is in the guide")
+    goTo(c, 2)
+    eq(screenId(PE), "questArrow")
+    eq(at(PE), "4 of 9")
+    -- off again: skipped
+    PE:SetModuleEnabled("questIcons", false)
+    c:advance(0.1)
+    eq(at(PE), "3 of 8")
+    c:click(button(c, "Back"))
+    c:advance(0.1)
+    eq(screenId(PE), "questIcons")
+    c:assertClean("details screen")
+end)
+
+test("setup: every feature of this build has a switch on some screen, and the old long texts are gone", function()
     local c, PE = T.new({})
     open(c, PE)
     local seen = {}
@@ -272,25 +360,36 @@ test("setup: every feature of this build has a switch on some screen, and the ne
             if b.peKey then seen[b.peKey] = (seen[b.peKey] or 0) + 1 end
         end
         for _, t in ipairs(texts(c)) do all[#all + 1] = t end
-        for key, at in pairs(SCREEN_OF) do
-            if at == i then switch(c, key) end
+        for key, screen in pairs(SCREEN_OF) do
+            if screen == i then switch(c, key) end
         end
-        -- The stepper is a real control now, shown with Chat from round button off (it is marked always).
-        if i == AT.chat then c:click(shownButtons(c, guide(c), "-")[1]); c:click(shownButtons(c, guide(c), "+")[1]) end
         if i < N then goTo(c, 2) end
     end
     for _, mod in ipairs(PE.moduleList) do
         eq(seen[mod.key], 1, "switches for " .. mod.key)
     end
     local joined = table.concat(all, "\n")
-    -- 0.8.0: "D-pad to Sort" is no longer a choice; the Bags screen names Bag sorter's two toggles.
-    for _, part in ipairs({ "Sort button", "Sort stick", "Bag size", "Bag icons", "One row at the top", "Chat text size" }) do
-        check(joined:find(part, 1, true), "no screen mentions \"" .. part .. "\"")
+    for _, part in ipairs({ "Bag icons", "Sort stick", "Bag sorter", "Chat from round button", "Move the round button",
+        "bottom row", "Pocket Essentials - Setup guide" }) do
+        check(not joined:find(part, 1, true), "a screen still says \"" .. part .. "\"")
     end
-    -- The owner tested the d-pad route in 0.6.0 and it works, so the text no longer calls it untested.
-    check(not joined:find("untested", 1, true), "the Bags screen still calls the d-pad route untested")
-    check(joined:find("Whenever the Sort button shows, press Left", 1, true),
-        "the Bags screen does not say the d-pad route works whenever the Sort button shows")
+end)
+
+test("setup: the cards carry the spec's How: lines for quest icons, quest arrow, chat picker and menu background", function()
+    local c, PE = T.new({})
+    open(c, PE)
+    local all = {}
+    for i = 1, N do
+        for _, t in ipairs(texts(c)) do all[#all + 1] = t end
+        if i < N then goTo(c, 2) end
+    end
+    local joined = table.concat(all, "\n")
+    for _, line in ipairs({ "Tap an icon on the map to see what it is for.",
+        "Focus a quest in your quest log, and the arrow points to it.",
+        "Tap PE, pick who to talk to, then press A to type.",
+        "For menus like Track, Focus and Share on a quest." }) do
+        check(joined:find("How: |r" .. line, 1, true), "no How: line \"" .. line .. "\"")
+    end
 end)
 
 test("setup: a switch calls the same path as the settings switch", function()
@@ -301,37 +400,37 @@ test("setup: a switch calls the same path as the settings switch", function()
     c:advance(0.1)
     check(PE:IsModuleEnabled("sellJunk"), "the switch did not turn Sell junk on")
     eq(PE.db.enabled.sellJunk, true)
-    eq(T.labelOf(switch(c, "sellJunk")), "ON")
+    eq(T.labelOf(switch(c, "sellJunk")), "On")
     eq(switch(c, "sellJunk").peStyle, "on")
-    eq(T.labelOf(switch(c, "repair")), "OFF")
+    eq(T.labelOf(switch(c, "repair")), "Off")
     c:click(switch(c, "sellJunk"))
     c:advance(0.1)
     check(not PE:IsModuleEnabled("sellJunk"), "the switch did not turn Sell junk off")
     eq(PE.db.enabled.sellJunk, false)
-    eq(T.labelOf(switch(c, "sellJunk")), "OFF")
+    eq(T.labelOf(switch(c, "sellJunk")), "Off")
     c:click(switch(c, "repair"))
     c:advance(0.1)
     -- the settings window shows the same
-    PE:OpenSettings()
+    PE:OpenSettings("vendors")
     c:advance(0.2)
     check(not isOpen(c), "the guide stayed open under the settings")
-    local on, off = 0, 0
+    local on = 0
     for _, b in ipairs(shownButtons(c, settingsPanel(c))) do
-        if T.labelOf(b) == "ON" then on = on + 1 elseif T.labelOf(b) == "OFF" then off = off + 1 end
+        if b.peKey and T.labelOf(b) == "On" then on = on + 1 end
     end
-    eq(on, 1, "switches reading ON in the settings")
+    eq(on, 1, "switches reading On in the settings")
     check(PE:IsModuleEnabled("repair") and not PE:IsModuleEnabled("sellJunk"), "the wrong feature is on")
     c:assertClean("switch")
 end)
 
-test("setup: a feature switched on in the settings shows ON in the guide", function()
+test("setup: a feature switched on in the settings shows On in the guide", function()
     local c, PE = T.new({})
     open(c, PE)
     goTo(c, AT.vendors)
-    eq(T.labelOf(switch(c, "repair")), "OFF")
+    eq(T.labelOf(switch(c, "repair")), "Off")
     PE:SetModuleEnabled("repair", true)
     c:advance(0.1)
-    eq(T.labelOf(switch(c, "repair")), "ON")
+    eq(T.labelOf(switch(c, "repair")), "On")
     c:assertClean("redraw hook")
 end)
 
@@ -343,8 +442,8 @@ test("setup: quest switches are dimmed with the reason when QuestieDB is missing
     check(type(reason) == "string" and reason:find("QuestieDB", 1, true), "no reason for the blocked quest features")
     for _, key in ipairs({ "questIcons", "questArrow" }) do
         goTo(c, 2)
-        eq(title(c), TITLE .. " (" .. SCREEN_OF[key] .. " of " .. N .. ")")
-        eq(T.labelOf(switch(c, key)), "OFF")
+        eq(at(PE), SCREEN_OF[key] .. " of " .. N)
+        eq(T.labelOf(switch(c, key)), "Off")
         eq(switch(c, key).peStyle, "disabled")
         c:click(switch(c, key))
         c:advance(0.1)
@@ -360,17 +459,17 @@ test("setup: quest switches are dimmed with the reason when QuestieDB is missing
         end
     end
     -- Menu background does not need QuestieDB
-    goTo(c, 2)
+    goTo(c, AT.vendors - AT.questArrow + 1)
     eq(switch(c, "menuBg").peStyle, "off")
     c:click(switch(c, "menuBg"))
     c:advance(0.1)
     check(PE:IsModuleEnabled("menuBg"), "Menu background did not switch on")
-    eq(T.labelOf(switch(c, "menuBg")), "ON")
+    eq(T.labelOf(switch(c, "menuBg")), "On")
     c:assertClean("blocked switches")
 end)
 
-test("setup: a row whose feature is not registered is left out, and an empty screen is skipped", function()
-    -- a copy of the addon whose TOC leaves Vendor.lua out
+test("setup: a card whose feature is not registered is left out, and a screen with no card left is skipped", function()
+    -- a copy of the addon whose TOC leaves Vendor.lua and MenuBackground.lua out
     local dir = (os.getenv("TMPDIR") or "/tmp"):gsub("/+$", "") .. "/pe-setup-test-" .. tostring(os.time()) .. "-" .. tostring(math.random(1e6))
     local function sh(cmd) return os.execute(cmd) end
     sh("mkdir -p '" .. dir .. "' && cp -R '" .. T.addonDir .. "/.' '" .. dir .. "/'")
@@ -381,62 +480,87 @@ test("setup: a row whose feature is not registered is left out, and an empty scr
         f:close()
         local changed, n = toc:gsub("Vendor%.lua\r?\n", "")
         eq(n, 1, "Vendor.lua lines in the TOC")
+        changed, n = changed:gsub("MenuBackground%.lua\r?\n", "")
+        eq(n, 1, "MenuBackground.lua lines in the TOC")
         f = assert(io.open(path, "wb"))
         f:write(changed)
         f:close()
         local c, PE = T.new({ addonDir = dir })
-        check(PE:GetModule("sellJunk") == nil and PE:GetModule("repair") == nil, "the vendor features still registered")
+        check(PE:GetModule("sellJunk") == nil and PE:GetModule("repair") == nil and PE:GetModule("menuBg") == nil,
+            "the vendor and menu features still registered")
         open(c, PE)
-        local headings = {}
+        local seenTitles = {}
         for i = 1, N - 1 do
-            eq(title(c), TITLE .. " (" .. i .. " of " .. (N - 1) .. ")")
+            eq(at(PE), i .. " of " .. (N - 1))
             for _, name in ipairs(ALL_SCREENS) do
-                if hasText(c, name) then headings[#headings + 1] = name end
+                if hasText(c, name) then seenTitles[#seenTitles + 1] = name end
             end
             if i < N - 1 then goTo(c, 2) end
         end
-        eq(headings, { "Welcome to Pocket Essentials", "Quest icons", "Quest arrow", "Menu background", "Bags", "Chat",
-            "The round button and Move on screen", "All set" })
+        check(not table.concat(seenTitles, "|"):find("Vendors and menus", 1, true), "the empty screen was shown")
         eq(T.labelOf(nextButton(c)), "Finish")
-        c:assertClean("a build without the vendor features")
+        c:assertClean("a build without the vendor and menu features")
     end)
     if dir:find("pe-setup-test-", 1, true) then sh("rm -rf '" .. dir .. "'") end
     if not ok then error(err, 0) end
 end)
 
-test("setup: the finish screen lists what is on and what is off", function()
+test("setup: the finish screen lists what is on and what is off, then the Tap, Hold and Move things tiles", function()
     local c, PE = T.new({})
     open(c, PE)
     goTo(c, N)
-    check(hasText(c, "Nothing is switched on yet. That is fine: you can do it later in the settings."),
-        "no \"nothing is on\" sentence")
-    local off = textWith(c, "Still off:")
-    check(off, "no Still off line with everything off")
+    check(hasText(c, "|cff59eb73On: |rnothing yet"), "no \"On: nothing yet\" line")
+    local off = textWith(c, "Off: |r")
+    check(off, "no Off line with everything off")
     for _, mod in ipairs(PE.moduleList) do
-        check(off:find(mod.label, 1, true), "Still off does not name " .. mod.label)
+        check(off:find(mod.label, 1, true), "Off does not name " .. mod.label)
     end
-    check(not textWith(c, "Switched on:"), "a Switched on line with nothing on")
 
     PE:SetModuleEnabled("sellJunk", true)
     PE:SetModuleEnabled("chat", true)
     c:advance(0.1)
-    check(hasText(c, "Switched on: Sell junk automatically, Chat picker."), "the Switched on line is wrong: "
-        .. tostring(textWith(c, "Switched on:")))
-    eq(textWith(c, "Still off:"), "Still off: Quest icons, Quest arrow, Bag sorting, Bigger bag, Repair automatically, Menu background.")
-    check(textWith(c, "\"Setup guide\" button at the bottom of the settings"), "no closing paragraph")
+    check(hasText(c, "|cff59eb73On: |rAuto sell junk, Chat picker"), "the On line is wrong: " .. tostring(textWith(c, "On: |r")))
+    eq(textWith(c, "Off: |r"), "|cff9e9ea3Off: |rQuest icons, Quest arrow, Bag sorting, Bigger bag, Auto repair, Menu background")
+    for _, t in ipairs({ "Tap", "Hold", "Move things", "Opens the settings, or Chat picker when it is on.",
+        "Always opens the settings.", "Settings, General tab." }) do
+        check(hasText(c, t), "the tiles have no \"" .. t .. "\"")
+    end
     check(not has(c, "Reload now"), "a reload is offered although nothing asked for one")
     c:assertClean("finish screen")
 end)
 
-test("setup: with every feature on the finish screen has no Still off line", function()
+test("setup: the three tiles have the same width and height and sit side by side", function()
+    local c, PE = T.new({})
+    open(c, PE)
+    goTo(c, N)
+    local tops, lefts = {}, {}
+    for _, name in ipairs({ "Tap", "Hold", "Move things" }) do
+        local found
+        walk(c, guide(c), function(w)
+            for _, r in ipairs(c._state(w).regions) do
+                if c._state(r).text == name and r:IsVisible() then found = r end
+            end
+        end)
+        check(found, "no tile title " .. name)
+        local l, r, t = c._rect(found)
+        tops[#tops + 1], lefts[#lefts + 1] = t, l
+        eq(r - l > 0, true)
+    end
+    check(math.abs(tops[1] - tops[2]) < 0.01 and math.abs(tops[2] - tops[3]) < 0.01, "the titles are not on one line")
+    check(lefts[1] < lefts[2] and lefts[2] < lefts[3], "the tiles are not side by side")
+    check(math.abs((lefts[2] - lefts[1]) - (lefts[3] - lefts[2])) < 0.01, "the tiles are not the same width")
+    c:assertClean("tiles")
+end)
+
+test("setup: with every feature on the finish screen has no Off line", function()
     if not T.questieDB then return end -- the quest features cannot be on without QuestieDB
     local c, PE = T.new({ quest = true, gamepadUI = true })
     for _, mod in ipairs(PE.moduleList) do PE:SetModuleEnabled(mod.key, true) end
     c:advance(0.5)
     open(c, PE)
-    goTo(c, N)
-    check(textWith(c, "Switched on: Quest icons, Quest arrow, Bag sorting"), "no Switched on line")
-    check(not textWith(c, "Still off:"), "a Still off line with everything on")
+    goTo(c, N + 1) -- nine screens with Quest icons on
+    check(textWith(c, "On: |rQuest icons, Quest arrow, Bag sorting"), "no On line")
+    check(not textWith(c, "Off: |r"), "an Off line with everything on")
 end)
 
 test("setup: the finish screen offers a reload when a feature asked for one", function()
@@ -445,9 +569,9 @@ test("setup: the finish screen offers a reload when a feature asked for one", fu
     goTo(c, AT.bags)
     c:click(switch(c, "bags"))
     c:advance(0.2)
-    check(#PE.reloadReasons > 0, "Bag sorter asked for no reload (the test's premise)")
+    check(#PE.reloadReasons > 0, "Bag sorting asked for no reload (the test's premise)")
     goTo(c, N - AT.bags + 1)
-    eq(title(c), TITLE .. " (" .. N .. " of " .. N .. ")")
+    eq(at(PE), N .. " of " .. N)
     check(textWith(c, "Bag sorting: "), "the reason for the reload is not shown")
     local before = #c:callsTo("C_UI.Reload")
     eq(PE.db.setup, "skipped") -- what T.new stored
@@ -459,7 +583,7 @@ test("setup: the finish screen offers a reload when a feature asked for one", fu
 end)
 
 -- Review of 0.4.0, point 3: the click runs inside PE:Safe, so an error in it lands on our
--- Errors page and never reaches the game; Finish is still stored first (rule 11).
+-- Errors page and never reaches the game; Finish is still stored first.
 test("setup: an error under Reload now does not escape the click, and Finish is already stored", function()
     local c, PE = T.new({ gamepadUI = false, setup = function(c) c.world.cvars.combinedBags = "0" end })
     open(c, PE)
@@ -484,7 +608,178 @@ test("setup: an error under Reload now does not escape the click, and Finish is 
 end)
 
 ---------------------------------------------------------------------------
--- Closing and remembering (rule 2)
+-- The screens' own cards
+---------------------------------------------------------------------------
+
+test("setup: Welcome has the play-style row and the controls card with its three glyphs", function()
+    local c, PE = T.new({ on = { "bags" } })
+    open(c, PE)
+    for _, t in ipairs({ "A few helpers for playing on a handheld. They all start off: switch on the ones you want.",
+        "You can change everything later in the settings.", "How do you play?", "Getting around these windows",
+        "Move the blue highlight", "Press the highlighted button", "Close the window",
+        "Or just tap any button on the screen." }) do
+        check(hasText(c, t), "Welcome has no \"" .. t .. "\"")
+    end
+    check(hasText(c, "A") and hasText(c, "B"), "no round A and B glyphs")
+    c:click(button(c, "Controller"))
+    c:advance(0.1)
+    check(hasText(c, "Touch works too, any time."), "the controller line did not replace the touch line")
+    check(not hasText(c, "Or just tap any button on the screen."), "the touch line stayed")
+    c:assertClean("welcome cards")
+end)
+
+-- The live round button beside its two choices.
+local function hubPreview(c)
+    local found
+    walk(c, guide(c), function(w)
+        if w.outer and w.word and w:IsVisible() and c._state(w.word).text == "PE" then
+            local l, r = c._rect(w)
+            if not found or (r - l) > found.width then found = { frame = w, width = r - l } end
+        end
+    end)
+    return found and found.frame
+end
+
+test("setup: Round button and chat shows a live round button that follows the colour and the button size", function()
+    local c, PE = T.new({})
+    open(c, PE)
+    goTo(c, AT.chat)
+    check(hasText(c, "The PE button is always on screen. With Chat picker on, a tap opens the chat window."), "no lead line")
+    check(textWith(c, "Colour") and textWith(c, "Size of all Pocket Essentials buttons"), "no Colour or size rows")
+    switch(c, "chat")
+    local preview = hubPreview(c)
+    check(preview, "no round button picture")
+    local function width() local l, r = c._rect(hubPreview(c)); return r - l end
+    eq(math.abs(width() - PE.UI:Metrics().hub * 1.6) < 0.01, true, "the picture is not 1.6 times the round button")
+    local function ringColor() return { c._state(hubPreview(c).outer.texture).vertexColor } end
+    local gold = ringColor()
+    c:click(button(c, "Horde"))
+    c:advance(0.1)
+    eq(PE.db.ui.hubColor, "horde")
+    check(T.show(ringColor()) ~= T.show(gold), "the picture did not change colour")
+    eq(button(c, "Horde").peStyle, "segmentOn")
+    c:click(button(c, "Large"))
+    c:advance(0.2)
+    eq(PE.db.ui.size, "large")
+    eq(math.abs(width() - PE.UI:Metrics().hub * 1.6) < 0.01, true, "the picture did not follow the button size")
+    c:assertClean("round button card")
+end)
+
+-- The labels of the gold boxes in the screen picture.
+test("setup: Your screen shows a gold box for each of the three pieces, with Move things now beside it", function()
+    local c, PE = T.new({})
+    open(c, PE)
+    goTo(c, AT.layout)
+    check(hasText(c, "This is where each piece sits to start with. Move any of them to suit your screen."), "no lead line")
+    for _, t in ipairs({ "Quest arrow", "Press A to type", "Round button", "Gold boxes show where each piece starts.",
+        "You can do this later too: Settings, General tab." }) do
+        check(hasText(c, t), "Your screen has no \"" .. t .. "\"")
+    end
+    button(c, "Move things now")
+    c:assertClean("your screen")
+end)
+
+test("setup: a moved round button moves its box in the screen picture", function()
+    local c, PE = T.new({})
+    open(c, PE)
+    goTo(c, AT.layout)
+    local function labelTop(name)
+        local found
+        walk(c, guide(c), function(w)
+            for _, r in ipairs(c._state(w).regions) do
+                if c._state(r).text == name and r:IsVisible() then found = r end
+            end
+        end)
+        local _, _, t = c._rect(found)
+        return t
+    end
+    local before = labelTop("Round button")
+    PE.db.ui.moved.hub = { x = 0, y = 200 }
+    PE:RefreshSettings()
+    c:advance(0.1)
+    check(labelTop("Round button") > before + 1, "the box did not follow the round button up")
+end)
+
+test("setup: Move things now hides the guide and opens Move on screen; closing it brings the guide back on the same screen", function()
+    local c, PE = T.new({ firstRun = true })
+    c:advance(2)
+    goTo(c, AT.layout)
+    c:click(button(c, "Move things now"))
+    c:advance(0.1)
+    check(not isOpen(c), "the guide stayed open")
+    check(moveOpen(c), "Move on screen did not open")
+    eq(linesWith(c, "Setup guide closed"), 0, "opening Move printed the closed line")
+    eq(PE.db.setup, nil, "opening Move counted as an answer")
+    c:click(shownButtons(c, movePanel(c), "Close")[1])
+    c:advance(0.1)
+    check(not moveOpen(c), "Move on screen did not close")
+    check(isOpen(c), "the guide did not come back")
+    eq(at(PE), AT.layout .. " of " .. N)
+    eq(bindings(c), ALL_KEYS)
+    -- B closes Move the same way
+    c:click(button(c, "Move things now"))
+    c:advance(0.1)
+    press(c, "B")
+    c:advance(0.1)
+    check(isOpen(c), "the guide did not come back after B")
+    eq(at(PE), AT.layout .. " of " .. N)
+    c:assertClean("move things now")
+end)
+
+test("setup: Move the arrow in the guide behaves like Move things now, with the arrow picked", function()
+    if not T.questieDB then return end
+    local c, PE = T.new({ quest = true, on = { "questArrow" } })
+    open(c, PE)
+    goTo(c, AT.questArrow)
+    eq(screenId(PE), "questArrow")
+    c:click(button(c, "Move the arrow"))
+    c:advance(0.1)
+    check(not isOpen(c), "the guide stayed open")
+    check(moveOpen(c), "Move on screen did not open")
+    check(shownButtons(c, movePanel(c), "Quest arrow")[1].peSelected, "the arrow is not picked")
+    c:click(shownButtons(c, movePanel(c), "Close")[1])
+    c:advance(0.1)
+    check(isOpen(c), "the guide did not come back")
+    eq(screenId(PE), "questArrow")
+    c:assertClean("move the arrow")
+end)
+
+test("setup: the guide does not come back over another window that closed Move on screen", function()
+    local c, PE = T.new({})
+    open(c, PE)
+    goTo(c, AT.layout)
+    c:click(button(c, "Move things now"))
+    c:advance(0.1)
+    PE:OpenSettings()
+    c:advance(0.2)
+    check(not moveOpen(c), "Move on screen stayed open")
+    check(settingsPanel(c):IsShown(), "the settings did not open")
+    check(not isOpen(c), "the guide came back over the settings")
+    PE:CloseSettings()
+    c:advance(0.2)
+    check(not isOpen(c), "the guide came back later")
+    c:assertClean("move then settings")
+end)
+
+test("setup: a fight while Move on screen is open brings the guide back on the same screen after the fight", function()
+    local c, PE = T.new({})
+    open(c, PE)
+    goTo(c, AT.layout)
+    c:click(button(c, "Move things now"))
+    c:advance(0.1)
+    c:enterCombat()
+    c:advance(0.1)
+    check(not moveOpen(c), "Move on screen stayed open in a fight")
+    check(not isOpen(c), "the guide came back in a fight")
+    c:leaveCombat()
+    c:advance(0.1)
+    check(isOpen(c), "the guide did not come back after the fight")
+    eq(at(PE), AT.layout .. " of " .. N)
+    c:assertClean("move and fight")
+end)
+
+---------------------------------------------------------------------------
+-- Closing and remembering
 ---------------------------------------------------------------------------
 
 test("setup: Finish remembers \"finished\" and closes", function()
@@ -578,33 +873,25 @@ test("setup: the answer is not saved when the saved settings did not load", func
 end)
 
 ---------------------------------------------------------------------------
--- Reopening (rule 3)
+-- Reopening
 ---------------------------------------------------------------------------
 
-test("setup: the settings' bottom row has Setup guide after Move on screen; it closes the settings and opens the guide at screen 1", function()
+test("setup: the General tab's Setup guide row closes the settings and opens the guide at screen 1", function()
     local c, PE = T.new({})
-    PE:OpenSettings()
-    c:advance(0.2)
+    local open2 = generalOpenButtons(c, PE)
     local settings = settingsPanel(c)
-    local setupBtn = shownButtons(c, settings, "Setup guide")
-    local moveBtn = shownButtons(c, settings, "Move on screen")
-    eq(#setupBtn, 1, "Setup guide buttons in the settings")
-    eq(#moveBtn, 1)
-    local mx, my = moveBtn[1]:GetCenter()
-    local sx, sy = setupBtn[1]:GetCenter()
-    check(sx > mx or sy < my, "Setup guide is not after Move on screen")
-    c:click(setupBtn[1])
+    eq(#open2, 2, "the General tab does not have its two Open buttons")
+    check(textsOf(c, settings)[1] ~= nil, "no texts in the settings")
+    c:click(open2[2])
     c:advance(0.2)
     check(not settings:IsShown(), "the settings stayed open")
     check(isOpen(c), "the guide did not open")
-    eq(title(c), TITLE .. " (1 of " .. N .. ")")
+    eq(at(PE), "1 of " .. N)
     -- reopened from the middle: back at the first screen
     goTo(c, 3)
-    PE:OpenSettings()
+    c:click(generalOpenButtons(c, PE)[2])
     c:advance(0.2)
-    c:click(shownButtons(c, settings, "Setup guide")[1])
-    c:advance(0.2)
-    eq(title(c), TITLE .. " (1 of " .. N .. ")")
+    eq(at(PE), "1 of " .. N)
     c:assertClean("open from settings")
 end)
 
@@ -659,14 +946,14 @@ test("setup: opening the chat picker closes the guide", function()
 end)
 
 ---------------------------------------------------------------------------
--- Fights (rule 4)
+-- Fights
 ---------------------------------------------------------------------------
 
 test("setup: a fight starting hides it; it comes back at the same screen afterwards", function()
     local c, PE = T.new({ firstRun = true })
     c:advance(2)
     goTo(c, 3)
-    eq(title(c), TITLE .. " (3 of " .. N .. ")")
+    eq(at(PE), "3 of " .. N)
     c:enterCombat()
     check(not isOpen(c), "the guide stayed on screen in a fight")
     eq(bindings(c), nil, "the controller keys were kept in a fight")
@@ -676,7 +963,7 @@ test("setup: a fight starting hides it; it comes back at the same screen afterwa
     c:leaveCombat()
     c:advance(0.1)
     check(isOpen(c), "the guide did not come back after the fight")
-    eq(title(c), TITLE .. " (3 of " .. N .. ")")
+    eq(at(PE), "3 of " .. N)
     check(hasText(c, "Quest arrow"), "it came back at another screen")
     eq(bindings(c), ALL_KEYS)
     -- only once: a second fight end does nothing more
@@ -705,7 +992,7 @@ test("setup: it does not come back after a fight if another window was opened me
     c:assertClean("fight with another window")
 end)
 
--- Review of 0.4.0, point 2 (rule 12): the game hides its whole interface for a cinematic or a
+-- Review of 0.4.0, point 2: the game hides its whole interface for a cinematic or a
 -- full-screen view. The guide's OnHide runs although the guide itself is still "shown"; that is
 -- not a closing. When the interface comes back the guide is on the screen again and must hide
 -- for a fight as before.
@@ -721,7 +1008,7 @@ test("setup: the game hiding its whole interface is not a closing; back on scree
     c.UIParent:Show()
     c:advance(0.1)
     check(guide(c):IsVisible(), "the guide did not come back with the interface")
-    eq(title(c), TITLE .. " (3 of " .. N .. ")")
+    eq(at(PE), "3 of " .. N)
     eq(bindings(c), ALL_KEYS)
     c:enterCombat()
     check(not isOpen(c), "the guide stayed on screen in a fight after the interface came back")
@@ -729,7 +1016,7 @@ test("setup: the game hiding its whole interface is not a closing; back on scree
     c:leaveCombat()
     c:advance(0.1)
     check(isOpen(c), "the guide did not come back after the fight")
-    eq(title(c), TITLE .. " (3 of " .. N .. ")")
+    eq(at(PE), "3 of " .. N)
     -- a real closing still says its line, once
     c:click(button(c, "Close"))
     eq(linesWith(c, "Setup guide closed"), 1)
@@ -754,7 +1041,7 @@ test("setup: a fight that starts while the interface is hidden hides the guide w
     c:leaveCombat()
     c:advance(0.1)
     check(isOpen(c), "the guide did not come back after the fight")
-    eq(title(c), TITLE .. " (2 of " .. N .. ")")
+    eq(at(PE), "2 of " .. N)
     eq(c.blocked, {})
     c:assertClean("interface back in a fight")
 end)
@@ -769,7 +1056,7 @@ test("setup: a fight that starts and ends while the interface is hidden changes 
     c.UIParent:Show()
     c:advance(0.1)
     check(isOpen(c) and guide(c):IsVisible(), "the guide is gone")
-    eq(title(c), TITLE .. " (2 of " .. N .. ")")
+    eq(at(PE), "2 of " .. N)
     eq(linesWith(c, "Setup guide closed"), 0)
     c:enterCombat()
     check(not isOpen(c), "the guide stayed on screen in a fight")
@@ -780,7 +1067,7 @@ test("setup: a fight that starts and ends while the interface is hidden changes 
 end)
 
 ---------------------------------------------------------------------------
--- Controller (rule 8)
+-- Controller
 ---------------------------------------------------------------------------
 
 test("setup: the d-pad reaches every button; A presses; B closes", function()
@@ -790,7 +1077,7 @@ test("setup: the d-pad reaches every button; A presses; B closes", function()
     eq(bindings(c), ALL_KEYS)
     check(panel.peNavFocus == button(c, "Start"), "the highlight does not start on Start (0.8.0)")
     panel:NavSetFocus(nil) -- the rest of this test presses the d-pad from nothing
-    goTo(c, AT.vendors) -- Vendors: two switches
+    goTo(c, AT.vendors) -- Vendors and menus: three switches
     press(c, "DOWN")
     check(panel.peNavFocus == switch(c, "sellJunk"), "DOWN from nothing did not land on the first button")
     local reached = { [panel.peNavFocus] = 1 }
@@ -802,16 +1089,17 @@ test("setup: the d-pad reaches every button; A presses; B closes", function()
         reached[b] = 1
         count = count + 1
     end
+    local paging = 0
     for _, b in ipairs(shownButtons(c, panel)) do
-        local paging = T.labelOf(b) == "^" or T.labelOf(b) == "v"
-        check(reached[b] or paging, "the d-pad never reached " .. T.labelOf(b))
+        check(reached[b], "the d-pad never reached " .. T.labelOf(b))
+        if T.labelOf(b) == "^" or T.labelOf(b) == "v" then paging = paging + 1 end
     end
-    eq(count, 6, "buttons in the d-pad's round: two switches, Back, Skip, Next, Close")
+    eq(count - paging, 7, "buttons in the d-pad's round: three switches, Back, Skip, Next, Close")
     -- A on Next moves a screen
     while panel.peNavFocus ~= nextButton(c) do press(c, "RIGHT") end
     press(c, "A")
     c:advance(0.1)
-    eq(title(c), TITLE .. " (" .. AT.chat .. " of " .. N .. ")")
+    eq(at(PE), AT.chat .. " of " .. N)
     press(c, "B")
     check(not isOpen(c), "B did not close the guide")
     c:assertClean("d-pad")
@@ -829,7 +1117,7 @@ test("setup: the highlight stays on Next from screen to screen, and on a switch 
     for i = 2, N do
         press(c, "A")
         c:advance(0.1)
-        eq(title(c), TITLE .. " (" .. i .. " of " .. N .. ")")
+        eq(at(PE), i .. " of " .. N)
         check(panel.peNavFocus == nextBtn and nextBtn.peNavFocused ~= false, "the highlight left Next on screen " .. i)
     end
     -- Back to the first screen with the highlight on Back: Back goes away, the highlight goes to Next
@@ -839,7 +1127,7 @@ test("setup: the highlight stays on Next from screen to screen, and on a switch 
         press(c, "A")
         c:advance(0.1)
     end
-    eq(title(c), TITLE .. " (1 of " .. N .. ")")
+    eq(at(PE), "1 of " .. N)
     check(panel.peNavFocus == nextBtn, "the highlight did not go to Start when Back went away")
     -- a switch keeps the highlight after it is pressed
     goTo(c, AT.vendors)
@@ -849,7 +1137,7 @@ test("setup: the highlight stays on Next from screen to screen, and on a switch 
     c:advance(0.1)
     check(PE:IsModuleEnabled("repair"), "A on the switch did not turn Repair on")
     check(panel.peNavFocus == switch(c, "repair"), "the highlight left the switch")
-    eq(T.labelOf(panel.peNavFocus), "ON")
+    eq(T.labelOf(panel.peNavFocus), "On")
     c:assertClean("highlight")
 end)
 
@@ -867,7 +1155,7 @@ test("setup: closing gives the d-pad back", function()
 end)
 
 ---------------------------------------------------------------------------
--- Nothing runs while closed (rule 9), sizes, debug log
+-- Nothing runs while closed, sizes, debug log
 ---------------------------------------------------------------------------
 
 local function setupListens(c, PE)
@@ -895,7 +1183,7 @@ test("setup: nothing is built before the first opening, and nothing ticks or lis
 
     open(c, PE)
     check(setupListens(c, PE).PLAYER_REGEN_DISABLED, "not listening for a fight while open")
-    goTo(c, 3)
+    for _ = 2, N do goTo(c, 2) end -- every screen, the screen picture and the tiles too
     c:advance(2)
     eq(c.stats.addonOnUpdate, 0, "something ticked while the guide was open")
     c:click(button(c, "Close"))
@@ -924,14 +1212,14 @@ test("setup: it draws at every button size, and a size change while open keeps i
         c:advance(0.2)
         open(c, PE)
         for i = 1, N do
-            eq(title(c), TITLE .. " (" .. i .. " of " .. N .. ")")
+            eq(at(PE), i .. " of " .. N)
             c:assertClean(size .. ", screen " .. i)
             if i < N then goTo(c, 2) end
         end
         PE:SetUISetting("size", size == "small" and "large" or "small")
         c:advance(0.2)
         check(isOpen(c), "a size change closed the guide")
-        eq(title(c), TITLE .. " (" .. N .. " of " .. N .. ")")
+        eq(at(PE), N .. " of " .. N)
         c:click(button(c, "Close"))
     end
     c:assertClean("sizes")
@@ -949,7 +1237,7 @@ test("setup: Up and Down show only on a screen too long to fit, and a screen tha
             eq(#up, #down, size .. ", screen " .. i .. ": Up and Down go together")
             if #up > 0 then
                 withPaging = withPaging + 1
-                local area = up[1]:GetParent()
+                local area = guide(c).peNavArea
                 check(area:GetRange() > 0, size .. ", screen " .. i .. ": paging buttons on a screen that fits")
                 check(area.viewWidth < guide(c).contentWidth, size .. ", screen " .. i .. ": no room kept for the paging buttons")
             else
@@ -961,7 +1249,7 @@ test("setup: Up and Down show only on a screen too long to fit, and a screen tha
     end
     check(without > 0, "no screen was drawn without paging buttons")
     if os.getenv("SETUP_VERBOSE") then print("screens with paging: " .. withPaging .. ", without: " .. without) end
-    -- The welcome screen is short at every size.
+    -- The welcome screen is short at Medium.
     PE:SetUISetting("size", "medium")
     c:advance(0.2)
     open(c, PE)
@@ -980,7 +1268,7 @@ test("setup: the debug log has the lines of the spec", function()
     c:advance(0.1)
     goTo(c, 3)
     c:click(switch(c, "questArrow"))
-    goTo(c, 2)
+    goTo(c, 3)
     c:click(switch(c, "menuBg"))
     c:advance(0.1)
     c:click(switch(c, "menuBg"))
@@ -997,30 +1285,44 @@ test("setup: the debug log has the lines of the spec", function()
     PE.Setup:Open("settings")
     goTo(c, N)
     c:click(button(c, "Finish"))
-    local all = "screens: welcome, questIcons, questArrow, menuBg, bags, vendors, chat, layout, finish"
+    local all = "screens: welcome, questIcons, questArrow, bags, vendors, chat, layout, finish"
     eq(debugLines(c, "setup"), {
         "first login check: not needed (finished)",
-        "opened (settings)", all, "screen 1 of 9: welcome",
-        "screen 2 of 9: questIcons", "screen 3 of 9: questArrow",
+        "opened (settings)", all, "screen 1 of 8: welcome",
+        "screen 2 of 8: questIcons", "screen 3 of 8: questArrow",
         "switch tapped: questArrow cannot be switched on",
-        "screen 4 of 9: menuBg",
+        "screen 4 of 8: bags", "screen 5 of 8: vendors",
         "switch tapped: menuBg -> on",
         "switch tapped: menuBg -> off",
         "closed: fight started, will come back",
         "not opened: in a fight",
-        "opened (after the fight)", all, "screen 4 of 9: menuBg",
+        "opened (after the fight)", all, "screen 5 of 8: vendors",
         "closed: not remembered (Close)",
-        "opened (slash)", all, "screen 1 of 9: welcome",
+        "opened (slash)", all, "screen 1 of 8: welcome",
         "closed: not remembered (B, Escape or another window)",
-        "opened (settings)", all, "screen 1 of 9: welcome",
+        "opened (settings)", all, "screen 1 of 8: welcome",
         "closed: skipped",
-        "opened (settings)", all, "screen 1 of 9: welcome",
-        "screen 2 of 9: questIcons", "screen 3 of 9: questArrow", "screen 4 of 9: menuBg", "screen 5 of 9: bags",
-        "screen 6 of 9: vendors", "screen 7 of 9: chat", "screen 8 of 9: layout", "screen 9 of 9: finish",
+        "opened (settings)", all, "screen 1 of 8: welcome",
+        "screen 2 of 8: questIcons", "screen 3 of 8: questArrow", "screen 4 of 8: bags", "screen 5 of 8: vendors",
+        "screen 6 of 8: chat", "screen 7 of 8: layout", "screen 8 of 8: finish",
         "closed: finished",
     })
     eq(PE.db.setup, "finished")
     c:assertClean("debug lines")
+end)
+
+test("setup: the debug log says when Move on screen takes the guide's place and when it comes back", function()
+    local c, PE = T.new({ saved = { debug = { on = true } } })
+    open(c, PE)
+    goTo(c, AT.layout)
+    c:click(button(c, "Move things now"))
+    c:advance(0.1)
+    c:click(shownButtons(c, movePanel(c), "Close")[1])
+    c:advance(0.1)
+    local lines = debugLines(c, "setup")
+    eq({ lines[#lines - 3], lines[#lines - 2], lines[#lines - 1], lines[#lines] }, {
+        "closed: Move on screen opened, will come back", "opened (after move)",
+        "screens: welcome, questIcons, questArrow, bags, vendors, chat, layout, finish", "screen 7 of 8: layout" })
 end)
 
 test("setup: the debug log says when it waits for a fight at login and when the answer cannot be kept", function()
@@ -1041,12 +1343,14 @@ test("setup: the debug log says when it waits for a fight at login and when the 
 end)
 
 ---------------------------------------------------------------------------
--- Options in the guide (amendment of 2026-11-18, rules 13 to 18)
+-- Options in the guide's cards
 --
--- What a feature's options should look like is worked out here from the
--- feature's own `options` list, not from the drawing code: a choices row is
--- its label and one button per choice, the saved one marked; an action row is
--- one button; a buttons row is its label and its buttons.
+-- What a feature's rows should look like is worked out here from the
+-- feature's own `options` list, not from the drawing code: a row is its name
+-- on the left and its control on the right; a choices row is one segment per
+-- choice, the saved one in the selected style; a number row is "-" and "+";
+-- an action row is one button reading its `button` text ("Open" when
+-- missing); a buttons row is its name and its buttons.
 ---------------------------------------------------------------------------
 
 local SIZES = { "small", "medium", "large" }
@@ -1071,10 +1375,38 @@ local function modsWithOptions(PE)
     return out
 end
 
+-- The screen of the guide that holds this row of a feature: "card" (the
+-- feature's own screen), "details" (Quest icon details) or nil (not in the
+-- guide: rows that open another settings page).
+local function guideScreenOf(mod, opt)
+    if opt.page ~= nil then return nil end
+    if mod.key == "questIcons" then
+        if QUEST_SCREEN_ROWS[opt.label] then return "card" end
+        if QUEST_DETAIL_ROWS[opt.label] then return "details" end
+        return nil
+    end
+    return "card"
+end
+
 local function goToFeature(c, PE, key)
     open(c, PE)
-    goTo(c, SCREEN_OF[key])
+    for _ = 1, 12 do
+        if screenId(PE) == (key == "bagWindow" and "bags" or (key == "sellJunk" or key == "repair" or key == "menuBg") and "vendors"
+            or key) then break end
+        c:click(nextButton(c))
+        c:advance(0.1)
+    end
     return switch(c, key)
+end
+
+-- To the screen that holds a row (the details screen for Quest icons' last rows).
+local function goToRow(c, PE, mod, opt)
+    goToFeature(c, PE, mod.key)
+    if guideScreenOf(mod, opt) == "details" then
+        c:click(nextButton(c))
+        c:advance(0.1)
+        eq(screenId(PE), "questDetails")
+    end
 end
 
 -- The visible text of `top` that is exactly `text`, or starts with `text .. ":"`.
@@ -1094,22 +1426,26 @@ local function textRegion(c, top, text)
     return found
 end
 
--- The buttons drawn after a label, in reading order: same list, below the label.
-local function buttonsAfter(c, top, label)
+-- The buttons of a row: right of its name, left to right. The row's control
+-- is the one whose middle is nearest the name's; its parts share that middle.
+local function rowButtons(c, top, label, PE)
     local at = textRegion(c, top, label)
     if not at then return nil end
-    -- Since 0.6.0 the heading may sit on its buttons' line (left of them), so
-    -- "after" is every button whose middle is not above the heading's top.
-    local _, _, labelTop = c._rect(at.region)
+    local nl, _, nt, nb = c._rect(at.region)
+    local mid = (nt + nb) / 2
+    local reach = PE.UI:Metrics().button
+    local best
+    for _, b in ipairs(shownButtons(c, top)) do
+        local l, _, t, bottom = c._rect(b)
+        local d = math.abs((t + bottom) / 2 - mid)
+        if l > nl and d <= reach and (not best or d < best.d) then best = { d = d, y = (t + bottom) / 2 } end
+    end
     local out = {}
     for _, b in ipairs(shownButtons(c, top)) do
         local l, _, t, bottom = c._rect(b)
-        if b:GetParent() == at.parent and (t + bottom) / 2 <= labelTop + 0.01 then out[#out + 1] = { b = b, l = l, t = t } end
+        if best and l > nl and math.abs((t + bottom) / 2 - best.y) < 1 then out[#out + 1] = { b = b, l = l } end
     end
-    table.sort(out, function(x, y)
-        if math.abs(x.t - y.t) > 0.01 then return x.t > y.t end
-        return x.l < y.l
-    end)
+    table.sort(out, function(x, y) return x.l < y.l end)
     for i = 1, #out do out[i] = out[i].b end
     return out
 end
@@ -1120,69 +1456,52 @@ local function currentOf(mod, opt)
     return mod.opts[opt.key]
 end
 
--- The one button of a toggle row (0.6.0): it reads "label: choice"; nil when not drawn.
-local function toggleButton(c, top, opt)
-    for _, b in ipairs(shownButtons(c, top)) do
-        local text = T.labelOf(b)
-        if text and text:sub(1, #opt.label + 2) == opt.label .. ": " then return b end
-    end
-    return nil
-end
-
--- The buttons of one choices row, in the order of its choices; nil when the row is not drawn.
--- A toggle row has one button, so this is a list of that one.
-local function choiceButtons(c, top, opt)
-    if opt.toggle then
-        local b = toggleButton(c, top, opt)
-        return b and { b } or nil
-    end
-    local after = buttonsAfter(c, top, opt.label)
+-- The segments of one choices row, in the order of its choices; nil when the row is not drawn.
+local function choiceButtons(c, top, mod, opt, PE)
+    local after = rowButtons(c, top, opt.label, PE)
     if not after then return nil end
     local out = {}
     for i, choice in ipairs(opt.choices) do
         local b = after[i]
-        check(b and T.labelOf(b) == tostring(choice.label), "under \"" .. opt.label .. "\" button " .. i .. " reads "
+        check(b and T.labelOf(b) == tostring(choice.label), "under \"" .. opt.label .. "\" segment " .. i .. " reads "
             .. tostring(b and T.labelOf(b)) .. ", expected " .. tostring(choice.label), 2)
         out[i] = b
     end
     return out
 end
 
+local function chosen(b) return b.peStyle == "segmentOn" end
+
 -- Checks that `top` draws (shown = true) or does not draw one option row of a feature.
-local function checkOption(c, top, mod, opt, shown, where)
-    if opt.toggle then
-        local b = toggleButton(c, top, opt)
-        eq(b ~= nil, shown, where .. ": toggle \"" .. opt.label .. "\" drawn")
-        if shown then
-            local current = currentOf(mod, opt)
-            local choice = current == opt.choices[2].value and opt.choices[2] or opt.choices[1]
-            eq(T.labelOf(b), opt.label .. ": " .. tostring(choice.label), where .. ": toggle label")
-            eq(b.peStyle, current == true and "on" or "off", where .. ": toggle style")
-        end
-    elseif type(opt.choices) == "table" then
-        local buttons = choiceButtons(c, top, opt)
+local function checkOption(c, top, mod, opt, shown, where, PE)
+    if type(opt.choices) == "table" then
+        local buttons = choiceButtons(c, top, mod, opt, PE)
         eq(buttons ~= nil, shown, where .. ": \"" .. opt.label .. "\" drawn")
         if shown then
             for i, choice in ipairs(opt.choices) do
-                eq(buttons[i].peSelected == true, currentOf(mod, opt) == choice.value,
+                eq(chosen(buttons[i]), currentOf(mod, opt) == choice.value,
                     where .. ": \"" .. opt.label .. "\" / " .. tostring(choice.label) .. " marked")
             end
         end
     elseif type(opt.number) == "table" or type(opt.stepper) == "function" then
-        -- A number control (0.7.0): the heading, then "-" and "+".
         local region = textRegion(c, top, opt.label)
         eq(region ~= nil, shown, where .. ": \"" .. opt.label .. "\" drawn")
         if shown then
-            local after = buttonsAfter(c, top, opt.label)
+            local after = rowButtons(c, top, opt.label, PE)
             eq({ T.labelOf(after[1]), T.labelOf(after[2]) }, { "-", "+" }, where .. ": the ends of \"" .. opt.label .. "\"")
         end
     elseif type(opt.action) == "function" then
-        eq(#shownButtons(c, top, opt.label), shown and 1 or 0, where .. ": button \"" .. opt.label .. "\"")
+        local region = textRegion(c, top, opt.label)
+        eq(region ~= nil, shown, where .. ": \"" .. opt.label .. "\" drawn")
+        if shown then
+            local after = rowButtons(c, top, opt.label, PE)
+            eq(T.labelOf(after[1]), opt.button or "Open", where .. ": the button of \"" .. opt.label .. "\"")
+        end
     else
         eq(textRegion(c, top, opt.label) ~= nil, shown, where .. ": \"" .. opt.label .. "\" drawn")
         if shown then
             local list = type(opt.buttons) == "function" and opt.buttons(mod) or opt.buttons
-            local after = buttonsAfter(c, top, opt.label)
+            local after = rowButtons(c, top, opt.label, PE)
             local n = 0
             for _, entry in ipairs(list) do
                 if entry.action then
@@ -1196,50 +1515,39 @@ local function checkOption(c, top, mod, opt, shown, where)
     end
 end
 
--- The scrolling list a button of the guide sits in.
-local function areaOf(btn) return btn:GetParent():GetParent():GetParent() end
-
 local function pagingShown(c)
     local up, down = shownButtons(c, guide(c), "^"), shownButtons(c, guide(c), "v")
     eq(#up, #down, "Up and Down go together")
     return #up > 0
 end
 
-test("options: the test's own reading of the screen list matches the features that have options", function()
+test("options: the test's own reading of the screen list matches the features", function()
     local c, PE = newClient()
-    -- every feature with options has a screen to itself; the others may share one. Since 0.8.0
-    -- the Bags screen holds the two bag features (spec 2026-11-18-0.8.0-design, section 2).
-    local SHARED = { [AT.bags] = 2 }
-    local perScreen = {}
     for _, mod in ipairs(PE.moduleList) do
         check(SCREEN_OF[mod.key], "no screen known for " .. mod.key)
-        perScreen[SCREEN_OF[mod.key]] = (perScreen[SCREEN_OF[mod.key]] or 0) + 1
+        check(TAB_OF[mod.key], "no settings tab known for " .. mod.key)
     end
-    local with = modsWithOptions(PE)
-    check(#with >= 4, "fewer than four features have options (the test's premise)")
-    for _, mod in ipairs(with) do
-        eq(perScreen[SCREEN_OF[mod.key]], SHARED[SCREEN_OF[mod.key]] or 1, "features on the screen of " .. mod.key .. ", which has options")
-    end
+    check(#modsWithOptions(PE) >= 4, "fewer than four features have options (the test's premise)")
     open(c, PE)
     for i = 1, N do
-        for key, at in pairs(SCREEN_OF) do
-            if at == i then switch(c, key) end
+        for key, screen in pairs(SCREEN_OF) do
+            if screen == i then switch(c, key) end
         end
         if i < N then goTo(c, 2) end
     end
 end)
 
-test("options: off, a feature shows only its rows marked always; switched on, all of them at once under its switch", function()
+test("options: off, a card shows only its rows marked always; switched on, its rows under its switch", function()
     local c, PE = newClient()
     local sawAlways = false
     for _, mod in ipairs(modsWithOptions(PE)) do
         if canBeOn(PE, mod.key) then
             local key = mod.key
             local sw = goToFeature(c, PE, key)
-            eq(T.labelOf(sw), "OFF")
+            eq(T.labelOf(sw), "Off")
             for _, opt in ipairs(mod.options) do
                 if opt.always then sawAlways = true end
-                checkOption(c, guide(c), mod, opt, opt.always == true, key .. " off")
+                checkOption(c, guide(c), mod, opt, opt.always == true and guideScreenOf(mod, opt) == "card", key .. " off", PE)
             end
             c:click(sw)
             c:advance(0.1)
@@ -1247,18 +1555,18 @@ test("options: off, a feature shows only its rows marked always; switched on, al
             check(switch(c, key) == sw, key .. ": the switch is another button after the press")
             local _, _, _, switchBottom = c._rect(sw)
             for _, opt in ipairs(mod.options) do
-                checkOption(c, guide(c), mod, opt, true, key .. " on")
-                local first = type(opt.action) == "function" and shownButtons(c, guide(c), opt.label)[1]
-                    or opt.toggle and toggleButton(c, guide(c), opt)
-                    or textRegion(c, guide(c), opt.label).region
-                local _, _, top = c._rect(first)
-                check(top < switchBottom, key .. ": \"" .. opt.label .. "\" is not under the switch")
+                local here = guideScreenOf(mod, opt) == "card"
+                checkOption(c, guide(c), mod, opt, here, key .. " on", PE)
+                if here then
+                    local _, _, top = c._rect(textRegion(c, guide(c), opt.label).region)
+                    check(top < switchBottom, key .. ": \"" .. opt.label .. "\" is not under the switch")
+                end
             end
             check(not has(c, "Hide options") and not has(c, "Show options"), key .. ": the guide has a fold button")
             c:click(switch(c, key))
             c:advance(0.1)
             for _, opt in ipairs(mod.options) do
-                checkOption(c, guide(c), mod, opt, opt.always == true, key .. " off again")
+                checkOption(c, guide(c), mod, opt, opt.always == true and guideScreenOf(mod, opt) == "card", key .. " off again", PE)
             end
             c:assertClean(key)
             c:click(button(c, "Close"))
@@ -1273,32 +1581,20 @@ test("options: a feature with both kinds of row shows only the always rows while
     local extra = { key = "testChoice", label = "Only while on", choices = { { value = 1, label = "First" }, { value = 2, label = "Second" } } }
     mod.options[#mod.options + 1] = extra
     goToFeature(c, PE, "chat")
-    checkOption(c, guide(c), mod, mod.options[1], true, "guide, chat off")
-    checkOption(c, guide(c), mod, extra, false, "guide, chat off")
-    PE:OpenSettings()
+    checkOption(c, guide(c), mod, mod.options[1], true, "guide, chat off", PE)
+    checkOption(c, guide(c), mod, extra, false, "guide, chat off", PE)
+    PE:OpenSettings("chat")
     c:advance(0.2)
-    checkOption(c, settingsPanel(c), mod, mod.options[1], true, "settings, chat off")
-    checkOption(c, settingsPanel(c), mod, extra, false, "settings, chat off")
+    checkOption(c, settingsPanel(c), mod, mod.options[1], true, "settings, chat off", PE)
+    checkOption(c, settingsPanel(c), mod, extra, false, "settings, chat off", PE)
     c:click(goToFeature(c, PE, "chat"))
     c:advance(0.1)
-    checkOption(c, guide(c), mod, mod.options[1], true, "guide, chat on")
-    checkOption(c, guide(c), mod, extra, true, "guide, chat on")
-    PE:OpenSettings()
+    checkOption(c, guide(c), mod, mod.options[1], true, "guide, chat on", PE)
+    checkOption(c, guide(c), mod, extra, true, "guide, chat on", PE)
+    PE:OpenSettings("chat")
     c:advance(0.2)
-    checkOption(c, settingsPanel(c), mod, extra, true, "settings, chat on")
+    checkOption(c, settingsPanel(c), mod, extra, true, "settings, chat on", PE)
     c:assertClean("always rows")
-end)
-
-test("options: a fold saved in the settings hides nothing in the guide", function()
-    local c, PE = newClient({ on = { "bags" } })
-    PE.db.ui.folded.bags = true
-    PE:OpenSettings()
-    c:advance(0.2)
-    local mod = PE:GetModule("bags")
-    checkOption(c, settingsPanel(c), mod, mod.options[1], false, "settings, folded")
-    goToFeature(c, PE, "bags")
-    for _, opt in ipairs(mod.options) do checkOption(c, guide(c), mod, opt, true, "guide, folded in the settings") end
-    eq(PE.db.ui.folded.bags, true, "the guide changed the saved fold")
 end)
 
 test("options: the guide draws what the settings window draws for the same feature", function()
@@ -1307,21 +1603,22 @@ test("options: the guide draws what the settings window draws for the same featu
         if canBeOn(PE, mod.key) then PE:SetModuleEnabled(mod.key, true) end
     end
     c:advance(0.5)
+    local compared = 0
     for _, mod in ipairs(modsWithOptions(PE)) do
         if canBeOn(PE, mod.key) then
-            goToFeature(c, PE, mod.key)
-            for _, opt in ipairs(mod.options) do checkOption(c, guide(c), mod, opt, true, mod.key .. " in the guide") end
+            for _, opt in ipairs(mod.options) do
+                if guideScreenOf(mod, opt) then
+                    goToRow(c, PE, mod, opt)
+                    checkOption(c, guide(c), mod, opt, true, mod.key .. " in the guide", PE)
+                    PE:OpenSettings(TAB_OF[mod.key])
+                    c:advance(0.2)
+                    checkOption(c, settingsPanel(c), mod, opt, true, mod.key .. " in the settings", PE)
+                    compared = compared + 1
+                end
+            end
         end
     end
-    -- the settings, one feature at a time (the others folded away), by the same reading
-    for _, mod in ipairs(modsWithOptions(PE)) do
-        if canBeOn(PE, mod.key) then
-            for _, other in ipairs(modsWithOptions(PE)) do PE.db.ui.folded[other.key] = other ~= mod and true or nil end
-            PE:OpenSettings()
-            c:advance(0.2)
-            for _, opt in ipairs(mod.options) do checkOption(c, settingsPanel(c), mod, opt, true, mod.key .. " in the settings") end
-        end
-    end
+    check(compared >= 5, "only " .. compared .. " rows were compared")
     c:assertClean("same drawing")
 end)
 
@@ -1332,9 +1629,8 @@ test("options: a choice pressed in the guide is saved, runs the same OnChange an
         if canBeOn(PE, mod.key) then
             PE:SetModuleEnabled(mod.key, true)
             c:advance(0.3)
-            for _, other in ipairs(modsWithOptions(PE)) do PE.db.ui.folded[other.key] = other ~= mod and true or nil end
             for _, opt in ipairs(mod.options) do
-                if type(opt.choices) == "table" then
+                if type(opt.choices) == "table" and guideScreenOf(mod, opt) then
                     local calls = {}
                     local original = opt.OnChange
                     opt.OnChange = function(...)
@@ -1342,30 +1638,19 @@ test("options: a choice pressed in the guide is saved, runs the same OnChange an
                         if original then return original(...) end
                     end
                     local where = mod.key .. " / " .. opt.label
-                    -- The value a press on this row should save, and the button to press.
-                    -- A toggle has one button that flips; otherwise a choice that is
-                    -- not the saved one (or the only other one, twice over).
+                    -- A choice that is not the saved one (the nth such), and its segment.
                     local function pick(top, nth)
                         local current = currentOf(mod, opt)
-                        if opt.toggle then
-                            local value = opt.choices[1].value -- not "and ... or": the other value may be false
-                            if current == opt.choices[1].value then value = opt.choices[2].value end
-                            return toggleButton(c, top, opt), value
-                        end
                         local others = {}
                         for i, choice in ipairs(opt.choices) do
                             if choice.value ~= current then others[#others + 1] = i end
                         end
                         local i = others[nth] or others[1]
-                        return choiceButtons(c, top, opt)[i], opt.choices[i].value, i
-                    end
-                    local function marked(top, i)
-                        if opt.toggle then return true end -- checkOption reads the toggle's label
-                        return choiceButtons(c, top, opt)[i].peSelected == true
+                        return choiceButtons(c, top, mod, opt, PE)[i], opt.choices[i].value, i
                     end
 
                     -- in the guide
-                    goToFeature(c, PE, mod.key)
+                    goToRow(c, PE, mod, opt)
                     local btn, value, index = pick(guide(c), 1)
                     c:click(btn)
                     c:advance(0.1)
@@ -1375,11 +1660,10 @@ test("options: a choice pressed in the guide is saved, runs the same OnChange an
                     end
                     eq(#calls, 1, where .. ": OnChange calls after the press in the guide")
                     check(calls[1][1] == mod and calls[1][2] == value, where .. ": OnChange got other arguments")
-                    check(marked(guide(c), index), where .. ": not marked in the guide")
-                    checkOption(c, guide(c), mod, opt, true, where .. ", guide after the press")
-                    PE:OpenSettings()
+                    check(chosen(choiceButtons(c, guide(c), mod, opt, PE)[index]), where .. ": not marked in the guide")
+                    PE:OpenSettings(TAB_OF[mod.key])
                     c:advance(0.2)
-                    checkOption(c, settingsPanel(c), mod, opt, true, where .. ", settings after the guide")
+                    checkOption(c, settingsPanel(c), mod, opt, true, where .. ", settings after the guide", PE)
 
                     -- in the settings
                     btn, value, index = pick(settingsPanel(c), 2)
@@ -1388,10 +1672,10 @@ test("options: a choice pressed in the guide is saved, runs the same OnChange an
                     eq(currentOf(mod, opt), value, where .. ": saved after the press in the settings")
                     eq(#calls, 2, where .. ": OnChange calls after the press in the settings")
                     check(calls[2][1] == mod and calls[2][2] == value, where .. ": OnChange got other arguments")
-                    goToFeature(c, PE, mod.key)
+                    goToRow(c, PE, mod, opt)
                     check(not settingsPanel(c):IsShown(), "the settings stayed open under the guide")
-                    checkOption(c, guide(c), mod, opt, true, where .. ", guide after the settings")
-                    check(marked(guide(c), index), where .. ": not marked in the guide")
+                    checkOption(c, guide(c), mod, opt, true, where .. ", guide after the settings", PE)
+                    check(chosen(choiceButtons(c, guide(c), mod, opt, PE)[index]), where .. ": not marked in the guide")
                     opt.OnChange = original
                     pressed = pressed + 1
                 end
@@ -1399,13 +1683,13 @@ test("options: a choice pressed in the guide is saved, runs the same OnChange an
             c:assertClean(mod.key)
         end
     end
-    check(pressed >= 5, "only " .. pressed .. " choices were tried")
+    check(pressed >= 3, "only " .. pressed .. " choices were tried")
 end)
 
 -- The number in the chat text size box (between - and +) in a window.
 local function stepperNumber(c, top)
     local smaller, bigger = shownButtons(c, top, "-")[1], shownButtons(c, top, "+")[1]
-    check(smaller and bigger, "no Smaller / Bigger pair", 2)
+    check(smaller and bigger, "no - / + pair", 2)
     local _, sr, st, sb = c._rect(smaller)
     local bl = c._rect(bigger)
     local found
@@ -1421,18 +1705,18 @@ local function stepperNumber(c, top)
     return tonumber(found)
 end
 
-test("options: the chat text size stepper works in the guide with Chat from round button off, and both windows show the same number", function()
+test("options: the chat text size control works in the guide with Chat picker off, and both windows show the same number", function()
     local c, PE = newClient()
     check(not PE:IsModuleEnabled("chat"), "chat is on (the test's premise)")
     goToFeature(c, PE, "chat")
     local start = stepperNumber(c, guide(c))
-    check(start, "no number between Smaller and Bigger in the guide")
+    check(start, "no number between - and + in the guide")
     c:click(button(c, "+"))
     c:advance(0.1)
     local bigger = stepperNumber(c, guide(c))
-    check(bigger > start, "Bigger in the guide did not raise the number: " .. tostring(bigger))
+    check(bigger > start, "+ in the guide did not raise the number: " .. tostring(bigger))
     eq(c.chatSizes[1], bigger, "the chat window's size")
-    PE:OpenSettings()
+    PE:OpenSettings("chat")
     c:advance(0.2)
     eq(stepperNumber(c, settingsPanel(c)), bigger, "the settings show another size")
     c:click(shownButtons(c, settingsPanel(c), "-")[1])
@@ -1440,49 +1724,20 @@ test("options: the chat text size stepper works in the guide with Chat from roun
     c:click(shownButtons(c, settingsPanel(c), "-")[1])
     c:advance(0.2)
     local smaller = stepperNumber(c, settingsPanel(c))
-    check(smaller < start, "Smaller twice in the settings did not lower the number")
+    check(smaller < start, "- twice in the settings did not lower the number")
     goToFeature(c, PE, "chat")
     eq(stepperNumber(c, guide(c)), smaller, "the guide shows another size")
     eq(c.chatSizes[1], smaller)
-    check(not PE:IsModuleSavedOn("chat"), "the stepper switched Chat from round button on")
+    check(not PE:IsModuleSavedOn("chat"), "the control switched Chat picker on")
     -- the highlight stays on the button after a press with A
     local panel = guide(c)
     press(c, "DOWN")
     while panel.peNavFocus ~= button(c, "+") do press(c, "RIGHT") end
     press(c, "A")
     c:advance(0.1)
-    check(panel.peNavFocus == button(c, "+"), "the highlight left Bigger")
-    check(stepperNumber(c, guide(c)) > smaller, "A on Bigger did nothing")
+    check(panel.peNavFocus == button(c, "+"), "the highlight left +")
+    check(stepperNumber(c, guide(c)) > smaller, "A on + did nothing")
     c:assertClean("stepper")
-end)
-
--- The spec's risk 12: the two choices that belong to no feature are not in the guide
--- (proposed, not asked for). The layout screen says where they are.
-test("options: the layout screen has no controls of its own; it says where Button size is", function()
-    local c, PE = newClient()
-    open(c, PE)
-    goTo(c, AT.layout)
-    check(not textRegion(c, guide(c), "Button size") and not textRegion(c, guide(c), "Round button position"),
-        "the settings' own two choices are drawn in the guide")
-    check(textWith(c, "Move the round button"), "the screen does not say where they are")
-    check(textWith(c, "Move the arrow"), "the screen does not mention the Move the arrow button")
-    check(not textWith(c, "Move things"), "Move things is still in the guide")
-    local panel = guide(c)
-    panel:NavSetFocus(nil)
-    press(c, "DOWN")
-    eq(T.labelOf(panel.peNavFocus), "Back", "the first button the d-pad reaches on a screen without controls")
-end)
-
-test("options: Quest Icon Key in the guide opens the settings' Quest Icon Key page, as it does in the settings", function()
-    if not T.questieDB then return end
-    local c, PE = newClient({ on = { "questIcons" } })
-    goToFeature(c, PE, "questIcons")
-    c:click(button(c, "Quest Icon Key"))
-    c:advance(0.2)
-    check(not isOpen(c), "the guide stayed open under the Quest Icon Key page")
-    check(settingsPanel(c):IsShown(), "the settings did not open")
-    eq(settingsPanel(c).peTitle:GetText(), "Pocket Essentials - Quest Icon Key")
-    c:assertClean("icon key from the guide")
 end)
 
 test("options: a reload asked for by an option is offered on the finish screen", function()
@@ -1536,9 +1791,11 @@ test("options: the d-pad reaches every control of every screen and scrolls it in
         c:advance(0.2)
         open(c, PE)
         local panel = guide(c)
-        for i = 1, N do
+        local area = panel.peNavArea
+        local _, _, count = PE.Setup:Screen()
+        for i = 1, count do
             local where = size .. ", screen " .. i
-            local reached, first = {}, nil
+            local reached = {}
             for _ = 1, 80 do
                 press(c, "RIGHT")
                 local b = panel.peNavFocus
@@ -1546,7 +1803,6 @@ test("options: the d-pad reaches every control of every screen and scrolls it in
                 if reached[b] then break end
                 reached[b] = true
                 if b.peScrollTop then
-                    local area = areaOf(b)
                     local height = b.peScrollBottom - b.peScrollTop
                     check(b.peScrollTop >= area.offset - 0.5, where .. ": " .. T.labelOf(b) .. " is above the view")
                     check(math.min(b.peScrollBottom, b.peScrollTop + area.viewHeight) <= area.offset + area.viewHeight + 0.5,
@@ -1557,7 +1813,7 @@ test("options: the d-pad reaches every control of every screen and scrolls it in
                 check(reached[b], where .. ": the d-pad never reached " .. T.labelOf(b))
             end
             c:assertClean(where)
-            if i < N then
+            if i < count then
                 c:click(nextButton(c))
                 c:advance(0.1)
             end
@@ -1568,7 +1824,7 @@ end)
 
 test("options: switching a feature on with A keeps the highlight on the switch, and the d-pad then walks its options", function()
     local c, PE = newClient()
-    -- Bag window: the first switch on the Bags screen since 0.8.0.
+    -- Bigger bag: the first switch on the Bags screen.
     local sw = goToFeature(c, PE, "bagWindow")
     local panel = guide(c)
     panel:NavSetFocus(nil)
@@ -1576,25 +1832,23 @@ test("options: switching a feature on with A keeps the highlight on the switch, 
     check(panel.peNavFocus == sw, "DOWN from nothing did not land on the switch")
     press(c, "A")
     c:advance(0.1)
-    check(PE:IsModuleEnabled("bagWindow"), "A did not switch Bag window on")
-    check(panel.peNavFocus == sw and T.labelOf(sw) == "ON", "the highlight left the switch")
+    check(PE:IsModuleEnabled("bagWindow"), "A did not switch Bigger bag on")
+    check(panel.peNavFocus == sw and T.labelOf(sw) == "On", "the highlight left the switch")
     local mod = PE:GetModule("bagWindow")
     local want = {}
     for _, opt in ipairs(mod.options) do
-        for _, b in ipairs(choiceButtons(c, panel, opt)) do want[#want + 1] = b end
+        for _, b in ipairs(choiceButtons(c, panel, mod, opt, PE)) do want[#want + 1] = b end
     end
     for i, b in ipairs(want) do
         press(c, "RIGHT")
         check(panel.peNavFocus == b, "step " .. i .. " from the switch is " .. T.labelOf(panel.peNavFocus) .. ", expected " .. T.labelOf(b))
     end
-    -- A on the last control (a toggle since 0.6.0): it flips, and the highlight stays on it
+    -- A on the last segment: it is chosen, and the highlight stays on it
     local last = want[#want]
-    local before = T.labelOf(last)
     press(c, "A")
     c:advance(0.1)
     check(panel.peNavFocus == last, "the highlight left the control")
-    check(T.labelOf(last) ~= before or last.peSelected == true, "A did not change the control")
-    -- DOWN moves a line at a time, so a few presses cross the whole list
+    check(chosen(last), "A did not choose the segment")
     press(c, "UP")
     check(panel.peNavFocus ~= last, "UP did not leave the line")
     c:assertClean("d-pad in options")
@@ -1604,8 +1858,7 @@ test("options: paging is decided again after every switch and option press, at e
     local c, PE = newClient()
     local flips = 0
     local function invariant(where)
-        local area
-        walk(c, guide(c), function(w) if w.upButton and w.downButton then area = w end end)
+        local area = guide(c).peNavArea
         check(area, where .. ": no scrolling list")
         local paging = pagingShown(c)
         eq(paging, area:GetRange() > 0, where .. ": paging buttons shown")
@@ -1629,8 +1882,8 @@ test("options: paging is decided again after every switch and option press, at e
                 local on = invariant(size .. ", " .. key .. " on")
                 if on ~= off then flips = flips + 1 end
                 for _, opt in ipairs(mod.options or {}) do
-                    if type(opt.choices) == "table" then
-                        c:click(choiceButtons(c, guide(c), opt)[1])
+                    if type(opt.choices) == "table" and guideScreenOf(mod, opt) == "card" then
+                        c:click(choiceButtons(c, guide(c), mod, opt, PE)[1])
                         c:advance(0.1)
                         invariant(size .. ", " .. key .. " after \"" .. opt.label .. "\"")
                     end
@@ -1660,13 +1913,14 @@ test("options: every screen draws without error at every size, with every featur
             PE:SetUISetting("size", size)
             c:advance(0.2)
             open(c, PE)
+            local _, _, count = PE.Setup:Screen()
             local line = {}
-            for i = 1, N do
-                eq(title(c), TITLE .. " (" .. i .. " of " .. N .. ")")
+            for i = 1, count do
+                eq(at(PE), i .. " of " .. count)
                 line[i] = pagingShown(c) and "page" or "fits"
                 check(#texts(c) >= 2, size .. ", screen " .. i .. ": almost no text")
                 c:assertClean((allOn and "all on, " or "all off, ") .. size .. ", screen " .. i)
-                if i < N then goTo(c, 2) end
+                if i < count then goTo(c, 2) end
             end
             report[#report + 1] = "  " .. (allOn and "all on,  " or "all off, ") .. size .. ": " .. table.concat(line, " ")
             c:click(button(c, "Close"))
@@ -1677,7 +1931,7 @@ test("options: every screen draws without error at every size, with every featur
 end)
 
 test("options: with options on screen the guide still has no per-frame code and listens for nothing once closed", function()
-    -- Bag sorter, Bag window and Chat from round button: features with options that start no timers of their own.
+    -- Bag sorting, Bigger bag and Chat picker: features with options that start no timers of their own.
     local c, PE = newClient({ on = { "bags", "bagWindow", "chat" } })
     c:advance(0.5)
     c.stats.addonOnUpdate = 0
@@ -1705,7 +1959,10 @@ test("options: with options on screen the guide still has no per-frame code and 
     c:assertClean("closed after options")
 end)
 
--- 0.8.0, spec section 5: the first focus is on Start, and the touch question.
+---------------------------------------------------------------------------
+-- How do you play? (the same save and Sort button rule as General's "I play with")
+---------------------------------------------------------------------------
+
 test("touch: opening the guide puts the controller highlight on Start", function()
     local c, PE = newClient({ on = { "bags" } })
     open(c, PE)
@@ -1713,52 +1970,52 @@ test("touch: opening the guide puts the controller highlight on Start", function
     c:assertClean("focus on start")
 end)
 
-test("touch: No saves ui.touch false, hides the Sort button and redraws with no scroll bar", function()
+test("touch: Controller saves ui.touch false, hides the Sort button and redraws with no scroll bar", function()
     local c, PE = newClient({ on = { "bags" } })
     open(c, PE)
-    c:click(button(c, "No"))
+    c:click(button(c, "Controller"))
     c:advance(0.1)
     eq(PE.db.ui.touch, false)
     eq(PE.db.options.bags.showTab, false)
-    check(not has(c, "Up") and not has(c, "Down"), "a scroll bar is showing with touch off")
-    c:assertClean("touch no")
+    check(not has(c, "^") and not has(c, "v"), "a scroll bar is showing with touch off")
+    c:assertClean("controller")
 end)
 
-test("touch: Yes after a No brings the Sort button back", function()
+test("touch: Touch controls after Controller brings the Sort button back", function()
     local c, PE = newClient({ on = { "bags" } })
     open(c, PE)
-    c:click(button(c, "No"))
+    c:click(button(c, "Controller"))
     c:advance(0.1)
-    c:click(button(c, "Yes"))
+    c:click(button(c, "Touch controls"))
     c:advance(0.1)
     eq(PE.db.ui.touch, true)
     eq(PE.db.options.bags.showTab, true)
-    c:assertClean("touch yes after no")
+    c:assertClean("touch after controller")
 end)
 
-test("touch: Yes with no No before it leaves the Sort button alone", function()
+test("touch: Touch controls shows the Sort button, as the General tab's I play with does", function()
     local c, PE = newClient({ on = { "bags" } })
     open(c, PE)
     PE.db.options.bags.showTab = false
-    c:click(button(c, "Yes"))
+    c:click(button(c, "Touch controls"))
     c:advance(0.1)
     eq(PE.db.ui.touch, true)
-    eq(PE.db.options.bags.showTab, false)
-    c:assertClean("touch yes alone")
+    eq(PE.db.options.bags.showTab, true)
+    c:assertClean("touch controls")
 end)
 
 test("touch: the guide marks the current answer", function()
     local c, PE = newClient({ on = { "bags" } })
     open(c, PE)
-    check(button(c, "Yes").peSelected == true and button(c, "No").peSelected == false, "Yes is not marked at the start")
-    c:click(button(c, "No"))
+    check(chosen(button(c, "Touch controls")) and not chosen(button(c, "Controller")), "Touch controls is not marked at the start")
+    c:click(button(c, "Controller"))
     c:advance(0.1)
-    check(button(c, "No").peSelected == true and button(c, "Yes").peSelected == false, "No is not marked after No")
+    check(chosen(button(c, "Controller")) and not chosen(button(c, "Touch controls")), "Controller is not marked after Controller")
     c:assertClean("touch marked")
 end)
 
 -- 0.8.0, spec section 2: the Bags screen holds both bag features.
-test("bags split: the Bags screen has a switch for Bag window and one for Bag sorter", function()
+test("bags split: the Bags screen has a switch for Bigger bag and one for Bag sorting", function()
     local c, PE = newClient()
     open(c, PE)
     goTo(c, AT.bags)
@@ -1766,14 +2023,14 @@ test("bags split: the Bags screen has a switch for Bag window and one for Bag so
     switch(c, "bags")
     c:click(switch(c, "bagWindow"))
     c:advance(0.1)
-    check(PE:IsModuleEnabled("bagWindow"), "the guide's switch did not switch Bag window on")
-    check(has(c, "Extra large") and hasText(c, "Bag size"), "Bag window's options are not under its switch")
+    check(PE:IsModuleEnabled("bagWindow"), "the guide's switch did not switch Bigger bag on")
+    check(has(c, "Extra large") and hasText(c, "Bag size"), "Bigger bag's options are not under its switch")
     c:assertClean("bags screen")
 end)
 
--- 0.8.0, spec section 5: No hides the Sort button through Bag sorter's own "Sort button" row,
--- so an open bag loses its tab at once, whichever stick is chosen.
-test("touch: No hides the Sort tab of an open bag at once, with either stick chosen", function()
+-- Controller hides the Sort button through Bag sorting's own row, so an open
+-- bag loses its tab at once, whichever stick is chosen.
+test("touch: Controller hides the Sort tab of an open bag at once, with either stick chosen", function()
     local c, PE = newClient({ on = { "bags" } })
     PE.db.options.bags.sortKey = "r3"
     c:openBag()
@@ -1782,11 +2039,11 @@ test("touch: No hides the Sort tab of an open bag at once, with either stick cho
         and r.frame:GetParent() == c.UIParent end)
     check(rec and rec.frame:IsVisible(), "no Sort tab with the bag open (the test's premise)")
     open(c, PE)
-    c:click(button(c, "No"))
+    c:click(button(c, "Controller"))
     c:advance(0.1)
     eq(PE.db.options.bags.showTab, false)
-    check(not rec.frame:IsVisible(), "the Sort tab still shows after No")
-    c:assertClean("touch no hides tab")
+    check(not rec.frame:IsVisible(), "the Sort tab still shows after Controller")
+    c:assertClean("controller hides tab")
 end)
 
 -- 0.8.0 fix: touch off, a tall screen with no list buttons is paged by the d-pad.
@@ -1813,11 +2070,12 @@ test("touch: with touch off the d-pad Down pages a tall finish screen to its bot
     c:assertClean("finish d-pad")
 end)
 
--- Spec 2026-11-19-0.8.1-clearer-labels, sections 1 to 3.
-test("setup: no guide screen says Big chat buttons or Icon key", function()
+-- Spec 2026-11-19-0.8.1-clearer-labels, and 0.9.0: rows that open another settings page stay out of the guide.
+test("setup: no guide screen says Big chat buttons or has the Icon key row", function()
     local c, PE = T.new({ quest = true, on = { "questIcons", "chat" } })
     open(c, PE)
-    for i = 1, N do
+    local _, _, count = PE.Setup:Screen()
+    for i = 1, count do
         for _, t in ipairs(texts(c)) do
             check(not t:find("Big chat buttons", 1, true) and not t:find("Icon key", 1, true), "screen " .. i .. ": " .. t)
         end
@@ -1825,17 +2083,8 @@ test("setup: no guide screen says Big chat buttons or Icon key", function()
             local l = tostring(T.labelOf(b))
             check(not l:find("Big chat", 1, true) and l ~= "Icon key", "screen " .. i .. " button: " .. l)
         end
-        if i < N then goTo(c, 2) end
+        if i < count then goTo(c, 2) end
     end
-end)
-
-test("setup: on the Quest icons screen Hide Blue Quest Haze and Quest Icon Key share a line", function()
-    local c, PE = T.new({ quest = true, on = { "questIcons" } })
-    open(c, PE)
-    goTo(c, AT.questIcons)
-    local haze, key = button(c, "Hide Blue Quest Haze: On"), button(c, "Quest Icon Key")
-    eq(key:GetTop(), haze:GetTop(), "not on one line")
-    check(key:GetLeft() > haze:GetLeft(), "the key is not to the right of the toggle")
 end)
 
 return { known = KNOWN_FAILURES }

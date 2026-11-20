@@ -1,21 +1,23 @@
 -- Pocket Essentials: the setup guide (PE.Setup).
--- A window of a few screens that explains each feature in plain words and
--- lets the player switch on the ones they want. Every feature starts off;
+-- A window of a few screens that shows each feature as a card with its switch
+-- and lets the player switch on the ones they want (spec
+-- 2026-11-20-0.9.0-ui-redesign, "Setup guide"). Every feature starts off;
 -- this is how a player finds out what exists.
 --
 -- It opens by itself a moment after the first loading screen, on an account
 -- that never pressed Finish or Skip in it (PocketEssentialsDB.setup is then
 -- nil; Finish stores "finished", Skip stores "skipped"). It can be opened
--- again from the settings ("Setup guide") and with /pe setup.
+-- again from the settings (General tab, "Setup guide") and with /pe setup.
 --
--- A switch here is the switch of the settings window: both read
--- PE:GetModuleSwitch and write through PE:SetModuleEnabled. This file never
--- writes the saved on/off table itself.
+-- The cards are drawn by the settings window's list drawer (Settings.lua,
+-- PE:NewListDrawer), so both windows show the same names, controls and saved
+-- values, and a press takes the same path. A switch here writes through
+-- PE:SetModuleEnabled, as the settings switch does; this file never writes
+-- the saved on/off table itself.
 --
--- Under each switch are that feature's options, drawn by the same code that
--- draws them in the settings window (the list drawer in Settings.lua,
--- PE:NewListDrawer). So both windows show the same labels and controls, a
--- press takes the same path, and a value set in one shows in the other.
+-- "Move things now" (and "Move the arrow" in the quest arrow's card) opens
+-- Move on screen: the guide goes away and comes back on the same screen when
+-- that window closes (Move.lua calls Setup:BackFromMove).
 --
 -- Nothing is built until the guide is first opened. It has no per-frame code.
 -- While open it listens for one thing (a fight starting, which hides it);
@@ -26,137 +28,74 @@ local ADDON_NAME, PE = ...
 local Setup = {}
 PE.Setup = Setup
 
-local type, tostring, ipairs, pcall = type, tostring, ipairs, pcall
-local max, min = math.max, math.min
+local type, tostring, ipairs, pairs, pcall = type, tostring, ipairs, pairs, pcall
+local max, min, sin, cos, pi = math.max, math.min, math.sin, math.cos, math.pi
 
 local PANEL_NAME = "PocketEssentialsSetupPanel" -- the prefix matters: our windows close each other by it
-local TITLE = "Pocket Essentials - Setup guide"
+local TITLE = "Setup"
 local FIRST_LOGIN_DELAY = 1.5 -- seconds after the first loading screen
 
 local TEXT_CLOSED = "Setup guide closed. It will show again next time you log in. Press Skip in it to stop that. "
     .. "You can open it any time from the settings."
 local TEXT_FIGHT = "The setup guide cannot be opened during a fight. Try again afterwards."
 local TEXT_BROKEN = "The setup guide could not be opened. See Errors in the settings."
-local TEXT_NOTHING_ON = "Nothing is switched on yet. That is fine: you can do it later in the settings."
+local TEXT_FAILED = "Switched on, but it hit a problem. See the Errors tab in the settings."
+
+local COLOR = {
+    line = { 0.88, 0.88, 0.88 },
+    name = { 0.92, 0.92, 0.92 },
+    small = { 0.84, 0.84, 0.84 },
+    dim = { 0.62, 0.62, 0.62 },
+    gold = { 1, 0.82, 0 },
+    warn = { 1, 0.60, 0.20 },
+    dotOff = { 0.35, 0.35, 0.38 },
+    glyph = { 0.70, 0.70, 0.72 },
+    glyphFill = { 0.16, 0.16, 0.18 },
+    tile = { 0.12, 0.12, 0.14 },
+    screen = { 0.20, 0.17, 0.13 },
+    screenEdge = { 0.35, 0.35, 0.38 },
+}
+
+-- The "How:" line of a feature's card in the guide.
+local HOW = {
+    questIcons = "Tap an icon on the map to see what it is for.",
+    questArrow = "Focus a quest in your quest log, and the arrow points to it.",
+    chat = "Tap PE, pick who to talk to, then press A to type.",
+    menuBg = "For menus like Track, Focus and Share on a quest.",
+}
 
 ---------------------------------------------------------------------------
--- The screens. A new feature is one row.
+-- The screens, in order.
 --
--- A screen: { id =, title =, text =, rows = { ... } }
---   text: one string; "\n\n" separates paragraphs.
---   rows: optional. A row is { key = <feature key>, title = <optional>, text = <string> }.
---         title defaults to the feature's own label.
---   A row is shown only when its feature is in this build (PE:GetModule(key)).
---   A screen that has a rows table but no row left is skipped.
---   A screen with no rows table (welcome, layout) is always shown.
---   id "finish" is drawn by its own function (the summary).
--- A row draws the feature's switch and, under it, the feature's options as
--- the settings window draws them. The options are not listed here: they come
--- from the feature itself. A feature with options gets a screen to itself,
--- because its options make the screen long; features without options share
--- a screen where they belong together.
+-- A screen: { id =, title =, lines = { ... }, draw = name, cards = { ... },
+--             needsOn = feature key }
+--   lines: short sentences under the title.
+--   draw:  the name of a function below that draws the screen's own cards
+--          (before its feature cards).
+--   cards: feature cards, { key = <feature key>, only = { option keys } }.
+--          A card is shown only when its feature is in this build. A screen
+--          that has cards but no draw, and none of whose features is in this
+--          build, is skipped.
+--   needsOn: the screen is shown only while that feature is on.
 ---------------------------------------------------------------------------
 
 local SCREENS = {
-    { id = "welcome", title = "Welcome to Pocket Essentials",
-      text = "Pocket Essentials adds a few helpers for playing on a handheld. Every helper starts switched off. "
-          .. "The next screens take them one at a time. Switch on the ones you want; a helper's choices appear "
-          .. "under its switch once it is on, so you can set it up there and then."
-          .. "\n\nUse the touch screen, or the d-pad to move the blue highlight, A to press and B to close."
-          .. "\n\nNothing here is final. You can change all of this later in the settings, and open this guide "
-          .. "again from there." },
-
+    { id = "welcome", title = "Welcome", draw = "Welcome",
+      lines = { "A few helpers for playing on a handheld. They all start off: switch on the ones you want.",
+                "You can change everything later in the settings." } },
     { id = "questIcons", title = "Quest icons",
-      text = "Quest icons and Quest arrow show where to go for the quests in your quest log. They get their "
-          .. "locations from the QuestieDB addon, which comes with Pocket Essentials.",
-      rows = {
-          { key = "questIcons",
-            text = "Puts an icon on the world map and the minimap at each place where a quest objective is: "
-                .. "something to kill, loot, use or hand in. Tap an icon on the map to read what it is." },
-      } },
-
-    { id = "questArrow", title = "Quest arrow",
-      text = "The arrow works on the quest you have focused. To focus a quest, open the quest log, select the "
-          .. "quest and choose Focus in its menu.",
-      rows = {
-          { key = "questArrow",
-            text = "Shows an arrow on screen that points to the nearest objective of your focused quest, with "
-                .. "the distance and the quest's name. If the quest is in another zone, it names the zone to "
-                .. "head to instead of pointing." },
-      } },
-
-    { id = "menuBg", title = "Menu background",
-      text = "The menu on a quest in the quest log (Track, Focus, Share, Abandon) is drawn by this game with no "
-          .. "background, which makes it hard to read.",
-      rows = {
-          { key = "menuBg",
-            text = "Puts a plain dark panel behind the game's pop-up menus while they are open, so the text is "
-                .. "easy to read. It does not need QuestieDB." },
-      } },
-
-    { id = "bags", title = "Bags",
-      text = "With the game's controller style on, all your bags already show as one window. These two helpers "
-          .. "make it bigger and easier to tidy. Each has its own switch."
-          .. "\n\nIf you play without the controller style, the game needs a reload to join the bags into "
-          .. "one window. The last screen of this guide offers it.",
-      rows = {
-          { key = "bagWindow",
-            text = "\"Bag size\" makes the bag window bigger. \"Bag icons\": \"One row at the top\" puts the "
-                .. "pictures of your equipped bags side by side above your items, not in among them." },
-          { key = "bags",
-            text = "Adds a big Sort button to the bag window (\"Sort button\"). A click on the stick you pick in "
-                .. "\"Sort stick\" sorts too, while the bag is open."
-                .. "\n\nWhenever the Sort button shows, press Left from the bag's first column to reach it, then A "
-                .. "presses it. This works with the controller style on." },
-      } },
-
-    { id = "vendors", title = "Vendors",
-      text = "Two chores done for you each time you open a vendor's window. Each has its own switch.",
-      rows = {
-          { key = "sellJunk",
-            text = "Sells every grey item in your bags as soon as a vendor's window opens, and says in chat how "
-                .. "many it sold and for how much. Bags you told the game to leave out of junk selling are not "
-                .. "touched. Careful: only the last 12 items sold can be bought back." },
-          { key = "repair",
-            text = "Repairs all your gear when you open a vendor who can repair, paying with your own money, "
-                .. "never the guild's. A line in chat says what it cost. If you cannot afford it, it says so and "
-                .. "does nothing." },
-      } },
-
-    { id = "chat", title = "Chat",
-      text = "Chat targets are small on a handheld. This helper gives you big buttons to pick who you talk to.",
-      rows = {
-          { key = "chat",
-            text = "While this is on, a tap on the round PE button opens a window with one big button for each "
-                .. "place you can talk (Say, Party, Guild, General, Trade and so on) and for the last six people "
-                .. "who whispered you. Tap one, then press A when \"Press A to type\" appears: the game's chat "
-                .. "box opens, already set to that channel or person. A red number on the round button counts "
-                .. "whispers you have not answered. With this on, hold the round button to open the settings."
-                .. "\n\nChat text size is for every chat window. It works whether this switch is on or off." },
-      } },
-
-    { id = "layout", title = "The round button and Move on screen",
-      text = "The round PE button is always on screen. Tap it to open the settings (or the chat window, when Chat "
-          .. "from round button is on). Hold it for a moment to always open the settings. "
-          .. "While the map is open, it sits on the map's book icon."
-          .. "\n\nIn the settings you can choose how big all Pocket Essentials buttons are: Small, Medium or "
-          .. "Large. \"Move the round button\" there, and \"Move the arrow\" in the quest arrow's options, open "
-          .. "\"Move on screen\"."
-          .. "\n\nButton colour in the settings paints the round button Gold, Horde or Alliance. Touch screen: "
-          .. "No hides the scroll bar's arrows, and the d-pad scrolls long pages by itself."
-          .. "\n\n\"Move on screen\", also in the bottom row of the settings, lets you nudge the quest arrow, the "
-          .. "\"Press A to type\" text and the round button to exactly where you want them, with on-screen "
-          .. "arrows or the d-pad." },
-
-    { id = "finish", title = "All set",
-      text = "You can change all of this at any time. Tap the round PE button to open the settings (hold it if "
-          .. "the chat window opens instead), or pick Pocket Essentials in the addon list at the minimap. The "
-          .. "\"Setup guide\" button at the bottom of the settings opens this guide again." },
-}
-
-local COLOR = {
-    title = { 1, 0.82, 0 },
-    warn = { 1, 0.60, 0.20 },
+      lines = { "Quest locations come from QuestieDB, which is included." },
+      cards = { { key = "questIcons", only = { "show", "Icons on", "size" } } } },
+    { id = "questDetails", title = "Quest icon details", draw = "QuestDetails", needsOn = "questIcons" },
+    { id = "questArrow", title = "Quest arrow", cards = { { key = "questArrow" } } },
+    { id = "bags", title = "Bags", cards = { { key = "bagWindow" }, { key = "bags" } } },
+    { id = "vendors", title = "Vendors and menus", cards = { { key = "sellJunk" }, { key = "repair" }, { key = "menuBg" } } },
+    { id = "chat", title = "Round button and chat", draw = "RoundButton",
+      lines = { "The PE button is always on screen. With Chat picker on, a tap opens the chat window." },
+      cards = { { key = "chat" } } },
+    { id = "layout", title = "Your screen", draw = "Layout",
+      lines = { "This is where each piece sits to start with. Move any of them to suit your screen." } },
+    { id = "finish", title = "All set", draw = "Finish" },
 }
 
 local UI           -- PE.UI, set when the window is built
@@ -164,19 +103,23 @@ local M            -- current metrics
 local panel, area
 local list         -- the list drawer of this window (PE:NewListDrawer in Settings.lua)
 local backButton, skipButton, nextButton, reloadButton
+local dots = {}    -- one per screen, between Skip and Next
 local built, buildFailed = false, false
 local drawing, drawQueued = false, false
-local switches = {} -- one switch button per row place on a screen, reused, so the highlight stays on it
 local navList = {}  -- tappable buttons in reading order, rebuilt on every draw
-local shown = {}    -- the screens of this opening: { { screen =, rows = { ... } }, ... }
-local index = 1
+local current = SCREENS[1].id -- the screen showing
 local closeWhy      -- why the window is being hidden, for OnHidden
 local waiting       -- "login" or "fight": the guide comes (back) when the fight ends
-local resumeIndex   -- the screen a fight interrupted
+local resumeScreen  -- the screen a fight or Move on screen interrupted
 local toldClosed = false -- the "closed, will show again" chat line was printed this session
+local handlers = {} -- tap handlers made once, at build
 
 local function Debug(text)
     if PE.debugOn then PE:Debug("setup", text) end
+end
+
+local function Escape(text)
+    return (tostring(text):gsub("|", "||"))
 end
 
 ---------------------------------------------------------------------------
@@ -204,62 +147,61 @@ local function Remember(value)
 end
 
 ---------------------------------------------------------------------------
--- Which screens this build has
+-- Which screens show right now
 ---------------------------------------------------------------------------
 
-local function ShownScreens()
+local function ScreenShown(screen)
+    if screen.needsOn then
+        return PE:GetModule(screen.needsOn) ~= nil and PE:IsModuleEnabled(screen.needsOn)
+    end
+    if screen.cards and not screen.draw then
+        for _, card in ipairs(screen.cards) do
+            if PE:GetModule(card.key) then return true end
+        end
+        return false
+    end
+    return true
+end
+
+local function Visible()
     local out = {}
     for _, screen in ipairs(SCREENS) do
-        if type(screen.rows) == "table" then
-            local rows = {}
-            for _, row in ipairs(screen.rows) do
-                if PE:GetModule(row.key) then rows[#rows + 1] = row end
-            end
-            if #rows > 0 then out[#out + 1] = { screen = screen, rows = rows } end
-        else
-            out[#out + 1] = { screen = screen }
-        end
+        if ScreenShown(screen) then out[#out + 1] = screen end
     end
     return out
 end
 
----------------------------------------------------------------------------
--- Placing things (y grows downwards from the top of the list)
----------------------------------------------------------------------------
-
-local function Escape(text)
-    return (tostring(text):gsub("|", "||"))
-end
-
-local function PlaceText(kind, text, x, y, width, color)
-    return list:Text(kind, text, x, y, width, color)
-end
-
--- Paragraphs ("\n\n" between them), one under the other. Returns the new y.
-local function PlaceParagraphs(kind, text, x, y, width, color)
-    for paragraph in (text .. "\n\n"):gmatch("(.-)\n\n") do
-        if paragraph ~= "" then
-            y = y + PlaceText(kind, paragraph, x, y, width, color) + M.gap
+-- The place of the current screen among the shown ones. A current screen
+-- that is not shown (its feature went off) counts as the shown one before it.
+local function PositionOf(shown)
+    local pos = 0
+    local seen = {}
+    for _, screen in ipairs(shown) do seen[screen] = true end
+    for _, screen in ipairs(SCREENS) do
+        if seen[screen] then pos = pos + 1 end
+        if screen.id == current then
+            if seen[screen] then return pos, true end
+            return max(pos, 1), false
         end
     end
-    return y
+    return 1, false
 end
 
-local function PlaceLine(y, width)
-    return list:Line(y, width)
+local function ScreenById(id)
+    for _, screen in ipairs(SCREENS) do
+        if screen.id == id then return screen end
+    end
 end
 
 ---------------------------------------------------------------------------
--- Switches
+-- Switches: the settings switch's path, with the guide's debug lines
 ---------------------------------------------------------------------------
 
 local QueueDraw -- defined below
 
--- The same call the settings switch makes.
 local function OnSwitch(key)
     if key == nil then return end
-    local _, _, state = PE:GetModuleSwitch(key)
-    if state == "blocked" then
+    if PE:GetModuleState(key) == "blocked" then
         Debug("switch tapped: " .. tostring(key) .. " cannot be switched on")
         return
     end
@@ -269,131 +211,355 @@ local function OnSwitch(key)
     QueueDraw()
 end
 
-local function SwitchButton(place)
-    local btn = switches[place]
-    if not btn then
-        btn = UI:CreateButton(area.child, "")
-        btn:SetScript("OnClick", PE:Wrap("core", function(self) OnSwitch(self.peKey) end))
-        switches[place] = btn
+local switchHandlers = {}
+local function SwitchHandler(key)
+    local fn = switchHandlers[key]
+    if not fn then
+        fn = PE:Wrap("core", function() OnSwitch(key) end)
+        switchHandlers[key] = fn
     end
-    return btn
+    return fn
 end
 
 ---------------------------------------------------------------------------
--- Drawing one screen
+-- Small pictures (all from the drawer's pools, set again on every draw)
 ---------------------------------------------------------------------------
 
--- True while the guide's first page has not yet put the highlight on Start.
-local focusStart = false
--- True when a No press in this guide session hid Bag sorter's Sort button, so a
--- later Yes may bring it back. Not saved.
-local noHidSortButton = false
+-- A plain rectangle. pool: "low", "mid", "shape" or "top" (drawn in that
+-- order, each above the one before; all above the card fill).
+local function Rect(pool, x, y, w, h, c, alpha)
+    local tex = list:Acquire(pool)
+    tex:ClearAllPoints()
+    tex:SetPoint("TOPLEFT", list.child, "TOPLEFT", x, -y)
+    tex:SetSize(max(w, 0.01), max(h, 0.01))
+    tex:SetColorTexture(c[1], c[2], c[3], alpha or 1)
+    list:Reach(y + h)
+    return tex
+end
 
--- The answer to "Do you use the touch screen?". No also hides the Sort button
--- (a touch player taps it; a controller player has the stick click); Yes brings
--- it back only if a No in this session hid it.
-local function AnswerTouch(yes)
-    PE:SetUISetting("touch", yes)
-    local bags = PE:GetModule("bags")
-    local opts = bags and (bags.opts or (PE.db and PE.db.options and PE.db.options.bags))
-    if type(opts) ~= "table" then return end
-    local want
-    if not yes and opts.showTab ~= false then
-        -- The stick click still sorts.
-        want = false
-        noHidSortButton = true
-    elseif yes and noHidSortButton then
-        want = true
-        noHidSortButton = false
+-- A round picture: an outer disc, an inner disc and a word in the middle.
+-- Used for the A / B glyphs and for the PE button.
+local function Round(x, y, d, outer, inner, innerD, word, wordColor)
+    local f = list:Acquire("round")
+    f:ClearAllPoints()
+    f:SetPoint("TOPLEFT", list.child, "TOPLEFT", x, -y)
+    f:SetSize(d, d)
+    f.outer:SetColor(outer[1], outer[2], outer[3], 1)
+    f.outer:Layout(f, d)
+    f.inner:SetColor(inner[1], inner[2], inner[3], 1)
+    f.inner:Layout(f, max(innerD, 1))
+    f.word:SetWidth(d)
+    f.word:SetText(word or "")
+    local c = wordColor or COLOR.name
+    f.word:SetTextColor(c[1], c[2], c[3], 1)
+    list:Reach(y + d)
+    return f
+end
+
+-- A d-pad cross, d wide.
+local function DpadGlyph(x, y, d)
+    local a, b = d / 3, M.border
+    Rect("shape", x + a, y, a, d, COLOR.glyph)
+    Rect("shape", x, y + a, d, a, COLOR.glyph)
+    Rect("top", x + a + b, y + a + b, max(a - 2 * b, 1), max(a - 2 * b, 1), COLOR.glyphFill)
+end
+
+-- A box of gold dashes over a faint fill.
+local function DashedBox(x, y, w, h, c, alpha, fill)
+    if fill then Rect("shape", x, y, w, h, c, 0.15) end
+    local dash, gap, t = max(UI:Px(5), 2), max(UI:Px(3), 1), max(UI:Px(1.5), 1)
+    local function Run(length, place)
+        local pos = 0
+        while pos < length do
+            place(pos, min(dash, length - pos))
+            pos = pos + dash + gap
+        end
     end
-    if want == nil then return end
-    opts.showTab = want
-    -- Let Bag sorter apply it the way its own "Sort button" choice does.
-    for _, opt in ipairs(bags.options or {}) do
-        if opt.key == "showTab" and type(opt.OnChange) == "function" then
-            PE:Safe("bags", opt.OnChange, bags, want)
+    Run(w, function(p, s) Rect("top", x + p, y, s, t, c, alpha) end)
+    Run(w, function(p, s) Rect("top", x + p, y + h - t, s, t, c, alpha) end)
+    Run(h, function(p, s) Rect("top", x, y + p, t, s, c, alpha) end)
+    Run(h, function(p, s) Rect("top", x + w - t, y + p, t, s, c, alpha) end)
+end
+
+-- A text placed by the drawer, then moved to (x, y) and centred in width.
+local function CenteredText(kind, text, x, y, width, color)
+    local h, fs = list:Text(kind, text, x, y, width, color)
+    fs:SetJustifyH("CENTER")
+    return h, fs
+end
+
+local function HubColors()
+    local Hub = PE.Hub
+    local colors = Hub and Hub.Colors and Hub:Colors()
+    if type(colors) ~= "table" or type(colors.ring) ~= "table" or type(colors.fill) ~= "table" then
+        colors = { ring = COLOR.gold, fill = { 0.07, 0.07, 0.10 } }
+    end
+    return colors
+end
+
+-- The round PE button, d wide; ring: a dashed ring around it (the Hold tile).
+local function HubPicture(x, y, d, ring)
+    local colors = HubColors()
+    Round(x, y, d, colors.ring, colors.fill, d - max(UI:Px(4), 2) * 2 * (d / max(M.hub, 1)), "PE", colors.ring)
+    if ring then
+        local r = d * 0.5 + UI:Px(5)
+        local s = max(UI:Px(2.5), 1)
+        local cx, cy = x + d * 0.5, y + d * 0.5
+        for k = 0, 17 do
+            local a = k * pi * 2 / 18
+            Rect("shape", cx + cos(a) * r - s * 0.5, cy + sin(a) * r - s * 0.5, s, s, colors.ring)
         end
     end
 end
 
--- The question row under the Welcome text. Returns the new y.
-local function DrawTouchQuestion(x, y, width)
-    local yes = PE:UsesTouch()
-    local items = {
-        { label = "Yes", selected = yes, onClick = PE:Wrap("core", function() AnswerTouch(true) end) },
-        { label = "No", selected = not yes, onClick = PE:Wrap("core", function() AnswerTouch(false) end) },
-    }
-    y = y + M.gap
-    return list:LabeledRow("Do you use the touch screen?", items, x, y, width, 0) + M.gap
+-- The gold outline that Move on screen draws, d wide.
+local function MovePicture(x, y, d)
+    local e = max(UI:Px(3), 2)
+    Rect("shape", x, y, d, d, COLOR.gold, 0.15)
+    Rect("top", x - e, y - e, d + 2 * e, e, COLOR.gold)
+    Rect("top", x - e, y + d, d + 2 * e, e, COLOR.gold)
+    Rect("top", x - e, y, e, d, COLOR.gold)
+    Rect("top", x + d, y, e, d, COLOR.gold)
 end
 
--- Heading, lead text, then one block per feature: name left, switch right,
--- the explanation under the name, and under that the feature's options, by
--- the settings window's own rule (all of them while the feature is on, only
--- the ones marked `always` while it is not). Returns the total height.
-local function DrawScreen(entry, width)
-    local screen = entry.screen
-    local x = M.gap
-    local y = M.gap * 0.5
-    y = y + PlaceText("title", screen.title, x, y, width - x * 2) + M.gap
-    y = PlaceParagraphs("font", screen.text, x, y, width - x * 2)
-    if screen.id == "welcome" then y = DrawTouchQuestion(x, y, width - x * 2) end
+---------------------------------------------------------------------------
+-- Each screen's own cards
+---------------------------------------------------------------------------
 
-    local toggleWidth = M.button * 2.8
-    local textWidth = width - toggleWidth - x - M.pad
-    for place, row in ipairs(entry.rows or {}) do
-        local mod = PE:GetModule(row.key)
-        if mod then
-            y = y + PlaceLine(y, width) + M.gap
-            local label, style = PE:GetModuleSwitch(row.key)
-            local ty = y + M.gap * 0.3
-            ty = ty + PlaceText("font", row.title or Escape(mod.label), x, ty, textWidth, COLOR.title) + M.gap * 0.3
-            ty = PlaceParagraphs("small", row.text, x, ty, textWidth)
-            ty = list:Status(mod, x, ty, textWidth, "Switched on, but it hit a problem. See Errors in the settings.")
-            local rowHeight = max(M.row, ty - y)
+local SIZE_CHOICES = {
+    { value = "small", label = "Small" },
+    { value = "medium", label = "Medium" },
+    { value = "large", label = "Large" },
+}
 
-            local btn = SwitchButton(place)
-            btn.peKey = row.key
-            btn:SetLabel(label)
-            btn:SetStyle(style)
-            btn:ClearAllPoints()
-            btn:SetSize(toggleWidth, M.button)
-            btn:SetPoint("TOPLEFT", area.child, "TOPLEFT", width - toggleWidth, -(y + (M.row - M.button) * 0.5))
-            -- When the controller lands on the switch, bring the whole block into view.
-            btn.peScrollTop, btn.peScrollBottom = y, y + rowHeight
-            btn:Show()
-            navList[#navList + 1] = btn
-            y = y + rowHeight + M.gap * 0.5
-            local hasOptions, onlyAlways = list:OptionsShown(mod)
-            if hasOptions then y = list:Options(mod, y, width, onlyAlways) end
+local COLOR_CHOICES = {
+    { value = "gold", label = "Gold" },
+    { value = "horde", label = "Horde" },
+    { value = "alliance", label = "Alliance" },
+}
+
+local function Items(choices, currentValue, handlerOf)
+    local items = {}
+    for i, choice in ipairs(choices) do
+        items[i] = { label = choice.label, selected = (currentValue == choice.value), onClick = handlerOf[choice.value] }
+    end
+    return items
+end
+
+local DRAW = {}
+
+-- Welcome: the play-style question and the controls card.
+function DRAW.Welcome(y, width)
+    local touch = PE:UsesTouch()
+    y = list:Card(0, y, width, function(ix, iy, iw)
+        return list:ChoiceRow("How do you play?", {
+            { label = "Touch controls", selected = touch, onClick = handlers.touch },
+            { label = "Controller", selected = not touch, onClick = handlers.controller },
+        }, ix, iy, iw)
+    end)
+    return list:Card(0, y, width, function(ix, iy, iw)
+        local yy = iy
+        yy = yy + list:Text("small", "Getting around these windows", ix, yy, iw, COLOR.gold) + M.gap * 0.6
+        local d = M.button * 0.75
+        local cw = (iw - 2 * M.gap) / 3
+        local items = {
+            { glyph = "dpad", text = "Move the blue highlight" },
+            { glyph = "A", text = "Press the highlighted button" },
+            { glyph = "B", text = "Close the window" },
+        }
+        local rowHeight = d
+        for i, item in ipairs(items) do
+            local cx = ix + (i - 1) * (cw + M.gap)
+            if item.glyph == "dpad" then
+                DpadGlyph(cx, yy, d)
+            else
+                Round(cx, yy, d, COLOR.glyph, COLOR.glyphFill, d - 2 * M.border, item.glyph, { 1, 1, 1 })
+            end
+            local tw = max(cw - d - M.gap, 10)
+            local h, fs = list:Text("font", item.text, cx + d + M.gap, yy, tw, COLOR.name)
+            fs:ClearAllPoints()
+            fs:SetPoint("TOPLEFT", list.child, "TOPLEFT", cx + d + M.gap, -(yy + max((d - h) * 0.5, 0)))
+            rowHeight = max(rowHeight, h)
+        end
+        list:Reach(yy + rowHeight)
+        yy = yy + rowHeight + M.gap * 0.8
+        yy = yy + list:Text("small", touch and "Or just tap any button on the screen." or "Touch works too, any time.",
+            ix, yy, iw, COLOR.dim)
+        return yy + M.gap
+    end)
+end
+
+-- Quest icon details: the rest of the Quest icons rows, then what each icon means.
+function DRAW.QuestDetails(y, width)
+    local mod = PE:GetModule("questIcons")
+    if not mod then return y end
+    y = list:Card(0, y, width, function(ix, iy, iw)
+        return list:Options(mod, ix, iy, iw, { only = { "cluster", "spots", "hideHaze" }, setup = true })
+    end)
+    return list:Card(0, y, width, function(ix, iy, iw)
+        local yy = iy + list:Text("small", "What the icons mean", ix, iy, iw, COLOR.gold) + M.gap * 0.6
+        local key = PE.QuestIconKey -- made when QuestIcons.lua loads, so read it here
+        if type(key) ~= "table" then return yy + M.gap end
+        local side = M.button * 0.7
+        local n = min(#key, 5)
+        local colWidth = iw / max(n, 1)
+        local rowHeight = side
+        for i = 1, n do
+            local entry = key[i]
+            if type(entry) == "table" then
+                local cx = ix + (i - 1) * colWidth
+                local icon = list:Acquire("icon")
+                icon:ClearAllPoints()
+                icon:SetPoint("TOPLEFT", list.child, "TOPLEFT", cx, -yy)
+                icon:SetSize(side, side)
+                icon:SetTexture(entry.tex)
+                local c = type(entry.color) == "table" and entry.color or COLOR.name
+                icon:SetVertexColor(c[1] or 1, c[2] or 1, c[3] or 1)
+                local tx = cx + side + M.gap * 0.5
+                local h, fs = list:Text("font", Escape(entry.label or ""), tx, yy, max(colWidth - side - M.gap, 10), COLOR.name)
+                fs:ClearAllPoints()
+                fs:SetPoint("TOPLEFT", list.child, "TOPLEFT", tx, -(yy + max((side - h) * 0.5, 0)))
+                rowHeight = max(rowHeight, h)
+            end
+        end
+        list:Reach(yy + rowHeight)
+        return yy + rowHeight + M.gap
+    end)
+end
+
+-- Round button and chat: a live picture of the round button beside its two choices.
+function DRAW.RoundButton(y, width)
+    local ui = PE.db and PE.db.ui or {}
+    return list:Card(0, y, width, function(ix, iy, iw)
+        local pv = M.hub * 1.6
+        HubPicture(ix, iy, pv)
+        local rx = ix + pv + M.gap * 2
+        local rw = max(iw - pv - M.gap * 2, 10)
+        local ry = iy
+        ry = list:ChoiceRow("Colour", Items(COLOR_CHOICES, ui.hubColor or "gold", handlers.color), rx, ry, rw)
+        ry = list:ChoiceRow("Size of all Pocket Essentials buttons", Items(SIZE_CHOICES, M.size, handlers.size), rx, ry, rw)
+        return max(iy + pv + M.gap, ry)
+    end)
+end
+
+-- A small picture of the screen with a gold dashed box where each piece of
+-- Move on screen sits now, and the minimap's outline. Returns its height.
+local function ScreenPicture(x, y, w)
+    local h = w * 9 / 16
+    Rect("low", x, y, w, h, COLOR.screenEdge)
+    local edge = max(UI:Px(1), 1)
+    Rect("mid", x + edge, y + edge, w - 2 * edge, h - 2 * edge, COLOR.screen)
+    local sl, sr, st, sb = UIParent:GetLeft(), UIParent:GetRight(), UIParent:GetTop(), UIParent:GetBottom()
+    if not (sl and sr and st and sb) or sr - sl < 1 or st - sb < 1 then return h end
+    local fx, fy = w / (sr - sl), h / (st - sb)
+    -- A rectangle of the screen (left, bottom, width, height) in the picture.
+    local function Place(l, b, rw, rh)
+        local bx = min(max((l - sl) * fx, 0), w - 2)
+        local by = min(max((st - (b + rh)) * fy, 0), h - 2)
+        local bw = min(max(rw * fx, 2), w - bx)
+        local bh = min(max(rh * fy, 2), h - by)
+        return x + bx, y + by, bw, bh
+    end
+    local minimap = _G.Minimap
+    if type(minimap) == "table" and type(minimap.GetLeft) == "function" then
+        local ok, l, r, t, b = pcall(function() return minimap:GetLeft(), minimap:GetRight(), minimap:GetTop(), minimap:GetBottom() end)
+        if ok and l and r and t and b then
+            local bx, by, bw, bh = Place(l, b, r - l, t - b)
+            DashedBox(bx, by, bw, bh, { 1, 1, 1 }, 0.35, false)
         end
     end
-    return y + M.pad
+    local Move = PE.Move
+    if not (Move and Move.Pieces and Move.PieceRect) then return h end
+    for _, piece in ipairs(Move:Pieces()) do
+        local l, b, rw, rh = Move:PieceRect(piece.key)
+        if l then
+            local bx, by, bw, bh = Place(l, b, rw, rh)
+            DashedBox(bx, by, bw, bh, COLOR.gold, 1, true)
+            local label = tostring(piece.label):gsub("\"", "")
+            local tw = min(bw + UI:Px(80), w)
+            local tx = min(max(bx + bw * 0.5 - tw * 0.5, x), x + w - tw)
+            CenteredText("small", Escape(label), tx, by + bh + UI:Px(3), tw, COLOR.gold)
+        end
+    end
+    return h
 end
 
--- The last screen: what is on, what is still off, where to change it later,
--- and the reload button if a feature asked for a reload.
-local function DrawFinish(entry, width)
-    local screen = entry.screen
-    local x = M.gap
-    local inner = width - x * 2
-    local y = M.gap * 0.5
-    y = y + PlaceText("title", screen.title, x, y, inner) + M.gap
+-- Your screen: the picture, and Move things now beside it.
+function DRAW.Layout(y, width)
+    return list:Card(0, y, width, function(ix, iy, iw)
+        local room = max((area.viewHeight or 0) - M.button * 3, M.button * 2)
+        local pw = min(iw * 0.62, room * 16 / 9)
+        local ph = ScreenPicture(ix, iy, pw)
+        local rx = ix + pw + M.gap * 2
+        local rw = max(iw - pw - M.gap * 2, 10)
+        local ry = iy
+        ry = ry + list:Text("font", "Gold boxes show where each piece starts.", rx, ry, rw, COLOR.name) + M.gap
+        list:Button("Move things now", rx, ry, rw, M.button, "normal", handlers.moveNow)
+        ry = ry + M.button + M.gap * 0.6
+        ry = ry + list:Text("small", "You can do this later too: Settings, General tab.", rx, ry, rw, COLOR.dim)
+        list:Reach(ry)
+        return iy + max(ph, ry - iy) + M.gap
+    end)
+end
 
+-- Three tiles of the same size: Tap, Hold, Move things.
+local TILES = {
+    { title = "Tap", text = "Opens the settings, or Chat picker when it is on.", picture = "hub" },
+    { title = "Hold", text = "Always opens the settings.", picture = "hold" },
+    { title = "Move things", text = "Settings, General tab.", picture = "move" },
+}
+
+local function Tiles(x, y, width)
+    local n = #TILES
+    local tw = (width - (n - 1) * M.gap) / n
+    local inner = max(tw - 2 * M.pad, 10)
+    local d = M.hub * 0.8
+    local boxHeight = d + UI:Px(14)
+    -- The texts first, to know the tallest; they are moved into place below.
+    local texts, textHeight = {}, 0
+    for i, tile in ipairs(TILES) do
+        local h, fs = CenteredText("small", tile.text, x, y, inner, COLOR.small)
+        texts[i] = fs
+        textHeight = max(textHeight, h)
+    end
+    local titleHeight = M.fontSize * 1.15
+    local tileHeight = M.pad + boxHeight + M.gap + titleHeight + M.gap * 0.3 + textHeight + M.pad
+    for i, tile in ipairs(TILES) do
+        local tx = x + (i - 1) * (tw + M.gap)
+        Rect("low", tx, y, tw, tileHeight, COLOR.tile)
+        local px, py = tx + tw * 0.5 - d * 0.5, y + M.pad + UI:Px(7)
+        if tile.picture == "move" then
+            MovePicture(px, py, d)
+        else
+            HubPicture(px, py, d, tile.picture == "hold")
+        end
+        local ty = y + M.pad + boxHeight + M.gap
+        CenteredText("font", tile.title, tx + M.pad, ty, inner, COLOR.gold)
+        texts[i]:ClearAllPoints()
+        texts[i]:SetPoint("TOPLEFT", list.child, "TOPLEFT", tx + M.pad, -(ty + titleHeight + M.gap * 0.3))
+    end
+    list:Reach(y + tileHeight)
+    return y + tileHeight
+end
+
+-- All set: what is on and off, the three tiles, and the reload offer when a
+-- feature asked for one.
+function DRAW.Finish(y, width)
     local on, off = {}, {}
     for _, mod in ipairs(PE.moduleList) do
         local into = PE:IsModuleEnabled(mod.key) and on or off
         into[#into + 1] = Escape(mod.label)
     end
-    if #on > 0 then
-        y = y + PlaceText("font", "Switched on: " .. table.concat(on, ", ") .. ".", x, y, inner) + M.gap
-    else
-        y = y + PlaceText("font", TEXT_NOTHING_ON, x, y, inner) + M.gap
-    end
-    if #off > 0 then
-        y = y + PlaceText("font", "Still off: " .. table.concat(off, ", ") .. ".", x, y, inner) + M.gap
-    end
-    y = PlaceParagraphs("font", screen.text, x, y, inner)
+    y = list:Card(0, y, width, function(ix, iy, iw)
+        local yy = iy
+        yy = yy + list:Text("font", "|cff59eb73On: |r" .. (#on > 0 and table.concat(on, ", ") or "nothing yet"),
+            ix, yy, iw, COLOR.name) + M.gap * 0.5
+        if #off > 0 then
+            yy = yy + list:Text("font", "|cff9e9ea3Off: |r" .. table.concat(off, ", "), ix, yy, iw, COLOR.name) + M.gap * 0.5
+        end
+        return yy + M.gap * 0.5
+    end)
+    y = Tiles(0, y, width) + M.gap
 
     local reasons = PE.reloadReasons
     if type(reasons) == "table" and #reasons > 0 then
@@ -402,8 +568,7 @@ local function DrawFinish(entry, width)
         for i = 1, min(#reasons, 2) do
             why[i] = Escape(reasons[i].label) .. ": " .. Escape(reasons[i].reason)
         end
-        y = y + PlaceLine(y, width) + M.gap
-        local textHeight = PlaceText("small", table.concat(why, "\n"), x, y, inner - buttonWidth - M.gap, COLOR.warn)
+        local textHeight = list:Text("small", table.concat(why, "\n"), 0, y, width - buttonWidth - M.gap, COLOR.warn)
         local rowHeight = max(M.button, textHeight)
         reloadButton:ClearAllPoints()
         reloadButton:SetSize(buttonWidth, M.button)
@@ -411,9 +576,48 @@ local function DrawFinish(entry, width)
         reloadButton.peScrollTop, reloadButton.peScrollBottom = y, y + rowHeight
         reloadButton:Show()
         navList[#navList + 1] = reloadButton
+        list:Reach(y + rowHeight)
         y = y + rowHeight + M.gap
     end
-    return y + M.pad
+    return y
+end
+
+---------------------------------------------------------------------------
+-- Drawing one screen
+---------------------------------------------------------------------------
+
+-- A feature's card, with the guide's own tap on its switch (same path as the
+-- settings switch, plus the guide's debug line). Returns the new y.
+local function FeatureCard(mod, card, y, width)
+    local mark = #navList
+    local ok, nextY = PE:Safe(mod.key, list.FeatureCard, list, mod, 0, y, width,
+        { setup = true, only = card.only, how = HOW[mod.key], failedText = TEXT_FAILED })
+    for i = mark + 1, #navList do
+        local btn = navList[i]
+        if btn.peKey == mod.key and btn.SetSwitch then btn:SetScript("OnClick", SwitchHandler(mod.key)) end
+    end
+    if ok and type(nextY) == "number" then return nextY end
+    return max(y, list.lowest) + M.gap
+end
+
+-- Title, lines, the screen's own cards, then its feature cards. Returns the
+-- total height.
+local function DrawScreen(screen, width)
+    local y = 0
+    y = y + list:Text("title", screen.title, 0, y, width) + M.gap * 0.5
+    for _, line in ipairs(screen.lines or {}) do
+        y = y + list:Text("font", line, 0, y, width, COLOR.line) + M.gap * 0.5
+    end
+    y = y + M.gap * 0.5
+    if screen.draw and DRAW[screen.draw] then
+        local ok, nextY = PE:Safe("core", DRAW[screen.draw], y, width)
+        y = (ok and type(nextY) == "number") and nextY or (max(y, list.lowest) + M.gap)
+    end
+    for _, card in ipairs(screen.cards or {}) do
+        local mod = PE:GetModule(card.key)
+        if mod then y = FeatureCard(mod, card, y, width) end
+    end
+    return max(y, list.lowest) + M.pad
 end
 
 local function PanelSize()
@@ -424,8 +628,9 @@ local function PanelSize()
 end
 
 -- Back and Skip at the bottom left, Next at the bottom right: always in the
--- same place, so pressing A again and again walks through the guide.
-local function LayoutBottomRow()
+-- same place, so pressing A again and again walks through the guide. One dot
+-- per screen between them, the current one gold.
+local function LayoutBottomRow(count, pos)
     local width = M.button * 3.5
     local content = panel.content
     backButton:ClearAllPoints()
@@ -437,24 +642,46 @@ local function LayoutBottomRow()
     nextButton:ClearAllPoints()
     nextButton:SetSize(width, M.button)
     nextButton:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
+
+    local d = M.smallFontSize * 0.6
+    local total = count * d + (count - 1) * M.gap
+    local x0 = (panel.contentWidth or 0) * 0.5 - total * 0.5
+    for k = 1, #dots do
+        local dot = dots[k]
+        if k <= count then
+            dot:ClearAllPoints()
+            dot:SetSize(d, d)
+            dot:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", x0 + (k - 1) * (d + M.gap), (M.button - d) * 0.5)
+            local c = k == pos and COLOR.gold or COLOR.dotOff
+            dot.disc:SetColor(c[1], c[2], c[3], 1)
+            dot.disc:Layout(dot, d)
+            dot.peCurrent = k == pos
+            dot:Show()
+        else
+            dot:Hide()
+        end
+    end
 end
+
+-- True while the guide's first screen has not yet put the highlight on Start.
+local focusStart = false
 
 local function DoDraw()
     M = UI:Metrics()
 
+    local shown = Visible()
+    local pos, isShown = PositionOf(shown)
+    if not isShown and shown[pos] then current = shown[pos].id end
+    local screen = shown[pos]
+    if not screen then return end
     local count = #shown
-    if index > count then index = count end
-    if index < 1 then index = 1 end
-    local entry = shown[index]
-    if not entry then return end
-    local isFirst, isLast = index == 1, index == count
-    panel:SetTitle(TITLE .. " (" .. index .. " of " .. count .. ")")
+    local isFirst, isLast = pos == 1, pos == count
+    panel:SetTitle(TITLE)
 
-    LayoutBottomRow()
+    LayoutBottomRow(count, pos)
     area:ClearAllPoints()
     area:SetPoint("TOPLEFT", panel.content, "TOPLEFT", 0, 0)
     local areaHeight = max(panel.contentHeight - M.button - M.gap, M.button * 2 + M.gap)
-    local rowCount = (entry.screen.id ~= "finish" and entry.rows) and #entry.rows or 0
     local total
     -- First with no paging buttons and the whole width. Only a screen that
     -- turns out too long is drawn again, narrower, with Up and Down.
@@ -463,12 +690,8 @@ local function DoDraw()
         list:Begin()
         area:Layout(panel.contentWidth, areaHeight, pass == 1)
         reloadButton:Hide()
-        for i = rowCount + 1, #switches do
-            switches[i].peKey = nil
-            switches[i]:Hide()
-        end
         local ok
-        ok, total = PE:Safe("core", entry.screen.id == "finish" and DrawFinish or DrawScreen, entry, area.viewWidth)
+        ok, total = PE:Safe("core", DrawScreen, screen, area.viewWidth)
         if not ok or type(total) ~= "number" then total = area.viewHeight end
         if total <= area.viewHeight + 0.5 then break end
     end
@@ -530,15 +753,26 @@ QueueDraw = function()
     end
 end
 
+local function ScreenIds(shown)
+    local ids = {}
+    for i, screen in ipairs(shown) do ids[i] = screen.id end
+    return ids
+end
+
 -- Back (-1) and Next / Start / Finish (+1).
 local function Go(step)
-    if step > 0 and index >= #shown then
+    local shown = Visible()
+    local pos, isShown = PositionOf(shown)
+    if step > 0 and isShown and pos >= #shown then
         Setup:Close("finished")
         return
     end
-    index = max(min(index + step, #shown), 1)
+    -- From a screen that is no longer shown, pos is the shown one before it.
+    if not isShown and step < 0 then pos = pos + 1 end
+    pos = max(min(pos + step, #shown), 1)
+    current = shown[pos].id
     area.offset = 0
-    Debug("screen " .. index .. " of " .. #shown .. ": " .. tostring(shown[index] and shown[index].screen.id))
+    Debug("screen " .. pos .. " of " .. #shown .. ": " .. current)
     Draw()
 end
 
@@ -619,9 +853,12 @@ local function OnHidden()
         Remember("skipped")
         Debug("closed: skipped")
     elseif why == "fight" then
-        resumeIndex = index
+        resumeScreen = current
         WaitForFightEnd("fight")
         Debug("closed: fight started, will come back")
+    elseif why == "move" then
+        resumeScreen = current
+        Debug("closed: Move on screen opened, will come back")
     else
         Debug("closed: not remembered (" .. (why == "Close" and "Close" or "B, Escape or another window") .. ")")
         if Setup:Seen() == nil and not toldClosed then
@@ -640,6 +877,22 @@ local function ReloadClicked()
     PE:ReloadNow()
 end
 
+local function MakeHandlers()
+    handlers.touch = PE:Wrap("core", function() PE:SetPlayStyle(true) end)
+    handlers.controller = PE:Wrap("core", function() PE:SetPlayStyle(false) end)
+    handlers.color, handlers.size = {}, {}
+    for _, choice in ipairs(COLOR_CHOICES) do
+        handlers.color[choice.value] = PE:Wrap("core", function() PE:SetUISetting("hubColor", choice.value) end)
+    end
+    for _, choice in ipairs(SIZE_CHOICES) do
+        handlers.size[choice.value] = PE:Wrap("core", function() PE:SetUISetting("size", choice.value) end)
+    end
+    -- Move on screen hides the guide and brings it back when it closes.
+    handlers.moveNow = PE:Wrap("core", function()
+        if PE.Move and PE.Move.Open then PE.Move:Open() end
+    end)
+end
+
 local function Build()
     UI = PE.UI
     M = UI:Metrics()
@@ -648,6 +901,22 @@ local function Build()
     panel.closeButton:SetScript("OnClick", PE:Wrap("core", function() Setup:Close("Close") end))
     area = UI:CreateScrollArea(panel.content)
     list = PE:NewListDrawer({ child = area.child, navList = navList })
+    local child = area.child
+    local layers = { low = { "BORDER", 0 }, mid = { "BORDER", 2 }, shape = { "ARTWORK", 1 }, top = { "ARTWORK", 3 } }
+    for name, layer in pairs(layers) do
+        list:AddPool(name, function() return child:CreateTexture(nil, layer[1], nil, layer[2]) end)
+    end
+    list:AddPool("round", function()
+        local f = CreateFrame("Frame", nil, child)
+        f.outer = UI:CreateDisc(f, "BACKGROUND", 0)
+        f.inner = UI:CreateDisc(f, "BORDER", 0)
+        f.word = UI:CreateText(f, "font")
+        f.word:SetJustifyH("CENTER")
+        f.word:SetWordWrap(false)
+        f.word:SetPoint("CENTER", f, "CENTER", 0, 0)
+        return f
+    end)
+    MakeHandlers()
 
     backButton = UI:CreateButton(panel.content, "Back")
     backButton:SetScript("OnClick", PE:Wrap("core", function() Go(-1) end))
@@ -655,6 +924,12 @@ local function Build()
     skipButton:SetScript("OnClick", PE:Wrap("core", function() Setup:Close("skipped") end))
     nextButton = UI:CreateButton(panel.content, "Next")
     nextButton:SetScript("OnClick", PE:Wrap("core", function() Go(1) end))
+    for k = 1, #SCREENS do
+        local dot = CreateFrame("Frame", nil, panel.content)
+        dot.disc = UI:CreateDisc(dot, "ARTWORK", 0)
+        dot:Hide()
+        dots[k] = dot
+    end
 
     reloadButton = UI:CreateButton(area.child, "Reload now")
     reloadButton:SetStyle("warn")
@@ -685,10 +960,11 @@ end
 -- Public
 ---------------------------------------------------------------------------
 
--- how: "first login", "settings", "slash" or "after the fight".
+-- how: "first login", "settings", "slash", "after the fight" or "after move".
 function Setup:Open(how)
     how = type(how) == "string" and how or "settings"
-    local byHand = how ~= "first login" and how ~= "after the fight"
+    local resuming = how == "after the fight" or how == "after move"
+    local byHand = how ~= "first login" and not resuming
     if PE:InCombat() then
         if byHand then
             Debug("not opened: in a fight")
@@ -724,16 +1000,10 @@ function Setup:Open(how)
             if other and other ~= panel and other.IsShown and other:IsShown() then pcall(other.Hide, other) end
         end
     end
-    shown = ShownScreens()
-    if how == "after the fight" then
-        index = max(min(resumeIndex or 1, #shown), 1)
-    else
-        index = 1
-    end
-    resumeIndex = nil
+    current = (resuming and resumeScreen and ScreenById(resumeScreen)) and resumeScreen or SCREENS[1].id
+    resumeScreen = nil
     closeWhy = nil
-    focusStart = index == 1
-    noHidSortButton = false
+    focusStart = current == SCREENS[1].id
     area.offset = 0
     -- The watch for a fight starts in OnShown. Asked for by hand while the
     -- game's whole interface is hidden, the guide is out of sight and OnShown
@@ -741,18 +1011,18 @@ function Setup:Open(how)
     if not panel:IsShown() then panel:Show() end
     panel:Raise()
     if PE.debugOn then
+        local shown = Visible()
+        local pos = PositionOf(shown)
         Debug("opened (" .. how .. ")")
-        local ids = {}
-        for i, entry in ipairs(shown) do ids[i] = entry.screen.id end
-        Debug("screens: " .. table.concat(ids, ", "))
-        Debug("screen " .. index .. " of " .. #shown .. ": " .. tostring(ids[index]))
+        Debug("screens: " .. table.concat(ScreenIds(shown), ", "))
+        Debug("screen " .. pos .. " of " .. #shown .. ": " .. tostring(current))
     end
     Draw()
     return true
 end
 
--- why: "finished", "skipped", "Close" or "fight"; anything else is a plain
--- hide. The bookkeeping is in OnHidden, so B and Escape take the same path.
+-- why: "finished", "skipped", "Close", "fight" or "move"; anything else is a
+-- plain hide. The bookkeeping is in OnHidden, so B and Escape take the same path.
 function Setup:Close(why)
     if built and panel:IsShown() then
         closeWhy = type(why) == "string" and why or nil
@@ -762,6 +1032,32 @@ end
 
 function Setup:IsOpen()
     return built and panel:IsShown() or false
+end
+
+-- Move on screen closed after it hid the guide: the guide comes back on the
+-- screen it was showing, unless another of our windows is open now. In a
+-- fight it waits for the fight to end.
+function Setup:BackFromMove()
+    if not built or panel:IsShown() or waiting or not resumeScreen then return end
+    if OtherWindowShown() then
+        resumeScreen = nil
+        Debug("not reopened: another window is open")
+        return
+    end
+    if PE:InCombat() then
+        WaitForFightEnd("fight")
+        Debug("waiting for the fight to end")
+        return
+    end
+    self:Open("after move")
+end
+
+-- The screen showing: its id, its place among the shown screens, how many
+-- screens are shown. For tests and the debug log.
+function Setup:Screen()
+    local shown = Visible()
+    local pos = PositionOf(shown)
+    return current, pos, #shown
 end
 
 ---------------------------------------------------------------------------

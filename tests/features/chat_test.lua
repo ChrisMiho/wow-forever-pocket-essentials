@@ -1332,6 +1332,7 @@ end)
 ---------------------------------------------------------------------------
 
 local function movePanel(c) return rawget(c.env, "PocketEssentialsMovePanel") end
+local PROMPT_LABEL = "\"Press A to type\""
 local function moveButton(c, label)
     local found
     local function walk(w, seen)
@@ -1372,7 +1373,7 @@ end
 
 local function promptSelected(c, PE)
     openMove(c, PE)
-    c:click(moveButton(c, "Chat prompt"))
+    c:click(moveButton(c, PROMPT_LABEL))
 end
 
 test("chat: move: no saved offset leaves the prompt where it was", function()
@@ -1395,14 +1396,23 @@ test("chat: move: a saved offset is added when the prompt is laid out", function
     check(dx ~= 0 and math.abs(x - dx) < 0.01 and math.abs(y - (PE.UI:Px(110) + dy)) < 0.01, "at " .. x .. "," .. y)
 end)
 
-test("chat: move: listed while Chat from round button is on, not when it is off", function()
+-- Spec 2026-11-20-0.9.0-ui-redesign, "Move on screen": always listed, as "Press A to type";
+-- with Chat picker off it reads "(off)", is dimmed and a tap does nothing.
+test("chat: move: listed as Press A to type while Chat picker is on, and dimmed with (off) while it is off", function()
     local c = T.new({ on = { "chat" }, gamepadUI = true })
     openMove(c, c.PE)
-    check(moveButton(c, "Chat prompt"), "not listed while on")
+    local on = moveButton(c, PROMPT_LABEL)
+    check(on, "not listed while on")
+    eq(on.peStyle, "normal")
     c.PE.Move:Close("test")
     local c2 = T.new({ on = {}, gamepadUI = true })
     openMove(c2, c2.PE)
-    check(moveButton(c2, "Chat prompt") == nil, "listed while off")
+    local off = moveButton(c2, PROMPT_LABEL .. " (off)")
+    check(off, "not listed as off while off")
+    eq(off.peStyle, "disabled")
+    check(moveButton(c2, PROMPT_LABEL) == nil, "listed as on while off")
+    c2:click(off)
+    check(not off.peSelected, "a tap picked the prompt while Chat picker is off")
 end)
 
 test("chat: move: the outline shows over the prompt's place before any prompt, and shows no prompt", function()

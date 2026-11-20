@@ -219,15 +219,17 @@ end
 
 -- Walks the open setup guide from its first screen to its last with Next,
 -- pressing no switch. eachScreen(i, n) runs on every screen. Returns the
--- number of screens; the guide is left on the last one.
-local function walkGuide(c, where, eachScreen)
+-- number of screens; the guide is left on the last one. The window is titled
+-- "Setup"; the place comes from PE.Setup:Screen() (spec 0.9.0).
+local function walkGuide(c, PE, where, eachScreen)
     local guide = guideOf(c)
     check(guideShown(c), where .. ": the setup guide is not open")
-    local n = tonumber(guide.peTitle:GetText():match("%(1 of (%d+)%)$"))
-    check(n and n >= 3, where .. ": the setup guide's title has no \"(1 of n)\": " .. tostring(guide.peTitle:GetText()))
+    check(guide.peTitle:GetText() == "Setup", where .. ": the setup guide is titled " .. tostring(guide.peTitle:GetText()))
+    local _, first, n = PE.Setup:Screen()
+    check(first == 1 and n and n >= 3, where .. ": the setup guide is not on screen 1 of at least 3")
     for i = 1, n do
-        check(guide.peTitle:GetText():find("(" .. i .. " of " .. n .. ")", 1, true),
-            where .. ": screen " .. i .. " is titled " .. tostring(guide.peTitle:GetText()))
+        local _, pos, count = PE.Setup:Screen()
+        check(pos == i and count == n, where .. ": screen " .. i .. " reads " .. tostring(pos) .. " of " .. tostring(count))
         c:assertClean(where .. ", setup guide screen " .. i)
         if eachScreen then eachScreen(i, n) end
         if i < n then
@@ -275,9 +277,9 @@ local function tocField(field)
     return v and v:gsub("%s+$", "")
 end
 
--- A feature's switch: the settings window's (a switch widget) or the setup guide's (ON / OFF / PROBLEM).
+-- A feature's switch: a switch widget, in the settings window or the setup guide.
 local function isSwitch(label, w)
-    return (w ~= nil and w.peSwitchState ~= nil) or label == "ON" or label == "OFF" or label == "PROBLEM"
+    return w ~= nil and w.peSwitchState ~= nil
 end
 
 local function addonFrames(c)
@@ -608,22 +610,22 @@ local function everythingOn(c, PE, hasQDB)
         check(PE.Setup:Open("settings") == true, "the setup guide did not open at size " .. size)
         c:advance(0.2)
         local switches, counted = 0, {}
-        walkGuide(c, "everything on, " .. size, function(i, n)
+        walkGuide(c, PE, "everything on, " .. size, function(i, n)
             for _, b in ipairs(layoutOf(c, guideOf(c))) do
                 if b.w.peKey then
                     if not counted[b.w.peKey] then switches = switches + 1 end
                     counted[b.w.peKey] = true
-                    local want = (QUEST_FEATURES[b.w.peKey] and not hasQDB) and "OFF" or "ON"
+                    local want = (QUEST_FEATURES[b.w.peKey] and not hasQDB) and "Off" or "On"
                     check(b.label == want, "the setup guide's switch for " .. b.w.peKey .. " reads " .. b.label .. ", expected " .. want)
                 end
             end
             if i == n then
                 local stillOff = false
                 for _, t in ipairs(visibleTexts(c, guideOf(c))) do
-                    if t:find("Still off:", 1, true) then stillOff = true end
+                    if t:find("Off: |r", 1, true) then stillOff = true end
                 end
                 check(stillOff == not hasQDB, "the setup guide's last screen "
-                    .. (stillOff and "has" or "has no") .. " \"Still off\" line with everything on")
+                    .. (stillOff and "has" or "has no") .. " \"Off\" line with everything on")
             end
         end)
         check(switches == #FEATURES, "the setup guide showed " .. switches .. " switches, expected " .. #FEATURES)
@@ -686,11 +688,12 @@ scenarios[#scenarios + 1] = { name = "1 first install", run = function()
     check(guideOf(c) == nil, "the setup guide was built at load")
     c:advance(2)
     check(guideShown(c), "the setup guide did not open by itself at first install")
-    local screens = walkGuide(c, "first install")
-    check(screens == 9, "the setup guide has " .. screens .. " screens at first install, expected 9")
+    -- Eight screens: Quest icon details shows only while Quest icons is on.
+    local screens = walkGuide(c, PE, "first install")
+    check(screens == 8, "the setup guide has " .. screens .. " screens at first install, expected 8")
     local nothingOn = false
     for _, t in ipairs(visibleTexts(c, guideOf(c))) do
-        if t:find("Nothing is switched on yet", 1, true) then nothingOn = true end
+        if t:find("On: |rnothing yet", 1, true) then nothingOn = true end
     end
     check(nothingOn, "the setup guide's last screen does not say that nothing is switched on")
     c:click(findButton(c, guideOf(c), "Finish"))
@@ -897,7 +900,7 @@ scenarios[#scenarios + 1] = { name = "5 saved settings from 0.0.2", needsQDB = t
     for _, b in ipairs(layoutOf(c, guideOf(c))) do
         if b.w.peKey == "questIcons" then iconsSwitch = b end
     end
-    check(iconsSwitch and iconsSwitch.label == "ON", "the setup guide does not show Quest icons as ON")
+    check(iconsSwitch and iconsSwitch.label == "On", "the setup guide does not show Quest icons as On")
     c:click(findButton(c, guideOf(c), "Skip"))
     c:advance(0.2)
     check(not guideShown(c), "Skip did not close the setup guide")

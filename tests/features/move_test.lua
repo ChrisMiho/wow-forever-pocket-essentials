@@ -216,7 +216,9 @@ test("move: nothing is built and nothing listens before the panel is first opene
     eq(c.stats.addonOnUpdate, 0)
 end)
 
-test("move: the panel lists only the pieces that are available, in order, and selects the first", function()
+-- Spec 2026-11-20-0.9.0-ui-redesign, "Move on screen": every piece is listed; one whose
+-- helper is off reads "(off)", is dimmed and a tap does nothing.
+test("move: the panel lists every piece in order, an unavailable one dimmed with (off), and selects the first available", function()
     local c, PE = T.new({})
     local applied = 0
     PE.Move:Register({ key = "testOff", label = "Hidden piece", order = 1, available = function() return false end,
@@ -225,8 +227,16 @@ test("move: the panel lists only the pieces that are available, in order, and se
         apply = function() applied = applied + 1 end,
         outline = function(box) box:ClearAllPoints(); box:SetPoint("CENTER", c.env.UIParent, "CENTER", 0, 0); box:SetSize(20, 20) end })
     openMove(c, PE)
-    eq(#shownButtons(c, movePanel(c), "Hidden piece"), 0, "an unavailable piece is listed")
+    eq(#shownButtons(c, movePanel(c), "Hidden piece"), 0, "an unavailable piece is listed without (off)")
+    local hidden = button(c, "Hidden piece (off)")
+    eq(hidden.peStyle, "disabled")
+    check(not hidden.peSelected, "the unavailable piece is selected")
     local first, hub = button(c, "Test piece"), button(c, "Round button")
+    local _, offY = hidden:GetCenter()
+    check(offY > select(2, first:GetCenter()), "the unavailable piece is not in its place in the order")
+    c:click(hidden)
+    check(first.peSelected and not hidden.peSelected, "a tap on the unavailable piece selected it")
+    for _, b in ipairs(movePanel(c).peNavGet()) do check(b ~= hidden, "the unavailable piece is a d-pad stop") end
     check(first.peSelected and not hub.peSelected, "the first piece is not the one selected")
     local _, fy = first:GetCenter()
     local _, hy = hub:GetCenter()
@@ -723,6 +733,125 @@ test("move: the Close button closes the panel", function()
     check(not movePanel(c):IsShown())
     local lines = debugLines(c, "move")
     eq(lines[#lines], "panel closed (Close)")
+end)
+
+---------------------------------------------------------------------------
+-- 0.9.0: the three pieces always listed, the piece width, the Size row
+-- (spec 2026-11-20-0.9.0-ui-redesign, "Move on screen")
+---------------------------------------------------------------------------
+
+local PROMPT = "\"Press A to type\""
+
+test("move: Quest arrow, Press A to type and Round button are always listed, the off ones dimmed with (off)", function()
+    local c, PE = T.new({})
+    openMove(c, PE)
+    local arrow, prompt, hub = button(c, "Quest arrow (off)"), button(c, PROMPT .. " (off)"), button(c, "Round button")
+    eq({ arrow.peStyle, prompt.peStyle, hub.peStyle }, { "disabled", "disabled", "normal" })
+    local _, ay = arrow:GetCenter()
+    local _, py = prompt:GetCenter()
+    local _, hy = hub:GetCenter()
+    check(ay > py and py > hy, "the pieces are not in the spec's order")
+    check(hub.peSelected, "the round button is not picked")
+    c:click(arrow)
+    c:click(prompt)
+    check(hub.peSelected and not arrow.peSelected and not prompt.peSelected, "a tap on an off piece picked it")
+    eq(PE.db.ui.moved.questArrow, nil)
+    -- the d-pad skips the off pieces
+    local panel = movePanel(c)
+    local seen = {}
+    for _ = 1, 14 do
+        c:script(nav(c), "OnClick", "RIGHT", true)
+        c:script(nav(c), "OnClick", "RIGHT", false)
+        if panel.peNavFocus then seen[panel.peNavFocus] = true end
+    end
+    check(seen[hub] and not seen[arrow] and not seen[prompt], "the d-pad reached an off piece, or missed the round button")
+    c:assertClean("three pieces")
+end)
+
+test("move: the piece buttons are 4.2 buttons wide", function()
+    local c, PE = T.new({})
+    openMove(c, PE)
+    local l, r = c._rect(button(c, "Round button"))
+    near(r - l, PE.UI:Metrics().button * 4.2, "piece width")
+end)
+
+test("move: opened for a piece whose helper is off, the round button is picked", function()
+    local c, PE = T.new({})
+    PE.Move:Open("questArrow")
+    c:advance(0.1)
+    check(button(c, "Round button").peSelected, "the round button is not picked")
+    check(not button(c, "Quest arrow (off)").peSelected, "the off arrow is picked")
+    eq(#shownButtons(c, movePanel(c), "Size"), 0)
+end)
+
+-- The texts of the panel that are not button labels.
+local function panelTexts(c)
+    local out = {}
+    walk(c, movePanel(c), function(w)
+        if c._state(w).type ~= "Button" then
+            for _, r in ipairs(c._state(w).regions) do
+                local st = c._state(r)
+                if st.type == "FontString" and st.text and st.text ~= "" and r:IsVisible() then out[st.text] = r end
+            end
+        end
+    end)
+    return out
+end
+
+test("move: no Size row while the round button is picked", function()
+    local c, PE = T.new({})
+    openMove(c, PE)
+    check(not panelTexts(c)["Size"], "a Size row for the round button")
+    eq(#shownButtons(c, movePanel(c), "-") + #shownButtons(c, movePanel(c), "+"), 0, "a number control for the round button")
+end)
+
+test("move: with the quest arrow picked, a Size row under the cross steps its size by 10 and the panel grows", function()
+    if not T.questieDB then return end
+    local c, PE = T.new({ quest = true, on = { "questArrow" } })
+    PE.Move:Open("hub")
+    c:advance(0.1)
+    local panel = movePanel(c)
+    local plain = panel.peHeight
+    c:click(button(c, "Quest arrow"))
+    c:advance(0.1)
+    local M = PE.UI:Metrics()
+    near(panel.peHeight - plain, M.button + M.gap, "the panel did not grow by one row")
+    local texts = panelTexts(c)
+    check(texts["Size"], "no Size name")
+    check(texts["100%"] and texts["of normal"], "the value or unit is missing")
+    local minus, plus = button(c, "-"), button(c, "+")
+    local up = button(c, "Up")
+    local _, _, _, upBottom = c._rect(button(c, "Down"))
+    local _, _, mt = c._rect(minus)
+    check(mt < upBottom, "the Size row is not under the cross")
+    local cl = c._rect(button(c, "Left"))
+    local _, cr = c._rect(button(c, "Right"))
+    local nl = c._rect(minus)
+    local _, nr = c._rect(plus)
+    near(nl, cl, "the number control does not start under the cross")
+    near(nr, cr, "the number control is not as wide as the cross")
+    check(up, "no Up")
+    local box = rawget(c.env, "PocketEssentialsMoveOutline")
+    local _, _, bt, bb = c._rect(box)
+    c:click(plus)
+    c:advance(0.1)
+    eq(PE.db.options.questArrow.scale, 110)
+    check(panelTexts(c)["110%"], "the value did not follow")
+    local _, _, bt2, bb2 = c._rect(box)
+    check((bt2 - bb2) > (bt - bb), "the outline did not grow with the arrow")
+    -- the ends stop at 50 and 150
+    for _ = 1, 10 do c:click(button(c, "+")) end
+    eq(PE.db.options.questArrow.scale, 150)
+    eq(button(c, "+").peStyle, "stepDim")
+    for _ = 1, 15 do c:click(button(c, "-")) end
+    eq(PE.db.options.questArrow.scale, 50)
+    eq(button(c, "-").peStyle, "stepDim")
+    -- the round button again: no Size row, the panel back to its size
+    c:click(button(c, "Round button"))
+    c:advance(0.1)
+    near(panel.peHeight, plain, "the panel did not shrink back")
+    check(not panelTexts(c)["Size"], "the Size row stayed")
+    c:assertClean("size row")
 end)
 
 return { known = KNOWN_FAILURES }

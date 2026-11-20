@@ -1132,7 +1132,7 @@ mod = PE:RegisterModule({
 -- "Move on screen": the prompt's backdrop can be nudged from its usual spot.
 if PE.Move and PE.Move.Register then
     PE.Move:Register({
-        key = PROMPT_KEY, label = "Chat prompt", order = 20,
+        key = PROMPT_KEY, label = "\"Press A to type\"", order = 20,
         available = function() return mod ~= nil and mod:IsEnabled() end,
         apply = function() PromptLayout() end,      -- does nothing until the prompt is built
         outline = function(box)
