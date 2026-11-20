@@ -454,7 +454,7 @@ test("setup: every feature of this build has a switch on some screen, and the ol
     end
 end)
 
-test("setup: the cards carry the spec's How: lines for quest icons, quest arrow, chat picker and menu background", function()
+test("setup: the cards carry How: lines for quest icons and quest arrow only (0.9.1: none for chat picker or menu background)", function()
     local c, PE = T.new({})
     open(c, PE)
     local all = {}
@@ -464,11 +464,33 @@ test("setup: the cards carry the spec's How: lines for quest icons, quest arrow,
     end
     local joined = table.concat(all, "\n")
     for _, line in ipairs({ "Tap an icon on the map to see what it is for.",
-        "Focus a quest in your quest log, and the arrow points to it.",
-        "Tap PE, pick who to talk to, then press A to type.",
-        "For menus like Track, Focus and Share on a quest." }) do
+        "Focus a quest in your quest log, and the arrow points to it." }) do
         check(joined:find("How: |r" .. line, 1, true), "no How: line \"" .. line .. "\"")
     end
+    for _, line in ipairs({ "Tap PE, pick who to talk to", "For menus like Track, Focus and Share" }) do
+        check(not joined:find(line, 1, true), "the guide still says \"" .. line .. "\"")
+    end
+    local hows = 0
+    for _ in joined:gmatch("How: |r") do hows = hows + 1 end
+    eq(hows, 2, "How: lines in the guide")
+end)
+
+test("setup: Round button and chat says once that the PE button is always on screen, and its card says the rest", function()
+    local c, PE = T.new({})
+    open(c, PE)
+    goTo(c, AT.chat)
+    check(hasText(c, "The PE button is always on screen."), "the screen line is not just \"The PE button is always on screen.\"")
+    check(not textWith(c, "With Chat picker on"), "the screen still explains the tap")
+    check(hasText(c, "Tap the round button to pick who to talk to."), "the chat card lost its description")
+    check(not textWith(c, "How: "), "the chat screen still has a How: line")
+    for _ = AT.chat, AT.vendors + 1, -1 do c:click(button(c, "Back")); c:advance(0.1) end
+    eq(screenId(PE), "vendors")
+    check(not textWith(c, "How: "), "the Vendors and menus screen still has a How: line")
+    for _, desc in ipairs({ "Sells grey items when you open a vendor.", "Repairs your gear at vendors, with your own gold.",
+        "A dark panel behind pop-up menus, so they are easy to read." }) do
+        check(hasText(c, desc), "no one-line description \"" .. desc .. "\"")
+    end
+    c:assertClean("one sentence each")
 end)
 
 test("setup: a switch calls the same path as the settings switch", function()
@@ -699,18 +721,33 @@ test("setup: Welcome has the play-style row and the controls card with its three
         "Or just tap any button on the screen." }) do
         check(hasText(c, t), "Welcome has no \"" .. t .. "\"")
     end
-    check(hasText(c, "A") and hasText(c, "B"), "no round A and B glyphs")
-    -- Review fix (mockup glyph): the letters are 0.55 of the glyph's width.
+    -- 0.9.1: no letters; two face-button diamonds, bottom lit for "press", right lit for "close".
+    check(not hasText(c, "A") and not hasText(c, "B"), "a round A or B glyph is still drawn")
     local M = PE.UI:Metrics()
-    local glyphs = 0
+    local d = M.button * 0.75
+    local glyphs = { press = {}, close = {} }
     walk(c, guide(c), function(w)
-        if w.word and w.outer and w:IsShown() and (w.word:GetText() == "A" or w.word:GetText() == "B") then
-            glyphs = glyphs + 1
-            local _, size = w.word:GetFont()
-            check(math.abs(size - M.button * 0.75 * 0.55) < 0.01, w.word:GetText() .. ": letter size " .. tostring(size))
+        if w.peFace and w:IsShown() then
+            check(glyphs[w.peGlyph], "a face-button circle of an unknown glyph: " .. tostring(w.peGlyph))
+            glyphs[w.peGlyph][w.peFace] = w
+            eq(w.word:GetText(), "", "a face-button circle has a letter")
         end
     end)
-    eq(glyphs, 2, "round A and B glyphs")
+    for name, lit in pairs({ press = "bottom", close = "right" }) do
+        local g = glyphs[name]
+        local left, right, top, bottom = math.huge, -math.huge, -math.huge, math.huge
+        for _, face in ipairs({ "top", "left", "right", "bottom" }) do
+            local w = g[face]
+            check(w, name .. ": no " .. face .. " circle")
+            eq(w.peLit == true, face == lit, name .. ": " .. face .. " lit")
+            left, right = math.min(left, w:GetLeft()), math.max(right, w:GetRight())
+            top, bottom = math.max(top, w:GetTop()), math.min(bottom, w:GetBottom())
+        end
+        check(math.abs((right - left) - d) < 0.5 and math.abs((top - bottom) - d) < 0.5,
+            name .. ": the diamond is not 0.75 of a button wide and high")
+        check(g.top:GetTop() > g.left:GetTop() and g.bottom:GetBottom() < g.left:GetBottom()
+            and g.left:GetLeft() < g.top:GetLeft() and g.right:GetRight() > g.top:GetRight(), name .. ": not a diamond")
+    end
     -- The PE picture of the next screens keeps the font's own size.
     goTo(c, AT.chat)
     walk(c, guide(c), function(w)
@@ -743,7 +780,7 @@ test("setup: Round button and chat shows a live round button that follows the co
     local c, PE = T.new({})
     open(c, PE)
     goTo(c, AT.chat)
-    check(hasText(c, "The PE button is always on screen. With Chat picker on, a tap opens the chat window."), "no lead line")
+    check(hasText(c, "The PE button is always on screen."), "no lead line")
     check(textWith(c, "Colour") and textWith(c, "Size of all Pocket Essentials buttons"), "no Colour or size rows")
     switch(c, "chat")
     local preview = hubPreview(c)
@@ -1204,31 +1241,171 @@ test("setup: the d-pad reaches every button; A presses; B closes", function()
     c:assertClean("d-pad")
 end)
 
-test("setup: the highlight stays on Next from screen to screen, and on a switch after pressing it", function()
+-- The d-pad stops of the list (the screen's own controls), in order: every
+-- stop that is not a paging button, the bottom row or Close.
+local NOT_LIST = { ["^"] = true, v = true, Back = true, Skip = true, Start = true, Next = true, Finish = true, Close = true }
+local function listStops(c)
+    local out = {}
+    for _, b in ipairs(guide(c).peNavGet()) do
+        if not NOT_LIST[T.labelOf(b)] then out[#out + 1] = b end
+    end
+    return out
+end
+
+local function focusName(c)
+    local b = guide(c).peNavFocus
+    return b and tostring(T.labelOf(b)) .. (b.peKey and (" (" .. b.peKey .. ")") or "") or "nothing"
+end
+
+-- 0.9.1 (owner's device test): the first stop is the screen's first control, not Close.
+test("setup: the d-pad starts on the first control: the play-style choice on Welcome, the switch on a feature screen", function()
     local c, PE = T.new({})
     open(c, PE)
     local panel = guide(c)
+    check(panel.peNavFocus == button(c, "Start"), "the highlight does not start on Start")
+    press(c, "DOWN")
+    check(panel.peNavFocus == button(c, "Touch controls"), "DOWN from Start is " .. focusName(c) .. ", not the play-style choice")
+    for _, key in ipairs({ "DOWN", "UP", "LEFT", "RIGHT" }) do
+        panel:NavSetFocus(nil)
+        press(c, key)
+        check(panel.peNavFocus == button(c, "Touch controls"), key .. " from nothing on Welcome is " .. focusName(c))
+    end
     panel:NavSetFocus(nil)
-    press(c, "UP") -- from nothing: the last button, Close
-    press(c, "LEFT")
-    local nextBtn = nextButton(c)
-    check(panel.peNavFocus == nextBtn, "LEFT from Close is not Next")
-    for i = 2, N do
+    goTo(c, AT.questArrow)
+    for _, key in ipairs({ "DOWN", "UP" }) do
+        panel:NavSetFocus(nil)
+        press(c, key)
+        check(panel.peNavFocus == switch(c, "questArrow"), key .. " from nothing on Quest arrow is " .. focusName(c))
+    end
+    -- A with nothing highlighted only shows the highlight, on the same first stop
+    panel:NavSetFocus(nil)
+    press(c, "A")
+    check(panel.peNavFocus == switch(c, "questArrow"), "A from nothing is " .. focusName(c))
+    check(not PE:IsModuleEnabled("questArrow"), "A from nothing pressed the switch")
+    c:assertClean("first stop")
+end)
+
+test("setup: Down from the last control lands on Next, Left walks to Skip then Back, Up returns to the controls, Close comes after Next", function()
+    local c, PE = T.new({})
+    open(c, PE)
+    local panel = guide(c)
+    local UI = PE.UI
+    for _, id in ipairs({ "welcome", "questArrow", "bags", "vendors", "chat", "layout" }) do
+        while screenId(PE) ~= id do c:click(nextButton(c)); c:advance(0.1) end
+        local stops = listStops(c)
+        check(#stops > 0, id .. ": no controls")
+        local first, last = stops[1], stops[#stops]
+        panel:NavSetFocus(last)
+        press(c, "DOWN")
+        check(panel.peNavFocus == nextButton(c), id .. ": DOWN from the last control is " .. focusName(c) .. ", not Next")
+        press(c, "UP")
+        check(UI:NavSameRow(panel.peNavFocus, last), id .. ": UP from Next is " .. focusName(c) .. ", not the last controls")
+        panel:NavSetFocus(nextButton(c))
+        if id ~= "welcome" then
+            press(c, "LEFT")
+            check(panel.peNavFocus == button(c, "Skip"), id .. ": LEFT from Next is " .. focusName(c) .. ", not Skip")
+            press(c, "LEFT")
+            check(panel.peNavFocus == button(c, "Back"), id .. ": LEFT from Skip is " .. focusName(c) .. ", not Back")
+            press(c, "UP")
+            check(UI:NavSameRow(panel.peNavFocus, last), id .. ": UP from Back is " .. focusName(c))
+        else
+            press(c, "LEFT")
+            check(panel.peNavFocus == button(c, "Skip"), "welcome: LEFT from Start is " .. focusName(c) .. ", not Skip")
+        end
+        -- Close: after Next going right, and above the first control
+        panel:NavSetFocus(nextButton(c))
+        press(c, "RIGHT")
+        check(panel.peNavFocus == button(c, "Close"), id .. ": RIGHT from Next is " .. focusName(c) .. ", not Close")
+        press(c, "DOWN")
+        check(panel.peNavFocus == first, id .. ": DOWN from Close is " .. focusName(c) .. ", not the first control")
+        press(c, "UP")
+        check(panel.peNavFocus == button(c, "Close"), id .. ": UP from the first control is " .. focusName(c) .. ", not Close")
+        press(c, "UP")
+        check(panel.peNavFocus == nextButton(c), id .. ": UP from Close is " .. focusName(c) .. ", not Next")
+        -- Down from the bottom row goes round to the first control, never to Close
+        press(c, "DOWN")
+        check(panel.peNavFocus == first, id .. ": DOWN from Next is " .. focusName(c) .. ", not the first control")
+    end
+    c:assertClean("bottom row path")
+end)
+
+test("setup: Next pressed with A puts the highlight on the next screen's first control; on a screen with none it stays on Next, so A keeps walking", function()
+    local c, PE = T.new({})
+    open(c, PE)
+    local panel = guide(c)
+    -- Start, with the highlight on it: the Quest icons screen opens on its switch
+    press(c, "A")
+    c:advance(0.1)
+    eq(screenId(PE), "questIcons")
+    check(panel.peNavFocus == switch(c, "questIcons"), "after Start the highlight is on " .. focusName(c))
+    -- every screen with controls: A on Next lands on the next screen's first control
+    while screenId(PE) ~= "layout" do
+        panel:NavSetFocus(nextButton(c))
         press(c, "A")
         c:advance(0.1)
-        eq(at(PE), i .. " of " .. N)
-        check(panel.peNavFocus == nextBtn and nextBtn.peNavFocused ~= false, "the highlight left Next on screen " .. i)
+        local stops = listStops(c)
+        check(panel.peNavFocus == stops[1], screenId(PE) .. ": the highlight is on " .. focusName(c) .. ", not the first control")
     end
-    -- Back to the first screen with the highlight on Back: Back goes away, the highlight goes to Next
+    check(panel.peNavFocus == button(c, "Move things now"), "Your screen does not start on Move things now")
+    -- All set has no controls: the highlight stays on Next (now Finish) and A finishes
+    panel:NavSetFocus(nextButton(c))
+    press(c, "A")
+    c:advance(0.1)
+    eq(screenId(PE), "finish")
+    eq(#listStops(c), 0, "controls on All set")
+    check(panel.peNavFocus == button(c, "Finish"), "on All set the highlight is on " .. focusName(c) .. ", not Finish")
+    -- Back with the d-pad: the screen before starts on its first control
     press(c, "LEFT")
-    check(panel.peNavFocus == button(c, "Back"), "LEFT from Finish is not Back")
-    for _ = 1, N - 1 do
-        press(c, "A")
-        c:advance(0.1)
+    check(panel.peNavFocus == button(c, "Back"), "LEFT from Finish is " .. focusName(c))
+    press(c, "A")
+    c:advance(0.1)
+    eq(screenId(PE), "layout")
+    check(panel.peNavFocus == button(c, "Move things now"), "after Back the highlight is on " .. focusName(c))
+    panel:NavSetFocus(nextButton(c))
+    press(c, "A")
+    c:advance(0.1)
+    press(c, "A")
+    c:advance(0.1)
+    check(not isOpen(c), "A on Finish did not close the guide")
+    eq(PE.db.setup, "finished")
+    -- touch: Next tapped with nothing highlighted shows no highlight on the next screen
+    open(c, PE)
+    panel:NavSetFocus(nil)
+    c:click(nextButton(c))
+    c:advance(0.1)
+    eq(panel.peNavFocus, nil, "a tap on Start put the highlight up")
+    c:assertClean("A walks")
+end)
+
+test("setup: with touch off, Down from the last control pages a tall screen to its bottom before it goes to Next", function()
+    local c, PE = T.new({})
+    PE:SetUISetting("touch", false)
+    open(c, PE)
+    goTo(c, AT.vendors)
+    local panel = guide(c)
+    local area = panel.peNavArea
+    area:SetContentHeight(area.viewHeight * 3)   -- a screen taller than the view
+    check(area:GetRange() > 20, "the screen does not scroll")
+    local stops = listStops(c)
+    panel:NavSetFocus(stops[#stops])
+    local pages = 0
+    for _ = 1, 40 do
+        if area.offset >= area:GetRange() - 0.5 then break end
+        press(c, "DOWN")
+        pages = pages + 1
+        check(panel.peNavFocus == stops[#stops], "the highlight left the last control while there was more to page")
     end
-    eq(at(PE), "1 of " .. N)
-    check(panel.peNavFocus == nextBtn, "the highlight did not go to Start when Back went away")
-    -- a switch keeps the highlight after it is pressed
+    check(area.offset >= area:GetRange() - 0.5, "the d-pad never reached the bottom")
+    check(pages > 0, "no paging")
+    press(c, "DOWN")
+    check(panel.peNavFocus == nextButton(c), "at the bottom, DOWN is " .. focusName(c) .. ", not Next")
+    c:assertClean("touch off paging")
+end)
+
+test("setup: a switch keeps the highlight after it is pressed", function()
+    local c, PE = T.new({})
+    open(c, PE)
+    local panel = guide(c)
     goTo(c, AT.vendors)
     local sw = switch(c, "repair")
     while panel.peNavFocus ~= sw do press(c, "RIGHT") end
@@ -1527,6 +1704,7 @@ end
 
 -- The buttons of a row: right of its name, left to right. The row's control
 -- is the one whose middle is nearest the name's; its parts share that middle.
+-- The scroll tabs (^ and v) on the right edge are never part of a row.
 local function rowButtons(c, top, label, PE)
     local at = textRegion(c, top, label)
     if not at then return nil end
@@ -1534,13 +1712,17 @@ local function rowButtons(c, top, label, PE)
     local mid = (nt + nb) / 2
     local reach = PE.UI:Metrics().button
     local best
+    local buttons = {}
     for _, b in ipairs(shownButtons(c, top)) do
+        if T.labelOf(b) ~= "^" and T.labelOf(b) ~= "v" then buttons[#buttons + 1] = b end
+    end
+    for _, b in ipairs(buttons) do
         local l, _, t, bottom = c._rect(b)
         local d = math.abs((t + bottom) / 2 - mid)
         if l > nl and d <= reach and (not best or d < best.d) then best = { d = d, y = (t + bottom) / 2 } end
     end
     local out = {}
-    for _, b in ipairs(shownButtons(c, top)) do
+    for _, b in ipairs(buttons) do
         local l, _, t, bottom = c._rect(b)
         if best and l > nl and math.abs((t + bottom) / 2 - best.y) < 1 then out[#out + 1] = { b = b, l = l } end
     end

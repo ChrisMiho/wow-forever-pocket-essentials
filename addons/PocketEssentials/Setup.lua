@@ -51,17 +51,18 @@ local COLOR = {
     dotOff = { 0.35, 0.35, 0.38 },
     glyph = { 0.70, 0.70, 0.72 },
     glyphFill = { 0.16, 0.16, 0.18 },
+    glyphLit = { 0.85, 0.85, 0.87 },
     tile = { 0.12, 0.12, 0.14 },
     screen = { 0.20, 0.17, 0.13 },
     screenEdge = { 0.35, 0.35, 0.38 },
 }
 
--- The "How:" line of a feature's card in the guide.
+-- The "How:" line of a feature's card in the guide. Only where the card's
+-- own one-line description does not already say it (0.9.1: none for Chat
+-- picker or Menu background).
 local HOW = {
     questIcons = "Tap an icon on the map to see what it is for.",
     questArrow = "Focus a quest in your quest log, and the arrow points to it.",
-    chat = "Tap PE, pick who to talk to, then press A to type.",
-    menuBg = "For menus like Track, Focus and Share on a quest.",
 }
 
 ---------------------------------------------------------------------------
@@ -91,7 +92,7 @@ local SCREENS = {
     { id = "bags", title = "Bags", cards = { { key = "bagWindow" }, { key = "bags" } } },
     { id = "vendors", title = "Vendors and menus", cards = { { key = "sellJunk" }, { key = "repair" }, { key = "menuBg" } } },
     { id = "chat", title = "Round button and chat", draw = "RoundButton",
-      lines = { "The PE button is always on screen. With Chat picker on, a tap opens the chat window." },
+      lines = { "The PE button is always on screen." },
       cards = { { key = "chat" } } },
     { id = "layout", title = "Your screen", draw = "Layout",
       lines = { "This is where each piece sits to start with. Move any of them to suit your screen." } },
@@ -238,10 +239,11 @@ local function Rect(pool, x, y, w, h, c, alpha)
 end
 
 -- A round picture: an outer disc, an inner disc and a word in the middle.
--- Used for the A / B glyphs and for the PE button.
--- wordSize: the word's own size (the A / B letters); nil keeps the font's.
+-- Used for the face-button circles and for the PE button.
+-- wordSize: the word's own size; nil keeps the font's.
 local function Round(x, y, d, outer, inner, innerD, word, wordColor, wordSize)
     local f = list:Acquire("round")
+    f.peFace, f.peLit, f.peGlyph = nil, nil, nil -- pooled: FaceGlyph sets them again
     f:ClearAllPoints()
     f:SetPoint("TOPLEFT", list.child, "TOPLEFT", x, -y)
     f:SetSize(d, d)
@@ -271,6 +273,20 @@ local function DpadGlyph(x, y, d)
     Rect("shape", x + a, y, a, d, COLOR.glyph)
     Rect("shape", x, y + a, d, a, COLOR.glyph)
     Rect("top", x + a + b, y + a + b, max(a - 2 * b, 1), max(a - 2 * b, 1), COLOR.glyphFill)
+end
+
+-- The four face buttons of a controller as four circles in a diamond, d
+-- wide; the one at `lit` ("top", "left", "right" or "bottom") filled light.
+-- No letters, so it reads the same on every controller. name: which glyph
+-- this is, kept on the circles for the tests.
+local FACES = { top = { 0.5, 0 }, left = { 0, 0.5 }, right = { 1, 0.5 }, bottom = { 0.5, 1 } }
+local function FaceGlyph(x, y, d, lit, name)
+    local s = d * 0.4
+    for face, at in pairs(FACES) do
+        local f = Round(x + (d - s) * at[1], y + (d - s) * at[2], s, COLOR.glyph,
+            face == lit and COLOR.glyphLit or COLOR.glyphFill, s - 2 * M.border, "")
+        f.peFace, f.peLit, f.peGlyph = face, face == lit, name
+    end
 end
 
 -- A box of gold dashes over a faint fill.
@@ -373,8 +389,8 @@ function DRAW.Welcome(y, width)
         local cw = (iw - 2 * M.gap) / 3
         local items = {
             { glyph = "dpad", text = "Move the blue highlight" },
-            { glyph = "A", text = "Press the highlighted button" },
-            { glyph = "B", text = "Close the window" },
+            { glyph = "press", lit = "bottom", text = "Press the highlighted button" },
+            { glyph = "close", lit = "right", text = "Close the window" },
         }
         local rowHeight = d
         for i, item in ipairs(items) do
@@ -382,7 +398,7 @@ function DRAW.Welcome(y, width)
             if item.glyph == "dpad" then
                 DpadGlyph(cx, yy, d)
             else
-                Round(cx, yy, d, COLOR.glyph, COLOR.glyphFill, d - 2 * M.border, item.glyph, { 1, 1, 1 }, d * 0.55)
+                FaceGlyph(cx, yy, d, item.lit, item.glyph)
             end
             local tw = max(cw - d - M.gap, 10)
             local h, fs = list:Text("font", item.text, cx + d + M.gap, yy, tw, COLOR.name)
@@ -684,6 +700,88 @@ end
 
 -- True while the guide's first screen has not yet put the highlight on Start.
 local focusStart = false
+-- How many of navList's first entries are the screen's own controls (the
+-- list), before the paging buttons, the bottom row and Close.
+local listEnd = 0
+-- True from Back or Next until the new screen is drawn.
+local screenMoved = false
+
+---------------------------------------------------------------------------
+-- The d-pad path (0.9.1, after the device test)
+--
+-- Reading order in navList: the screen's controls, Up and Down (only on a
+-- long screen with touch on), Back, Skip, Next, Close. Left and Right walk
+-- that order, so Left from Next is Skip, then Back, and Right from Next is
+-- Close. Up and Down follow these rules instead of the plain order:
+--   * nothing highlighted: any press lands on the first stop, which is the
+--     screen's first control (Next on a screen with none);
+--   * Down from the last row of controls: Next (Start, Finish);
+--   * Up from the bottom row: the last row of controls;
+--   * Down from the bottom row: round to the first control;
+--   * Close is reached last: Right from Next, or Up from the first control.
+--     Up from Close goes to Next, Down from Close to the first control.
+-- With touch off, a long screen is still paged first (UI.lua NavMove): while
+-- there is more to see below (Down) or above (Up), these rules step aside.
+---------------------------------------------------------------------------
+
+local function FirstStop()
+    if listEnd > 0 then return navList[1] end
+    return nextButton
+end
+
+local function InBottomRow(btn)
+    return btn == backButton or btn == skipButton or btn == nextButton
+end
+
+local function ListIndex(btn)
+    for i = 1, listEnd do
+        if navList[i] == btn then return i end
+    end
+end
+
+-- The first control of the last row of controls.
+local function LastRowStart()
+    local i = listEnd
+    while i > 1 and UI:NavSameRow(navList[i - 1], navList[i]) do i = i - 1 end
+    return navList[i]
+end
+
+-- True while the d-pad pages the list instead (touch off, more to see).
+local function WillPage(step)
+    if PE:UsesTouch() or not area.GetRange then return false end
+    if step > 0 then return area:GetRange() > area.offset + 0.5 end
+    return area.offset > 0.5
+end
+
+-- panel.navCross (UI.lua NavMove): a stop to jump to, or nil for the plain move.
+local function NavCross(focus, step, byRow)
+    if focus == nil then return FirstStop() end
+    if not byRow then return nil end
+    local at = ListIndex(focus)
+    if step > 0 then
+        if at then
+            -- Only from the last row of controls.
+            for i = at + 1, listEnd do
+                if not UI:NavSameRow(navList[i], focus) then return nil end
+            end
+            if WillPage(1) then return nil end
+            return nextButton
+        end
+        if InBottomRow(focus) then
+            if WillPage(1) then return nil end
+            return FirstStop()
+        end
+        if focus == panel.closeButton then return FirstStop() end
+        return nil
+    end
+    if InBottomRow(focus) then
+        if listEnd > 0 then return LastRowStart() end
+        if WillPage(-1) then return nil end
+        return panel.closeButton
+    end
+    if focus == panel.closeButton then return nextButton end
+    return nil
+end
 
 local function DoDraw()
     M = UI:Metrics()
@@ -718,7 +816,9 @@ local function DoDraw()
     area:SetContentHeight(total)
 
     -- Reading order for the d-pad: what is in the list, the paging buttons
-    -- when there is something to page, the bottom row, Close.
+    -- when there is something to page, the bottom row, Close (see "The d-pad
+    -- path" above for Up and Down).
+    listEnd = #navList
     if area:GetRange() > 0 and area.upButton:IsShown() then
         navList[#navList + 1] = area.upButton
         navList[#navList + 1] = area.downButton
@@ -732,12 +832,18 @@ local function DoDraw()
     navList[#navList + 1] = nextButton
     navList[#navList + 1] = panel.closeButton
 
-    -- The highlighted button went away with the screen (Back on the first
-    -- screen): the highlight goes to Next.
+    -- A new screen (Back or Next) with the highlight in use: the highlight
+    -- goes to its first control, or stays on Next when it has none, so A
+    -- pressed again and again still walks the guide. Otherwise, when the
+    -- highlighted button went away with a redraw, it goes to Next.
     local focus = panel.peNavFocus
+    local moved = screenMoved
+    screenMoved = false
     if focusStart and isFirst then
         focusStart = false
         panel:NavSetFocus(nextButton)
+    elseif moved and focus then
+        panel:NavSetFocus(FirstStop())
     elseif focus then
         local still = false
         for i = 1, #navList do
@@ -791,8 +897,10 @@ local function Go(step)
     pos = max(min(pos + step, #shown), 1)
     current = shown[pos].id
     area.offset = 0
+    screenMoved = true
     Debug("screen " .. pos .. " of " .. #shown .. ": " .. current)
     Draw()
+    screenMoved = false
 end
 
 ---------------------------------------------------------------------------
@@ -961,6 +1069,7 @@ local function Build()
 
     UI:AttachNav(panel, function() return navList end)
     panel.peNavArea = area   -- lets the d-pad page the list when touch is off (UI.lua NavMove)
+    panel.navCross = NavCross
     panel.navOnFocus = function(btn)
         if btn.peScrollTop then area:ScrollIntoView(btn) end
     end
