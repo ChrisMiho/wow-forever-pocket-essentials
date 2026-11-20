@@ -1012,4 +1012,56 @@ test("quest arrow: Move the arrow is still one wide button on its own line", fun
 end)
 
 
+-- One button width everywhere in a run of buttons: a slot is 3 button heights;
+-- a longer label takes whole slots, and a toggle is as wide as its longest label.
+test("settings buttons: one slot width, long labels take whole slots, toggles keep their width", function()
+    local c, PE = T.new({})
+    openSettings(c, PE)
+    local M = PE.UI:Metrics()
+    local slot = M.button * 3
+    local function near(a, b) return math.abs(a - b) < 0.01 end
+    local function width(label)
+        local b = shownButtons(c, label)[1]
+        check(b, "no button " .. label)
+        return b:GetWidth()
+    end
+    for _, label in ipairs({ "Small", "Medium", "Large", "Gold", "Horde", "Alliance", "Reload UI" }) do
+        check(near(width(label), slot), label .. " is " .. width(label) .. ", not one slot " .. slot)
+    end
+    local move = width("Move the round button")
+    local slots = (move + M.gap) / (slot + M.gap)
+    check(near(slots, math.floor(slots + 0.5)) and slots >= 1.5, "Move the round button is not whole slots: " .. move)
+    local yes = width("Touch screen: Yes")
+    c:click(shownButtons(c, "Touch screen: Yes")[1])
+    c:advance(0.2)
+    check(near(width("Touch screen: No"), yes), "the touch toggle changed width when tapped")
+    c:assertClean("slot widths")
+end)
+
+-- The 0.8.1 shared line and the slot widths together: Hide Blue Quest Haze and
+-- Quest Icon Key stay on one line in whole slots, before and after a tap.
+test("quest icons: haze toggle and icon key keep one line and whole slots when tapped", function()
+    local c, PE = T.new({ quest = true, on = { "questIcons" } })
+    openSettings(c, PE)
+    local M = PE.UI:Metrics()
+    local slot = M.button * 3
+    local function whole(b)
+        local slots = (b:GetWidth() + M.gap) / (slot + M.gap)
+        return math.abs(slots - math.floor(slots + 0.5)) < 0.01 and slots >= 0.99
+    end
+    local haze, key = shownButtons(c, "Hide Blue Quest Haze: On")[1], shownButtons(c, "Quest Icon Key")[1]
+    check(haze and key, "haze or key button missing")
+    check(whole(haze) and whole(key), "not whole slots: " .. haze:GetWidth() .. ", " .. key:GetWidth())
+    local w = haze:GetWidth()
+    c:click(haze)
+    c:advance(0.2)
+    haze, key = shownButtons(c, "Hide Blue Quest Haze: Off")[1], shownButtons(c, "Quest Icon Key")[1]
+    check(haze and key, "haze or key button missing after the tap")
+    check(math.abs(haze:GetWidth() - w) < 0.01, "the haze toggle changed width when tapped")
+    eq(key:GetTop(), haze:GetTop(), "not on one line after the tap")
+    check(key:GetLeft() > haze:GetRight() - 0.01, "the key overlaps the toggle")
+    c:assertClean("haze and key slots")
+end)
+
+
 return { known = KNOWN_FAILURES }

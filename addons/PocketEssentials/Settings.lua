@@ -213,8 +213,25 @@ function Drawer:NumberBox(box, x, y)
     return NumberBoxWidth()
 end
 
--- A run of buttons sized to their labels, wrapping onto new lines.
--- items: { { label =, selected =, style =, onClick = }, ... }. An item
+-- The width of `slots` button slots side by side. Every button in a run is
+-- one slot (3 button heights) wide, or whole slots when its label is longer,
+-- so buttons are one size and line up in columns.
+local function SlotsWidth(slots)
+    return slots * M.button * 3 + (slots - 1) * M.gap
+end
+
+-- The fewest whole slots at least `needed` wide, never more than maxWidth.
+local function SlotFit(needed, maxWidth)
+    local slots = max(ceil((needed - 0.01 + M.gap) / (M.button * 3 + M.gap)), 1)
+    local width = SlotsWidth(slots)
+    if maxWidth then width = min(width, maxWidth) end
+    return width
+end
+
+-- A run of buttons, each one or more slots wide, wrapping onto new lines.
+-- items: { { label =, selected =, style =, onClick =, alts = }, ... }. alts:
+-- the other labels the button can show (a toggle's other side); it is wide
+-- enough for the longest, so a tap does not change its width. An item
 -- { text = } is not a button: it is a short centred text in the run. An
 -- item { box = } is a number control (NumberBox), kept whole on one line.
 -- Returns the new y.
@@ -248,9 +265,18 @@ function Drawer:Flow(items, x0, y, maxWidth, minWidth)
         else
             local btn = self:Acquire("button")
             ResetButton(btn)
-            btn:SetLabel(item.label)
             btn:SetHeight(height)
-            width = btn:FitWidth(minWidth or M.button * 2.2, maxWidth)
+            local needed = minWidth or 0
+            if type(item.alts) == "table" then
+                for _, alt in ipairs(item.alts) do
+                    btn:SetLabel(alt)
+                    needed = max(needed, btn:FitWidth(0))
+                end
+            end
+            btn:SetLabel(item.label)
+            needed = max(needed, btn:FitWidth(0))
+            width = SlotFit(needed, maxWidth)
+            btn:SetWidth(width)
             if x > x0 and x + width > x0 + maxWidth then
                 x = x0
                 y = y + height + M.gap
@@ -524,11 +550,15 @@ function Drawer:Options(mod, y, width, onlyAlways)
                 -- Not "and ... or": the value may be false.
                 local nextValue = second.value
                 if shown == second then nextValue = first.value end
-                local label = tostring(shown.label ~= nil and shown.label or shown.value)
-                if type(opt.label) == "string" and opt.label ~= "" then label = opt.label .. ": " .. label end
+                local function Label(choice)
+                    local text = tostring(choice.label ~= nil and choice.label or choice.value)
+                    if type(opt.label) == "string" and opt.label ~= "" then text = opt.label .. ": " .. text end
+                    return text
+                end
                 actionsOnly = false
                 toggles[#toggles + 1] = {
-                    label = label,
+                    label = Label(shown),
+                    alts = { Label(first), Label(second) },
                     style = (current == true) and "on" or "off",
                     onClick = ChooseHandler(mod, opt, nextValue, refresh),
                 }
@@ -698,6 +728,7 @@ function Drawer:CoreChoices(y, width)
     local touch = PE:UsesTouch()
     y = self:Flow({ {
         label = "Touch screen: " .. (touch and "Yes" or "No"),
+        alts = { "Touch screen: Yes", "Touch screen: No" },
         style = touch and "on" or "off",
         onClick = PE:Wrap("core", function() PE:SetUISetting("touch", not touch) end),
     } }, x, y, innerWidth) + M.gap

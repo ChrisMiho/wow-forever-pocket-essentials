@@ -26,6 +26,11 @@ on a device. Your saved choices carry over as they are.
   normal size, the round PE button sits on the map's book icon in the
   top-left corner; it goes back to its spot when the map closes or goes full
   screen. Tap and hold work as before. Always on, no setting.
+- **Buttons are one size.** In the settings and the setup guide, every
+  button in a row is the same width (3 button heights), so they line up in
+  columns; a longer label takes two or more widths. A toggle such as
+  **Touch screen: Yes/No** is wide enough for both sides, so it no longer
+  changes size when you tap it.
 
 ### Not changed yet
 

@@ -446,6 +446,9 @@ better plan would be to move it over the little book icon of the map",
 always on: "for now, lets just auto move it for the players"; spec
 `docs/superpowers/specs/2026-11-20-round-button-on-map-design.md`). Menu background did
 not fix the quest log's quest menu: waiting on a debug log, no change yet.
+Also in 0.8.1 (UI clean-up from another session, merged and tested together):
+buttons in a row are one slot (3 button heights) wide or whole slots, and a
+toggle is wide enough for both its labels so a tap does not resize it.
 Spec `docs/superpowers/specs/2026-11-19-0.8.1-clearer-labels.md`; device
 steps `docs/TESTING.md` section 17.
 

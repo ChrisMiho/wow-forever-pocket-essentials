@@ -1062,3 +1062,8 @@ Install the 0.8.1 zip (only the `PocketEssentials` folder) and log in.
    (Track, Focus, Share, Abandon) opens, look at it, then close it. Back on
    the **Errors** page, tap **Save log now**. Send the saved
    `PocketEssentials.lua` file (in `WTF/Account/<your account>/SavedVariables/`).
+9. Look through the settings pages: buttons in a row (Small, Medium,
+   Large; Gold, Horde, Alliance) are all the same width and line up.
+   Longer ones like **Move the round button** are two widths. Tap
+   **Touch screen: Yes**: it reads No and stays the same size. Hide Blue
+   Quest Haze and Quest Icon Key are still on one line.
