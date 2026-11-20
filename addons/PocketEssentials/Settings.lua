@@ -441,11 +441,12 @@ end
 --            set = function(mod, value), when one choice stands for more
 --            than one saved value. With toggle = true and two choices, it is
 --            one button "label: choice" that flips to the other choice;
---            toggles that follow each other share a line. A toggle showing
+--            toggles and action buttons that follow each other share a line. A toggle showing
 --            the value true is green, otherwise grey.
 --            The heading goes beside the buttons when they fit (LabeledRow).
 --   action:  { label, action = function(mod) }
---            one wide button that runs the action.
+--            one button that runs the action. Alone (no toggle or action
+--            next to it) it is a wide button on its own line.
 --   buttons: { label, value = function(mod) -> text, buttons = { { label,
 --            action = function(mod) }, ... } }
 --            the label with the value text after it ("label: text"), then a
@@ -500,17 +501,19 @@ function Drawer:Options(mod, y, width, onlyAlways)
     end
     local labelWidth = self:LabelColumn(headings, innerWidth)
 
-    -- Toggles waiting to be drawn together on one line.
-    local toggles = {}
+    -- Toggles and action buttons waiting to be drawn together on one line.
+    -- A run of one action alone keeps its wide button.
+    local toggles, actionsOnly = {}, true
     local function FlushToggles()
         if #toggles == 0 then return end
-        y = self:Flow(toggles, x, y, innerWidth) + M.gap
-        toggles = {}
+        local minWidth = (#toggles == 1 and actionsOnly) and M.button * 4 or nil
+        y = self:Flow(toggles, x, y, innerWidth, minWidth) + M.gap
+        toggles, actionsOnly = {}, true
     end
 
     for _, row in ipairs(rows) do
         local opt = row.opt
-        if not IsToggleRow(opt) then FlushToggles() end
+        if not IsToggleRow(opt) and type(opt.action) ~= "function" then FlushToggles() end
         do
             if IsToggleRow(opt) then
                 local current = CurrentChoice(mod, opt)
@@ -523,6 +526,7 @@ function Drawer:Options(mod, y, width, onlyAlways)
                 if shown == second then nextValue = first.value end
                 local label = tostring(shown.label ~= nil and shown.label or shown.value)
                 if type(opt.label) == "string" and opt.label ~= "" then label = opt.label .. ": " .. label end
+                actionsOnly = false
                 toggles[#toggles + 1] = {
                     label = label,
                     style = (current == true) and "on" or "off",
@@ -571,14 +575,13 @@ function Drawer:Options(mod, y, width, onlyAlways)
                     y = y + self:Text("small", text, x, y, innerWidth, COLOR.option) + M.gap * 0.4
                 end
             elseif type(opt.action) == "function" then
-                local items = { {
+                toggles[#toggles + 1] = {
                     label = (type(opt.label) == "string" and opt.label ~= "") and opt.label or "Do it",
                     onClick = PE:Wrap("core", function()
                         PE:Safe(mod.key, opt.action, mod)
                         refresh()
                     end),
-                } }
-                y = self:Flow(items, x, y, innerWidth, M.button * 4) + M.gap
+                }
             elseif type(opt.buttons) == "table" or type(opt.buttons) == "function" then
                 local text = row.text or ""
                 local buttons = opt.buttons

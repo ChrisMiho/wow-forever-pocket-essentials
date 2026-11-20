@@ -988,5 +988,28 @@ test("nav: touch on, the d-pad Down does not page the Errors page", function()
     eq(area.offset, 0, "the d-pad paged with touch on")
 end)
 
+-- Spec 2026-11-19-0.8.1-clearer-labels, section 1: toggles and action buttons
+-- that follow each other share a line; one action alone stays one wide button.
+test("quest icons: Hide Blue Quest Haze and Quest Icon Key sit on one line, the key to the right", function()
+    local c, PE = T.new({ quest = true, on = { "questIcons" } })
+    openSettings(c, PE)
+    local haze, key = shownButtons(c, "Hide Blue Quest Haze: On")[1], shownButtons(c, "Quest Icon Key")[1]
+    check(haze, "no Hide Blue Quest Haze: On button")
+    check(key, "no Quest Icon Key button")
+    eq(key:GetTop(), haze:GetTop(), "not on one line")
+    check(key:GetLeft() > haze:GetLeft(), "the key is not to the right of the toggle")
+    c:assertClean("haze and key")
+end)
+
+test("quest arrow: Move the arrow is still one wide button on its own line", function()
+    local c, PE = T.new({ quest = true, on = { "questArrow" } })
+    openSettings(c, PE)
+    local move, small = shownButtons(c, "Move the arrow")[1], shownButtons(c, "Small")[1]
+    check(move and small, "Move the arrow or the Arrow size buttons are missing")
+    check(move:GetWidth() >= move:GetHeight() * 4 - 0.01, "Move the arrow is narrower than 4 button heights")
+    check(move:GetTop() ~= small:GetTop(), "Move the arrow shares a line with Arrow size")
+    c:assertClean("move the arrow")
+end)
+
 
 return { known = KNOWN_FAILURES }
