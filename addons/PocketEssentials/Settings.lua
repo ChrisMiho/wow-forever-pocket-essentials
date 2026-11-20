@@ -34,7 +34,7 @@ local TABS = {
     { id = "bags", label = "Bags", features = { "bagWindow", "bags" } },
     { id = "vendors", label = "Vendors", features = { "sellJunk", "repair" } },
     { id = "chat", label = "Chat", features = { "chat" } },
-    { id = "menuBg", label = "Menu background", features = { "menuBg" }, heading = true },
+    { id = "gameFixes", label = "Game fixes", features = { "menuBg", "sparkles" }, heading = true },
     { id = "general", label = "General" },
     { id = "errors", label = "Errors" },
 }
@@ -619,8 +619,10 @@ function Drawer:FeatureCard(mod, x, y, width, opts)
             ty = ty + self:Text("small", "|cffffd100How: |r" .. opts.how, ix, ty, tw, COLOR.small)
         end
         local state = PE:GetModuleState(key)
+        -- A feature marked statusWhenOff keeps its line while off (Loot
+        -- sparkles: the restart line).
         ty = self:Status(mod, ix, ty, tw, opts.failedText or TEXT_FAILED,
-            NO_STATUS_LINES[key] or state ~= "on")
+            NO_STATUS_LINES[key] or (state ~= "on" and not mod.statusWhenOff))
         local headerHeight = max(M.button, ty - iy)
         local switch = self:Switch(ix + iw - sw, iy + (headerHeight - M.button) * 0.5, SWITCH_STATE[state] or "off",
             PE:Wrap("core", function()

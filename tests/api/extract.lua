@@ -73,6 +73,10 @@ local INDIRECT = {
     { "global", "QuestMapLogTitleButton_CreateContextMenu", "MenuBackground.lua", "QuestMapLogTitleButton_CreateContextMenu" },
     { "namespace", "Menu.GetManager", "MenuBackground.lua", "Menu.GetManager" },
     { "cvar",   "combinedBags", "Bags.lua", '"combinedBags"' },
+    -- Loot sparkles: the setting it writes and the two it watches are held in constants.
+    { "cvar",   "outlineModeShowLootEffectWhenDisabled", "LootSparkles.lua", '"outlineModeShowLootEffectWhenDisabled"' },
+    { "cvar",   "graphicsQuality", "LootSparkles.lua", "graphicsquality" },
+    { "cvar",   "raidGraphicsQuality", "LootSparkles.lua", "raidgraphicsquality" },
     -- D-pad to Sort: Blizzard's two navigation setters and its table of directions are reached by
     -- name (Blizzard_GamepadSmartNavigation/Utility.lua, loaded only with the Gamepad UI); the two
     -- methods are ones we define on our own Sort button for Blizzard's cursor to call

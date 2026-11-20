@@ -20,16 +20,16 @@ local NAV_NAME = "PocketEssentialsNavButton"
 local ALL_KEYS = { PADDUP = NAV_NAME, PADDDOWN = NAV_NAME, PADDLEFT = NAV_NAME, PADDRIGHT = NAV_NAME, PAD1 = NAV_NAME, PAD2 = NAV_NAME }
 local TITLE = "Setup"
 -- The screens while Quest icons is off: "Quest icon details" is skipped.
-local ALL_SCREENS = { "Welcome", "Quest icons", "Quest arrow", "Bags", "Vendors and menus", "Round button and chat",
+local ALL_SCREENS = { "Welcome", "Quest icons", "Quest arrow", "Bags", "Vendors and game fixes", "Round button and chat",
     "Your screen", "All set" }
 local IDS = { "welcome", "questIcons", "questArrow", "bags", "vendors", "chat", "layout", "finish" }
 local N = #ALL_SCREENS
 local AT = { welcome = 1, questIcons = 2, questArrow = 3, bags = 4, vendors = 5, chat = 6, layout = 7, finish = 8 }
 -- The screen each feature's switch is on (Quest icons off).
-local SCREEN_OF = { questIcons = 2, questArrow = 3, bagWindow = 4, bags = 4, sellJunk = 5, repair = 5, menuBg = 5, chat = 6 }
+local SCREEN_OF = { questIcons = 2, questArrow = 3, bagWindow = 4, bags = 4, sellJunk = 5, repair = 5, menuBg = 5, sparkles = 5, chat = 6 }
 -- The settings tab of each feature.
 local TAB_OF = { questIcons = "questIcons", questArrow = "questArrow", bagWindow = "bags", bags = "bags",
-    sellJunk = "vendors", repair = "vendors", chat = "chat", menuBg = "menuBg" }
+    sellJunk = "vendors", repair = "vendors", chat = "chat", menuBg = "gameFixes", sparkles = "gameFixes" }
 -- Quest icons' rows in the guide: three on its own screen, three on the details screen.
 local QUEST_SCREEN_ROWS = { ["Show icons for"] = true, ["Icons on"] = true, ["Icon size"] = true }
 local QUEST_DETAIL_ROWS = { ["Merge icons closer than"] = true, ["Spots per objective"] = true, ["Blizzard blue quest haze"] = true }
@@ -256,7 +256,7 @@ test("setup: existing settings are kept and shown", function()
     c:advance(2)
     check(isOpen(c), "an existing player did not get the guide once")
     goTo(c, AT.vendors)
-    check(hasText(c, "Vendors and menus"), "screen " .. AT.vendors .. " is not Vendors and menus")
+    check(hasText(c, "Vendors and game fixes"), "screen " .. AT.vendors .. " is not Vendors and game fixes")
     eq(T.labelOf(switch(c, "sellJunk")), "On")
     eq(T.labelOf(switch(c, "repair")), "Off")
     goTo(c, 2)
@@ -271,7 +271,7 @@ end)
 -- Screens, dots and switches
 ---------------------------------------------------------------------------
 
-test("setup: the window is titled Setup; the screens are welcome, quest icons, quest arrow, bags, vendors and menus, round button and chat, your screen, all set", function()
+test("setup: the window is titled Setup; the screens are welcome, quest icons, quest arrow, bags, vendors and game fixes, round button and chat, your screen, all set", function()
     local c, PE = T.new({})
     open(c, PE)
     for i = 1, N do
@@ -485,7 +485,7 @@ test("setup: Round button and chat says once that the PE button is always on scr
     check(not textWith(c, "How: "), "the chat screen still has a How: line")
     for _ = AT.chat, AT.vendors + 1, -1 do c:click(button(c, "Back")); c:advance(0.1) end
     eq(screenId(PE), "vendors")
-    check(not textWith(c, "How: "), "the Vendors and menus screen still has a How: line")
+    check(not textWith(c, "How: "), "the Vendors and game fixes screen still has a How: line")
     for _, desc in ipairs({ "Sells grey items when you open a vendor.", "Repairs your gear at vendors, with your own gold.",
         "A dark panel behind pop-up menus, so they are easy to read." }) do
         check(hasText(c, desc), "no one-line description \"" .. desc .. "\"")
@@ -570,7 +570,7 @@ test("setup: quest switches are dimmed with the reason when QuestieDB is missing
 end)
 
 test("setup: a card whose feature is not registered is left out, and a screen with no card left is skipped", function()
-    -- a copy of the addon whose TOC leaves Vendor.lua and MenuBackground.lua out
+    -- a copy of the addon whose TOC leaves Vendor.lua, MenuBackground.lua and LootSparkles.lua out
     local dir = (os.getenv("TMPDIR") or "/tmp"):gsub("/+$", "") .. "/pe-setup-test-" .. tostring(os.time()) .. "-" .. tostring(math.random(1e6))
     local function sh(cmd) return os.execute(cmd) end
     sh("mkdir -p '" .. dir .. "' && cp -R '" .. T.addonDir .. "/.' '" .. dir .. "/'")
@@ -583,12 +583,14 @@ test("setup: a card whose feature is not registered is left out, and a screen wi
         eq(n, 1, "Vendor.lua lines in the TOC")
         changed, n = changed:gsub("MenuBackground%.lua\r?\n", "")
         eq(n, 1, "MenuBackground.lua lines in the TOC")
+        changed, n = changed:gsub("LootSparkles%.lua\r?\n", "")
+        eq(n, 1, "LootSparkles.lua lines in the TOC")
         f = assert(io.open(path, "wb"))
         f:write(changed)
         f:close()
         local c, PE = T.new({ addonDir = dir })
-        check(PE:GetModule("sellJunk") == nil and PE:GetModule("repair") == nil and PE:GetModule("menuBg") == nil,
-            "the vendor and menu features still registered")
+        check(PE:GetModule("sellJunk") == nil and PE:GetModule("repair") == nil and PE:GetModule("menuBg") == nil
+            and PE:GetModule("sparkles") == nil, "the vendor and game fix features still registered")
         open(c, PE)
         local seenTitles = {}
         for i = 1, N - 1 do
@@ -598,7 +600,7 @@ test("setup: a card whose feature is not registered is left out, and a screen wi
             end
             if i < N - 1 then goTo(c, 2) end
         end
-        check(not table.concat(seenTitles, "|"):find("Vendors and menus", 1, true), "the empty screen was shown")
+        check(not table.concat(seenTitles, "|"):find("Vendors and game fixes", 1, true), "the empty screen was shown")
         eq(T.labelOf(nextButton(c)), "Finish")
         c:assertClean("a build without the vendor and menu features")
     end)
@@ -621,7 +623,7 @@ test("setup: the finish screen lists what is on and what is off, then the Tap, H
     PE:SetModuleEnabled("chat", true)
     c:advance(0.1)
     check(hasText(c, "|cff59eb73On: |rAuto sell junk, Chat picker"), "the On line is wrong: " .. tostring(textWith(c, "On: |r")))
-    eq(textWith(c, "Off: |r"), "|cff9e9ea3Off: |rQuest icons, Quest arrow, Bag sorting, Bigger bag, Auto repair, Menu background")
+    eq(textWith(c, "Off: |r"), "|cff9e9ea3Off: |rQuest icons, Quest arrow, Bag sorting, Bigger bag, Auto repair, Menu background, Loot sparkles")
     for _, t in ipairs({ "Tap", "Hold", "Move things", "Opens the settings, or Chat picker when it is on.",
         "Always opens the settings.", "Settings, General tab." }) do
         check(hasText(c, t), "the tiles have no \"" .. t .. "\"")
@@ -1213,7 +1215,7 @@ test("setup: the d-pad reaches every button; A presses; B closes", function()
     eq(bindings(c), ALL_KEYS)
     check(panel.peNavFocus == button(c, "Start"), "the highlight does not start on Start (0.8.0)")
     panel:NavSetFocus(nil) -- the rest of this test presses the d-pad from nothing
-    goTo(c, AT.vendors) -- Vendors and menus: three switches
+    goTo(c, AT.vendors) -- Vendors and game fixes: four switches
     press(c, "DOWN")
     check(panel.peNavFocus == switch(c, "sellJunk"), "DOWN from nothing did not land on the first button")
     local reached = { [panel.peNavFocus] = 1 }
@@ -1230,7 +1232,7 @@ test("setup: the d-pad reaches every button; A presses; B closes", function()
         check(reached[b], "the d-pad never reached " .. T.labelOf(b))
         if T.labelOf(b) == "^" or T.labelOf(b) == "v" then paging = paging + 1 end
     end
-    eq(count - paging, 7, "buttons in the d-pad's round: three switches, Back, Skip, Next, Close")
+    eq(count - paging, 8, "buttons in the d-pad's round: four switches, Back, Skip, Next, Close")
     -- A on Next moves a screen
     while panel.peNavFocus ~= nextButton(c) do press(c, "RIGHT") end
     press(c, "A")
@@ -1667,7 +1669,7 @@ end
 local function goToFeature(c, PE, key)
     open(c, PE)
     for _ = 1, 12 do
-        if screenId(PE) == (key == "bagWindow" and "bags" or (key == "sellJunk" or key == "repair" or key == "menuBg") and "vendors"
+        if screenId(PE) == (key == "bagWindow" and "bags" or (key == "sellJunk" or key == "repair" or key == "menuBg" or key == "sparkles") and "vendors"
             or key) then break end
         c:click(nextButton(c))
         c:advance(0.1)

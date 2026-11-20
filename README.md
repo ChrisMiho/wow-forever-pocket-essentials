@@ -32,6 +32,7 @@ choices right under its switch.
 | Repair automatically | Repairs from your own money |
 | Chat from round button | The round button opens a picker: one big button per channel and per recent whisperer. A badge shows unanswered whispers. "Chat text size" (a - size + control) is in the settings and works with the feature on or off |
 | Menu background | A plain dark panel behind the game's pop-up menus, such as the menu on a quest in the quest log, so the text is easy to read |
+| Loot sparkles | Brings back the sparkle on things you can loot or use, even on the lowest graphics. Switching it off needs a full restart of the game |
 | Setup guide | Not a switch: nine short screens that explain the features above, each with its switch and, under it, the same choices as in the settings. Opens by itself once; open it again from the settings ("Setup guide") |
 
 ## Install
@@ -139,6 +140,9 @@ Found a bug or have an idea? Open an issue:
   [CurseForge](https://www.curseforge.com/wow/addons/questiedb).
 - Three icons come from [pfQuest](https://github.com/shagu/pfQuest) by Shagu
   (MIT).
+- Loot sparkles: Based on
+  [ForeverLootSparkles](https://github.com/svengabr/ForeverLootSparkles) by
+  Ashtar Senior (GPL-3.0-or-later).
 
 ## Licence
 

@@ -208,7 +208,7 @@ test("tabs: eight tabs in the spec's order, each holding the spec's helpers", fu
         got[#got + 1] = t.id .. "=" .. t.label .. "=" .. table.concat(t.features or {}, ",")
     end
     eq(got, { "questIcons=Quest icons=questIcons", "questArrow=Quest arrow=questArrow", "bags=Bags=bagWindow,bags",
-        "vendors=Vendors=sellJunk,repair", "chat=Chat=chat", "menuBg=Menu background=menuBg", "general=General=",
+        "vendors=Vendors=sellJunk,repair", "chat=Chat=chat", "gameFixes=Game fixes=menuBg,sparkles", "general=General=",
         "errors=Errors=" })
     openSettings(c, PE)
     for _, t in ipairs(PE.SETTINGS_TABS) do
@@ -476,9 +476,9 @@ test("feature card: name, line, switch; off with options says to switch it on; o
     check(not shownText(c, "Switch it on to choose how it works."), "the hint on a feature with no options")
 end)
 
-test("menu background: the tab starts with the heading card", function()
+test("game fixes: the tab starts with the heading card", function()
     local c, PE = T.new({})
-    openSettings(c, PE, "menuBg")
+    openSettings(c, PE, "gameFixes")
     check(shownText(c, "Fixes for the game's own interface"), "no heading")
     check(shownText(c, "Parts of the default Blizzard UI that are hard to use on a handheld. Each fix only changes the game's window it names."),
         "no heading line")

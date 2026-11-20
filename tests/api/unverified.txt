@@ -1,0 +1,1 @@
+cvar	outlineModeShowLootEffectWhenDisabled	engine-only setting, not in Blizzard's interface source; taken from ForeverLootSparkles. If this client lacks it, the write does nothing (docs/ARCHITECTURE.md, Unverified API)

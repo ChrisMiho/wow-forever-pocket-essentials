@@ -201,7 +201,10 @@ function Client.new(opts)
         player = { map = nil, x = 0, y = 0, facing = 0 },   -- map nil: no position (loading screen)
         maps = {},                   -- [uiMapID] = { name =, width =, height = } (yards)
         questLog = { quests = {}, focus = nil, watched = {} }, -- quests: { { id, title, complete, objectives, header } }
-        cvars = { combinedBags = "0", rotateMinimap = "0" },
+        -- outlineModeShowLootEffectWhenDisabled: engine-only (Loot sparkles); the two graphics
+        -- presets are what reset it (Blizzard_Settings_Shared/Mainline/GraphicsOverrides.lua).
+        cvars = { combinedBags = "0", rotateMinimap = "0", outlineModeShowLootEffectWhenDisabled = "0",
+                  graphicsQuality = "3", raidGraphicsQuality = "3" },
         chatLockdown = false,
         layouts = { layouts = {}, activeLayout = 1 },        -- C_EditMode.GetLayouts(); presets not included
         layoutImport = nil,          -- what C_EditMode.ConvertStringToLayoutInfo returns (a layout table), or nil
@@ -1336,6 +1339,9 @@ function Client.new(opts)
         SetCVar = function(name, value)
             if world.cvars[name] == nil then return false end
             world.cvars[name] = tostring(value)
+            -- The game announces the change at once, inside the call
+            -- (CVAR_UPDATE is a SynchronousEvent, ConsoleDocumentation.lua).
+            if c.snapshot and c.snapshot.event.CVAR_UPDATE then c:fire("CVAR_UPDATE", name, tostring(value)) end
             return true
         end,
     }, { SetCVar = true })

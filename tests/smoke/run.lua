@@ -79,7 +79,7 @@ local CORE_EVENTS = {
     DISPLAY_SIZE_CHANGED = "UI.lua: resizes everything",
 }
 
-local FEATURES = { "questIcons", "questArrow", "bags", "bagWindow", "sellJunk", "repair", "chat", "menuBg" }
+local FEATURES = { "questIcons", "questArrow", "bags", "bagWindow", "sellJunk", "repair", "chat", "menuBg", "sparkles" }
 local QUEST_FEATURES = { questIcons = true, questArrow = true }
 
 ---------------------------------------------------------------------------
@@ -171,7 +171,7 @@ local function guideOf(c) return rawget(c.env, "PocketEssentialsSetupPanel") end
 local function guideShown(c) return guideOf(c) ~= nil and guideOf(c):IsShown() end
 
 -- The settings window's pages (0.9.0): one per tab, and the Quest Icon Key.
-local PAGES = { "questIcons", "questArrow", "bags", "vendors", "chat", "menuBg", "general", "errors", "key" }
+local PAGES = { "questIcons", "questArrow", "bags", "vendors", "chat", "gameFixes", "general", "errors", "key" }
 
 local function openPage(c, PE, page)
     PE:OpenSettings(page)
@@ -386,7 +386,7 @@ local EVENT_ORDER = {
     "QUEST_ACCEPTED", "QUEST_LOG_UPDATE", "QUEST_WATCH_LIST_CHANGED", "SUPER_TRACKING_CHANGED", "QUEST_REMOVED",
     "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED", "INPUT_DEVICE_INTERFACE_TRANSITION",
     "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_UPDATE_RESTING",
-    "MERCHANT_SHOW", "MERCHANT_CLOSED",
+    "MERCHANT_SHOW", "MERCHANT_CLOSED", "CVAR_UPDATE",
     "CHAT_MSG_WHISPER", "CHAT_MSG_WHISPER_INFORM",
     "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN",
     "PLAYER_LOGOUT",
@@ -406,6 +406,12 @@ local function fireWorldEvent(c, event)
     elseif event == "PLAYER_REGEN_ENABLED" then c:leaveCombat()
     elseif event == "MERCHANT_SHOW" then c:openMerchant()
     elseif event == "MERCHANT_CLOSED" then c:closeMerchant()
+    -- A graphics preset change that turns the sparkle off (Loot sparkles sets it again).
+    elseif event == "CVAR_UPDATE" then
+        c.world.cvars.graphicsQuality = "1"
+        c:fire(event, "graphicsQuality", "1")
+        c.world.cvars.outlineModeShowLootEffectWhenDisabled = "0"
+        c:fire(event, "outlineModeShowLootEffectWhenDisabled", "0")
     elseif event == "CHAT_MSG_WHISPER" then c:whisperIn("Thrall-Camelot", "hello")
     elseif event == "CHAT_MSG_WHISPER_INFORM" then c:whisperOut("Thrall-Camelot", "hi back")
     -- Another addon's block: ours would be a real problem (and is logged as one).

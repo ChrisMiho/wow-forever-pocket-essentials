@@ -59,7 +59,7 @@ local COLOR = {
 
 -- The "How:" line of a feature's card in the guide. Only where the card's
 -- own one-line description does not already say it (0.9.1: none for Chat
--- picker or Menu background).
+-- picker, Menu background or Loot sparkles).
 local HOW = {
     questIcons = "Tap an icon on the map to see what it is for.",
     questArrow = "Focus a quest in your quest log, and the arrow points to it.",
@@ -90,7 +90,8 @@ local SCREENS = {
     { id = "questDetails", title = "Quest icon details", draw = "QuestDetails", needsOn = "questIcons" },
     { id = "questArrow", title = "Quest arrow", cards = { { key = "questArrow" } } },
     { id = "bags", title = "Bags", cards = { { key = "bagWindow" }, { key = "bags" } } },
-    { id = "vendors", title = "Vendors and menus", cards = { { key = "sellJunk" }, { key = "repair" }, { key = "menuBg" } } },
+    { id = "vendors", title = "Vendors and game fixes",
+      cards = { { key = "sellJunk" }, { key = "repair" }, { key = "menuBg" }, { key = "sparkles" } } },
     { id = "chat", title = "Round button and chat", draw = "RoundButton",
       lines = { "The PE button is always on screen." },
       cards = { { key = "chat" } } },
