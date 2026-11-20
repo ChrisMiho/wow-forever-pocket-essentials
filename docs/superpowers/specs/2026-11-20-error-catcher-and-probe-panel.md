@@ -70,8 +70,10 @@ Research is in this session's notes. The sources are `Blizzard_ScriptErrors.lua:
 **Debug log is a separate feature** with its own tab, **Debug log**, after Errors (owner, 2026-11-20). It holds today's debug log card unchanged: the switch, the help line, the line count, and Save the log / Empty the log. The Errors tab holds only the catcher and the viewer. The settings now have 9 tabs; tab height is `min(button, (contentHeight − 8*border) / 9)`.
 
 **Standing aside:**
-- At login, if BugGrabber, BugSack or Swatter is loaded (or the error handler was replaced by someone), it does nothing.
-- The card then says: "BugSack is collecting errors, so Pocket Essentials only lists its own." It never switches another addon off.
+- At login, if BugGrabber, BugSack or Swatter is loaded (or someone replaced the error handler), the feature does nothing. Its switch is drawn disabled and reads Off.
+- The card says why, in amber: "Off while BugSack is loaded: BugSack takes the errors before they reach this list." It uses the name actually found.
+- And how to choose ours, in dim text: "To use this instead, turn BugSack off in the AddOns list and restart."
+- **No override switch** (owner asked, 2026-11-20). BugGrabber takes errors before they reach the game's error popup, which is where we listen, so an override would catch nothing. Pocket Essentials never switches another addon off.
 
 **Catching:**
 - The hook from Part 1, trial 3. If the device shows the hook does not work, use the chained handler from trial 6.
