@@ -15,6 +15,9 @@ Research is in this session's notes. The sources are `Blizzard_ScriptErrors.lua:
 - **Secret text:** error text from tainted code can be secret, so check `issecretvalue` before any use.
 - **Other error addons:** they can be spotted with `C_AddOns.IsAddOnLoaded` and the globals `BugGrabber` / `BugSack`.
 
+## Shared rule (all settings rows)
+**Choices that do not fit grow wider.** A choice row's control grows past the usual width (`min(inner*0.58, button*9)`) when its labels need it. It can grow up to the row width minus the row name's width (never less than 30% of the row) minus a gap. A long name then wraps rather than a choice being cut off. Owner, 2026-11-20: "the text is cutoff on the second button, we have deadspace on the left side".
+
 ## Part 1: Pocket Probe 0.3.0 (testing only, ships as PocketProbe.zip)
 
 **No more automatic runs.**
@@ -77,12 +80,13 @@ Research is in this session's notes. The sources are `Blizzard_ScriptErrors.lua:
 - Others' errors are kept apart from ours in their own list, capped at 50. Dedupe on source + message + first stack line. A stack keeps up to 8 lines. `locals` are never stored.
 - A secret message shows as "(the game hides this message from addons)".
 
-**Hiding the game's popup:** the row **When an error happens: Show error popup / Hide popup, list here** (owner's wording, 2026-11-20). "Hide popup, list here" sets `scriptErrors` to 0 and saves the old value; switching the feature off puts it back. Hidden errors still go into the list.
+**Hiding the game's popup:** the row **Error popup: Show / Hide**, with the grey help line "Hidden errors still show in this list." (owner's pick, 2026-11-20). Hide sets `scriptErrors` to 0 and saves the old value; switching the feature off puts it back.
 
 **The viewer** (the Errors tab's second card, BugSack style, one error per page):
 - A filter row: **All / Pocket Essentials / Blizzard / Other addons**.
 - The page: the source in gold, "x3 · 23:11" on the right, the message (white, wraps), and the stack (dim, small).
 - The bottom row: **◀ Previous**, "3 of 12", **Next ▶**, and **Clear all**. With the d-pad, Left and Right move between errors.
+- **Switch off, or another error addon present:** Pocket Essentials still lists its own errors, as it always has. The filter row is hidden, and a dim line says "Only Pocket Essentials' own errors are listed while this is off."
 - When empty: "No errors recorded."
 - **No scroll bar:** the message shows at most 3 lines and the stack at most 6 lines. Longer text is cut at the edge, and the full text stays in the saved file. The Errors page must fit at every button size without the scroll bar.
 
