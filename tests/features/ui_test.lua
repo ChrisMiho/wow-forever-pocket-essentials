@@ -1001,15 +1001,7 @@ test("quest icons: Hide Blue Quest Haze and Quest Icon Key sit on one line, the 
     c:assertClean("haze and key")
 end)
 
-test("quest arrow: Move the arrow is still one wide button on its own line", function()
-    local c, PE = T.new({ quest = true, on = { "questArrow" } })
-    openSettings(c, PE)
-    local move, small = shownButtons(c, "Move the arrow")[1], shownButtons(c, "Small")[1]
-    check(move and small, "Move the arrow or the Arrow size buttons are missing")
-    check(move:GetWidth() >= move:GetHeight() * 4 - 0.01, "Move the arrow is narrower than 4 button heights")
-    check(move:GetTop() ~= small:GetTop(), "Move the arrow shares a line with Arrow size")
-    c:assertClean("move the arrow")
-end)
+-- The quest arrow's old "Move the arrow" + Arrow size layout went in 0.9.0 (spec 2026-11-20-0.9.0-ui-redesign).
 
 
 -- One button width everywhere in a run of buttons: a slot is 3 button heights;

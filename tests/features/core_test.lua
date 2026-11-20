@@ -381,7 +381,7 @@ test("core: a block of ours is logged with its function, and announced once per 
     check(forbade, "no entry names UseContainerItem")
     eq(forbade.count, 2, "the repeat was counted")
     check(forbade.msg:find("forbade", 1, true), "entry does not say forbade: " .. forbade.msg)
-    check(forbade.msg:find("Chat from round button", 1, true), "entry does not list the features on: " .. forbade.msg)
+    check(forbade.msg:find("Chat picker", 1, true), "entry does not list the features on: " .. forbade.msg)
     eq(linesWith(c, "The game blocked Pocket Essentials from using UseContainerItem"), 1)
     eq(linesWith(c, "The game blocked Pocket Essentials from using SetAttribute"), 1)
     eq(linesWith(c, "hit a problem"), 0, "the generic problem line is not added for blocks")

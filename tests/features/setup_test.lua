@@ -276,7 +276,7 @@ test("setup: every feature of this build has a switch on some screen, and the ne
             if at == i then switch(c, key) end
         end
         -- The stepper is a real control now, shown with Chat from round button off (it is marked always).
-        if i == AT.chat then button(c, "-"); button(c, "+") end
+        if i == AT.chat then c:click(shownButtons(c, guide(c), "-")[1]); c:click(shownButtons(c, guide(c), "+")[1]) end
         if i < N then goTo(c, 2) end
     end
     for _, mod in ipairs(PE.moduleList) do
@@ -420,7 +420,7 @@ test("setup: the finish screen lists what is on and what is off", function()
     PE:SetModuleEnabled("sellJunk", true)
     PE:SetModuleEnabled("chat", true)
     c:advance(0.1)
-    check(hasText(c, "Switched on: Sell junk automatically, Chat from round button."), "the Switched on line is wrong: "
+    check(hasText(c, "Switched on: Sell junk automatically, Chat picker."), "the Switched on line is wrong: "
         .. tostring(textWith(c, "Switched on:")))
     eq(textWith(c, "Still off:"), "Still off: Quest icons, Quest arrow, Bag sorting, Bigger bag, Repair automatically, Menu background.")
     check(textWith(c, "\"Setup guide\" button at the bottom of the settings"), "no closing paragraph")
@@ -1685,7 +1685,7 @@ test("options: with options on screen the guide still has no per-frame code and 
     for i = 2, N do
         goTo(c, 2)
         if i == AT.bags then button(c, "Extra large") end
-        if i == AT.chat then button(c, "+") end
+        if i == AT.chat then c:click(shownButtons(c, guide(c), "+")[1]) end
     end
     c:advance(2)
     eq(c.stats.addonOnUpdate, 0, "something ticked while the guide was open")
