@@ -77,7 +77,7 @@ Research is in this session's notes. The sources are `Blizzard_ScriptErrors.lua:
 - Others' errors are kept apart from ours in their own list, capped at 50. Dedupe on source + message + first stack line. A stack keeps up to 8 lines. `locals` are never stored.
 - A secret message shows as "(the game hides this message from addons)".
 
-**Hiding the game's box:** the row **The game's error box: Show / Hide**. Hide sets `scriptErrors` to 0 and saves the old value; switching the feature off puts it back.
+**Hiding the game's popup:** the row **When an error happens: Show error popup / Hide popup, list here** (owner's wording, 2026-11-20). "Hide popup, list here" sets `scriptErrors` to 0 and saves the old value; switching the feature off puts it back. Hidden errors still go into the list.
 
 **The viewer** (the Errors tab's second card, BugSack style, one error per page):
 - A filter row: **All / Pocket Essentials / Blizzard / Other addons**.
