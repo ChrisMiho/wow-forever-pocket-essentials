@@ -27,11 +27,22 @@ local ADDON_NAME, PE = ...
 --   * Its places are all on other maps: no arrow; the text reads "Outside
 --     this zone" over "Head to <zone>" (the zone with most of its places;
 --     the quest's name if the zone name cannot be read).
---   * It has no known place at all: no arrow; "No known location".
---   * No quest focused: no arrow; the text asks you to focus one.
+--   * It has no known place at all: no arrow; "No map data for this quest".
+--   * No quest focused: no arrow; the text asks you to focus one. With
+--     restHide on (the default) the block is hidden while you rest in a city
+--     or inn (IsResting), checked again on PLAYER_UPDATE_RESTING, which is
+--     listened for only while the feature is on.
 --
 -- When the objective is behind you (more than TURN_ENTER from straight
--- ahead) the arrow is swapped for the words "Turn around".
+-- ahead) there is no arrow; the top line reads "Turn around".
+--
+-- Look (spec 2026-11-20-0.9.0-ui-redesign, "Quest arrow on screen"): the
+-- block is sized by its own `scale` option only (s = scale / 100), not by
+-- Button size: arrow box 76*s, text width 400*s, top line 28*s in the title
+-- face, quest line 20*s in the normal face, 4*s under the box and 2*s between
+-- the lines (720p units through UI:Px). With no arrow the top line starts at
+-- the top of the block. The quest line is one text with colour codes:
+-- "Quest: " (or "Turn in: ", "Head to ") in dim gold, then the name in white.
 --
 -- Which way (the part most likely to be wrong, so it is spelled out):
 --   * Map fractions: x grows to the EAST, y grows to the SOUTH.
@@ -95,11 +106,17 @@ local POSITIONS = {
     left  = { "CENTER", "CENTER", -230, 60 },
     right = { "CENTER", "CENTER", 230,  60 },
 }
-local BOX_PX = { small = 56, normal = 76, large = 112 }
-local DEFAULTS = { position = "top", size = "normal" }
+-- Sizes of the block at scale 100, in pixels on a 720p screen.
+local BOX_PX, WIDTH_PX, BIG_PX, SMALL_PX, BOX_GAP_PX, LINE_GAP_PX = 76, 400, 28, 20, 4, 2
+local SCALE_MIN, SCALE_MAX, SCALE_STEP, SCALE_DEFAULT = 50, 150, 10, 100
+-- The old Small / Normal / Large choice, moved to scale once (then cleared).
+local SIZE_TO_SCALE = { small = 70, normal = 100, large = 150 }
+local DEFAULTS = { position = "top", scale = SCALE_DEFAULT, restHide = true }
 
 local COLOR_ARROW = { 1, 0.82, 0 }
 local COLOR_HERE = { 0.35, 1, 0.45 }
+-- Colour codes for the quest line: dim gold (.85, .72, .35), white, grey (.84).
+local CODE_PREFIX, CODE_NAME, CODE_GREY = "|cffd9b859", "|cffffffff", "|cffd6d6d6"
 local ARROW_TEXTURE = "Interface\\AddOns\\PocketEssentials\\Icons\\arrow"
 
 -- Fallback drawing: the arrow pointing up, as fractions of half its length: x1, y1, x2, y2.
@@ -126,6 +143,7 @@ local S = {
     failures = 0,
     here = false,
     turn = false,                       -- "Turn around" is showing instead of the arrow
+    noFocus = false,                    -- the text-only state is "No quest focused"
     arrow = nil,                        -- the arrow picture, when it can be turned (else `lines` are used)
     pinMap = nil,                       -- the map the target (S.pin) is on
     aside = {},                         -- spots set aside after being reached: [PosKey] = GetTime() they come back
@@ -152,9 +170,34 @@ end
 
 local function Opt(key)
     local opts = mod and mod.opts
-    local value = type(opts) == "table" and opts[key] or nil
+    local value = nil
+    if type(opts) == "table" then value = opts[key] end     -- may be false: not "and ... or nil"
     if value == nil then value = DEFAULTS[key] end
     return value
+end
+
+-- s = scale / 100, from the saved scale kept inside 50..150.
+local function ScaleFactor()
+    local scale = Opt("scale")
+    if type(scale) ~= "number" or scale ~= scale then scale = SCALE_DEFAULT end
+    if scale < SCALE_MIN then scale = SCALE_MIN elseif scale > SCALE_MAX then scale = SCALE_MAX end
+    return scale / 100
+end
+
+-- Moves an old saved size (small / normal / large) to scale, once: size is
+-- cleared, so it is never read again.
+local function MigrateSize(opts)
+    if type(opts) ~= "table" or opts.size == nil then return end
+    local scale = SIZE_TO_SCALE[opts.size]
+    if scale then opts.scale = scale end
+    opts.size = nil
+end
+
+local function IsRestingNow()
+    if type(IsResting) ~= "function" then return false end
+    local ok, resting = pcall(IsResting)
+    if not ok or IsSecret(resting) then return false end
+    return resting and true or false
 end
 
 ---------------------------------------------------------------------------
@@ -248,13 +291,21 @@ local function Shorten(text)
     return strsub(text, 1, n) .. "..."
 end
 
+-- The quest line: the prefix in dim gold, then the name (shortened) in white.
+local function Line(prefix, name)
+    return CODE_PREFIX .. prefix .. "|r" .. CODE_NAME .. Shorten(name) .. "|r"
+end
+
+local function QuestTitle(questID)
+    local title = QD:GetQuestTitle(questID)
+    if type(title) ~= "string" or title == "" then title = "Quest" end
+    return title
+end
+
 local function TitleFor(pin)
     local title = pin.title
-    if type(title) ~= "string" or title == "" then title = QD:GetQuestTitle(pin.questID) end
-    if type(title) ~= "string" or title == "" then title = "Quest" end
-    title = Shorten(title)
-    if pin.kind == "turnin" then title = "Turn in: " .. title end
-    return title
+    if type(title) ~= "string" or title == "" then title = QuestTitle(pin.questID) end
+    return Line(pin.kind == "turnin" and "Turn in: " or "Quest: ", title)
 end
 
 local function SetTitle(title)
@@ -350,8 +401,9 @@ local function Select(playerMap, px, py)
     RefreshAside(tracked, playerMap)
 
     local pin = nil
+    S.noFocus = not tracked
     if not tracked then
-        SetMessage("No quest focused", "Focus one in your quest log")
+        SetMessage("No quest focused", CODE_GREY .. "Focus one in your quest log|r")
         if PE.debugOn then DebugState("text only: no quest focused") end
     else
         local byMap = QD:GetPinsForQuest(tracked)
@@ -370,14 +422,13 @@ local function Select(playerMap, px, py)
                     or ("hidden: quest " .. tracked .. ", size not readable of map " .. playerMap))
             end
         else
-            local title = QD:GetQuestTitle(tracked)
-            if type(title) ~= "string" or title == "" then title = "Quest" end
+            local title = QuestTitle(tracked)
             if type(byMap) == "table" and HasPlaces(byMap) then
                 local zone = ZoneName(BusiestMap(byMap))
-                SetMessage("Outside this zone", zone and Shorten("Head to " .. zone) or Shorten(title))
+                SetMessage("Outside this zone", zone and Line("Head to ", zone) or Line("Quest: ", title))
                 if PE.debugOn then DebugState("text only: quest " .. tracked .. " has no spot on map " .. playerMap) end
             else
-                SetMessage("No known location", Shorten(title))
+                SetMessage("No map data for this quest", Line("Quest: ", title))
                 if PE.debugOn then DebugState("text only: quest " .. tracked .. " has no known location") end
             end
         end
@@ -414,15 +465,18 @@ local function Paint(here)
     end
 end
 
--- Swaps the arrow for the words "Turn around", and back.
-local function SetTurn(turn)
-    if S.turn == turn then return end
-    S.turn = turn
-    S.turnText:SetShown(turn)
-    if S.arrow then
-        S.arrow:SetShown(not turn)
-    else
-        for i = 1, LINE_COUNT do lines[i]:SetShown(not turn) end
+-- The top line: its text, in green for "Here" and gold otherwise. Only a
+-- change is passed on to the game.
+local function SetTop(text, green)
+    if text ~= S.topText then
+        S.topText = text
+        S.distText:SetText(text)
+    end
+    green = green and true or false
+    if green ~= S.topGreen then
+        S.topGreen = green
+        local c = green and COLOR_HERE or COLOR_ARROW
+        S.distText:SetTextColor(c[1], c[2], c[3], 1)
     end
 end
 
@@ -473,7 +527,7 @@ local function ShowDistance(dist)
     if here ~= S.painted then Paint(here) end
     if code == S.distCode then return end
     S.distCode = code
-    S.distText:SetText(here and "Here" or (code .. " yd"))
+    S.distLabel = here and "Here" or (code .. " yd")
 end
 
 -- Creates the frames once. Returns false if this client can neither turn a
@@ -526,16 +580,11 @@ local function Build()
         local text = UI:CreateText(S.display, "title")
         text:SetJustifyH("CENTER")
         text:SetWordWrap(false)
-        S.distText = text
-    end
-    if not S.turnText then
-        local text = UI:CreateText(S.box, "title")
-        text:SetJustifyH("CENTER")
-        text:SetWordWrap(false)
-        text:SetText("Turn around")
         text:SetTextColor(COLOR_ARROW[1], COLOR_ARROW[2], COLOR_ARROW[3], 1)
-        text:Hide()
-        S.turnText = text
+        -- The face of the title font; its size is set by Layout from scale.
+        local face, _, flags = text:GetFont()
+        S.bigFace, S.bigFlags = face, flags
+        S.distText = text
     end
     if not S.titleText then
         local text = UI:CreateText(S.display, "font")
@@ -543,6 +592,9 @@ local function Build()
         text:SetJustifyV("TOP")
         text:SetWordWrap(true)       -- a long name continues on a second line
         if text.SetMaxLines then text:SetMaxLines(2) end
+        text:SetTextColor(1, 1, 1, 1)
+        local face, _, flags = text:GetFont()
+        S.smallFace, S.smallFlags = face, flags
         S.titleText = text
     end
     if not S.driver then
@@ -565,41 +617,48 @@ local function PlaceDistText()
     end
 end
 
--- The sizes of the whole block (arrow box, distance line and quest name) and
+-- The sizes of the whole block (arrow box, top line and quest line) and
 -- where it sits, offset included. Shared by Layout and by the "Move on screen"
 -- outline, so the outline is right even before anything has been built.
--- Returns box, gap, fontSize, textWidth, width, height, point, relPoint, x, y.
+-- Sized by scale only, not by Button size.
+-- Returns box, width, height, point, relPoint, x, y, big, small, boxGap, lineGap.
 local function Geometry()
     local UI = PE.UI
-    local m = UI:Metrics()
-    local box = UI:Px(BOX_PX[Opt("size")] or BOX_PX.normal)
-    local gap = UI:Px(4)
-    local fontSize = (type(m.fontSize) == "number" and m.fontSize > 0) and m.fontSize or UI:Px(25)
-    local textWidth = max(UI:Px(280), fontSize * 16)
+    local s = ScaleFactor()
+    local box, width = UI:Px(BOX_PX * s), UI:Px(WIDTH_PX * s)
+    local big, small = UI:Px(BIG_PX * s), UI:Px(SMALL_PX * s)
+    local boxGap, lineGap = UI:Px(BOX_GAP_PX * s), UI:Px(LINE_GAP_PX * s)
     local pos = POSITIONS[Opt("position")] or POSITIONS.top
     local Move, dx, dy = PE.Move, 0, 0
     if Move and Move.GetOffset then dx, dy = Move:GetOffset(KEY) end
-    return box, gap, fontSize, textWidth, textWidth, box + gap + fontSize * 3.8,
-        pos[1], pos[2], UI:Px(pos[3]) + dx, UI:Px(pos[4]) + dy
+    -- The arrow, the top line, and room for two lines of quest name.
+    local height = box + boxGap + big * 1.15 + lineGap + small * 2.3
+    return box, width, height, pos[1], pos[2], UI:Px(pos[3]) + dx, UI:Px(pos[4]) + dy,
+        big, small, boxGap, lineGap
 end
 
--- Sizes and position; also after a preset, a move or the screen size changes.
+-- Sets a text's size in its own face (from the font it was made with).
+local function SetSize(text, face, flags, size)
+    if type(face) ~= "string" or face == "" then return end
+    pcall(text.SetFont, text, face, size, flags or "")
+end
+
+-- Sizes and position; also after a scale change, a move or the screen size changes.
 local function Layout()
     if not S.built then return end
     local UI = PE.UI
-    local box, gap, fontSize, textWidth, width, height, point, relPoint, x, y = Geometry()
+    local box, width, height, point, relPoint, x, y, big, small, boxGap, lineGap = Geometry()
 
     S.box:SetSize(box, box)
-    S.gap = gap
+    S.gap = boxGap
+    SetSize(S.distText, S.bigFace, S.bigFlags, big)
+    SetSize(S.titleText, S.smallFace, S.smallFlags, small)
     PlaceDistText()
-    S.distText:SetWidth(textWidth)
+    S.distText:SetWidth(width)
     S.titleText:ClearAllPoints()
-    S.titleText:SetPoint("TOP", S.distText, "BOTTOM", 0, -UI:Px(2))
-    S.titleText:SetWidth(textWidth)
-    S.titleText:SetHeight(fontSize * 2.4)    -- room for two lines
-    S.turnText:ClearAllPoints()
-    S.turnText:SetPoint("CENTER", S.box, "CENTER", 0, 0)
-    S.turnText:SetWidth(textWidth)
+    S.titleText:SetPoint("TOP", S.distText, "BOTTOM", 0, -lineGap)
+    S.titleText:SetWidth(width)
+    S.titleText:SetHeight(small * 2.4)    -- room for two lines
 
     S.display:SetSize(width, height)
     S.display:ClearAllPoints()
@@ -678,6 +737,17 @@ local function SetBoxShown(show)
     end
 end
 
+-- "Turn around" takes the arrow away; the top line moves up into its place.
+local function SetTurn(turn)
+    S.turn = turn
+    SetBoxShown(not turn)
+end
+
+-- Resting rule: "No quest focused" is hidden in cities and inns with restHide on.
+local function HiddenForRest()
+    return S.noFocus and Opt("restHide") == true and IsRestingNow()
+end
+
 -- Returns true when it ran to the end (the driver counts failures).
 local function Update()
     local playerMap, px, py = QD:GetPlayerPosition()
@@ -694,10 +764,14 @@ local function Update()
         -- Nothing to point at for now. Stop completely; QuestData's
         -- "quests" / "zone" / "tracked" callbacks start the driver again.
         if S.msgBig then
+            S.turn = false
             SetBoxShown(false)
             S.distCode = nil
-            S.distText:SetText(S.msgBig)
-            if not S.shown then
+            SetTop(S.msgBig, false)
+            if HiddenForRest() then
+                HideDisplay()
+                if PE.debugOn then DebugState("hidden: no quest focused while resting") end
+            elseif not S.shown then
                 S.shown = true
                 S.display:Show()
             end
@@ -713,7 +787,7 @@ local function Update()
         S.dbgArrow = true
         PE:Debug(KEY, "driver started")     -- written when an arrow starts showing, not on every start
     end
-    SetBoxShown(true)
+    SetBoxShown(not S.turn)
     if not S.shown then
         S.shown = true
         S.force = true
@@ -740,6 +814,11 @@ local function Update()
             SetTurn(behind > TURN_ENTER)
         end
         DrawArrow(rel)
+    end
+    if S.turn then
+        SetTop("Turn around", false)
+    else
+        SetTop(S.distLabel or "", S.here)
     end
     return true
 end
@@ -808,6 +887,12 @@ local function OnWorldEvent()
     if S.ready then Evaluate() end
 end
 
+-- PLAYER_UPDATE_RESTING (registered only while the feature is on), and the
+-- restHide choice: look again, so the message is hidden or shown at once.
+local function OnResting()
+    if S.ready then Evaluate() end
+end
+
 local function Relayout()
     if S.ready then Layout() end
 end
@@ -822,28 +907,31 @@ local STATUS = {
     notarget = "Hidden: the game cannot tell this zone's size.",
 }
 
-local SafeOnData, SafeOnUpdate
+local SafeOnData, SafeOnUpdate, SafeOnResting
 
 mod = PE:RegisterModule({
     key = KEY,
     label = "Quest arrow",
-    desc = "Points to your focused quest. Focus a quest from the quest log.",
+    desc = "Points to the nearest objective of your focused quest.",
     order = 20,
     requiresQuestieDB = true,
-    defaults = { position = DEFAULTS.position, size = DEFAULTS.size },
+    defaults = { position = DEFAULTS.position, scale = DEFAULTS.scale, restHide = DEFAULTS.restHide },
 
     options = {
-        { label = "Move the arrow",
+        { key = "scale", label = "Size of the arrow and its text",
+          number = { min = SCALE_MIN, max = SCALE_MAX, step = SCALE_STEP, default = SCALE_DEFAULT,
+                     suffix = "%", unit = "of normal" },
+          OnChange = function() Relayout() end },
+        { key = "restHide", label = "\"No quest focused\" in cities and inns",
+          choices = {
+              { value = true, label = "Hide" },
+              { value = false, label = "Show" },
+          },
+          OnChange = function() OnResting() end },
+        { label = "Position on screen", button = "Move the arrow",
           action = function()
               if PE.Move and PE.Move.Open then PE.Move:Open(KEY) end
           end },
-        { key = "size", label = "Arrow size",
-          choices = {
-              { value = "small", label = "Small" },
-              { value = "normal", label = "Normal" },
-              { value = "large", label = "Large" },
-          },
-          OnChange = function() Relayout() end },
     },
 
     status = function(self)
@@ -853,6 +941,7 @@ mod = PE:RegisterModule({
     end,
 
     OnLoad = function(self)
+        MigrateSize(self.opts)
         local UI = PE.UI
         if UI and UI.OnMetricsChanged then UI:OnMetricsChanged(self:Wrap(Relayout)) end
     end,
@@ -884,11 +973,14 @@ mod = PE:RegisterModule({
         QD:OnChanged(KEY, SafeOnData)
         self:RegisterEvent("PLAYER_ENTERING_WORLD", OnWorldEvent)
         self:RegisterEvent("ZONE_CHANGED_NEW_AREA", OnWorldEvent)
+        -- Only while on; the core drops every event of the feature when it goes off.
+        self:RegisterEvent("PLAYER_UPDATE_RESTING", SafeOnResting)
         S.tracked = QD:GetTrackedQuest()
         S.pin, S.pinMap, S.map, S.title, S.msgBig = nil, nil, nil, nil, nil
         S.titleText:SetText("")
-        S.distText:SetText("")
-        S.distCode, S.here = nil, false
+        SetTop("", false)
+        S.distCode, S.distLabel, S.here, S.turn, S.noFocus = nil, nil, false, false, false
+        SetBoxShown(true)
         S.ready = true
         Evaluate()
     end,
@@ -910,6 +1002,7 @@ mod = PE:RegisterModule({
         end
         S.acquired = false
         S.pin, S.pinMap, S.map, S.tracked, S.msgBig = nil, nil, nil, nil, nil
+        S.turn, S.noFocus = false, false
         S.why, S.failReason = nil, nil
         wipe(S.aside)
         S.asideQuest, S.asideMap = nil, nil
@@ -919,6 +1012,7 @@ mod = PE:RegisterModule({
 SafeUpdate = mod:Wrap(Update)
 SafeOnUpdate = mod:Wrap(OnUpdate)
 SafeOnData = mod:Wrap(OnData)
+SafeOnResting = mod:Wrap(OnResting)
 
 -- "Move on screen": the whole block can be nudged from the preset spot.
 if PE.Move and PE.Move.Register then
@@ -931,7 +1025,7 @@ if PE.Move and PE.Move.Register then
             if o then o.position = "top" end
         end,
         outline = function(box)
-            local _, _, _, _, width, height, point, relPoint, x, y = Geometry()
+            local _, width, height, point, relPoint, x, y = Geometry()
             box:ClearAllPoints()
             box:SetPoint(point, UIParent, relPoint, x, y)
             box:SetSize(width, height)

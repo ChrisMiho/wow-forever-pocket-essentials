@@ -20,7 +20,12 @@ local function newArrow(spec, on)
     spec = spec or {}
     spec.quests = spec.quests or { { id = QW.MANY }, { id = QW.ONE }, { id = QW.ELSEWHERE } }
     if spec.focus == nil and not spec.nofocus then spec.focus = QW.MANY end
-    local c, PE = T.new({ quest = true, on = on or { "questArrow" }, setup = function(c) QW.setup(c, spec) end })
+    local c, PE = T.new({ quest = true, on = on or { "questArrow" }, saved = spec.saved, setup = function(c)
+        QW.setup(c, spec)
+        c.world.resting = spec.resting == true
+        -- The fake client has no IsResting; the test world says whether the player rests.
+        rawset(c.env, "IsResting", function() return c.world.resting == true end)
+    end })
     c:advance(1.2)
     QW.check(c, PE)
     return c, PE
@@ -38,10 +43,22 @@ local function parts(c)
     return {
         display = display, box = box, driver = driver,
         distText = function() return region(display, 1).text end,
-        titleText = function() return region(display, 2).text end,
+        -- The quest line without its colour codes (|cffRRGGBB ... |r).
+        titleText = function() return ((region(display, 2).text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end,
+        rawTitle = function() return region(display, 2).text end,
+        distWidget = display.regions[1], titleWidget = display.regions[2],
+        distColor = function() return region(display, 1).textColor end,
         arrow = function() return region(box, 1) end,
-        turn = function() return region(box, 2) end,
     }
+end
+
+-- Spec 2026-11-20-0.9.0-ui-redesign, "Quest arrow on screen": the quest line is
+-- "Quest: " in dim gold (.85, .72, .35), then the name in white.
+local DIM_GOLD, WHITE, GREY = "|cffd9b859", "|cffffffff", "|cffd6d6d6"
+local function questLine(prefix, name) return DIM_GOLD .. prefix .. "|r" .. WHITE .. name .. "|r" end
+local function near(a, b) return type(a) == "number" and type(b) == "number" and math.abs(a - b) < 0.01 end
+local function sameColor(got, r, g, b)
+    return got ~= nil and math.abs(got[1] - r) < 0.005 and math.abs(got[2] - g) < 0.005 and math.abs(got[3] - b) < 0.005
 end
 
 -- The pin the arrow publishes to the quest data.
@@ -86,7 +103,7 @@ test("quest arrow: points at the spot nearest the player (the published pin)", f
     check(published(PE), "no pin published")
     check(rawequal(published(PE), expected), "published pin is at " .. published(PE).x .. "," .. published(PE).y
         .. ", the nearest is at " .. expected.x .. "," .. expected.y)
-    eq(parts(c).titleText(), "Wolves Across the Border")
+    eq(parts(c).rawTitle(), questLine("Quest: ", "Wolves Across the Border"))
     c:assertClean("nearest")
 end)
 
@@ -153,7 +170,9 @@ test("quest arrow: shows the distance in yards and the quest name", function()
     local pin = onePin(c, PE)
     placeAt(c, pin.x, pin.y + 0.03, 0)         -- 0.03 * 2314 = 69.4 yards south
     eq(parts(c).distText(), "70 yd")
-    eq(parts(c).titleText(), "Bounty on Garrick Padfoot")
+    eq(parts(c).rawTitle(), questLine("Quest: ", "Bounty on Garrick Padfoot"))
+    check(sameColor(parts(c).distColor(), 1, 0.82, 0), "the distance is not gold")
+    check(parts(c).box.frame:IsShown(), "no arrow with a distance")
     check(parts(c).display.frame:IsVisible(), "the arrow block is not on screen")
     c:assertClean("distance")
 end)
@@ -164,6 +183,10 @@ test("quest arrow: within 10 yards it says Here", function()
     local pin = onePin(c, PE)
     placeAt(c, pin.x, pin.y + 0.002, 0)        -- 4.6 yards
     eq(parts(c).distText(), "Here")
+    -- Spec 0.9.0: Here is green (.35, 1, .45) in the arrow and the text.
+    check(sameColor(parts(c).distColor(), 0.35, 1, 0.45), "Here is not green")
+    check(sameColor(parts(c).arrow().vertexColor, 0.35, 1, 0.45), "the arrow is not green at Here")
+    eq(parts(c).rawTitle(), questLine("Quest: ", "Bounty on Garrick Padfoot"))
 end)
 
 -- QuestArrow.lua HERE_ENTER = 10, HERE_LEAVE = 14: "Here" switches on below 10 yards and off only above 14.
@@ -180,17 +203,17 @@ test("quest arrow: Here switches on below 10 yards and stays on until 14", funct
     eq(at(12), "10 yd", "12 yards coming in again: not Here")
 end)
 
--- DECISIONS "Quest arrow": "Five preset positions (Top, Upper middle, Lower middle, Left, Right), two sizes";
--- QuestArrow.lua POSITIONS and BOX_PX (pixels on a 720p screen; PE.UI:Px converts).
-test("quest arrow: the five positions and two sizes put the block where QuestArrow.lua says", function()
+-- DECISIONS "Quest arrow": "Five preset positions (Top, Upper middle, Lower middle, Left, Right)";
+-- QuestArrow.lua POSITIONS (pixels on a 720p screen; PE.UI:Px converts). Spec 0.9.0: "Today's position
+-- and Move offsets stay."
+test("quest arrow: the five positions put the block where QuestArrow.lua says", function()
     local c, PE = newArrow(focusOne())
     local mod = PE:GetModule("questArrow")
-    local function choose(key, value)
-        mod.opts[key] = value
+    local function choose(name)
+        mod.opts.position = name
+        -- The position has no option row; a saved one is still drawn, so it redraws through the size row.
         for _, opt in ipairs(mod.options) do
-            -- The position has no option row any more (0.8.0); a saved one is
-            -- still drawn, so changing it redraws through the size option.
-            if opt.key == key or (key == "position" and opt.key == "size") then PE:Safe(mod.key, opt.OnChange, mod, value) end
+            if opt.key == "scale" then PE:Safe(mod.key, opt.OnChange, mod, mod.opts.scale) end
         end
     end
     local Px = function(n) return PE.UI:Px(n) end
@@ -199,23 +222,99 @@ test("quest arrow: the five positions and two sizes put the block where QuestArr
         left = { "CENTER", -230, 60 }, right = { "CENTER", 230, 60 },
     }
     for name, e in pairs(expected) do
-        choose("position", name)
+        choose(name)
         local point, rel, relPoint, x, y = parts(c).display.frame:GetPoint(1)
         eq({ point, rel, relPoint }, { e[1], c.UIParent, e[1] }, name)
-        check(math.abs(x - Px(e[2])) < 0.01 and math.abs(y - Px(e[3])) < 0.01, name .. ": offset " .. x .. "," .. y)
+        check(near(x, Px(e[2])) and near(y, Px(e[3])), name .. ": offset " .. x .. "," .. y)
     end
-    choose("size", "normal")
-    check(math.abs(parts(c).box.frame:GetWidth() - Px(76)) < 0.01, "normal size " .. parts(c).box.frame:GetWidth())
-    choose("size", "large")
-    check(math.abs(parts(c).box.frame:GetWidth() - Px(112)) < 0.01, "large size " .. parts(c).box.frame:GetWidth())
-    -- Spec 2026-11-18-number-control-design, section 3: Small first, 56 px.
-    choose("size", "small")
-    check(math.abs(parts(c).box.frame:GetWidth() - Px(56)) < 0.01, "small size " .. parts(c).box.frame:GetWidth())
-    local got = {}
+end)
+
+---------------------------------------------------------------------------
+-- Size from scale (spec 0.9.0, "Quest arrow on screen" and "Option rows per feature")
+---------------------------------------------------------------------------
+
+local function setScale(PE, value)
+    local mod = PE:GetModule("questArrow")
+    mod.opts.scale = value
     for _, opt in ipairs(mod.options) do
-        if opt.key == "size" then for _, ch in ipairs(opt.choices) do got[#got + 1] = ch.value end end
+        if opt.key == "scale" then PE:Safe(mod.key, opt.OnChange, mod, value) end
     end
-    eq(got, { "small", "normal", "large" })
+end
+
+-- Spec: arrow box 76*s, text width 400*s, top line 28*s (title face), quest line 20*s (font face).
+test("quest arrow: the block's sizes follow scale", function()
+    local c, PE = newArrow(focusOne())
+    local Px = function(n) return PE.UI:Px(n) end
+    for _, scale in ipairs({ 100, 50, 150, 70 }) do
+        setScale(PE, scale)
+        local s = scale / 100
+        local a = parts(c)
+        check(near(a.box.frame:GetWidth(), Px(76 * s)) and near(a.box.frame:GetHeight(), Px(76 * s)),
+            scale .. "%: box " .. a.box.frame:GetWidth())
+        check(near(a.display.frame:GetWidth(), Px(400 * s)), scale .. "%: width " .. a.display.frame:GetWidth())
+        local _, big = a.distWidget:GetFont()
+        local _, small = a.titleWidget:GetFont()
+        check(near(big, Px(28 * s)), scale .. "%: top line size " .. tostring(big))
+        check(near(small, Px(20 * s)), scale .. "%: quest line size " .. tostring(small))
+    end
+    c:assertClean("scale")
+end)
+
+-- Spec: "It no longer follows Button size."
+test("quest arrow: the sizes do not follow Button size", function()
+    local c, PE = newArrow(focusOne())
+    local Px = function(n) return PE.UI:Px(n) end
+    for _, size in ipairs({ "large", "small", "medium" }) do
+        PE.db.ui.size = size
+        PE.UI:Refresh(true)
+        local a = parts(c)
+        check(near(a.box.frame:GetWidth(), Px(76)), size .. ": box " .. a.box.frame:GetWidth())
+        check(near(a.display.frame:GetWidth(), Px(400)), size .. ": width " .. a.display.frame:GetWidth())
+        local _, big = a.distWidget:GetFont()
+        local _, small = a.titleWidget:GetFont()
+        check(near(big, Px(28)) and near(small, Px(20)), size .. ": fonts " .. tostring(big) .. ", " .. tostring(small))
+    end
+end)
+
+-- Spec: "Saved size values move to scale once: small -> 70, normal -> 100, large -> 150. After that size
+-- is ignored."
+test("quest arrow: a saved size moves to scale once", function()
+    for size, scale in pairs({ small = 70, normal = 100, large = 150 }) do
+        local c, PE = newArrow({ focus = QW.ONE, saved = { options = { questArrow = { size = size } } } })
+        local opts = PE:GetModule("questArrow").opts
+        eq(opts.scale, scale, size)
+        eq(opts.size, nil, size .. ": size still saved")
+        check(near(parts(c).box.frame:GetWidth(), PE.UI:Px(76 * scale / 100)), size .. ": box not drawn at the new scale")
+    end
+    -- A scale already saved (with no size) is kept, and a later size is not read again.
+    local c, PE = newArrow({ focus = QW.ONE, saved = { options = { questArrow = { scale = 120 } } } })
+    eq(PE:GetModule("questArrow").opts.scale, 120)
+    PE:GetModule("questArrow").opts.size = "small"
+    setScale(PE, 120)
+    check(near(parts(c).box.frame:GetWidth(), PE.UI:Px(76 * 1.2)), "a size saved after the move was read")
+    -- First install: 100, and Hide in cities and inns.
+    local _, PE2 = newArrow(focusOne())
+    eq(PE2:GetModule("questArrow").opts.scale, 100)
+    eq(PE2:GetModule("questArrow").opts.restHide, true)
+end)
+
+-- Spec "Option rows per feature", Quest arrow (labels exactly); plan "Option-row interface".
+test("quest arrow: the option rows, in order, with the size choice gone", function()
+    local _, PE = newArrow(focusOne())
+    local mod = PE:GetModule("questArrow")
+    eq(mod.desc, "Points to the nearest objective of your focused quest.")
+    local o = mod.options
+    eq(#o, 3, "rows")
+    eq(o[1].key, "scale")
+    eq(o[1].label, "Size of the arrow and its text")
+    eq(o[1].number, { min = 50, max = 150, step = 10, default = 100, suffix = "%", unit = "of normal" })
+    eq(o[2].key, "restHide")
+    eq(o[2].label, "\"No quest focused\" in cities and inns")
+    eq(o[2].choices, { { value = true, label = "Hide" }, { value = false, label = "Show" } })
+    eq(o[3].label, "Position on screen")
+    eq(o[3].button, "Move the arrow")
+    check(type(o[3].action) == "function", "no action")
+    for _, opt in ipairs(o) do check(opt.key ~= "size", "the size choice is still there") end
 end)
 
 -- DECISIONS "Quest arrow": 'With none focused it says "No quest focused / Focus one in your quest log"'.
@@ -223,7 +322,9 @@ test("quest arrow: with no quest focused it says so", function()
     local c, PE = newArrow({ nofocus = true })
     local a = parts(c)
     eq(a.distText(), "No quest focused")
-    eq(a.titleText(), "Focus one in your quest log")
+    eq(a.rawTitle(), GREY .. "Focus one in your quest log|r")
+    local point, _, relPoint = a.distWidget:GetPoint(1)
+    eq({ point, relPoint }, { "TOP", "TOP" }, "with no arrow the top line is not at the block's top")
     check(a.display.frame:IsVisible(), "the message is not on screen")
     check(not a.box.frame:IsShown(), "the arrow itself is shown with nothing to point at")
     eq(published(PE), nil)
@@ -234,16 +335,153 @@ test("quest arrow: a focused quest in another zone says Outside this zone and na
     local c, PE = newArrow({ focus = QW.ELSEWHERE })
     local a = parts(c)
     eq(a.distText(), "Outside this zone")
-    eq(a.titleText(), "Head to Duskwood")
+    eq(a.rawTitle(), questLine("Head to ", "Duskwood"))
     check(not a.box.frame:IsShown(), "an arrow is shown for another zone")
     eq(published(PE), nil)
+end)
+
+-- Spec 0.9.0 message table, "No location": "No map data for this quest" over the quest line. Here the
+-- quest has places but none are known to the data: its pins are removed before the arrow looks.
+test("quest arrow: a quest with no known place says No map data for this quest", function()
+    local c, PE = newArrow(focusOne())
+    local QD = PE.QuestData
+    local real = QD.GetPinsForQuest
+    QD.GetPinsForQuest = function(self, id) if id == QW.ONE then return {} end return real(self, id) end
+    c.world.player.x = c.world.player.x + 0.001
+    c:fire("SUPER_TRACKING_CHANGED")
+    c:advance(1.5)
+    local a = parts(c)
+    eq(a.distText(), "No map data for this quest")
+    eq(a.rawTitle(), questLine("Quest: ", "Bounty on Garrick Padfoot"))
+    check(not a.box.frame:IsShown(), "an arrow is shown with no map data")
+end)
+
+-- Spec 0.9.0 message table, "Turn-in target": the distance, then "Turn in: " in dim gold and the name.
+test("quest arrow: a turn-in spot reads Turn in: before the quest name", function()
+    local c, PE = newArrow(focusOne())
+    local QD = PE.QuestData
+    local real = QD.GetPinsForQuest
+    QD.GetPinsForQuest = function(self, id)
+        local byMap = real(self, id)
+        if id ~= QW.ONE then return byMap end
+        local out = {}
+        for map, pins in pairs(byMap) do
+            out[map] = {}
+            for i, p in ipairs(pins) do
+                local copy = {}
+                for k, v in pairs(p) do copy[k] = v end
+                copy.kind, copy.obj = "turnin", nil
+                out[map][i] = copy
+            end
+        end
+        return out
+    end
+    PE:SetModuleEnabled("questArrow", false)       -- start again, so the first pick is the turn-in spot
+    c:advance(0.2)
+    PE:SetModuleEnabled("questArrow", true)
+    c:advance(1.5)
+    eq(parts(c).rawTitle(), questLine("Turn in: ", "Bounty on Garrick Padfoot"))
+    check(parts(c).distText():find(" yd$"), "no distance: " .. tostring(parts(c).distText()))
+end)
+
+---------------------------------------------------------------------------
+-- Resting (spec 0.9.0 "Quest arrow on screen", Resting)
+---------------------------------------------------------------------------
+
+local function listening(c, event) return #c:_eventOrder(event) > 0 end
+
+test("quest arrow: no quest focused while resting hides the block when restHide is on", function()
+    local c, PE = newArrow({ nofocus = true })
+    local a = parts(c)
+    check(a.display.frame:IsVisible(), "test setup: the message is not on screen")
+    c.world.resting = true
+    c:fire("PLAYER_UPDATE_RESTING")
+    c:advance(0.3)
+    check(not a.display.frame:IsVisible(), "the message is on screen while resting")
+    c.world.resting = false
+    c:fire("PLAYER_UPDATE_RESTING")
+    c:advance(0.3)
+    check(a.display.frame:IsVisible(), "the message did not come back after leaving the inn")
+    -- Show: the message stays while resting.
+    PE:GetModule("questArrow").opts.restHide = false
+    c.world.resting = true
+    c:fire("PLAYER_UPDATE_RESTING")
+    c:advance(0.3)
+    check(a.display.frame:IsVisible(), "hidden while resting with Show chosen")
+    c:assertClean("resting")
+end)
+
+test("quest arrow: choosing Hide while resting hides the message at once", function()
+    local c, PE = newArrow({ nofocus = true })
+    local mod = PE:GetModule("questArrow")
+    mod.opts.restHide = false
+    c.world.resting = true
+    c:fire("PLAYER_UPDATE_RESTING")
+    c:advance(0.3)
+    check(parts(c).display.frame:IsVisible(), "test setup: hidden with Show")
+    for _, opt in ipairs(mod.options) do
+        if opt.key == "restHide" then
+            mod.opts.restHide = true
+            PE:Safe(mod.key, opt.OnChange, mod, true)
+        end
+    end
+    c:advance(0.3)
+    check(not parts(c).display.frame:IsVisible(), "still shown after choosing Hide")
+end)
+
+test("quest arrow: resting never hides an arrow pointing at a focused quest", function()
+    local c, PE = newArrow(focusOne())
+    c.world.resting = true
+    c:fire("PLAYER_UPDATE_RESTING")
+    c:advance(0.5)
+    local a = parts(c)
+    check(a.display.frame:IsVisible(), "the arrow is hidden while resting")
+    check(a.box.frame:IsShown(), "no arrow while resting")
+    -- And in another zone the text stays too.
+    local c2 = newArrow({ focus = QW.ELSEWHERE })
+    c2.world.resting = true
+    c2:fire("PLAYER_UPDATE_RESTING")
+    c2:advance(0.5)
+    check(parts(c2).display.frame:IsVisible(), "Outside this zone is hidden while resting")
+end)
+
+test("quest arrow: resting at login with no quest focused starts hidden", function()
+    local c = newArrow({ nofocus = true, resting = true })
+    check(not parts(c).display.frame:IsVisible(), "the message is on screen while resting")
+    check(not parts(c).driver.frame:IsVisible(), "the driver is still running")
+end)
+
+-- Spec: "PLAYER_UPDATE_RESTING, which is registered only while the feature is on."
+test("quest arrow: PLAYER_UPDATE_RESTING is listened for only while the arrow is on", function()
+    local c, PE = newArrow({ nofocus = true }, { "questIcons" })   -- icons hold the quest data
+    check(not listening(c, "PLAYER_UPDATE_RESTING"), "listened for with the arrow off")
+    PE:SetModuleEnabled("questArrow", true)
+    c:advance(0.2)
+    check(listening(c, "PLAYER_UPDATE_RESTING"), "not listened for with the arrow on")
+    PE:SetModuleEnabled("questArrow", false)
+    c:advance(0.2)
+    check(not listening(c, "PLAYER_UPDATE_RESTING"), "still listened for after the arrow went off")
+    c:assertClean("resting event")
 end)
 
 ---------------------------------------------------------------------------
 -- Turn around, direction
 ---------------------------------------------------------------------------
 
-local function turnShown(c) return parts(c).turn().shown and true or false end
+-- Spec 0.9.0: Turn around draws no arrow; the top line reads "Turn around" in gold, at the block's top,
+-- with the quest line under it.
+local function turnShown(c)
+    local a = parts(c)
+    local shown = a.distText() == "Turn around"
+    if shown then
+        check(not a.box.frame:IsShown(), "an arrow is drawn with Turn around")
+        check(sameColor(a.distColor(), 1, 0.82, 0), "Turn around is not gold")
+        eq(a.rawTitle(), questLine("Quest: ", "Bounty on Garrick Padfoot"))
+        local point, _, relPoint = a.distWidget:GetPoint(1)
+        eq({ point, relPoint }, { "TOP", "TOP" }, "Turn around is not at the top of the block")
+    end
+    return shown
+end
 
 -- DECISIONS "Quest arrow": '"Turn around" instead of an arrow pointing down (back below 135 degrees)';
 -- QuestArrow.lua TURN_ENTER = 150 degrees, TURN_LEAVE = 135. The spot is straight north (bearing 0),
@@ -254,15 +492,17 @@ test("quest arrow: Turn around appears above 150 degrees off, stays down to 135,
     local x, y = pin.x, pin.y + 0.03
     placeAt(c, x, y, rad(140))
     check(not turnShown(c), "Turn around at 140 degrees off")
-    check(parts(c).arrow().shown, "arrow hidden at 140 degrees off")
+    check(parts(c).box.frame:IsShown(), "arrow hidden at 140 degrees off")
+    eq(parts(c).distText(), "70 yd")
     placeAt(c, x, y, rad(160))
     check(turnShown(c), "no Turn around at 160 degrees off")
-    check(not parts(c).arrow().shown, "arrow still shown with Turn around")
+    check(not parts(c).box.frame:IsShown(), "arrow still shown with Turn around")
     placeAt(c, x, y, rad(140))
     check(turnShown(c), "Turn around went away at 140 degrees, above the 135 it should wait for")
     placeAt(c, x, y, rad(130))
     check(not turnShown(c), "Turn around still shown at 130 degrees off")
-    check(parts(c).arrow().shown, "arrow not back at 130 degrees off")
+    check(parts(c).box.frame:IsShown(), "arrow not back at 130 degrees off")
+    eq(parts(c).distText(), "70 yd", "the distance did not come back")
     c:assertClean("turn around")
 end)
 
@@ -686,7 +926,7 @@ test("quest arrow: move: a saved offset is added to the preset when the block is
     PE.db.ui.moved.questArrow = { x = 14, y = -6 }
     local mod = PE:GetModule("questArrow")
     for _, opt in ipairs(mod.options) do
-        if opt.key == "size" then PE:Safe(mod.key, opt.OnChange, mod, "normal") end
+        if opt.key == "scale" then PE:Safe(mod.key, opt.OnChange, mod, mod.opts.scale) end
     end
     local _, _, _, x, y = parts(c).display.frame:GetPoint(1)
     local dx, dy = PE.Move:GetOffset("questArrow")
@@ -729,13 +969,13 @@ test("quest arrow: move: the outline works while the arrow is hidden (no quest f
     check(sameRect(rect(c, outline), rect(c, parts(c).display.frame)), "outline and block differ after a move")
 end)
 
-test("quest arrow: no Arrow position row; a Move the arrow action row instead", function()
+test("quest arrow: no Arrow position row; a Position on screen row with Move the arrow instead", function()
     local c, PE = newArrow(focusOne())
     local mod = PE:GetModule("questArrow")
     local action
     for _, opt in ipairs(mod.options) do
         check(opt.label ~= "Arrow position", "the Arrow position row is still there")
-        if opt.label == "Move the arrow" then action = opt end
+        if opt.button == "Move the arrow" then action = opt end
     end
     check(action and type(action.action) == "function", "no Move the arrow action row")
 end)
@@ -744,7 +984,7 @@ test("quest arrow: Move the arrow opens Move on screen with the arrow selected",
     local c, PE = newArrow(focusOne())
     local mod = PE:GetModule("questArrow")
     for _, opt in ipairs(mod.options) do
-        if opt.label == "Move the arrow" then PE:Safe(mod.key, opt.action, mod) end
+        if opt.button == "Move the arrow" then PE:Safe(mod.key, opt.action, mod) end
     end
     c:advance(0.1)
     check(movePanel(c) and movePanel(c):IsShown(), "the Move on screen panel did not open")
@@ -772,7 +1012,7 @@ test("quest arrow: an old saved position = left with an offset is still drawn at
     mod.opts.position = "left"
     PE.db.ui.moved.questArrow = { x = 10, y = 4 }
     for _, opt in ipairs(mod.options) do
-        if opt.key == "size" then PE:Safe(mod.key, opt.OnChange, mod, mod.opts.size) end
+        if opt.key == "scale" then PE:Safe(mod.key, opt.OnChange, mod, mod.opts.scale) end
     end
     local _, _, _, x, y = parts(c).display.frame:GetPoint(1)
     check(math.abs(x - PE.UI:Px(-230 + 10)) < 0.01 and math.abs(y - PE.UI:Px(60 + 4)) < 0.01, "drawn at " .. x .. "," .. y)
