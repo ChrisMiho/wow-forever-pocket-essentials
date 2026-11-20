@@ -5,7 +5,7 @@ Run from anywhere: python3 scripts/make_art.py  -> writes curseforge/*.png
 (the description images are made by curseforge/source/render.sh)
 
 With --icons it instead writes the addon's own textures (original art):
-    addons/PocketEssentials/Icons/arrow.tga, circle.tga
+    addons/PocketEssentials/Icons/arrow.tga, circle.tga, tab_round.tga
 """
 import os
 import struct
@@ -169,6 +169,27 @@ def circle_icon(size=128):
     return downscale(img, size, (255, 255, 255))
 
 
+# The bag's Sort tab: corner radius as a share of the tab's width (spec 0.9.0,
+# "Bag Sort tab": radius button*0.28 on a tab one button wide).
+TAB_RADIUS = 0.28
+
+
+def tab_round_icon(size=32):
+    """White square with its two left corners rounded, square on the right.
+
+    Bags.lua draws it in three slices (top half, a thin middle band stretched
+    to any height, bottom half), so the corners keep their shape on a tall tab.
+    Each half holds a whole corner: the radius is under half the height.
+    """
+    n = size * ICON_SS
+    r = TAB_RADIUS * n
+    img = Image.new("RGBA", (n, n), (255, 255, 255, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle((0, 0, n - 1, n - 1), radius=r, fill=(255, 255, 255, 255),
+                        corners=(True, False, False, True))
+    return downscale(img, size, (255, 255, 255))
+
+
 ARROW_OUTLINE = (12, 12, 14)
 
 
@@ -199,6 +220,7 @@ def make_icons(out):
     os.makedirs(out, exist_ok=True)
     write_tga(arrow_icon(), os.path.join(out, "arrow.tga"))
     write_tga(circle_icon(), os.path.join(out, "circle.tga"))
+    write_tga(tab_round_icon(), os.path.join(out, "tab_round.tga"))
     print("wrote", out)
 
 

@@ -422,7 +422,7 @@ test("setup: the finish screen lists what is on and what is off", function()
     c:advance(0.1)
     check(hasText(c, "Switched on: Sell junk automatically, Chat from round button."), "the Switched on line is wrong: "
         .. tostring(textWith(c, "Switched on:")))
-    eq(textWith(c, "Still off:"), "Still off: Quest icons, Quest arrow, Bag sorter, Bag window, Repair automatically, Menu background.")
+    eq(textWith(c, "Still off:"), "Still off: Quest icons, Quest arrow, Bag sorting, Bigger bag, Repair automatically, Menu background.")
     check(textWith(c, "\"Setup guide\" button at the bottom of the settings"), "no closing paragraph")
     check(not has(c, "Reload now"), "a reload is offered although nothing asked for one")
     c:assertClean("finish screen")
@@ -435,7 +435,7 @@ test("setup: with every feature on the finish screen has no Still off line", fun
     c:advance(0.5)
     open(c, PE)
     goTo(c, N)
-    check(textWith(c, "Switched on: Quest icons, Quest arrow, Bag sorter"), "no Switched on line")
+    check(textWith(c, "Switched on: Quest icons, Quest arrow, Bag sorting"), "no Switched on line")
     check(not textWith(c, "Still off:"), "a Still off line with everything on")
 end)
 
@@ -448,7 +448,7 @@ test("setup: the finish screen offers a reload when a feature asked for one", fu
     check(#PE.reloadReasons > 0, "Bag sorter asked for no reload (the test's premise)")
     goTo(c, N - AT.bags + 1)
     eq(title(c), TITLE .. " (" .. N .. " of " .. N .. ")")
-    check(textWith(c, "Bag sorter: "), "the reason for the reload is not shown")
+    check(textWith(c, "Bag sorting: "), "the reason for the reload is not shown")
     local before = #c:callsTo("C_UI.Reload")
     eq(PE.db.setup, "skipped") -- what T.new stored
     PE.db.setup = nil
@@ -1498,7 +1498,7 @@ test("options: a reload asked for by an option is offered on the finish screen",
     eq(#PE.reloadReasons, 1)
     check(not has(c, "Reload now"), "Reload now is on a feature screen")
     goTo(c, N - AT.bags + 1)
-    check(hasText(c, "Bag sorter: Test reason."), "the reason is not on the finish screen")
+    check(hasText(c, "Bag sorting: Test reason."), "the reason is not on the finish screen")
     button(c, "Reload now")
     -- and the settings offer it too
     PE:OpenSettings()

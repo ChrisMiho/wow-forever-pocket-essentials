@@ -1,9 +1,9 @@
 -- Pocket Essentials: two features in one file, sharing one engine.
---   * "bags" (Bag sorter): a large Sort button ("Sort button": On / Off), a
---     stick-click shortcut ("Sort stick": left or right) and, while the Sort
---     button shows, a d-pad route onto it.
---   * "bagWindow" (Bag window): a size choice ("Bag size") and the bag
---     pictures in one row at the top ("Bag icons").
+--   * "bags" (Bag sorting): a large Sort tab ("Sort button on the bag": Show /
+--     Hide), a stick-click shortcut ("Click a stick in to sort": left or right)
+--     and, while the Sort tab shows, a d-pad route onto it.
+--   * "bagWindow" (Bigger bag): a size choice ("Bag size"), and the bag
+--     pictures always in one row at the top while it is on (controller style).
 -- Both use Blizzard's own combined bag window (ContainerFrameCombinedBags).
 -- The engine (combined bag setting, hooks, layout) runs while either feature
 -- is on; each part checks its own feature, so either one works alone.
@@ -29,7 +29,7 @@
 --     made by addon code, which the item actions then read.)
 --   * The Sort button carries none of the fields the bag's own code reads from
 --     the button under the cursor (buttonContext and the like).
---   * "Bag icons" moves Blizzard's own buttons, with the widget methods
+--   * The bag pictures row moves Blizzard's own buttons, with the widget methods
 --     ClearAllPoints and SetPoint only. A button's place is not a Lua value, so
 --     nothing Blizzard's item code later reads is ours. What we remember about
 --     a button is kept in a table of our own.
@@ -43,6 +43,16 @@ local FRAME_NAME = "ContainerFrameCombinedBags"
 local LAYOUT_FUNC = "UpdateContainerFrameAnchors"
 local CVAR = "combinedBags"
 local SORT_ATLAS = "bags-button-autosort-up" -- Blizzard's own sort button (ContainerFrame.xml)
+-- The Sort tab's shape: a white square with its two left corners rounded
+-- (made by scripts/make_art.py --icons), tinted with the vertex colour. It is
+-- drawn in three slices so the corners keep their shape on a tall tab: the
+-- top half, a thin band from the middle stretched to fill, the bottom half.
+local TAB_TEXTURE = "Interface\\AddOns\\PocketEssentials\\Icons\\tab_round"
+local TAB_SLICES = { { 0, 1, 0, 0.5 }, { 0, 1, 0.4, 0.6 }, { 0, 1, 0.5, 1 } }
+local TAB_EDGE = { 0.62, 0.52, 0.22, 1 }  -- gold-brown
+local TAB_FILL = { 0.10, 0.09, 0.08, 1 }
+local TAB_PUSH = { 1, 1, 1, 0.3 }         -- the press flash
+local TAB_GOLD = { 1, 0.82, 0 }
 -- Stick clicks (Blizzard_SharedXML/Shared/GamepadConstants.lua).
 local SORT_KEYS = { l3 = "PADLSTICK", r3 = "PADRSTICK" }
 local SORT_KEY_LABELS = { l3 = "left stick click", r3 = "right stick click" }
@@ -89,7 +99,7 @@ local base           -- { scale, x, y }: what Blizzard's layout pass last set
 local applied        -- { scale, x, y }: what we set on top of it, or nil
 local baseStale = false -- Blizzard's layout pass ran since we last read its values
 local clamped = false
--- "Bag icons": [button] = { ox, oy, nx, ny }, the place Blizzard's layout gave
+-- The bag pictures row: [button] = { ox, oy, nx, ny }, the place Blizzard's layout gave
 -- the button and the place we gave it. A table of ours; nothing is written on
 -- the button.
 local placed = setmetatable({}, { __mode = "k" })
@@ -403,6 +413,27 @@ local function BagToUI()
     return bagScale / uiScale
 end
 
+-- Lays one three-slice shape over the tab: `left` in from the tab's left
+-- edge, `inset` in from its top and bottom, flush with its right edge (the
+-- side against the bag). Each end cap is half as tall as the shape is wide,
+-- the same proportions as in the texture, so the corners are not stretched.
+local function PlaceShape(shape, width, left, inset)
+    if not shape then return end
+    local top, middle, bottom = shape[1], shape[2], shape[3]
+    local cap = (width - left) * 0.5
+    top:ClearAllPoints()
+    top:SetPoint("TOPLEFT", sortButton, "TOPLEFT", left, -inset)
+    top:SetPoint("TOPRIGHT", sortButton, "TOPRIGHT", 0, -inset)
+    top:SetHeight(cap)
+    bottom:ClearAllPoints()
+    bottom:SetPoint("BOTTOMLEFT", sortButton, "BOTTOMLEFT", left, inset)
+    bottom:SetPoint("BOTTOMRIGHT", sortButton, "BOTTOMRIGHT", 0, inset)
+    bottom:SetHeight(cap)
+    middle:ClearAllPoints()
+    middle:SetPoint("TOPLEFT", top, "BOTTOMLEFT", 0, 0)
+    middle:SetPoint("BOTTOMRIGHT", bottom, "TOPRIGHT", 0, 0)
+end
+
 local function LayoutButton()
     if not sortButton or not bagFrame then return end
     local m = PE.UI:Metrics()
@@ -410,7 +441,7 @@ local function LayoutButton()
     local toUI = BagToUI()
     local bagHeight = Plain(bagFrame:GetHeight())
     -- About half the bag's height, never shorter than three and a half
-    -- buttons (room for the icon and four letters).
+    -- buttons.
     local height = max(m.button * 3.5, (toUI and bagHeight and bagHeight * toUI or 0) * 0.5)
     -- Starts below the round picture, at any bag size.
     local drop = max(m.button, toUI and PICTURE_DROP * toUI or 0)
@@ -422,24 +453,36 @@ local function LayoutButton()
     -- bottom left. It starts below the round picture, which sticks out of
     -- the top left corner. Being beside the window, it costs the bag no height.
     -- (Anchored to the bag, the offset is in the tab's own UIParent units.)
-    sortButton:SetPoint("TOPRIGHT", bagFrame, "TOPLEFT", 0, -drop)
-    -- Icon at the top, the letters stacked in the space below it.
-    local icon, letters = sortButton.peSortIcon, sortButton.peSortLetters
-    local iconSize = width - m.gap
-    if icon then
+    -- It reaches one border width over the bag's edge, so the two look joined.
+    sortButton:SetPoint("TOPRIGHT", bagFrame, "TOPLEFT", m.border, -drop)
+    -- The shape: the gold-brown edge, the dark fill one border inside it on
+    -- the top, left and bottom (open against the bag), the flash over all.
+    PlaceShape(sortButton.peTabEdge, width, 0, 0)
+    PlaceShape(sortButton.peTabFill, width, m.border, m.border)
+    PlaceShape(sortButton.peTabPush, width, 0, 0)
+    -- The middle: Blizzard's sort picture with "Sort" under it, the pair
+    -- centred both ways on the tab.
+    local icon, word = sortButton.peSortIcon, sortButton.peSortWord
+    local iconSize = m.button * 0.5
+    local wordHeight = m.smallFontSize * 1.15
+    local hasIcon = icon ~= nil and icon:IsShown()
+    local total = hasIcon and (iconSize + m.gap * 0.6 + wordHeight) or wordHeight
+    local top = (height - total) * 0.5
+    if hasIcon then
         icon:SetSize(iconSize, iconSize)
         icon:ClearAllPoints()
-        icon:SetPoint("TOP", sortButton, "TOP", 0, -m.gap * 0.5)
+        icon:SetPoint("TOP", sortButton, "TOP", 0, -top)
+        top = top + iconSize + m.gap * 0.6
     end
-    if letters then
-        local top = (icon and icon:IsShown()) and (iconSize + m.gap) or m.gap * 0.5
-        letters:ClearAllPoints()
-        letters:SetPoint("TOPLEFT", sortButton, "TOPLEFT", 0, -top)
-        letters:SetPoint("BOTTOMRIGHT", sortButton, "BOTTOMRIGHT", 0, m.gap * 0.5)
+    if word then
+        word:ClearAllPoints()
+        word:SetPoint("TOPLEFT", sortButton, "TOPLEFT", 0, -top)
+        word:SetPoint("TOPRIGHT", sortButton, "TOPRIGHT", 0, -top)
+        word:SetHeight(wordHeight)
     end
 end
 
--- The "Sort button" choice: shown while Bag sorter is on, unless the player
+-- The "Sort button on the bag" choice: shown while Bag sorting is on, unless the player
 -- hid it (they sort with the stick click instead).
 local function TabWanted()
     if not sorterOn then return false end
@@ -457,7 +500,7 @@ local function SyncButton()
     end
 end
 
--- The "Sort stick" choice: "l3" or "r3". Anything else reads as "l3".
+-- The "Click a stick in to sort" choice: "l3" or "r3". Anything else reads as "l3".
 local function SortKeyChoice()
     local opts = Opts()
     local value = opts and opts.sortKey
@@ -505,7 +548,7 @@ end
 ---------------------------------------------------------------------------
 -- The d-pad route: a Left jump from the bag's first column onto the Sort
 -- tab, and the A button while the cursor is on it. There whenever the Sort
--- tab is wanted (Bag sorter on, "Sort button" On).
+-- tab is wanted (Bag sorting on, its Sort button shown).
 --
 -- Blizzard's cursor looks for a "jump override" on the current button before
 -- anything else and goes to that frame if it is visible, whether or not the
@@ -843,6 +886,74 @@ local function OnCombatEnd()
     RefreshSortJump()
 end
 
+-- One three-slice shape on the tab (see TAB_SLICES), tinted `color`.
+local function NewShape(btn, layer, color)
+    local shape = {}
+    for i = 1, 3 do
+        local piece = btn:CreateTexture(nil, layer)
+        piece:SetTexture(TAB_TEXTURE)
+        local c = TAB_SLICES[i]
+        piece:SetTexCoord(c[1], c[2], c[3], c[4])
+        piece:SetVertexColor(color[1], color[2], color[3], color[4])
+        shape[i] = piece
+    end
+    return shape
+end
+
+local function ShowShape(shape, shown)
+    for i = 1, 3 do shape[i]:SetShown(shown) end
+end
+
+-- The press flash: shown while pressed, fading out just after the finger
+-- lifts (the same feel as the shared buttons), in the tab's own shape.
+local function BuildTabFlash(btn)
+    local groups = {}
+    for i = 1, 3 do
+        local piece = btn.peTabPush[i]
+        local group = piece:CreateAnimationGroup()
+        local fade = group:CreateAnimation("Alpha")
+        fade:SetFromAlpha(1)
+        fade:SetToAlpha(0)
+        fade:SetDuration(0.3)
+        group:SetToFinalAlpha(true)
+        group:SetScript("OnFinished", mod:Wrap(function() piece:Hide() end))
+        groups[i] = group
+    end
+    return groups
+end
+
+local function StopTabFlash(btn)
+    local groups = btn.peTabFlash
+    if groups then for i = 1, 3 do groups[i]:Stop() end end
+end
+
+local function TabDown(btn)
+    StopTabFlash(btn)
+    for i = 1, 3 do btn.peTabPush[i]:SetAlpha(1) end
+    ShowShape(btn.peTabPush, true)
+end
+
+-- Also the tab's Flash (a stick click that sorted).
+local function TabUp(btn)
+    if btn.peTabFlash == nil then
+        local ok, groups = pcall(BuildTabFlash, btn)
+        btn.peTabFlash = (ok and groups) or false
+    end
+    if btn.peTabFlash and btn:IsVisible() then
+        StopTabFlash(btn)
+        for i = 1, 3 do btn.peTabPush[i]:SetAlpha(1) end
+        ShowShape(btn.peTabPush, true)
+        for i = 1, 3 do btn.peTabFlash[i]:Play() end
+    else
+        ShowShape(btn.peTabPush, false)
+    end
+end
+
+local function TabHidden(btn)
+    StopTabFlash(btn)
+    ShowShape(btn.peTabPush, false)
+end
+
 local function CreateButtons()
     if not keyButton then
         keyButton = CreateFrame("Button", KEY_BUTTON_NAME, UIParent)
@@ -861,10 +972,22 @@ local function CreateButtons()
         btn:Hide()
         btn:SetFrameStrata("MEDIUM")
         btn:SetFrameLevel(50)
-        btn:SetStyle("tab")
-        -- The label stays "Sort" (it is what the button is called); what is
-        -- drawn is Blizzard's sort icon over the letters one per line.
-        btn.peText:Hide()
+        -- The label stays "Sort" (it is what the button is called). What is
+        -- drawn is our own rounded shape, with Blizzard's sort icon and the
+        -- word under it; the shared button's square look is hidden.
+        if btn.peText then btn.peText:Hide() end
+        if btn.peBorder then btn.peBorder:Hide() end
+        if btn.peFill then btn.peFill:Hide() end
+        btn.peTabEdge = NewShape(btn, "BACKGROUND", TAB_EDGE)
+        btn.peTabFill = NewShape(btn, "BORDER", TAB_FILL)
+        btn.peTabPush = NewShape(btn, "ARTWORK", TAB_PUSH)
+        ShowShape(btn.peTabPush, false)
+        -- Our own press flash in the tab's shape, in place of the shared
+        -- button's square one.
+        btn:SetScript("OnMouseDown", mod:Wrap(TabDown))
+        btn:SetScript("OnMouseUp", mod:Wrap(TabUp))
+        btn:SetScript("OnHide", mod:Wrap(TabHidden))
+        btn.Flash = TabUp
         local m = PE.UI:Metrics()
         local icon = btn:CreateTexture(nil, "OVERLAY")
         -- An unknown atlas raises no error, it just draws nothing: ask first.
@@ -875,14 +998,14 @@ local function CreateButtons()
         end
         if not (hasAtlas and pcall(icon.SetAtlas, icon, SORT_ATLAS)) then icon:Hide() end
         btn.peSortIcon = icon
-        local letters = btn:CreateFontString(nil, "OVERLAY", m.font)
-        if not letters:GetFont() and GameFontHighlight then letters:SetFontObject(GameFontHighlight) end
-        letters:SetWordWrap(true)
-        letters:SetJustifyH("CENTER")
-        letters:SetJustifyV("MIDDLE")
-        letters:SetTextColor(1, 0.82, 0, 1)
-        letters:SetText("S\no\nr\nt")
-        btn.peSortLetters = letters
+        local word = btn:CreateFontString(nil, "OVERLAY", m.smallFont)
+        if not word:GetFont() and GameFontHighlight then word:SetFontObject(GameFontHighlight) end
+        word:SetWordWrap(false)
+        word:SetJustifyH("CENTER")
+        word:SetJustifyV("MIDDLE")
+        word:SetTextColor(TAB_GOLD[1], TAB_GOLD[2], TAB_GOLD[3], 1)
+        word:SetText("Sort")
+        btn.peSortWord = word
         btn:SetScript("OnClick", mod:Wrap(OnSortTapped))
         -- Called by Blizzard's controller cursor when it arrives and leaves.
         -- No other field its bag code reads from the current button is set
@@ -1018,7 +1141,7 @@ local function SyncScale()
 end
 
 ---------------------------------------------------------------------------
--- "Bag icons": the bag pictures in one row at the top.
+-- The bag pictures in one row at the top (always, while Bigger bag is on).
 --
 -- In the controller style Blizzard puts one button per bag into the same
 -- ten-wide grid as the item slots, each at the start of its bag's slots
@@ -1034,9 +1157,10 @@ end
 -- that is not full is the first row of slots, not the last.
 ---------------------------------------------------------------------------
 
+-- Always while Bigger bag is on (0.9.0). The old saved iconRow is not read:
+-- a false left in the file from the "Bag icons" choice changes nothing.
 local function IconRowWanted()
-    local opts = windowOn and WinOpts()
-    return opts and opts.iconRow == true or false
+    return windowOn
 end
 
 local function NoteIcons(text)
@@ -1227,6 +1351,14 @@ SyncIcons = function(announce)
         -- Closed: Blizzard lays the bag out afresh every time it opens.
         ForgetPlaced()
         if not wanted then NothingToPutBack(announce) end
+        return
+    end
+    if wanted and not IsGamepadStyle() then
+        -- Only the controller style puts the bag pictures in the grid; in the
+        -- other style there is nothing to move (and the picture bar may not
+        -- even be loaded).
+        ForgetPlaced()
+        NoteIcons("left alone, no bag icons in the grid (not the controller style)")
         return
     end
     local cells, ours = ReadGrid()
@@ -1426,9 +1558,8 @@ end
 -- One feature switched off (also the rollback of a half-finished OnEnable).
 -- Only its own parts come down; the engine stops once both are off.
 local function FeatureOff(sorter)
-    -- "Bag icons" says so in the debug log when Bag window goes off with it on.
-    local wopts = WinOpts()
-    local announce = not sorter and windowOn and wopts ~= nil and wopts.iconRow == true
+    -- The bag pictures row says so in the debug log when Bigger bag goes off.
+    local announce = not sorter and windowOn
     if sorter then sorterOn = false else windowOn = false end
     active = sorterOn or windowOn
     SyncButton()
@@ -1490,18 +1621,9 @@ local function SorterStatus(self)
     local problem = CombinedProblem(self)
     if problem then return problem end
     if problem == false then return nil end
-    local lines = {}
-    lines[1] = "Controller: click the " .. (SortKeyChoice() == "l3" and "left" or "right") .. " stick to sort while the bag is open."
-    if not TabWanted() then
-        lines[#lines + 1] = "The Sort button is hidden; turn Sort button On to bring it back."
-    elseif IsGamepadStyle() then
-        if NavApi() then
-            lines[#lines + 1] = "D-pad: press Left from the first column to reach Sort, then A."
-        else
-            lines[#lines + 1] = "This client has no way to reach Sort with the d-pad."
-        end
-    end
-    return lines
+    -- 0.9.0: no informational lines (how to use the stick and the d-pad) in
+    -- its card; only the problems above.
+    return nil
 end
 
 local function WindowStatus(self)
@@ -1510,33 +1632,26 @@ local function WindowStatus(self)
     local problem = CombinedProblem(self)
     if problem then return problem end
     if problem == false then return nil end
-    local lines = {}
-    local opts = WinOpts()
-    if opts and opts.iconRow == true then
-        lines[#lines + 1] = IsGamepadStyle() and "Bag icons are in one row at the top of the bag."
-            or "Bag icons: only in the controller style."
-    end
-    if clamped then lines[#lines + 1] = "The bag is as big as the screen allows." end
-    if #lines == 0 then return nil end
-    return lines
+    if clamped then return "The bag is as big as the screen allows." end
+    return nil
 end
 
 mod = PE:RegisterModule({
     key = "bags",
-    label = "Bag sorter",
-    desc = "Sort your bags with a big button or a stick click.",
+    label = "Bag sorting",
+    desc = "Sort your bags with one press.",
     order = 30,
     -- 0.8.0: the old keys size, iconRow and dpad may still be in a saved
     -- table; they are left there and not read (Bag window has its own).
     defaults = { showTab = true, sortKey = "l3" },
 
-    -- Two toggles side by side. The stick always sorts; the d-pad route
-    -- onto the Sort button is there whenever the button shows.
+    -- The stick always sorts; the d-pad route onto the Sort tab is there
+    -- whenever the tab shows. (toggle is kept for old saved values.)
     options = {
-        { key = "showTab", label = "Sort button", toggle = true,
+        { key = "showTab", label = "Sort button on the bag", toggle = true,
           choices = {
-              { value = false, label = "Off" },
-              { value = true, label = "On" },
+              { value = true, label = "Show" },
+              { value = false, label = "Hide" },
           },
           -- The bag may now grow into the tab's space, or make room for it;
           -- the d-pad route and A follow the tab.
@@ -1547,10 +1662,10 @@ mod = PE:RegisterModule({
               SyncConfirm()
               RefreshSortJump()
           end },
-        { key = "sortKey", label = "Sort stick", toggle = true,
+        { key = "sortKey", label = "Click a stick in to sort", toggle = true,
           choices = {
-              { value = "l3", label = "Left" },
-              { value = "r3", label = "Right" },
+              { value = "l3", label = "Left stick" },
+              { value = "r3", label = "Right stick" },
           },
           -- Hands the old stick back before the new one is taken (ApplyBinding).
           OnChange = function()
@@ -1583,10 +1698,12 @@ mod = PE:RegisterModule({
 
 win = PE:RegisterModule({
     key = "bagWindow",
-    label = "Bag window",
-    desc = "Makes the bag window bigger and tidier.",
+    label = "Bigger bag",
+    desc = "A bigger and better organized bag window.",
     order = 31,
-    defaults = { size = "normal", iconRow = false },
+    -- 0.9.0: an old iconRow ("Bag icons") may still be in a saved table; it
+    -- is left there and not read (the row is always on with the feature).
+    defaults = { size = "normal" },
 
     options = {
         { key = "size", label = "Bag size",
@@ -1602,23 +1719,6 @@ win = PE:RegisterModule({
               end
               if windowOn then SyncScale() end
           end },
-        -- Off until it has passed a device test: it moves the bag's own
-        -- buttons (their places only).
-        { key = "iconRow", label = "Bag icons", toggle = true,
-          choices = {
-              { value = false, label = "In the grid" },
-              { value = true, label = "One row at the top" },
-          },
-          OnChange = function()
-              local opts = WinOpts()
-              local row = opts ~= nil and opts.iconRow == true
-              if PE.debugOn then PE:Debug("bags", row and "bag icons choice: row" or "bag icons choice: grid") end
-              lastIconLine = nil
-              if windowOn then
-                  SyncIcons(true)
-                  RefreshSortJump() -- the first column may be other buttons now
-              end
-          end },
     },
 
     status = WindowStatus,
@@ -1631,20 +1731,20 @@ win = PE:RegisterModule({
         local old = type(db) == "table" and type(db.options) == "table" and db.options.bags
         if type(old) == "table" and (old.size ~= nil or old.iconRow ~= nil)
             and type(db.enabled) == "table" and db.enabled.bagWindow == nil then
-            -- The first load of 0.8.0 over a save from before it (Bag sorter's
-            -- table still has its old size or icons; Bag window has never been
-            -- saved): Bag window takes over Bag sorter's switch, size and
-            -- icons. The saved switch is written now, so this happens once. A
+            -- The first load of 0.8.0 or later over a save from before it (Bag
+            -- sorter's table still has its old size or icons; Bag window has
+            -- never been saved): Bag window takes over Bag sorter's switch and
+            -- size. The old icons key only tells an old save apart; it is not
+            -- copied. The saved switch is written now, so this happens once. A
             -- fresh install has neither key and is left alone (both off).
             db.enabled.bagWindow = db.enabled.bags == true
-            opts.size, opts.iconRow = old.size, old.iconRow
+            opts.size = old.size
             if PE.debugOn then
                 PE:Debug("bags", "Bag window set up from Bag sorter's saved choices: "
                     .. (db.enabled.bagWindow and "on" or "off"))
             end
         end
         if not SIZE_FACTOR[opts.size] then opts.size = "normal" end
-        if type(opts.iconRow) ~= "boolean" then opts.iconRow = false end
     end,
 
     OnEnable = function(self)

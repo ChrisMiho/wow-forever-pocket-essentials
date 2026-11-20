@@ -73,7 +73,7 @@ local M_SCRIPT_REGION = list([[Show Hide SetShown IsShown IsVisible GetWidth Get
     GetBottom GetLeft GetRight EnableMouse EnableMouseWheel SetMouseMotionEnabled SetScript GetScript HookScript IsProtected
     SetPoint ClearAllPoints SetAllPoints SetSize SetWidth SetHeight GetPoint GetNumPoints]])
 local M_REGION = list("GetAlpha SetAlpha GetScale SetScale GetEffectiveScale SetVertexColor CreateAnimationGroup")
-local M_TEXTURE = list("SetColorTexture SetTexture SetAtlas SetRotation")
+local M_TEXTURE = list("SetColorTexture SetTexture SetAtlas SetRotation SetTexCoord")
 local M_LINE = list("SetColorTexture SetTexture SetStartPoint SetEndPoint SetThickness")
 local M_FONT_INSTANCE = list("SetFont GetFont SetFontObject SetTextColor SetShadowColor SetShadowOffset SetJustifyH SetJustifyV")
 local M_FONTSTRING = list("SetText GetText SetWordWrap SetMaxLines GetStringHeight GetUnboundedStringWidth SetRotation")
@@ -597,6 +597,11 @@ function Client.new(opts)
         st.atlas, st.texture, st.color = atlas, nil, nil
     end
     function METHODS:SetRotation(r) CheckNumber(r, "SetRotation()"); St(self).rotation = r end
+    function METHODS:SetTexCoord(left, right, top, bottom)
+        CheckNumber(left, "SetTexCoord()"); CheckNumber(right, "SetTexCoord()")
+        CheckNumber(top, "SetTexCoord()"); CheckNumber(bottom, "SetTexCoord()")
+        St(self).texCoord = { left, right, top, bottom }
+    end
     function METHODS:SetStartPoint(point, rel, x, y)
         if not POINTS[point] then error("SetStartPoint(): Invalid point", 2) end
         St(self).startPoint = { point, rel, x or 0, y or 0 }
