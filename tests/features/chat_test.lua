@@ -721,9 +721,9 @@ end)
 
 local function settingsOf(c) return rawget(c.env, "PocketEssentialsSettingsPanel") end
 
--- Opens the settings window and returns a button with that label (any, shown or scrolled away).
+-- Opens the settings window on its Chat tab and returns a button with that label (any, shown or scrolled away).
 local function settingsButton(c, PE, label)
-    PE:OpenSettings()
+    PE:OpenSettings("chat")
     c:advance(0.2)
     local found
     walk(c, settingsOf(c), function(w)
@@ -1057,7 +1057,7 @@ end)
 test("chat size: the number steps through the full list both ways and stops at the ends", function()
     local c, PE = newChat()
     setAllTo(c, 12)
-    PE:OpenSettings()
+    PE:OpenSettings("chat")
     c:advance(0.2)
     local seen = { stepperText(c) }
     for _ = 1, 10 do
@@ -1087,7 +1087,7 @@ test("chat size: the number is read from the game, not from anything the addon k
     local before = #sizeCalls(c)
     setAllTo(c, 14) -- the game's own tab menu, behind the addon's back
     PE:CloseSettings()
-    PE:OpenSettings()
+    PE:OpenSettings("chat")
     c:advance(0.2)
     eq(stepperText(c), "14")
     eq(#sizeCalls(c), before, "drawing the row called the game")
@@ -1098,7 +1098,7 @@ test("chat size: a size that is not in the list is shown, and one press goes to 
     for _, case in ipairs({ { 19, "+", "20" }, { 19, "-", "18" }, { 22, "+", "24" }, { 40, "-", "34" } }) do
         local c, PE = newChat()
         setAllTo(c, case[1])
-        PE:OpenSettings()
+        PE:OpenSettings("chat")
         c:advance(0.2)
         eq(stepperText(c), tostring(case[1]))
         c:click(shownButton(c, case[2]))
@@ -1169,7 +1169,7 @@ end)
 -- (this reverses the 0.1.0 rule that hid it while the feature was off).
 test("chat size: the row is drawn and works while the chat feature is off", function()
     local c, PE = T.new({})
-    PE:OpenSettings()
+    PE:OpenSettings("chat")
     c:advance(0.2)
     check(hasText(c, "Chat text size"), "not drawn with the feature off: " .. table.concat(settingsTexts(c), " | "))
     eq(stepperText(c), "18")
@@ -1191,7 +1191,7 @@ end)
 -- Spec 1 rule 7: nothing on login, nothing saved, with the feature off.
 test("chat size: with the feature off nothing is saved and nothing is called until a tap", function()
     local c, PE = T.new({})
-    PE:OpenSettings()
+    PE:OpenSettings("chat")
     c:advance(0.2)
     eq(#sizeCalls(c), 0)
     c:click(shownButton(c, "+"))
@@ -1204,7 +1204,7 @@ end)
 
 test("chat size: a tap in a fight with the feature off is held and applied when the fight ends", function()
     local c, PE = T.new({})
-    PE:OpenSettings()
+    PE:OpenSettings("chat")
     c:advance(0.2)
     local bigger = shownButton(c, "+")
     c:enterCombat()
@@ -1221,7 +1221,7 @@ end)
 -- picker's window size row has its own; spec 0.9.0).
 test("chat size: without the game's function the row says so and has no buttons", function()
     local c, PE = T.new({ setup = function(cc) rawset(cc.env, "FCF_SetChatWindowFontSize", nil) end })
-    PE:OpenSettings()
+    PE:OpenSettings("chat")
     c:advance(0.2)
     check(hasText(c, "Chat text size: Not available on this version of the game"), table.concat(settingsTexts(c), " | "))
     check(not settingsButton(c, PE, "+") and not settingsButton(c, PE, "-"), "buttons drawn")
@@ -1229,7 +1229,7 @@ end)
 
 test("chat size: without a main chat window the row says so and has no buttons", function()
     local c, PE = T.new({ setup = function(cc) rawset(cc.env, "DEFAULT_CHAT_FRAME", nil) end })
-    PE:OpenSettings()
+    PE:OpenSettings("chat")
     c:advance(0.2)
     check(hasText(c, "Chat text size: Not available on this version of the game"), table.concat(settingsTexts(c), " | "))
     check(not settingsButton(c, PE, "+"), "buttons drawn")
@@ -1256,7 +1256,7 @@ test("settings: an option row with a value and buttons draws the text and runs e
     local n = 0
     mod.options[#mod.options + 1] = { label = "Test row", value = function() return "n = " .. n end,
         buttons = { { label = "Add one", action = function() n = n + 1 end }, { label = "Add ten", action = function() n = n + 10 end } } }
-    PE:OpenSettings()
+    PE:OpenSettings("bags")
     c:advance(0.2)
     check(hasText(c, "Test row: n = 0"), table.concat(settingsTexts(c), " | "))
     local one
@@ -1275,7 +1275,7 @@ test("settings: a text entry in a buttons row is drawn between the buttons and r
         return { { label = "-", action = function() n = n - 1 end }, { text = "n" .. n },
             { label = "+", action = function() n = n + 1 end } }
     end }
-    PE:OpenSettings()
+    PE:OpenSettings("bags")
     c:advance(0.2)
     check(hasText(c, "Test row"), table.concat(settingsTexts(c), " | "))
     eq(stepperText(c), "n7")
@@ -1295,7 +1295,7 @@ test("settings: an option row marked always is drawn with its feature off, other
         buttons = { { label = "Plain tap", action = function() end } } }
     mod.options[#mod.options + 1] = { label = "Always row", value = function() return "y" end, always = true,
         buttons = { { label = "Always tap", action = function() taps = taps + 1 end } } }
-    PE:OpenSettings()
+    PE:OpenSettings("bags")
     c:advance(0.2)
     check(hasText(c, "Always row: y"), table.concat(settingsTexts(c), " | "))
     check(not hasText(c, "Plain row: x"), "a row without the mark was drawn with the feature off")
@@ -1308,28 +1308,23 @@ test("settings: an option row marked always is drawn with its feature off, other
     check(hasText(c, "Always row: y") and hasText(c, "Plain row: x"), table.concat(settingsTexts(c), " | "))
 end)
 
-test("settings: a feature that is off with an always row has a fold button that hides and shows the row", function()
+-- Spec 2026-11-20-0.9.0-ui-redesign: no fold buttons; an always row shows on the Chat tab with the feature off.
+test("settings: the Chat tab shows Chat text size with the chat feature off, and has no fold button", function()
     local c, PE = T.new({})
-    PE:OpenSettings()
+    PE:OpenSettings("chat")
     c:advance(0.2)
-    local hide = shownButton(c, "Hide options")
-    check(hide, "no fold button for the chat block with the feature off")
-    c:click(hide)
-    c:advance(0.2)
-    check(not hasText(c, "Chat text size"), "the row is still drawn after folding")
-    check(not shownButton(c, "-"), "the stepper is still drawn after folding")
-    c:click(shownButton(c, "Show options"))
-    c:advance(0.2)
-    check(hasText(c, "Chat text size") and stepperText(c) == "18", "the row did not come back")
+    check(hasText(c, "Chat text size") and stepperText(c) == "18", "the row is not drawn with the feature off")
+    check(not shownButton(c, "Hide options") and not shownButton(c, "Show options"), "a fold button")
 end)
 
-test("settings: a feature that is off with no always row has no fold button", function()
+test("settings: a feature that is off with no always row draws no option rows", function()
     local c, PE = T.new({})
     local chat = PE:GetModule("chat")
     for i = #chat.options, 1, -1 do chat.options[i] = nil end
-    PE:OpenSettings()
+    PE:OpenSettings("chat")
     c:advance(0.2)
-    check(not shownButton(c, "Hide options") and not shownButton(c, "Show options"), "a fold button with nothing to fold")
+    check(not hasText(c, "Chat text size"), "a row drawn")
+    check(not shownButton(c, "-"), "a control drawn")
 end)
 
 ---------------------------------------------------------------------------

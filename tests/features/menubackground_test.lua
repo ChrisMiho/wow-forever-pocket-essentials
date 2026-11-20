@@ -114,12 +114,12 @@ test("menu background: off by default, a menu gets no panel and nothing is regis
     c:assertClean()
 end)
 
--- Spec "What the player sees": name and text under it.
+-- Spec "What the player sees": name and text under it (the shorter line from spec 2026-11-20-0.9.0-ui-redesign).
 test("menu background: the switch has the spec's name and text", function()
     local _, PE = start({ off = true })
     local mod = PE:GetModule("menuBg")
     eq(mod.label, "Menu background")
-    eq(mod.desc, "Puts a dark panel behind the game's pop-up menus, such as the menu on a quest in the quest log, so the text is easy to read.")
+    eq(mod.desc, "A dark panel behind pop-up menus, so they are easy to read.")
 end)
 
 ---------------------------------------------------------------------------

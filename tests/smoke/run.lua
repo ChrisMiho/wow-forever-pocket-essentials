@@ -170,12 +170,16 @@ local function panelOf(c) return rawget(c.env, "PocketEssentialsSettingsPanel") 
 local function guideOf(c) return rawget(c.env, "PocketEssentialsSetupPanel") end
 local function guideShown(c) return guideOf(c) ~= nil and guideOf(c):IsShown() end
 
+-- The settings window's pages (0.9.0): one per tab, and the Quest Icon Key.
+local PAGES = { "questIcons", "questArrow", "bags", "vendors", "chat", "menuBg", "general", "errors", "key" }
+
 local function openPage(c, PE, page)
-    PE:OpenSettings(page ~= "main" and page or nil)
+    PE:OpenSettings(page)
     c:advance(0.1)
 end
 
-local function isReload(label) return label == "Reload UI" or label == "Reload now" or label == "Save log now" end
+-- "Reload" (General), "Reload now" (the header) and "Save" (the debug log) reload the interface.
+local function isReload(label) return label == "Reload" or label == "Reload now" or label == "Save" end
 
 -- Presses every button on one settings page once (re-opening the page after a
 -- button closed it or moved to another page), until none is left unpressed.
@@ -188,7 +192,7 @@ local function pressAll(c, PE, page, skip)
         local target, key
         for _, b in ipairs(layoutOf(c, panel)) do
             local k = page .. "|" .. b.ctx .. "|" .. b.label
-            if not pressed[k] and not isReload(b.label) and not (skip and skip(b.label, b.ctx)) then
+            if not pressed[k] and not isReload(b.label) and not (skip and skip(b.label, b.ctx, b.w)) then
                 target, key = b.w, k
                 break
             end
@@ -271,7 +275,10 @@ local function tocField(field)
     return v and v:gsub("%s+$", "")
 end
 
-local function isSwitch(label) return label == "ON" or label == "OFF" or label == "PROBLEM" end
+-- A feature's switch: the settings window's (a switch widget) or the setup guide's (ON / OFF / PROBLEM).
+local function isSwitch(label, w)
+    return (w ~= nil and w.peSwitchState ~= nil) or label == "ON" or label == "OFF" or label == "PROBLEM"
+end
 
 local function addonFrames(c)
     local out = {}
@@ -565,7 +572,7 @@ local function everythingOn(c, PE, hasQDB)
     c:assertClean("chat")
 
     -- every settings page again
-    for _, page in ipairs({ "main", "key", "errors" }) do openPage(c, PE, page) end
+    for _, page in ipairs(PAGES) do openPage(c, PE, page) end
     PE:CloseSettings()
     c:advance(0.2)
     c:assertClean("settings pages")
@@ -578,15 +585,15 @@ local function everythingOn(c, PE, hasQDB)
     c:assertClean("switching to the Gamepad UI")
 
     -- every feature's options, at each button size (switches and reload left alone)
-    local skip = function(label, ctx) return isSwitch(label) or ctx == "Button size" end
+    local skip = function(label, ctx, w) return isSwitch(label, w) or ctx == "Button size" end
     local presses = 0
     for _, size in ipairs({ "small", "medium", "large" }) do
         PE:SetUISetting("size", size)
         c:advance(0.2)
-        presses = presses + pressAll(c, PE, "main", skip)
+        for _, page in ipairs(PAGES) do presses = presses + pressAll(c, PE, page, skip) end
     end
-    -- "Touch screen" flips once per size (three times), which would leave touch off; put it
-    -- back so the pages after this are drawn with the scroll bar again.
+    -- "I play with" ends on Controller (its parts are pressed left to right), which leaves
+    -- touch off; put it back so the pages after this are drawn with the scroll bar again.
     PE:SetUISetting("touch", true)
     c:advance(0.2)
     PE:CloseSettings()
@@ -637,6 +644,8 @@ local function everythingOn(c, PE, hasQDB)
     -- 207 with QuestieDB and 103 without.
     -- 0.8.0 (Bags in two): Bag window is a feature of its own with Bag size and Bag icons,
     -- and Bag sorter has two toggles: 243 with QuestieDB and 125 without. The floor stays.
+    -- 0.9.0 (tabs): every tab is pressed through, its tab buttons included, at each size:
+    -- 461 with QuestieDB and 322 without. The floor stays.
     check(presses >= (hasQDB and 195 or 100), "only " .. presses .. " option buttons were pressed")
     c:assertClean("pressing every option")
 
@@ -697,14 +706,14 @@ scenarios[#scenarios + 1] = { name = "1 first install", run = function()
     -- bags switched on asks for a reload ("Reload now" in the header)
     c.world.cvars.combinedBags = "0"
     for _, size in ipairs({ "Small", "Medium", "Large" }) do
-        openPage(c, PE, "main")
+        openPage(c, PE, "general")
         local btn = findButton(c, panelOf(c), size, "Button size")
         check(btn ~= nil, "no " .. size .. " button under \"Button size\"")
         c:click(btn)
         c:advance(0.4)
         check(PE.db.ui.size == size:lower(), "pressing " .. size .. " left the size at " .. tostring(PE.db.ui.size))
         local skip = function(label, ctx) return ctx == "Button size" end
-        for _, page in ipairs({ "main", "key", "errors" }) do
+        for _, page in ipairs(PAGES) do
             presses = presses + pressAll(c, PE, page, skip)
             c:assertClean("pressing every button on page " .. page .. " at " .. size)
         end
@@ -714,8 +723,8 @@ scenarios[#scenarios + 1] = { name = "1 first install", run = function()
 
     -- Reload buttons: each press calls C_UI.Reload exactly once.
     PE:SetModuleEnabled("bags", true)
-    openPage(c, PE, "main")
-    for _, label in ipairs({ "Reload UI", "Reload now" }) do
+    openPage(c, PE, "general")
+    for _, label in ipairs({ "Reload", "Reload now" }) do
         local btn = findButton(c, panelOf(c), label)
         check(btn ~= nil, "no \"" .. label .. "\" button")
         local before = #c:callsTo("C_UI.Reload")
@@ -737,14 +746,14 @@ scenarios[#scenarios + 1] = { name = "1 first install", run = function()
         if t:find("smoke seeded error", 1, true) then seen = true end
     end
     check(seen, "the Errors page does not show a logged error")
-    local clear = findButton(c, panelOf(c), "Clear")
-    check(clear, "no Clear button on the Errors page")
-    -- "Save log now" is a reload (the game writes the saved file then): one call per press.
-    local save = findButton(c, panelOf(c), "Save log now")
-    check(save, "no Save log now button on the Errors page")
+    local clear = findButton(c, panelOf(c), "Clear errors")
+    check(clear, "no Clear errors button on the Errors page")
+    -- "Save" is a reload (the game writes the saved file then): one call per press.
+    local save = findButton(c, panelOf(c), "Save")
+    check(save, "no Save button on the Errors page")
     local reloadsBefore = #c:callsTo("C_UI.Reload")
     c:click(save)
-    check(#c:callsTo("C_UI.Reload") - reloadsBefore == 1, "\"Save log now\" did not call C_UI.Reload once")
+    check(#c:callsTo("C_UI.Reload") - reloadsBefore == 1, "\"Save\" did not call C_UI.Reload once")
     c:click(clear)
     c:advance(0.2)
     check(#PE.errors == 0, "Clear left " .. #PE.errors .. " entries in the error log")

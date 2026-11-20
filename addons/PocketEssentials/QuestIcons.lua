@@ -84,9 +84,9 @@ local KIND_LABEL = { slay = "Kill", loot = "Loot", object = "Use", event = "Expl
 local KIND_DESC = {
     slay = "A creature to kill.",
     loot = "A creature that drops a quest item.",
-    object = "An object in the world to click, use or open. It may hold a quest item.",
+    object = "An object to click, use or open.",
     event = "A place to go to, or someone to talk to.",
-    turnin = "Where to hand the quest in, once you have done everything it asks.",
+    turnin = "Where to hand the quest in.",
 }
 local KIND_ORDER = { "slay", "loot", "object", "event", "turnin" }
 local iconKey = {}
@@ -1114,7 +1114,7 @@ end
 -- Registration
 ---------------------------------------------------------------------------
 
-local ON_OFF = { { value = true, label = "On" }, { value = false, label = "Off" } }
+local HIDE_SHOW = { { value = true, label = "Hide" }, { value = false, label = "Show" } }
 
 local function OptionChanged(key)
     return function() ApplyOption(key) end
@@ -1123,20 +1123,20 @@ end
 mod = PE:RegisterModule({
     key = KEY,
     label = "Quest icons",
-    desc = "Shows where quest objectives are on the map and minimap.",
+    desc = "Icons on the map and minimap where your quest objectives are.",
     order = 10,
     requiresQuestieDB = true,
     defaults = DEFAULTS,
     options = {
         { key = "show", label = "Show icons for",
-          choices = { { value = "tracked", label = "Tracked quests" }, { value = "focus", label = "Focused quest" },
-                      { value = "all", label = "All quests" } },
+          choices = { { value = "tracked", label = "Tracked" }, { value = "focus", label = "Focused" },
+                      { value = "all", label = "All" } },
           OnChange = OptionChanged("show") },
         -- One choice for the two saved switches `map` and `mini` (0.6.0). Both
         -- off (only from /qd or an old file) marks no button.
         { label = "Icons on",
-          choices = { { value = "both", label = "Map and minimap" }, { value = "map", label = "Map only" },
-                      { value = "mini", label = "Minimap only" } },
+          choices = { { value = "both", label = "Both" }, { value = "map", label = "Map" },
+                      { value = "mini", label = "Minimap" } },
           get = function(m)
               local o = m.opts
               if type(o) ~= "table" then return nil end
@@ -1154,7 +1154,7 @@ mod = PE:RegisterModule({
               ApplyOption("mini")
           end },
         { key = "size", label = "Icon size",
-          choices = { { value = "xsmall", label = "Extra small" }, { value = "small", label = "Small" },
+          choices = { { value = "xsmall", label = "Tiny" }, { value = "small", label = "Small" },
                       { value = "medium", label = "Medium" }, { value = "large", label = "Large" } },
           OnChange = OptionChanged("size") },
         -- Number controls (0.7.0). The saved values are the same as before:
@@ -1165,9 +1165,11 @@ mod = PE:RegisterModule({
         { key = "spots", label = "Spots per objective",
           number = { min = 1, max = MAX_SPOTS, default = DEFAULT_SPOTS, unit = "spots", all = 0, allLabel = "All" },
           OnChange = OptionChanged("spots") },
-        { key = "hideHaze", label = "Hide Blue Quest Haze", choices = ON_OFF, toggle = true, OnChange = OptionChanged("hideHaze") },
-        -- Opens the Quest Icon Key page of the settings (Back returns to the main list).
-        { label = "Quest Icon Key", action = function() PE:OpenSettings("key") end },
+        -- Hide is hideHaze = true (the saved values are the same as before).
+        { key = "hideHaze", label = "Blizzard blue quest haze", choices = HIDE_SHOW, OnChange = OptionChanged("hideHaze") },
+        -- Opens the Quest Icon Key page of the settings (Back returns to the tab).
+        -- `page`: the setup guide leaves this row out.
+        { label = "Icon key", button = "Open", page = "key", action = function() PE:OpenSettings("key") end },
     },
     status = Status,
     OnEnable = OnEnable,

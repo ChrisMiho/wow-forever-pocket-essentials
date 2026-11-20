@@ -110,7 +110,8 @@ test("hub: a short tap opens the chat picker, not the settings, when the chat fe
 end)
 
 ---------------------------------------------------------------------------
--- Spec 2026-11-17-post-0.0.9-batch, section 5: feature blocks fold away (Settings.lua BuildModuleRow).
+-- Spec 2026-11-20-0.9.0-ui-redesign, "Settings window": tabs on the left,
+-- cards on the right (Settings.lua), and the widgets (UI.lua).
 ---------------------------------------------------------------------------
 
 local function walkAll(c, w, fn, seen)
@@ -132,18 +133,6 @@ local function shownButtons(c, label)
     return out
 end
 
--- The visible fold buttons with this label, without the one of "Chat from
--- round button": since 0.4.0 that block has a row drawn with the feature off
--- ("Chat text size", marked always), so it has a fold button in every one of
--- these tests. Its own fold button is tested in chat_test.lua.
-local function foldButtons(c, label)
-    local out = {}
-    for _, b in ipairs(shownButtons(c, label)) do
-        if b.peFoldKey ~= "chat" then out[#out + 1] = b end
-    end
-    return out
-end
-
 local function shownText(c, text)
     local found = false
     walkAll(c, settingsPanel(c), function(w)
@@ -155,8 +144,9 @@ local function shownText(c, text)
     return found
 end
 
-local function openSettings(c, PE)
-    PE:OpenSettings()
+-- tab: a tab id (PE.SETTINGS_TABS); nil keeps the tab shown last.
+local function openSettings(c, PE, tab)
+    PE:OpenSettings(tab)
     c:advance(0.2)
 end
 
@@ -170,203 +160,21 @@ local function debugLinesOf(c, key)
     return out
 end
 
-test("fold: a feature that is on with options shows Hide options; tapping folds it and keeps the switch ON", function()
-    local c, PE = T.new({ on = { "bagWindow" } })
-    openSettings(c, PE)
-    eq(#foldButtons(c, "Hide options"), 1)
-    check(shownButtons(c, "Normal")[1], "the options are not drawn at first")
-    c:click(foldButtons(c, "Hide options")[1])
-    c:advance(0.5)
-    eq(#foldButtons(c, "Show options"), 1)
-    eq(#foldButtons(c, "Hide options"), 0)
-    eq(#shownButtons(c, "Normal"), 0, "the options are still drawn")
-    check(not shownText(c, "Bag size"), "the option label is still drawn")
-    check(PE:IsModuleEnabled("bagWindow"), "folding switched the feature off")
-    eq(#shownButtons(c, "ON"), 1, "the switch no longer shows ON")
-    eq(PE.db.ui.folded.bagWindow, true)
-    c:assertClean("fold")
-end)
+-- The visible switch of a feature's card.
+local function switchOf(c, key)
+    local found
+    walkAll(c, settingsPanel(c), function(w)
+        if w.peSwitchState and w.peKey == key and w:IsVisible() then found = w end
+    end)
+    return found
+end
 
-test("fold: the description line is hidden when folded and comes back when unfolded", function()
-    local c, PE = T.new({ on = { "bagWindow" } })
-    local desc = PE:GetModule("bagWindow").desc
-    check(type(desc) == "string" and desc ~= "", "bagWindow has no description")
-    openSettings(c, PE)
-    check(shownText(c, desc), "no description at first")
-    c:click(foldButtons(c, "Hide options")[1])
-    c:advance(0.5)
-    check(not shownText(c, desc), "the description is still drawn when folded")
-    c:click(foldButtons(c, "Show options")[1])
-    c:advance(0.5)
-    check(shownText(c, desc), "the description did not come back")
-    check(shownButtons(c, "Normal")[1], "the options did not come back")
-    eq(PE.db.ui.folded.bagWindow, nil, "unfold left the entry in the saved table")
-end)
+local function tabButton(c, id)
+    local found
+    walkAll(c, settingsPanel(c), function(w) if w.peTabId == id then found = w end end)
+    return found
+end
 
-test("fold: a status line stays while folded", function()
-    local c, PE = T.new({ on = { "bags" } })
-    PE:GetModule("bags").status = function() return "Status stays" end
-    openSettings(c, PE)
-    c:click(foldButtons(c, "Hide options")[1])
-    c:advance(0.5)
-    check(shownText(c, "Status stays"), "the status line vanished")
-end)
-
-test("fold: the folded state is saved and still there after a reload", function()
-    local c, PE = T.new({ on = { "bags" } })
-    openSettings(c, PE)
-    c:click(foldButtons(c, "Hide options")[1])
-    c:advance(0.5)
-    local db = rawget(c.env, "PocketEssentialsDB")
-    local c2, PE2 = T.new({ saved = db })
-    openSettings(c2, PE2)
-    eq(#foldButtons(c2, "Show options"), 1)
-    eq(#shownButtons(c2, "Normal"), 0)
-end)
-
-test("fold: a feature that is off, or has no options, has no fold button", function()
-    local c, PE = T.new({})
-    openSettings(c, PE)
-    eq(#foldButtons(c, "Hide options"), 0)
-    eq(#foldButtons(c, "Show options"), 0)
-    local c2, PE2 = T.new({ on = { "sellJunk" } })
-    PE2:GetModule("sellJunk").options = nil
-    openSettings(c2, PE2)
-    eq(#foldButtons(c2, "Hide options"), 0)
-    local c3, PE3 = T.new({ on = { "sellJunk" } })
-    PE3:GetModule("sellJunk").options = {}
-    openSettings(c3, PE3)
-    eq(#foldButtons(c3, "Hide options"), 0)
-end)
-
-test("fold: a folded feature that is switched off shows no fold button and no options", function()
-    local c, PE = T.new({ on = { "bagWindow" } })
-    openSettings(c, PE)
-    c:click(foldButtons(c, "Hide options")[1])
-    c:advance(0.5)
-    PE:SetModuleEnabled("bagWindow", false)
-    c:advance(0.5)
-    eq(#foldButtons(c, "Show options"), 0)
-    eq(#shownButtons(c, "Normal"), 0)
-end)
-
-test("fold: a damaged saved folded value does no harm and is replaced by an empty table", function()
-    for _, bad in ipairs({ "yes", 5, true }) do
-        local c, PE = T.new({ on = { "bags" }, saved = { version = 1, enabled = { bags = true }, options = {}, ui = { size = "medium", hubPos = "LEFT", folded = bad }, errors = {} } })
-        eq(type(PE.db.ui.folded), "table")
-        openSettings(c, PE)
-        eq(#foldButtons(c, "Hide options"), 1)
-        c:click(foldButtons(c, "Hide options")[1])
-        c:advance(0.5)
-        eq(PE.db.ui.folded.bags, true)
-    end
-    -- A non-true entry inside the table does not fold anything.
-    local c, PE = T.new({ on = { "bags" }, saved = { version = 1, enabled = { bags = true }, options = {}, ui = { size = "medium", hubPos = "LEFT", folded = { bags = "yes" } }, errors = {} } })
-    openSettings(c, PE)
-    eq(#foldButtons(c, "Hide options"), 1)
-end)
-
-test("fold: the controller's d-pad reaches the fold button, A presses it, and the highlight stays on it", function()
-    local c, PE = T.new({ on = { "bags", "sellJunk" } })
-    openSettings(c, PE)
-    local panel = settingsPanel(c)
-    local nav = rawget(c.env, NAV_NAME)
-    local fold = foldButtons(c, "Hide options")[1]
-    local n = 0
-    repeat
-        c:script(nav, "OnClick", "RIGHT", true)
-        c:script(nav, "OnClick", "RIGHT", false)
-        n = n + 1
-    until panel.peNavFocus == fold or n > 60
-    check(panel.peNavFocus == fold, "the d-pad never reached the fold button")
-    c:script(nav, "OnClick", "A", true)
-    c:script(nav, "OnClick", "A", false)
-    c:advance(0.5)
-    eq(PE.db.ui.folded.bags, true)
-    local after = foldButtons(c, "Show options")[1]
-    check(after, "no Show options button after folding")
-    check(panel.peNavFocus == after, "the highlight left the fold button")
-    -- and again the other way
-    c:script(nav, "OnClick", "A", true)
-    c:script(nav, "OnClick", "A", false)
-    c:advance(0.5)
-    eq(PE.db.ui.folded.bags, nil)
-    check(panel.peNavFocus == foldButtons(c, "Hide options")[1], "the highlight left the fold button after unfolding")
-    c:assertClean("fold nav")
-end)
-
-test("fold: the highlight stays on the fold button of the same feature when two features have one", function()
-    local c, PE = T.new({ on = { "bags", "sellJunk" } })
-    PE:GetModule("sellJunk").options = { { label = "Extra", action = function() end } }
-    openSettings(c, PE)
-    local panel = settingsPanel(c)
-    local nav = rawget(c.env, NAV_NAME)
-    local folds = foldButtons(c, "Hide options")
-    eq(#folds, 2)
-    local target = folds[2]
-    local n = 0
-    repeat
-        c:script(nav, "OnClick", "RIGHT", true)
-        c:script(nav, "OnClick", "RIGHT", false)
-        n = n + 1
-    until panel.peNavFocus == target or n > 80
-    check(panel.peNavFocus == target, "could not reach the second fold button")
-    local key = target.peFoldKey
-    c:script(nav, "OnClick", "A", true)
-    c:script(nav, "OnClick", "A", false)
-    c:advance(0.5)
-    eq(panel.peNavFocus.peFoldKey, key, "the highlight moved to another feature's button")
-    eq(T.labelOf(panel.peNavFocus), "Show options")
-end)
-
-test("fold: a tap writes a debug line and does not redraw twice for a fold", function()
-    local c, PE = T.new({ on = { "bags" } })
-    PE:SetDebug(true)
-    openSettings(c, PE)
-    c:click(foldButtons(c, "Hide options")[1])
-    c:advance(0.5)
-    c:click(foldButtons(c, "Show options")[1])
-    c:advance(0.5)
-    eq(debugLinesOf(c, "settings"), { "bags folded", "bags unfolded" })
-end)
-
--- Spec 2026-11-17 section 6: the Icon key button lives with the Quest icons options.
-test("icon key: not in the bottom row; one in the Quest icons block when it is on; it opens the key page and Back returns", function()
-    local c, PE = T.new({ quest = true, on = { "questIcons" } })
-    openSettings(c, PE)
-    eq(#shownButtons(c, "Quest Icon Key"), 1)
-    eq(#shownButtons(c, "Reload UI"), 1)
-    c:click(shownButtons(c, "Quest Icon Key")[1])
-    c:advance(0.5)
-    check(shownText(c, "Pocket Essentials - Quest Icon Key") or #shownButtons(c, "Back") == 1, "the key page did not open")
-    eq(#shownButtons(c, "Back"), 1)
-    c:click(shownButtons(c, "Back")[1])
-    c:advance(0.5)
-    eq(#shownButtons(c, "Quest Icon Key"), 1, "Back did not return to the main list")
-    c:assertClean("icon key")
-end)
-
-test("icon key: no button when Quest icons is off, and none in the bottom row", function()
-    local c, PE = T.new({ quest = true })
-    openSettings(c, PE)
-    eq(#shownButtons(c, "Quest Icon Key"), 0)
-    eq(#shownButtons(c, "Reload UI"), 1)
-end)
-
-test("icon key: folding Quest icons hides the Icon key button", function()
-    local c, PE = T.new({ quest = true, on = { "questIcons" } })
-    openSettings(c, PE)
-    eq(#shownButtons(c, "Quest Icon Key"), 1)
-    c:click(foldButtons(c, "Hide options")[1])
-    c:advance(0.5)
-    eq(#shownButtons(c, "Quest Icon Key"), 0, "the Icon key button is drawn while folded")
-    c:click(foldButtons(c, "Show options")[1])
-    c:advance(0.5)
-    eq(#shownButtons(c, "Quest Icon Key"), 1)
-end)
-
--- The controller highlight stays on a feature's own ON / OFF switch after A switches it
--- (the buttons after it come and go, so the highlight must not drift to another button).
 local function dpadTo(c, target)
     local panel, nav = settingsPanel(c), rawget(c.env, NAV_NAME)
     local n = 0
@@ -385,69 +193,397 @@ local function pressA(c)
     c:advance(0.5)
 end
 
--- The switch of the n-th feature row: the 'n'-th button labelled ON or OFF (the debug switch is not on this page).
-local function switchOfRow(c, n)
-    local found = {}
-    walkAll(c, settingsPanel(c), function(w)
-        local l = c._state(w).type == "Button" and w:IsVisible() and T.labelOf(w)
-        if l == "ON" or l == "OFF" then found[#found + 1] = w end
-    end)
-    table.sort(found, function(a, b)
-        local _, ya = a:GetCenter()
-        local _, yb = b:GetCenter()
-        return ya > yb
-    end)
-    return found[n]
+local function dpadKey(c, key)
+    local nav = rawget(c.env, NAV_NAME)
+    c:script(nav, "OnClick", key, true)
+    c:script(nav, "OnClick", key, false)
 end
 
-local function rowIndexOf(c, PE, key)
-    for i, m in ipairs(PE.moduleList) do if m.key == key then return i end end
-end
+local function near(a, b, eps) return math.abs(a - b) < (eps or 0.01) end
 
-test("fold: A on a switch keeps the highlight on that feature's switch, off to on and on to off", function()
-    local c, PE = T.new({ on = { "sellJunk" } })
-    PE:GetModule("sellJunk").options = { { label = "Extra", action = function() end } }
+test("tabs: eight tabs in the spec's order, each holding the spec's helpers", function()
+    local c, PE = T.new({})
+    local got = {}
+    for _, t in ipairs(PE.SETTINGS_TABS) do
+        got[#got + 1] = t.id .. "=" .. t.label .. "=" .. table.concat(t.features or {}, ",")
+    end
+    eq(got, { "questIcons=Quest icons=questIcons", "questArrow=Quest arrow=questArrow", "bags=Bags=bagWindow,bags",
+        "vendors=Vendors=sellJunk,repair", "chat=Chat=chat", "menuBg=Menu background=menuBg", "general=General=",
+        "errors=Errors=" })
     openSettings(c, PE)
-    local panel = settingsPanel(c)
-    local i = rowIndexOf(c, PE, "bags")
-    local sw = switchOfRow(c, i)
-    dpadTo(c, sw)
-    pressA(c)
-    check(PE:IsModuleEnabled("bags"), "A did not switch bags on")
-    check(panel.peNavFocus == switchOfRow(c, i), "off to on: the highlight left the switch")
-    eq(T.labelOf(panel.peNavFocus), "ON")
-    pressA(c)
-    check(not PE:IsModuleEnabled("bags"), "the second A did not switch bags off again")
-    check(PE:IsModuleEnabled("sellJunk"), "the second A switched another feature")
-    check(panel.peNavFocus == switchOfRow(c, i), "on to off: the highlight left the switch")
-    eq(T.labelOf(panel.peNavFocus), "OFF")
+    for _, t in ipairs(PE.SETTINGS_TABS) do
+        local b = tabButton(c, t.id)
+        check(b and b:IsVisible(), "no tab " .. t.id)
+        eq(T.labelOf(b), t.label)
+    end
+    eq(settingsPanel(c).peTitle:GetText(), "Pocket Essentials")
+    c:assertClean("tabs")
 end)
 
-test("fold: in a row with a fold button the d-pad goes to the fold button first, then the switch", function()
-    local c, PE = T.new({ on = { "bags" } })
-    openSettings(c, PE)
-    local panel, nav = settingsPanel(c), rawget(c.env, NAV_NAME)
-    local fold = foldButtons(c, "Hide options")[1]
-    local order = {}
-    for _ = 1, 40 do
-        c:script(nav, "OnClick", "RIGHT", true)
-        c:script(nav, "OnClick", "RIGHT", false)
-        local f = panel.peNavFocus
-        order[#order + 1] = f
-        if f == fold then break end
+test("tabs: all eight fit the window at every button size, stacked one border apart, never taller than a button", function()
+    for _, size in ipairs({ "small", "medium", "large" }) do
+        local c, PE = T.new({})
+        PE:SetUISetting("size", size)
+        openSettings(c, PE)
+        local M = PE.UI:Metrics()
+        local panel = settingsPanel(c)
+        local _, _, contentTop, contentBottom = c._rect(panel.content)
+        local prevBottom
+        for _, t in ipairs(PE.SETTINGS_TABS) do
+            local b = tabButton(c, t.id)
+            local _, _, top, bottom = c._rect(b)
+            check(top - bottom <= M.button + 0.01, size .. ": a tab is taller than a button")
+            check(bottom >= contentBottom - 0.01, size .. ": tab " .. t.id .. " is below the window")
+            check(near(b:GetWidth(), M.button * 5), size .. ": tabs are not five buttons wide")
+            if prevBottom then check(near(prevBottom - top, M.border), size .. ": tabs are not one border apart") end
+            prevBottom = bottom
+        end
+        local _, _, firstTop = c._rect(tabButton(c, "questIcons"))
+        check(near(firstTop, contentTop), size .. ": the tabs do not start at the top of the content")
+        c:assertClean("tabs at " .. size)
     end
-    c:script(nav, "OnClick", "RIGHT", true)
-    c:script(nav, "OnClick", "RIGHT", false)
-    eq(T.labelOf(panel.peNavFocus), "ON", "the switch does not follow the fold button")
+end)
+
+test("tabs: the chosen tab is gold with its bar, a tap shows only that tab's cards, and it is remembered", function()
+    local c, PE = T.new({})
+    openSettings(c, PE)
+    eq(PE:SettingsPage(), "questIcons")
+    eq(tabButton(c, "questIcons").peStyle, "tabOn")
+    eq(tabButton(c, "bags").peStyle, "tabItem")
+    check(tabButton(c, "questIcons").peBar:IsShown() and not tabButton(c, "bags").peBar:IsShown(), "the gold bar is wrong")
+    check(shownText(c, "Quest icons"), "the Quest icons card is not on the first tab")
+    c:click(tabButton(c, "bags"))
+    c:advance(0.2)
+    check(shownText(c, PE:GetModule("bagWindow").label) and shownText(c, PE:GetModule("bags").label),
+        "the Bags tab does not hold both bag cards")
+    check(not switchOf(c, "questIcons"), "another tab's card is still drawn")
+    eq(tabButton(c, "bags").peStyle, "tabOn")
+    PE:CloseSettings()
+    openSettings(c, PE)
+    eq(PE:SettingsPage(), "bags", "the tab was not remembered")
+    openSettings(c, PE, "vendors")
+    check(switchOf(c, "sellJunk") and switchOf(c, "repair"), "the Vendors tab does not hold both vendor cards")
+    c:assertClean("tab choice")
+end)
+
+test("tabs: a feature tab's dot is green while any of its helpers is on, grey otherwise", function()
+    local c, PE = T.new({ on = { "repair" } })
+    openSettings(c, PE)
+    eq(tabButton(c, "vendors").peDotOn, true)
+    eq(tabButton(c, "bags").peDotOn, false)
+    local green = c._state(tabButton(c, "vendors").peDot.texture).vertexColor
+    check(near(green[1], 0.35) and near(green[2], 0.92), "the on dot is not green")
+    local grey = c._state(tabButton(c, "bags").peDot.texture).vertexColor
+    check(near(grey[1], 0.40) and near(grey[3], 0.43), "the off dot is not grey")
+    check(not tabButton(c, "general").peDot.texture:IsShown(), "General has a dot")
+    PE:SetModuleEnabled("bags", true)
+    c:advance(0.2)
+    eq(tabButton(c, "bags").peDotOn, true)
+end)
+
+test("tabs: the Errors tab has a red badge with the count only while there are errors", function()
+    local c, PE = T.new({})
+    openSettings(c, PE)
+    check(not tabButton(c, "errors").peCount:IsShown(), "a badge with no errors")
+    PE:LogError("probe", "one")
+    PE:LogError("probe", "two")
+    c:advance(0.2)
+    local b = tabButton(c, "errors")
+    check(b.peCount:IsShown() and b.peCount:GetText() == tostring(#PE.errors), "no badge with the count")
+    check(b.peBadgeDisc.texture:IsShown(), "no red disc")
+    PE:ClearErrors()
+    c:advance(0.2)
+    check(not b.peCount:IsShown(), "the badge stays after Clear errors")
+end)
+
+test("settings: no fold buttons, no tip line, no bottom row, no Move the round button", function()
+    local c, PE = T.new({ on = { "bags", "bagWindow", "chat" } })
+    for _, t in ipairs(PE.SETTINGS_TABS) do
+        openSettings(c, PE, t.id)
+        for _, label in ipairs({ "Hide options", "Show options", "Move the round button", "Reload UI", "Errors (0)",
+            "Move on screen", "Touch screen: Yes" }) do
+            eq(#shownButtons(c, label), 0, t.id .. ": " .. label)
+        end
+        check(not shownText(c, "Tip: press and hold the round button to open this window."), t.id .. ": the tip line")
+    end
+end)
+
+test("row: the control is min(58% of the row, 9 buttons) wide on the right, the name column fills the rest", function()
+    for _, size in ipairs({ "small", "medium", "large" }) do
+        local c, PE = T.new({})
+        PE:SetUISetting("size", size)
+        local UI, M = PE.UI, PE.UI:Metrics()
+        for _, inner in ipairs({ 300, 700, 2000 }) do
+            check(near(UI:ControlWidth(inner), math.min(inner * 0.58, M.button * 9)), size .. " " .. inner)
+        end
+        PE:SetModuleEnabled("sellJunk", true)
+        PE:GetModule("sellJunk").options = { { label = "Do the thing", button = "Go", action = function() end } }
+        openSettings(c, PE, "vendors")
+        local go = shownButtons(c, "Go")[1]
+        local card = switchOf(c, "sellJunk")
+        local _, cardRight = c._rect(card)  -- the switch sits at the card's inner right edge
+        local gl, gr = c._rect(go)
+        check(near(gr, cardRight), size .. ": the control does not end at the card's inner edge")
+        local inner = go:GetWidth() -- the control width
+        local area = settingsPanel(c).peNavArea
+        local innerWidth = area.viewWidth - 2 * M.pad
+        check(near(inner, UI:ControlWidth(innerWidth)), size .. ": the control is " .. inner .. " wide")
+        c:assertClean("row at " .. size)
+    end
+end)
+
+test("row: at Large a long name wraps in its column and never reaches the control", function()
+    local c, PE = T.new({ on = { "sellJunk" } })
+    PE:SetUISetting("size", "large")
+    local long = "A very long row name that cannot possibly fit on one line beside its control at this size"
+    PE:GetModule("sellJunk").options = { { label = long, help = "And a help line under it, which is long as well.", action = function() end } }
+    openSettings(c, PE, "vendors")
+    local M = PE.UI:Metrics()
+    local open = shownButtons(c, "Open")[1]
+    check(open, "the action row has no Open button")
+    local ol, _, ot, ob = c._rect(open)
+    local name, help
+    walkAll(c, settingsPanel(c), function(w)
+        for _, r in ipairs(c._state(w).regions) do
+            local st = c._state(r)
+            if st.text == long and r:IsVisible() then name = r end
+            if st.text == "And a help line under it, which is long as well." and r:IsVisible() then help = r end
+        end
+    end)
+    check(name and help, "the name or the help line is missing")
+    local nl, nr, nt, nb = c._rect(name)
+    check(nr <= ol - M.gap + 0.01, "the name reaches the control")
+    check(name:GetStringHeight() > M.fontSize * 1.5, "the long name did not wrap")
+    local _, _, ht = c._rect(help)
+    check(ht <= nb + 0.01, "the help line is not under the name")
+    -- The control is centred on the row.
+    -- (a text's rectangle has no height here: its bottom is its top less its string height)
+    local hb = ht - help:GetStringHeight()
+    check(near((ot + ob) / 2, (nt + hb) / 2, 1), "the control is not centred on the row")
+    c:assertClean("long name")
+end)
+
+test("switch: On is green with the knob on the right, Off grey with it on the left, blocked does nothing", function()
+    local c, PE = T.new({ on = { "repair" } })
+    openSettings(c, PE, "vendors")
+    local M = PE.UI:Metrics()
+    local on, off = switchOf(c, "repair"), switchOf(c, "sellJunk")
+    eq({ T.labelOf(on), on.peStyle, T.labelOf(off), off.peStyle }, { "On", "on", "Off", "off" })
+    check(near(on:GetWidth(), M.button * 2) and near(on:GetHeight(), M.button), "the switch is not 2 x 1 buttons")
+    local knob = M.button - 4 * M.border - M.gap * 0.4
+    check(near(on.peKnob:GetWidth(), knob) and near(on.peKnob:GetHeight(), knob), "the knob is not square at the spec's size")
+    local sl, sr = c._rect(on)
+    local kl, kr = c._rect(on.peKnob)
+    check(near(sr - kr, 2 * M.border + M.gap * 0.2), "the On knob is not at the right")
+    local fl = c._rect(off)
+    local ol = c._rect(off.peKnob)
+    check(near(ol - fl, 2 * M.border + M.gap * 0.2), "the Off knob is not at the left")
+    c:click(off)
+    c:advance(0.2)
+    check(PE:IsModuleEnabled("sellJunk"), "a tap did not switch it on")
+    eq(T.labelOf(switchOf(c, "sellJunk")), "On")
+    -- Blocked: the disabled look, and a tap changes nothing.
+    local sw = PE.UI:CreateSwitch(rawget(c.env, "UIParent"))
+    sw:SetSwitch("blocked")
+    eq({ sw.peStyle, T.labelOf(sw) }, { "disabled", "Off" })
+    sw:SetSwitch("failed")
+    eq({ sw.peStyle, T.labelOf(sw) }, { "warn", "Problem" })
+    c:assertClean("switch")
+end)
+
+test("switch: a blocked feature's switch is disabled and a tap leaves it off", function()
+    local c, PE = T.new({})
+    openSettings(c, PE, "questIcons")
+    local sw = switchOf(c, "questIcons")
+    check(sw, "no Quest icons switch")
+    if PE:GetModuleState("questIcons") == "blocked" then
+        eq(sw.peStyle, "disabled")
+        c:click(sw)
+        c:advance(0.2)
+        check(not PE:IsModuleSavedOn("questIcons"), "a tap on a blocked switch saved it on")
+    end
+end)
+
+test("feature card: name, line, switch; off with options says to switch it on; on shows a divider and the rows", function()
+    local c, PE = T.new({})
+    openSettings(c, PE, "bags")
+    check(shownText(c, "Switch it on to choose how it works."), "no hint on an off feature with options")
+    eq(#shownButtons(c, "Normal"), 0, "options drawn while off")
+    PE:SetModuleEnabled("bagWindow", true)
+    c:advance(0.2)
+    check(shownButtons(c, "Normal")[1], "no options once on")
+    openSettings(c, PE, "vendors")
+    check(not shownText(c, "Switch it on to choose how it works."), "the hint on a feature with no options")
+end)
+
+test("menu background: the tab starts with the heading card", function()
+    local c, PE = T.new({})
+    openSettings(c, PE, "menuBg")
+    check(shownText(c, "Fixes for the game's own interface"), "no heading")
+    check(shownText(c, "Parts of the default Blizzard UI that are hard to use on a handheld. Each fix only changes the game's window it names."),
+        "no heading line")
+    check(switchOf(c, "menuBg"), "no Menu background card")
+end)
+
+test("general: two cards with the core rows, I play with saves touch and moves the Sort button", function()
+    local c, PE = T.new({})
+    openSettings(c, PE, "general")
+    for _, name in ipairs({ "Button size", "Round button colour", "I play with", "Move things on screen", "Setup guide",
+        "Reload the interface" }) do
+        check(shownText(c, name), "no row " .. name)
+    end
+    check(shownButtons(c, "Reload")[1] and #shownButtons(c, "Open") == 2, "the action buttons are wrong")
+    local bags = PE:GetModule("bags")
+    local changes = {}
+    for _, opt in ipairs(bags.options) do
+        if opt.key == "showTab" then
+            local real = opt.OnChange
+            opt.OnChange = function(m, v) changes[#changes + 1] = v; if real then return real(m, v) end end
+        end
+    end
+    c:click(shownButtons(c, "Controller")[1])
+    c:advance(0.2)
+    eq(PE.db.ui.touch, false)
+    eq(bags.opts.showTab, false)
+    eq(shownButtons(c, "Controller")[1].peStyle, "segmentOn")
+    c:click(shownButtons(c, "Touch controls")[1])
+    c:advance(0.2)
+    eq(PE.db.ui.touch, true)
+    eq(bags.opts.showTab, true)
+    eq(changes, { false, true })
+    c:assertClean("general")
+end)
+
+test("general: Button size and Round button colour are segmented choices that save at once", function()
+    local c, PE = T.new({})
+    openSettings(c, PE, "general")
+    c:click(shownButtons(c, "Large")[1])
+    c:advance(0.2)
+    eq(PE.db.ui.size, "large")
+    eq(shownButtons(c, "Large")[1].peStyle, "segmentOn")
+    c:click(shownButtons(c, "Horde")[1])
+    c:advance(0.2)
+    eq(PE.db.ui.hubColor, "horde")
+end)
+
+test("errors: the debug card and the errors card; Clear errors is dim with no errors", function()
+    local c, PE = T.new({})
+    openSettings(c, PE, "errors")
+    check(shownText(c, "Debug log") and shownText(c, "Errors"), "a card heading is missing")
+    check(shownText(c, "Save the log (reloads)") and shownText(c, "Empty the log"), "a debug row is missing")
+    check(shownButtons(c, "Save")[1] and shownButtons(c, "Empty")[1], "a debug button is missing")
+    check(shownText(c, "No errors recorded."), "no empty line")
+    eq(shownButtons(c, "Clear errors")[1].peStyle, "disabled")
+    PE:LogError("probe", "boom")
+    c:advance(0.2)
+    eq(shownButtons(c, "Clear errors")[1].peStyle, "normal")
+    check(shownText(c, "boom"), "the error is not listed")
+end)
+
+test("icon key: an Icon key row opens the key page; Back returns to the Quest icons tab", function()
+    local c, PE = T.new({ quest = true, on = { "questIcons" } })
+    openSettings(c, PE, "questIcons")
+    check(shownText(c, "Icon key"), "no Icon key row")
+    c:click(shownButtons(c, "Open")[1])
+    c:advance(0.5)
+    eq({ PE:SettingsPage() }, { "questIcons", "key" })
+    eq(settingsPanel(c).peTitle:GetText(), "Pocket Essentials")
+    local back = shownButtons(c, "Back")[1]
+    check(back and near(back:GetWidth(), PE.UI:Metrics().button * 3), "no Back button three buttons wide")
+    for _, d in ipairs({ "A creature to kill.", "A creature that drops a quest item.", "An object to click, use or open.",
+        "A place to go to, or someone to talk to.", "Where to hand the quest in.", "Tap an icon on the map to see what it is for." }) do
+        check(shownText(c, d), "missing: " .. d)
+    end
+    c:click(back)
+    c:advance(0.5)
+    eq({ PE:SettingsPage() }, { "questIcons", "main" })
+    check(shownText(c, "Icon key"), "Back did not return to the tab")
+    c:assertClean("icon key")
+end)
+
+test("icon key: no row while Quest icons is off", function()
+    local c, PE = T.new({ quest = true })
+    openSettings(c, PE, "questIcons")
+    check(not shownText(c, "Icon key"), "an Icon key row with the feature off")
+end)
+
+test("nav: Right from a tab goes to the page, Left from the first stop of a row goes back to the chosen tab", function()
+    local c, PE = T.new({ on = { "bagWindow" } })
+    openSettings(c, PE, "bags")
+    local panel = settingsPanel(c)
+    dpadKey(c, "DOWN")
+    eq(panel.peNavFocus, tabButton(c, "bags"), "the first press does not land on the chosen tab")
+    dpadKey(c, "DOWN")
+    eq(panel.peNavFocus, tabButton(c, "vendors"), "Down does not stay in the tab column")
+    dpadKey(c, "UP")
+    dpadKey(c, "RIGHT")
+    eq(panel.peNavFocus, switchOf(c, "bagWindow"), "Right from a tab does not go to the page's first stop")
+    dpadKey(c, "DOWN")
+    eq(T.labelOf(panel.peNavFocus), "Normal", "Down from the switch does not reach the first segment")
+    dpadKey(c, "RIGHT")
+    eq(T.labelOf(panel.peNavFocus), "Large", "Right does not move between segments")
+    dpadKey(c, "LEFT")
+    eq(T.labelOf(panel.peNavFocus), "Normal")
+    dpadKey(c, "LEFT")
+    eq(panel.peNavFocus, tabButton(c, "bags"), "Left from the first stop of a row does not go to the tab")
+    -- A on a tab chooses it.
+    dpadKey(c, "DOWN")
+    pressA(c)
+    eq(PE:SettingsPage(), "vendors")
+    eq(panel.peNavFocus, tabButton(c, "vendors"), "the highlight left the tab")
+    c:assertClean("nav columns")
+end)
+
+test("nav: Up and Down in the page never land on a tab", function()
+    local c, PE = T.new({ on = { "bagWindow", "bags" } })
+    openSettings(c, PE, "bags")
+    local panel = settingsPanel(c)
+    dpadKey(c, "DOWN")
+    dpadKey(c, "RIGHT")
+    for _ = 1, 20 do
+        dpadKey(c, "DOWN")
+        check(not panel.peNavFocus.peTabId, "Down went into the tabs")
+    end
+    for _ = 1, 20 do
+        dpadKey(c, "UP")
+        check(not panel.peNavFocus.peTabId, "Up went into the tabs")
+    end
+end)
+
+test("nav: A on a switch keeps the highlight on that feature's switch, off to on and on to off", function()
+    local c, PE = T.new({})
+    openSettings(c, PE, "bags")
+    local panel = settingsPanel(c)
+    dpadTo(c, switchOf(c, "bags"))
+    pressA(c)
+    check(PE:IsModuleEnabled("bags"), "A did not switch bags on")
+    check(panel.peNavFocus == switchOf(c, "bags"), "off to on: the highlight left the switch")
+    eq(T.labelOf(panel.peNavFocus), "On")
+    pressA(c)
+    check(not PE:IsModuleEnabled("bags"), "the second A did not switch bags off again")
+    check(panel.peNavFocus == switchOf(c, "bags"), "on to off: the highlight left the switch")
+    eq(T.labelOf(panel.peNavFocus), "Off")
+end)
+
+test("scroll bar: a page that fits has no bar, a page that does not fit has one (touch on)", function()
+    local c, PE = T.new({})
+    PE:SetUISetting("touch", true)
+    openSettings(c, PE, "vendors")
+    local panel = settingsPanel(c)
+    local area = panel.peNavArea
+    check(not area.upButton:IsShown(), "a bar on a page that fits")
+    for i = 1, 40 do PE:LogError("probe", "problem number " .. i .. " with a fairly long message to fill the line", "stack " .. i) end
+    openSettings(c, PE, "errors")
+    check(area.upButton:IsShown() and area:GetRange() > 0, "no bar on a long page")
 end)
 
 -- Spec 2026-11-17-move-things, "Hold with the controller": only a button with a peHold table
 -- acts on A going down; every other button still clicks once, on A's release.
 test("nav: an ordinary settings button does nothing on A down and clicks once on A up", function()
     local c, PE = T.new({})
-    openSettings(c, PE)
+    openSettings(c, PE, "bags")
     local panel, nav = settingsPanel(c), rawget(c.env, NAV_NAME)
-    local sw = switchOfRow(c, rowIndexOf(c, PE, "bags"))
+    local sw = switchOf(c, "bags")
     check(sw.peHold == nil, "a settings button has a hold hook")
     local clicks = 0
     local original = sw:GetScript("OnClick")
@@ -467,9 +603,9 @@ end)
 -- The same hook in UI.lua on any panel: start on A down, stop on A up, no click on release.
 test("nav: a button with peHold gets start on A down and stop on A up, and no click", function()
     local c, PE = T.new({})
-    openSettings(c, PE)
+    openSettings(c, PE, "bags")
     local panel, nav = settingsPanel(c), rawget(c.env, NAV_NAME)
-    local sw = switchOfRow(c, rowIndexOf(c, PE, "bags"))
+    local sw = switchOf(c, "bags")
     local log = {}
     sw.peHold = { start = function() log[#log + 1] = "start" end, stop = function() log[#log + 1] = "stop" end }
     dpadTo(c, sw)
@@ -487,9 +623,9 @@ test("nav: a button with peHold gets start on A down and stop on A up, and no cl
 end)
 
 ---------------------------------------------------------------------------
--- Tidier option rows (spec 2026-11-18-tidier-settings): toggles, rows with
--- get / set, and the heading beside its buttons. Drawn on "Sell junk", which
--- has no options of its own.
+-- Option rows (spec 2026-11-20-0.9.0-ui-redesign, "The option-row
+-- interface"): choices (toggle or not) as segmented controls, rows with get /
+-- set, help lines. Drawn on "Auto sell junk", which has no options of its own.
 ---------------------------------------------------------------------------
 
 -- The visible text region of the settings window that reads exactly `text`.
@@ -506,7 +642,7 @@ local function textRegionOf(c, text)
     return found
 end
 
-local ON_OFF_TEST = { { value = true, label = "On" }, { value = false, label = "Off" } }
+local YES_NO = { { value = true, label = "Yes" }, { value = false, label = "No" } }
 
 local function withOptions(options, opts)
     local c, PE = T.new({ on = { "sellJunk" } })
@@ -514,47 +650,43 @@ local function withOptions(options, opts)
     mod.options = options
     mod.opts = mod.opts or {}
     for k, v in pairs(opts or {}) do mod.opts[k] = v end
-    openSettings(c, PE)
+    openSettings(c, PE, "vendors")
     return c, PE, mod
 end
 
-test("options: a toggle is one button reading label: choice, green for true, and a tap flips it and runs OnChange", function()
+test("options: a toggle row is drawn as a segmented choice, the saved part chosen, and a tap saves and runs OnChange", function()
     local calls = {}
     local c, PE, mod = withOptions({
-        { key = "first", label = "First", toggle = true, choices = ON_OFF_TEST,
+        { key = "first", label = "First", toggle = true, choices = YES_NO,
           OnChange = function(m, v) calls[#calls + 1] = v end },
-        { key = "second", label = "Second", toggle = true,
-          choices = { { value = false, label = "In" }, { value = true, label = "Out" } } },
-    }, { first = true, second = false })
-    local first, second = shownButtons(c, "First: On")[1], shownButtons(c, "Second: In")[1]
-    check(first and second, "the toggles are not drawn as one button each")
-    eq(first.peStyle, "on")
-    eq(second.peStyle, "off")
-    eq(#shownButtons(c, "On") + #shownButtons(c, "Off") + #shownButtons(c, "In") + #shownButtons(c, "Out"), 0,
-        "a choice is still drawn as a button of its own")
-    check(not textRegionOf(c, "First") and not textRegionOf(c, "Second"), "a toggle has a heading line")
-    local _, _, top1 = c._rect(first)
-    local _, _, top2 = c._rect(second)
-    check(math.abs(top1 - top2) < 0.01, "two toggles in a row are not on one line")
-    c:click(first)
+    }, { first = true })
+    local M = PE.UI:Metrics()
+    local yes, no = shownButtons(c, "Yes")[1], shownButtons(c, "No")[1]
+    check(yes and no, "the choices are not drawn as parts")
+    eq({ yes.peStyle, no.peStyle }, { "segmentOn", "segment" })
+    check(yes.peBar:IsShown() and not no.peBar:IsShown(), "the gold bar is not under the chosen part")
+    check(near(yes:GetWidth(), no:GetWidth()), "the parts are not equal")
+    check(textRegionOf(c, "First"), "no row name")
+    local _, yr, yt = c._rect(yes)
+    local nl, _, nt = c._rect(no)
+    check(near(yt, nt) and near(nl - yr, M.border), "the parts are not one border apart on one line")
+    eq(#shownButtons(c, "First: Yes"), 0, "still drawn as the old one-button toggle")
+    c:click(no)
     c:advance(0.2)
     eq(mod.opts.first, false)
     eq(calls, { false })
-    check(shownButtons(c, "First: Off")[1], "the toggle does not read the new choice")
-    eq(shownButtons(c, "First: Off")[1].peStyle, "off")
-    c:assertClean("toggle")
+    eq(shownButtons(c, "No")[1].peStyle, "segmentOn")
+    c:assertClean("toggle as segmented")
 end)
 
-test("options: a toggle with a damaged saved value reads as its first choice and a tap saves the second", function()
+test("options: a toggle with a damaged saved value marks no part, and a tap saves", function()
     local c, PE, mod = withOptions({
-        { key = "first", label = "First", toggle = true, choices = ON_OFF_TEST },
+        { key = "first", label = "First", toggle = true, choices = YES_NO },
     }, { first = "yes" })
-    local b = shownButtons(c, "First: On")[1]
-    check(b, "not drawn as the first choice")
-    c:click(b)
+    eq({ shownButtons(c, "Yes")[1].peStyle, shownButtons(c, "No")[1].peStyle }, { "segment", "segment" })
+    c:click(shownButtons(c, "No")[1])
     c:advance(0.2)
     eq(mod.opts.first, false)
-    check(shownButtons(c, "First: Off")[1], "the tap did not change what the toggle says")
     c:assertClean("damaged toggle")
 end)
 
@@ -564,24 +696,24 @@ test("options: a row with get and set marks what get returns, and a tap goes thr
           get = function(m) return m.opts.x end,
           set = function(m, v) m.opts.x = v; m.opts.y = v .. "!" end },
     }, { x = "a" })
-    eq(shownButtons(c, "Alpha")[1].peSelected, true)
-    eq(shownButtons(c, "Beta")[1].peSelected, false)
+    eq(shownButtons(c, "Alpha")[1].peChosen, true)
+    eq(shownButtons(c, "Beta")[1].peChosen, false)
     c:click(shownButtons(c, "Beta")[1])
     c:advance(0.2)
     eq({ mod.opts.x, mod.opts.y }, { "b", "b!" })
-    eq(shownButtons(c, "Beta")[1].peSelected, true)
+    eq(shownButtons(c, "Beta")[1].peChosen, true)
     c:assertClean("get and set")
 end)
 
-test("options: get returning nothing marks no button, and a set that fails is recorded and saves nothing", function()
+test("options: get returning nothing marks no part, and a set that fails is recorded and saves nothing", function()
     local c, PE, mod = withOptions({
         { label = "Pair", choices = { { value = "a", label = "Alpha" }, { value = "b", label = "Beta" } },
           get = function() return nil end,
           set = function() error("broken set") end,
           OnChange = function() error("OnChange ran after a failed set") end },
     })
-    eq(shownButtons(c, "Alpha")[1].peSelected, false)
-    eq(shownButtons(c, "Beta")[1].peSelected, false)
+    eq(shownButtons(c, "Alpha")[1].peChosen, false)
+    eq(shownButtons(c, "Beta")[1].peChosen, false)
     c:click(shownButtons(c, "Alpha")[1])
     c:advance(0.2)
     local msgs = {}
@@ -591,29 +723,69 @@ test("options: get returning nothing marks no button, and a set that fails is re
     check(not joined:find("OnChange ran", 1, true), "OnChange ran after a failed set")
 end)
 
-test("options: a heading sits on its buttons' line when they fit, and above them when they do not", function()
-    local many = {}
-    for i = 1, 14 do many[i] = { value = i, label = "Choice number " .. i } end
+test("options: the name sits left of its control on the row, a help line under the name, at every size", function()
     for _, size in ipairs({ "small", "medium", "large" }) do
         local c, PE = T.new({ on = { "sellJunk" } })
         PE:SetUISetting("size", size)
         local mod = PE:GetModule("sellJunk")
         mod.options = {
-            { key = "few", label = "Few", choices = { { value = 1, label = "One" }, { value = 2, label = "Two" } } },
-            { key = "many", label = "Many", choices = many },
+            { key = "few", label = "Few", help = "Helps.", choices = { { value = 1, label = "One" }, { value = 2, label = "Two" } } },
         }
-        openSettings(c, PE)
-        local few, one = textRegionOf(c, "Few"), shownButtons(c, "One")[1]
-        local fl, _, ft, fb = c._rect(few)
-        local bl, _, bt, bb = c._rect(one)
-        check(ft <= bt + 0.01 and fb >= bb - 0.01, size .. ": \"Few\" is not on its buttons' line")
-        check(fl < bl, size .. ": \"Few\" is not left of its buttons")
-        local manyText, first = textRegionOf(c, "Many"), shownButtons(c, "Choice number 1")[1]
-        local _, _, _, mb = c._rect(manyText)
-        local _, _, ct = c._rect(first)
-        check(mb >= ct - 0.01, size .. ": \"Many\" is not above its buttons, which wrap")
-        c:assertClean("headings at " .. size)
+        openSettings(c, PE, "vendors")
+        local few, helpLine, one = textRegionOf(c, "Few"), textRegionOf(c, "Helps."), shownButtons(c, "One")[1]
+        check(few and helpLine and one, size .. ": a piece is missing")
+        local fl, fr, ft, fb = c._rect(few)
+        local bl = c._rect(one)
+        local _, _, ht = c._rect(helpLine)
+        check(fr < bl, size .. ": the name is not left of its control")
+        check(ht <= fb + 0.01, size .. ": the help line is not under the name")
+        c:assertClean("row at " .. size)
     end
+end)
+
+test("options: an action row's button reads its `button` text, or Open without one, and runs the action", function()
+    local ran = 0
+    local c = withOptions({
+        { label = "Move the arrow row", button = "Move the arrow", action = function() ran = ran + 1 end },
+        { label = "Plain", action = function() ran = ran + 10 end },
+    })
+    check(textRegionOf(c, "Move the arrow row") and textRegionOf(c, "Plain"), "the row names are missing")
+    c:click(shownButtons(c, "Move the arrow")[1])
+    c:click(shownButtons(c, "Open")[1])
+    eq(ran, 11)
+end)
+
+test("number: step moves by its size and stops at the ends", function()
+    local c, PE = T.new({ on = { "sellJunk" } })
+    local mod = PE:GetModule("sellJunk")
+    mod.opts = mod.opts or {}
+    mod.opts.n = 140
+    mod.options = { { key = "n", label = "Scale", number = { min = 50, max = 150, step = 10, default = 100, suffix = "%", unit = "of normal" } } }
+    openSettings(c, PE, "vendors")
+    check(textRegionOf(c, "140%") and textRegionOf(c, "of normal"), "the value or unit is missing")
+    c:click(shownButtons(c, "+")[1])
+    c:advance(0.2)
+    eq(mod.opts.n, 150)
+    eq(shownButtons(c, "+")[1].peStyle, "stepDim")
+    c:click(shownButtons(c, "-")[1])
+    c:advance(0.2)
+    eq(mod.opts.n, 140)
+end)
+
+test("number: the control is as wide as the row's control, the ends one button square", function()
+    local c, PE = T.new({ on = { "sellJunk" } })
+    local mod = PE:GetModule("sellJunk")
+    mod.opts = mod.opts or {}
+    mod.opts.n = 3
+    mod.options = { { key = "n", label = "Count", number = { min = 1, max = 20, default = 5 } } }
+    openSettings(c, PE, "vendors")
+    local M = PE.UI:Metrics()
+    local minus, plus = shownButtons(c, "-")[1], shownButtons(c, "+")[1]
+    local ml = c._rect(minus)
+    local _, pr = c._rect(plus)
+    local inner = settingsPanel(c).peNavArea.viewWidth - 2 * M.pad
+    check(near(pr - ml, PE.UI:ControlWidth(inner)), "the control is " .. (pr - ml) .. " wide")
+    check(near(minus:GetWidth(), M.button) and near(plus:GetHeight(), M.button), "the ends are not square")
 end)
 
 ---------------------------------------------------------------------------
@@ -733,7 +905,7 @@ test("number: at every size in a narrow window the three pieces stay on one line
         mod.opts.n = 3
         mod.options = { { key = "n", label = "A rather long heading for a number row",
             number = { min = 1, max = 20, default = 5, unit = "spots" } } }
-        openSettings(c, PE)
+        openSettings(c, PE, "vendors")
         local _, _, mt = c._rect(shownButtons(c, "-")[1])
         local _, _, pt = c._rect(shownButtons(c, "+")[1])
         check(math.abs(mt - pt) < 0.01, size .. ": the box split across lines")
@@ -838,24 +1010,6 @@ test("touch: not asked yet reads as yes; only an explicit no hides the bar", fun
     eq(area.viewWidth, 400, "the list is not full width")
 end)
 
-test("touch: the toggle in the settings flips ui.touch and the window redraws at once", function()
-    local c, PE = T.new({})
-    openSettings(c, PE)
-    check(#shownButtons(c, "Touch screen: Yes") == 1, "no 'Touch screen: Yes' button")
-    local btn = shownButtons(c, "Touch screen: Yes")[1]
-    eq(btn.peStyle, "on")
-    c:click(btn)
-    c:advance(0.2)
-    eq(PE.db.ui.touch, false)
-    check(#shownButtons(c, "Touch screen: No") == 1, "the toggle did not change its label")
-    eq(shownButtons(c, "Touch screen: No")[1].peStyle, "off")
-    c:click(shownButtons(c, "Touch screen: No")[1])
-    c:advance(0.2)
-    eq(PE.db.ui.touch, true)
-    check(#shownButtons(c, "Touch screen: Yes") == 1, "the toggle did not come back")
-    c:assertClean("touch toggle")
-end)
-
 test("touch off: the settings list is full width and the d-pad reaches the last settings button", function()
     local c, PE = T.new({})
     PE:SetUISetting("touch", false)
@@ -865,7 +1019,8 @@ test("touch off: the settings list is full width and the d-pad reaches the last 
     walkAll(c, panel, function(w) if w.upButton and w.downButton then area = w end end)
     check(area, "no scroll area")
     check(not area.upButton:IsShown(), "the bar is shown with touch off")
-    eq(area.viewWidth, panel.contentWidth, "the list is not full width")
+    local M = PE.UI:Metrics()
+    eq(area.viewWidth, panel.contentWidth - M.button * 5 - M.gap, "the page is not full width")
     -- Every button of the list, in reading order; the last one must be reachable.
     local last
     walkAll(c, area.child, function(w)
@@ -891,7 +1046,7 @@ local function hubColors(c, PE)
              label = c._state(H.label).textColor }
 end
 
-local function near(a, b)
+local function nearColor(a, b)
     for i = 1, 3 do if math.abs(a[i] - b[i]) > 1e-6 then return false end end
     return true
 end
@@ -908,9 +1063,9 @@ test("hub: each colour theme sets the ring, fill and label at once, an unknown o
     for _, case in ipairs(THEME_CASES) do
         PE:SetUISetting("hubColor", case[1])
         local got = hubColors(c, PE)
-        check(near(got.ring, case[2]), case[1] .. " ring")
-        check(near(got.label, case[2]), case[1] .. " label")
-        check(near(got.fill, case[3]), case[1] .. " fill")
+        check(nearColor(got.ring, case[2]), case[1] .. " ring")
+        check(nearColor(got.label, case[2]), case[1] .. " label")
+        check(nearColor(got.fill, case[3]), case[1] .. " fill")
     end
     c:assertClean("hub themes")
 end)
@@ -919,20 +1074,20 @@ test("hub: the pressed colour follows the theme", function()
     local c, PE = T.new({})
     PE:SetUISetting("hubColor", "alliance")
     c:script(PE.Hub.button, "OnMouseDown", "LeftButton")
-    check(near(hubColors(c, PE).fill, { 0.10, 0.25, 0.55 }), "alliance pressed")
+    check(nearColor(hubColors(c, PE).fill, { 0.10, 0.25, 0.55 }), "alliance pressed")
     PE:SetUISetting("hubColor", "horde")
-    check(near(hubColors(c, PE).fill, { 0.18, 0.03, 0.03 }) or near(hubColors(c, PE).fill, { 0.45, 0.07, 0.05 }), "horde fill")
+    check(nearColor(hubColors(c, PE).fill, { 0.18, 0.03, 0.03 }) or nearColor(hubColors(c, PE).fill, { 0.45, 0.07, 0.05 }), "horde fill")
     c:assertClean("hub pressed theme")
 end)
 
 test("settings: the Button colour row has Gold, Horde and Alliance, and a tap repaints the round button", function()
     local c, PE = T.new({})
-    openSettings(c, PE)
-    check(textRegionOf(c, "Button colour"), "no Button colour heading")
+    openSettings(c, PE, "general")
+    check(textRegionOf(c, "Round button colour"), "no Round button colour row")
     check(shownButtons(c, "Gold")[1] and shownButtons(c, "Alliance")[1], "buttons missing")
     press(c, "Horde")
     eq(PE.db.ui.hubColor, "horde")
-    check(near(hubColors(c, PE).ring, { 0.85, 0.15, 0.10 }), "ring not red")
+    check(nearColor(hubColors(c, PE).ring, { 0.85, 0.15, 0.10 }), "ring not red")
     c:assertClean("button colour row")
 end)
 
@@ -947,11 +1102,6 @@ end)
 
 -- 0.8.0 fix: with touch off there are no scroll tabs, so the d-pad itself pages a list
 -- that has no stops below the top (UI.lua NavMove).
-local function dpadKey(c, key)
-    local nav = rawget(c.env, NAV_NAME)
-    c:script(nav, "OnClick", key, true)
-    c:script(nav, "OnClick", key, false)
-end
 
 test("nav: touch off, the Errors page can be read to the bottom with the d-pad Down", function()
     local c, PE = T.new({})
@@ -988,71 +1138,24 @@ test("nav: touch on, the d-pad Down does not page the Errors page", function()
     eq(area.offset, 0, "the d-pad paged with touch on")
 end)
 
--- Spec 2026-11-19-0.8.1-clearer-labels, section 1: toggles and action buttons
--- that follow each other share a line; one action alone stays one wide button.
-test("quest icons: Hide Blue Quest Haze and Quest Icon Key sit on one line, the key to the right", function()
+-- Spec 2026-11-20-0.9.0-ui-redesign, "Option rows per feature": Quest icons.
+test("quest icons: the rows in the spec's order with its labels, the haze as Hide / Show, Icon key with Open", function()
     local c, PE = T.new({ quest = true, on = { "questIcons" } })
-    openSettings(c, PE)
-    local haze, key = shownButtons(c, "Hide Blue Quest Haze: On")[1], shownButtons(c, "Quest Icon Key")[1]
-    check(haze, "no Hide Blue Quest Haze: On button")
-    check(key, "no Quest Icon Key button")
-    eq(key:GetTop(), haze:GetTop(), "not on one line")
-    check(key:GetLeft() > haze:GetLeft(), "the key is not to the right of the toggle")
-    c:assertClean("haze and key")
-end)
-
--- The quest arrow's old "Move the arrow" + Arrow size layout went in 0.9.0 (spec 2026-11-20-0.9.0-ui-redesign).
-
-
--- One button width everywhere in a run of buttons: a slot is 3 button heights;
--- a longer label takes whole slots, and a toggle is as wide as its longest label.
-test("settings buttons: one slot width, long labels take whole slots, toggles keep their width", function()
-    local c, PE = T.new({})
-    openSettings(c, PE)
-    local M = PE.UI:Metrics()
-    local slot = M.button * 3
-    local function near(a, b) return math.abs(a - b) < 0.01 end
-    local function width(label)
-        local b = shownButtons(c, label)[1]
-        check(b, "no button " .. label)
-        return b:GetWidth()
+    openSettings(c, PE, "questIcons")
+    for _, name in ipairs({ "Show icons for", "Icons on", "Icon size", "Merge icons closer than", "Spots per objective",
+        "Blizzard blue quest haze", "Icon key" }) do
+        check(shownText(c, name), "no row " .. name)
     end
-    for _, label in ipairs({ "Small", "Medium", "Large", "Gold", "Horde", "Alliance", "Reload UI" }) do
-        check(near(width(label), slot), label .. " is " .. width(label) .. ", not one slot " .. slot)
+    for _, label in ipairs({ "Tracked", "Focused", "All", "Both", "Map", "Minimap", "Tiny", "Small", "Medium", "Large",
+        "Hide", "Show", "Open" }) do
+        check(shownButtons(c, label)[1], "no button " .. label)
     end
-    local move = width("Move the round button")
-    local slots = (move + M.gap) / (slot + M.gap)
-    check(near(slots, math.floor(slots + 0.5)) and slots >= 1.5, "Move the round button is not whole slots: " .. move)
-    local yes = width("Touch screen: Yes")
-    c:click(shownButtons(c, "Touch screen: Yes")[1])
+    local hide = shownButtons(c, "Hide")[1]
+    eq(hide.peStyle, PE:GetModule("questIcons").opts.hideHaze == false and "segment" or "segmentOn")
+    c:click(shownButtons(c, "Show")[1])
     c:advance(0.2)
-    check(near(width("Touch screen: No"), yes), "the touch toggle changed width when tapped")
-    c:assertClean("slot widths")
-end)
-
--- The 0.8.1 shared line and the slot widths together: Hide Blue Quest Haze and
--- Quest Icon Key stay on one line in whole slots, before and after a tap.
-test("quest icons: haze toggle and icon key keep one line and whole slots when tapped", function()
-    local c, PE = T.new({ quest = true, on = { "questIcons" } })
-    openSettings(c, PE)
-    local M = PE.UI:Metrics()
-    local slot = M.button * 3
-    local function whole(b)
-        local slots = (b:GetWidth() + M.gap) / (slot + M.gap)
-        return math.abs(slots - math.floor(slots + 0.5)) < 0.01 and slots >= 0.99
-    end
-    local haze, key = shownButtons(c, "Hide Blue Quest Haze: On")[1], shownButtons(c, "Quest Icon Key")[1]
-    check(haze and key, "haze or key button missing")
-    check(whole(haze) and whole(key), "not whole slots: " .. haze:GetWidth() .. ", " .. key:GetWidth())
-    local w = haze:GetWidth()
-    c:click(haze)
-    c:advance(0.2)
-    haze, key = shownButtons(c, "Hide Blue Quest Haze: Off")[1], shownButtons(c, "Quest Icon Key")[1]
-    check(haze and key, "haze or key button missing after the tap")
-    check(math.abs(haze:GetWidth() - w) < 0.01, "the haze toggle changed width when tapped")
-    eq(key:GetTop(), haze:GetTop(), "not on one line after the tap")
-    check(key:GetLeft() > haze:GetRight() - 0.01, "the key overlaps the toggle")
-    c:assertClean("haze and key slots")
+    eq(PE:GetModule("questIcons").opts.hideHaze, false)
+    c:assertClean("quest icons rows")
 end)
 
 

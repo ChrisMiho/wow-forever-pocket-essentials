@@ -308,7 +308,7 @@ end
 menuBg = PE:RegisterModule({
     key = "menuBg",
     label = "Menu background",
-    desc = "Puts a dark panel behind the game's pop-up menus, such as the menu on a quest in the quest log, so the text is easy to read.",
+    desc = "A dark panel behind pop-up menus, so they are easy to read.",
     order = 70,
 
     OnEnable = OnEnable,

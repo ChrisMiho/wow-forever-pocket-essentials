@@ -1,15 +1,15 @@
--- Pocket Essentials: the settings panel and its Errors page.
--- A standalone window made of large buttons (no Blizzard settings rows).
+-- Pocket Essentials: the settings window.
+-- A standalone window made of large controls (no Blizzard settings rows):
+-- tabs on the left, the chosen tab's cards on the right (spec
+-- 2026-11-20-0.9.0-ui-redesign, "Settings window").
 -- Built the first time it is opened; redrawn only when something changes.
 local ADDON_NAME, PE = ...
 
-local type, tostring, tonumber, ipairs, pcall = type, tostring, tonumber, ipairs, pcall
+local type, tostring, tonumber, ipairs, pairs, pcall = type, tostring, tonumber, ipairs, pairs, pcall
 local max, min, ceil, floor = math.max, math.min, math.ceil, math.floor
 
 local PANEL_NAME = "PocketEssentialsSettingsPanel"
 local TITLE_MAIN = "Pocket Essentials"
-local TITLE_ERRORS = "Pocket Essentials - Errors"
-local TITLE_KEY = "Pocket Essentials - Quest Icon Key"
 
 local COLOR = {
     font = { 1, 1, 1 },
@@ -19,35 +19,48 @@ local COLOR = {
     status = { 0.65, 0.85, 1 },
     warn = { 1, 0.60, 0.20 },
     dim = { 0.62, 0.62, 0.62 },
+    name = { 0.92, 0.92, 0.92 },
 }
+
+local TEXT_SWITCH_ON_FIRST = "Switch it on to choose how it works."
+local TEXT_FAILED = "Switched on, but it hit a problem. See the Errors tab."
+
+-- The tabs, top to bottom. `features`: the helpers whose cards the tab holds,
+-- in order (its dot is green while any of them is on). `heading`: the tab
+-- starts with the card that says what the fixes are.
+local TABS = {
+    { id = "questIcons", label = "Quest icons", features = { "questIcons" } },
+    { id = "questArrow", label = "Quest arrow", features = { "questArrow" } },
+    { id = "bags", label = "Bags", features = { "bagWindow", "bags" } },
+    { id = "vendors", label = "Vendors", features = { "sellJunk", "repair" } },
+    { id = "chat", label = "Chat", features = { "chat" } },
+    { id = "menuBg", label = "Menu background", features = { "menuBg" }, heading = true },
+    { id = "general", label = "General" },
+    { id = "errors", label = "Errors" },
+}
+PE.SETTINGS_TABS = TABS
 
 local UI           -- PE.UI, set when the first list drawer is made
 local M            -- current metrics
 local panel, area
 local list         -- this window's list drawer (see below)
-local header = {}  -- fixed widgets above the scrolling list
+local header = {}  -- fixed widgets above the scrolling page
+local tabButtons = {}
 local navList = {} -- tappable buttons in reading order, rebuilt on every redraw
-local page = "main"
-local drawnPage = "main"
+local tab = "questIcons"  -- the chosen tab
+local page = "main"       -- "main", or "key" (the Quest Icon Key, inside the Quest icons tab)
+local drawnTab, drawnPage = tab, page
 local built, buildFailed = false, false
 local drawing, drawQueued = false, false
-local refocusKey   -- feature whose fold button the controller highlight returns to after the next redraw
 
 local function Escape(text)
     return (tostring(text):gsub("|", "||"))
 end
 
-local function TextHeight(fontString, kind, text, width)
-    local size = (kind == "small" and M.smallFontSize) or (kind == "title" and M.fontSize * 1.12) or M.fontSize
-    local ok, height = pcall(fontString.GetStringHeight, fontString)
-    if ok and type(height) == "number" and height >= size * 0.8 then return height end
-    -- The game could not measure it yet: estimate from the text length.
-    local perLine = max(floor(width / (size * 0.5)), 1)
-    local lines = 0
-    for line in (text .. "\n"):gmatch("(.-)\n") do
-        lines = lines + max(ceil(#line / perLine), 1)
+local function TabById(id)
+    for _, t in ipairs(TABS) do
+        if t.id == id then return t end
     end
-    return max(lines, 1) * size * 1.2
 end
 
 local function SetText(fontString, kind, text, width, color)
@@ -56,21 +69,20 @@ local function SetText(fontString, kind, text, width, color)
     fontString:SetText(text)
     local c = color or COLOR[kind] or COLOR.font
     fontString:SetTextColor(c[1], c[2], c[3], 1)
-    return TextHeight(fontString, kind, text, width)
+    return UI:TextHeight(fontString, kind)
 end
 
 local function ResetButton(btn)
     btn:SetSelected(false)
     btn:SetStyle("normal")
     btn:SetBadgeText(nil)
-    btn.peFoldKey = nil
     btn:ClearAllPoints()
 end
 
 ---------------------------------------------------------------------------
 -- The list drawer. One per window: the settings window has one, the setup
--- guide (Setup.lua) has another. It places texts, lines and buttons in a
--- window's scrolling list and draws a feature's options. Because both
+-- guide (Setup.lua) has another. It places cards, rows, texts and controls in
+-- a window's scrolling list and draws a feature's options. Because both
 -- windows draw options with this code, they show the same labels, the same
 -- controls and the same saved values, and a press takes the same path.
 --
@@ -81,11 +93,35 @@ end
 --              default PE:RefreshSettings, which redraws whichever of the
 --              two windows is open.
 --   list:Begin()    before a redraw (may be called again to start over)
---   ... list:Text / Line / Button / Flow / Options / Status ...
+--   ... list:Card / Row / FeatureCard / Options / Text / Divider ...
 --   list:End()      after it: hides what the redraw did not use
 --
 -- Widgets are reused on every redraw, never thrown away. y grows downwards
 -- from the top of the list. list.lowest is how far down this redraw got.
+--
+-- The calls (x, y: the top-left corner inside the list; w: the width):
+--   list:Card(x, y, w, body)          a card; body(ix, iy, iw) draws inside it
+--                                     and returns its y after the last row
+--                                     (rows end one gap below themselves).
+--                                     Returns the y one gap below the card.
+--   list:Row(label, help, x, y, w, draw)
+--                                     a row: the name (and help line) on the
+--                                     left, draw(cx, cy, cw, top, bottom) puts
+--                                     the control on the right. Returns the y
+--                                     one gap below the row.
+--   list:ChoiceRow(label, items, x, y, w, help)       items as Segmented
+--   list:ActionRow(label, buttonText, onClick, x, y, w, style, help)
+--   list:FeatureCard(mod, x, y, w, opts)
+--                                     a feature's card: name, line, switch,
+--                                     then its option rows. opts = { setup =
+--                                     bool, only = { option keys }, how =
+--                                     text }. Returns like Card.
+--   list:Options(mod, x, y, w, opts)  only the option rows (opts as above,
+--                                     plus onlyAlways). Returns the new y.
+--   list:Switch(x, y, state, onClick) list:Segmented(x, y, w, items)
+--   list:Number(x, y, w, box)         list:Divider(x, y, w)
+-- The older calls Setup.lua still uses (Line, Flow, LabeledRow, Status,
+-- OptionsShown, and Options(mod, y, width, onlyAlways)) keep working.
 ---------------------------------------------------------------------------
 
 local Drawer = {}
@@ -120,15 +156,20 @@ function Drawer:End()
     end
 end
 
--- kind: "font", "small" or "title". Returns the height of the text.
+function Drawer:Reach(bottom)
+    if bottom > self.lowest then self.lowest = bottom end
+end
+
+-- kind: "font", "small" or "title". Returns the height of the text and the
+-- text itself (the caller may move it).
 function Drawer:Text(kind, text, x, y, width, color)
     local fontString = self:Acquire(kind)
     fontString:ClearAllPoints()
     fontString:SetJustifyH("LEFT") -- a reused one may have been a centred text between buttons
     fontString:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -y)
     local height = SetText(fontString, kind, text, width, color)
-    if y + height > self.lowest then self.lowest = y + height end
-    return height
+    self:Reach(y + height)
+    return height, fontString
 end
 
 function Drawer:Line(y, width)
@@ -137,6 +178,21 @@ function Drawer:Line(y, width)
     line:SetPoint("TOPLEFT", self.child, "TOPLEFT", 0, -y)
     line:SetSize(max(width, 1), M.border)
     return M.border
+end
+
+-- The thin line between a card's header and its rows.
+function Drawer:Divider(x, y, width)
+    local line = self:Acquire("divider")
+    line:ClearAllPoints()
+    line:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -y)
+    local height = max(M.border * 0.5, 1)
+    line:SetSize(max(width, 1), height)
+    return height
+end
+
+local function AddStop(self, btn, top, bottom)
+    btn.peScrollTop, btn.peScrollBottom = top, bottom
+    self.navList[#self.navList + 1] = btn
 end
 
 -- One button at a fixed place and size.
@@ -148,79 +204,132 @@ function Drawer:Button(text, x, y, width, height, style, onClick)
     btn:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -y)
     if style then btn:SetStyle(style) end
     btn:SetScript("OnClick", onClick)
-    btn.peScrollTop, btn.peScrollBottom = y, y + height
-    self.navList[#self.navList + 1] = btn
-    if y + height > self.lowest then self.lowest = y + height end
+    AddStop(self, btn, y, y + height)
+    self:Reach(y + height)
     return btn
 end
 
--- The number control's width: two square ends and the well between them,
--- their borders overlapping so each joint is one line.
+-- The switch (UI:CreateSwitch). state: "on", "off", "blocked", "failed".
+function Drawer:Switch(x, y, state, onClick)
+    local sw = self:Acquire("switch")
+    sw:ClearAllPoints()
+    sw:SetSwitch(state)
+    sw:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -y)
+    sw:SetScript("OnClick", onClick)
+    AddStop(self, sw, y, y + M.button)
+    self:Reach(y + M.button)
+    return sw
+end
+
+-- The segmented choice (UI:CreateSegmented). items: { { label, selected,
+-- onClick }, ... }. Returns the part buttons.
+function Drawer:Segmented(x, y, width, items)
+    local seg = self:Acquire("segmented")
+    seg:ClearAllPoints()
+    seg:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -y)
+    local parts = seg:Set(width, items)
+    for _, part in ipairs(parts) do AddStop(self, part, y, y + M.button) end
+    self:Reach(y + M.button)
+    return parts
+end
+
+-- The number control (UI:CreateNumber). box: { text, unit, down, up,
+-- downDim, upDim }; a missing step is a dim end whose press only redraws.
+function Drawer:Number(x, y, width, box)
+    local num = self:Acquire("number")
+    num:ClearAllPoints()
+    num:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -y)
+    local shown = {}
+    for k, v in pairs(box) do shown[k] = v end
+    shown.noStep = self.noStep
+    local minus, plus = num:Set(width, shown)
+    AddStop(self, minus, y, y + M.button)
+    AddStop(self, plus, y, y + M.button)
+    self:Reach(y + M.button)
+    return minus, plus
+end
+
+-- The old number control's width (the setup guide's rows): two square ends
+-- and a well 2.2 button heights wide, their borders overlapping.
 local function NumberBoxWidth()
     return M.button * 2 + M.button * 2.2 - M.border * 2
 end
 
--- One end of a number control: "-" or "+". With no step it is dimmed, and a
--- press does nothing (it still redraws, like any press). dim: drawn dimmed
--- although it has a press (one that only notes there is no further step).
-function Drawer:NumberEnd(sign, step, dim, x, y)
-    local btn = self:Acquire("button")
-    ResetButton(btn)
-    btn:SetLabel(sign)
-    btn:SetSize(M.button, M.button)
-    btn:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -y)
-    btn:SetStyle((step and not dim) and "step" or "stepDim")
-    btn:SetScript("OnClick", step or self.noStep)
-    btn.peScrollTop, btn.peScrollBottom = y, y + M.button
-    self.navList[#self.navList + 1] = btn
-    return btn
-end
-
--- The number control (spec 2026-11-18-number-control-design): "-", a dark
--- well with the value in gold and a small grey unit word under it, "+", as
--- one box. box: { text, unit, down = onClick or nil, up = onClick or nil,
--- downDim, upDim }.
--- The well is not a d-pad stop.
 function Drawer:NumberBox(box, x, y)
-    local endWidth, wellWidth = M.button, M.button * 2.2
-    self:NumberEnd("-", box.down, box.downDim, x, y)
-    local well = self:Acquire("well")
-    local wx = x + endWidth - M.border
-    well:ClearAllPoints()
-    well:SetSize(wellWidth, M.button)
-    well:SetPoint("TOPLEFT", self.child, "TOPLEFT", wx, -y)
-    well.fill:ClearAllPoints()
-    well.fill:SetPoint("TOPLEFT", well, "TOPLEFT", M.border, -M.border)
-    well.fill:SetPoint("BOTTOMRIGHT", well, "BOTTOMRIGHT", -M.border, M.border)
-    local inner = wellWidth - M.border * 2
-    local unit = box.unit ~= nil and tostring(box.unit) or ""
-    -- The unit word goes under the value only when both lines fit.
-    local showUnit = unit ~= "" and M.fontSize + M.smallFontSize <= M.button - M.border * 2
-    local valueHeight = SetText(well.value, "font", box.text, inner, COLOR.option)
-    well.value:ClearAllPoints()
-    if showUnit then
-        local unitHeight = SetText(well.unit, "small", unit, inner, COLOR.dim)
-        local top = max((M.button - valueHeight - unitHeight) * 0.5, M.border)
-        well.value:SetPoint("TOP", well, "TOP", 0, -top)
-        well.unit:ClearAllPoints()
-        well.unit:SetPoint("TOP", well, "TOP", 0, -(top + valueHeight))
-        well.unit:Show()
-    else
-        well.value:SetPoint("TOP", well, "TOP", 0, -max((M.button - valueHeight) * 0.5, 0))
-        well.unit:Hide()
-    end
-    self:NumberEnd("+", box.up, box.upDim, wx + wellWidth - M.border, y)
+    self:Number(x, y, NumberBoxWidth(), box)
     return NumberBoxWidth()
 end
 
--- The width of `slots` button slots side by side. Every button in a run is
--- one slot (3 button heights) wide, or whole slots when its label is longer,
--- so buttons are one size and line up in columns.
+-- A card: the card fill from x to x + width, with pad inside on every side.
+-- body(ix, iy, iw) returns its y after the last row. Returns the y one gap
+-- below the card.
+function Drawer:Card(x, y, width, body)
+    local fill = self:Acquire("card")
+    fill:ClearAllPoints()
+    fill:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -y)
+    local inner = max(width - 2 * M.pad, 1)
+    local bottom = body(x + M.pad, y + M.pad, inner)
+    if type(bottom) ~= "number" then bottom = max(self.lowest, y + M.pad) + M.gap end
+    local height = max(bottom - y + M.pad - M.gap, 1)
+    fill:SetSize(max(width, 1), height)
+    self:Reach(y + height)
+    return y + height + M.gap
+end
+
+-- A row: the name on the left (with an optional help line under it), the
+-- control on the right, both centred on the row. draw(cx, cy, cw, top,
+-- bottom) places the control (may be nil). Returns the y one gap below.
+function Drawer:Row(label, help, x, y, innerWidth, draw)
+    local cw = UI:ControlWidth(innerWidth)
+    local lw = max(innerWidth - cw - M.gap, 10)
+    local nameHeight, name = self:Text("font", label or "", x, y, lw, COLOR.name)
+    local helpHeight, helpText = 0, nil
+    if type(help) == "string" and help ~= "" then
+        helpHeight, helpText = self:Text("small", help, x, y, lw, COLOR.dim)
+        helpHeight = helpHeight + M.gap * 0.15
+    end
+    local textHeight = nameHeight + helpHeight
+    local height = max(M.button, textHeight)
+    local top = y + (height - textHeight) * 0.5
+    name:ClearAllPoints()
+    name:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -top)
+    if helpText then
+        helpText:ClearAllPoints()
+        helpText:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -(top + nameHeight + M.gap * 0.15))
+    end
+    self:Reach(y + height)
+    if draw then
+        local mark = #self.navList
+        draw(x + innerWidth - cw, y + (height - M.button) * 0.5, cw)
+        -- When the controller lands on the control, bring the whole row into view.
+        for i = mark + 1, #self.navList do
+            local btn = self.navList[i]
+            btn.peScrollTop, btn.peScrollBottom = y, y + height
+        end
+    end
+    return y + height + M.gap
+end
+
+function Drawer:ChoiceRow(label, items, x, y, innerWidth, help)
+    return self:Row(label, help, x, y, innerWidth, function(cx, cy, cw)
+        self:Segmented(cx, cy, cw, items)
+    end)
+end
+
+function Drawer:ActionRow(label, buttonText, onClick, x, y, innerWidth, style, help)
+    return self:Row(label, help, x, y, innerWidth, function(cx, cy, cw)
+        self:Button(buttonText or "Open", cx, cy, cw, M.button, style or "normal", onClick)
+    end)
+end
+
+-- A run of buttons, each one or more slots wide, wrapping onto new lines
+-- (used by the setup guide's question row). items: { { label =, selected =,
+-- style =, onClick = }, ... }; an item { box = } is a number control.
+-- Returns the new y.
 local function SlotsWidth(slots)
     return slots * M.button * 3 + (slots - 1) * M.gap
 end
 
--- The fewest whole slots at least `needed` wide, never more than maxWidth.
 local function SlotFit(needed, maxWidth)
     local slots = max(ceil((needed - 0.01 + M.gap) / (M.button * 3 + M.gap)), 1)
     local width = SlotsWidth(slots)
@@ -228,16 +337,8 @@ local function SlotFit(needed, maxWidth)
     return width
 end
 
--- A run of buttons, each one or more slots wide, wrapping onto new lines.
--- items: { { label =, selected =, style =, onClick =, alts = }, ... }. alts:
--- the other labels the button can show (a toggle's other side); it is wide
--- enough for the longest, so a tap does not change its width. An item
--- { text = } is not a button: it is a short centred text in the run. An
--- item { box = } is a number control (NumberBox), kept whole on one line.
--- Returns the new y.
 function Drawer:Flow(items, x0, y, maxWidth, minWidth)
     local x, height = x0, M.button
-    local navList = self.navList
     for i = 1, #items do
         local item = items[i]
         local width
@@ -248,20 +349,6 @@ function Drawer:Flow(items, x0, y, maxWidth, minWidth)
                 y = y + height + M.gap
             end
             self:NumberBox(item.box, x, y)
-        elseif item.text ~= nil then
-            local text = tostring(item.text)
-            -- A fixed width for short texts, so the button after it stays put
-            -- when the number changes.
-            width = min(max(M.button * 1.6, #text * M.fontSize * 0.6 + M.pad), maxWidth)
-            if x > x0 and x + width > x0 + maxWidth then
-                x = x0
-                y = y + height + M.gap
-            end
-            local fontString = self:Acquire("font")
-            fontString:ClearAllPoints()
-            fontString:SetJustifyH("CENTER")
-            local textHeight = SetText(fontString, "font", text, width)
-            fontString:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -(y + max((height - textHeight) * 0.5, 0)))
         else
             local btn = self:Acquire("button")
             ResetButton(btn)
@@ -285,13 +372,21 @@ function Drawer:Flow(items, x0, y, maxWidth, minWidth)
             if item.style then btn:SetStyle(item.style) end
             btn:SetSelected(item.selected)
             btn:SetScript("OnClick", item.onClick)
-            btn.peScrollTop, btn.peScrollBottom = y, y + height
-            navList[#navList + 1] = btn
+            AddStop(self, btn, y, y + height)
         end
-        if y + height > self.lowest then self.lowest = y + height end
+        self:Reach(y + height)
         x = x + width + M.gap
     end
     return y + height
+end
+
+-- A heading above its run of buttons (the setup guide's question row).
+-- labelWidth is accepted for older callers and ignored. Returns the new y.
+function Drawer:LabeledRow(text, items, x, y, innerWidth, labelWidth)
+    if text ~= "" then
+        y = y + self:Text("small", text, x, y, innerWidth, COLOR.option) + M.gap * 0.4
+    end
+    return self:Flow(items, x, y, innerWidth)
 end
 
 -- Which option rows of a feature are drawn right now. Options are drawn
@@ -313,76 +408,6 @@ function Drawer:OptionsShown(mod)
     return hasOptions, onlyAlways
 end
 
--- How far the list has got: what Rewind needs to take back a part just drawn.
-function Drawer:Mark()
-    local used = {}
-    for name, pool in pairs(self.pools) do used[name] = pool.used end
-    return { used = used, nav = #self.navList, lowest = self.lowest }
-end
-
--- Takes back everything drawn since Mark: the widgets go back to their pools
--- (hidden by End unless the redraw uses them again) and leave the d-pad list.
-function Drawer:Rewind(mark)
-    for name, pool in pairs(self.pools) do
-        if mark.used[name] then pool.used = mark.used[name] end
-    end
-    for i = #self.navList, mark.nav + 1, -1 do self.navList[i] = nil end
-    self.lowest = mark.lowest
-end
-
--- The width a text takes in the small font, on one line.
-function Drawer:Measure(text)
-    -- One hidden text per window, made on the first measure, used only to measure.
-    if self.measure == nil then
-        local ok, made = pcall(UI.CreateText, UI, self.child, "small")
-        self.measure = ok and made or false
-        if self.measure then self.measure:Hide() end
-    end
-    local fontString = self.measure
-    local width
-    if fontString then
-        fontString:SetText(text)
-        local ok, got = pcall(fontString.GetUnboundedStringWidth, fontString)
-        if ok and type(got) == "number" and got > 0 then width = got end
-    end
-    return width or #text * M.smallFontSize * 0.55
-end
-
--- The heading column of a group of rows: wide enough for the widest heading,
--- and never more than 40% of the row. 0 when there is no heading.
-function Drawer:LabelColumn(texts, innerWidth)
-    local widest = 0
-    for i = 1, #texts do widest = max(widest, self:Measure(texts[i])) end
-    if widest <= 0 then return 0 end
-    return min(widest + M.gap * 1.5, innerWidth * 0.4)
-end
-
--- A heading and its run of buttons. With a heading column the heading goes on
--- the buttons' line, left of them, when the buttons fit on one line beside it
--- and the heading fits its column; otherwise the heading goes above them, as
--- before. Returns the new y (the bottom of the row).
-function Drawer:LabeledRow(text, items, x, y, innerWidth, labelWidth)
-    if text ~= "" and labelWidth and labelWidth > 0 and self:Measure(text) <= labelWidth - M.gap then
-        local mark = self:Mark()
-        local bottom = self:Flow(items, x + labelWidth, y, innerWidth - labelWidth)
-        if bottom <= y + M.button + 0.01 then
-            local fontString = self:Acquire("small")
-            fontString:ClearAllPoints()
-            fontString:SetJustifyH("LEFT")
-            local height = SetText(fontString, "small", text, labelWidth - M.gap, COLOR.option)
-            local top = y + max((M.button - height) * 0.5, 0)
-            fontString:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -top)
-            if top + height > self.lowest then self.lowest = top + height end
-            return max(bottom, top + height)
-        end
-        self:Rewind(mark)
-    end
-    if text ~= "" then
-        y = y + self:Text("small", text, x, y, innerWidth, COLOR.option) + M.gap * 0.4
-    end
-    return self:Flow(items, x, y, innerWidth)
-end
-
 -- The saved value a choices row shows: its `get`, or mod.opts[key].
 local function CurrentChoice(mod, opt)
     if type(opt.get) == "function" then
@@ -398,11 +423,6 @@ end
 local function IsChoiceRow(opt)
     return type(opt.choices) == "table"
         and (opt.key ~= nil or (type(opt.get) == "function" and type(opt.set) == "function"))
-end
-
-local function IsToggleRow(opt)
-    return opt.toggle == true and IsChoiceRow(opt) and #opt.choices == 2
-        and type(opt.choices[1]) == "table" and type(opt.choices[2]) == "table"
 end
 
 local function IsNumberRow(opt)
@@ -424,12 +444,14 @@ local function NumberCurrent(mod, opt)
 end
 
 -- The values one step down and one step up from v (nil: no step that way).
--- After max comes `all`, when the row has one.
+-- The step is n.step (1 when not given). After max comes `all`, when the row
+-- has one.
 local function NumberSteps(n, v)
+    local step = (type(n.step) == "number" and n.step > 0) and n.step or 1
     local hasAll = n.all ~= nil and n.all ~= false
     if hasAll and v == n.all then return n.max, nil end
-    local down = v > n.min and v - 1 or nil
-    local up = (v < n.max and v + 1) or (hasAll and n.all) or nil
+    local down = v > n.min and max(v - step, n.min) or nil
+    local up = (v < n.max and min(v + step, n.max)) or (hasAll and n.all) or nil
     return down, up
 end
 
@@ -457,38 +479,46 @@ local function ChooseHandler(mod, opt, value, refresh)
     end)
 end
 
--- Option rows: the list `options` of a feature, drawn under its switch while
--- the feature is on. A row with `always = true` is also drawn while the
--- feature is not on (it must not need the feature). Each row is a table of
--- one of these kinds:
+-- The name of a row, with the text of its `value` after it when it has one
+-- ("Chat text size: 20 (after the fight)").
+local function RowName(mod, opt)
+    local text = type(opt.label) == "string" and opt.label or ""
+    if type(opt.value) == "function" then
+        local ok, shown = pcall(opt.value, mod)
+        if ok and shown ~= nil then text = (text ~= "" and (text .. ": ") or "") .. tostring(shown) end
+    end
+    return text
+end
+
+-- Option rows: the list `options` of a feature, drawn in its card while the
+-- feature is on. A row with `always = true` is also drawn while the feature
+-- is not on (it must not need the feature). Rows show in list order. Each row
+-- is a table of one of these kinds; any of them may have help = "text", a
+-- grey line under the row name:
 --   choices: { key, label, choices = { { value, label }, ... }, OnChange }
---            a row of buttons; the tapped one is saved as mod.opts[key].
+--            a segmented choice; the tapped part is saved as mod.opts[key].
 --            Instead of key, a row may have get = function(mod) -> value and
 --            set = function(mod, value), when one choice stands for more
---            than one saved value. With toggle = true and two choices, it is
---            one button "label: choice" that flips to the other choice;
---            toggles and action buttons that follow each other share a line. A toggle showing
---            the value true is green, otherwise grey.
---            The heading goes beside the buttons when they fit (LabeledRow).
---   action:  { label, action = function(mod) }
---            one button that runs the action. Alone (no toggle or action
---            next to it) it is a wide button on its own line.
+--            than one saved value. `toggle` (from older versions) changes
+--            nothing in how it is drawn.
+--   action:  { label, button = "text", action = function(mod), page }
+--            a button reading `button` ("Open" when missing) that runs the
+--            action. `page`: the action opens another settings page, so the
+--            setup guide leaves the row out.
 --   buttons: { label, value = function(mod) -> text, buttons = { { label,
 --            action = function(mod) }, ... } }
---            the label with the value text after it ("label: text"), then a
---            row of buttons. `buttons` may also be a function(mod) that
---            returns that list (an empty list draws no buttons). Each tap
---            runs its action, then the window is drawn again, so the value
---            text is read again. An entry { text = } in the list is drawn
---            as a short text at that place in the row instead of a button.
---            A button entry with style = "disabled" is drawn dim (it has
---            nothing to do right now); it can still be pressed.
---   number:  { key, label, number = { min, max, default, unit, suffix, all,
---            allLabel, offLabel }, OnChange }
---            the number control "- value +" (NumberBox); each end saves
---            mod.opts[key] one step down or up. `all` (optional) is the
---            value after max, shown as allLabel ("All"); offLabel (optional)
---            is shown at 0. A saved value that is not a whole number in the
+--            the label with the value text after it ("label: text"), then
+--            the buttons side by side in the control's place. `buttons` may
+--            also be a function(mod) that returns that list. An entry
+--            { text = } is a short text at that place instead of a button; a
+--            button entry with style = "disabled" is drawn dim (it can still
+--            be pressed). Each tap runs its action, then the window redraws.
+--   number:  { key, label, number = { min, max, step, default, unit, suffix,
+--            all, allLabel, offLabel }, OnChange }
+--            the number control "- value +"; each end saves mod.opts[key]
+--            one step (default 1) down or up. `all` (optional) is the value
+--            after max, shown as allLabel ("All"); offLabel (optional) is
+--            shown at 0. A saved value that is not a whole number in the
 --            range shows the default. An end with no step is dimmed.
 --   stepper: { label, value = function(mod) -> text, stepper =
 --            function(mod) -> { text, unit, down = fn, up = fn, downDim,
@@ -496,164 +526,165 @@ end
 --            the same control for a value the feature keeps itself; a
 --            missing down or up, or downDim / upDim = true, is a dimmed end
 --            (a dimmed end with a function still runs it). nil draws the
---            label only.
--- onlyAlways: draw only the rows marked `always`.
--- Returns the new y.
-function Drawer:Options(mod, y, width, onlyAlways)
-    local x = M.pad * 2
-    local innerWidth = width - x - M.gap
+--            row name only.
+-- Returns the new y (one gap below the last row).
+function Drawer:OptionRow(mod, opt, x, y, innerWidth)
     local refresh = self.refresh
-
-    -- The headings of this feature's rows, for one shared heading column.
-    local rows, headings = {}, {}
-    for _, opt in ipairs(mod.options) do
-        if type(opt) == "table" and (not onlyAlways or opt.always == true) then
-            local text
-            if IsToggleRow(opt) or type(opt.action) == "function" then
-                text = nil
-            elseif IsChoiceRow(opt) or IsNumberRow(opt) then
-                text = type(opt.label) == "string" and opt.label or ""
-            elseif type(opt.buttons) == "table" or type(opt.buttons) == "function"
-                or type(opt.stepper) == "function" then
-                text = type(opt.label) == "string" and opt.label or ""
-                if type(opt.value) == "function" then
-                    local ok, shown = pcall(opt.value, mod)
-                    if ok and shown ~= nil then text = (text ~= "" and (text .. ": ") or "") .. tostring(shown) end
-                end
+    local help = type(opt.help) == "string" and opt.help or nil
+    if IsChoiceRow(opt) then
+        local current = CurrentChoice(mod, opt)
+        local items = {}
+        for _, choice in ipairs(opt.choices) do
+            if type(choice) == "table" then
+                local value = choice.value
+                items[#items + 1] = {
+                    label = tostring(choice.label ~= nil and choice.label or value),
+                    selected = (current == value),
+                    onClick = ChooseHandler(mod, opt, value, refresh),
+                }
             end
-            rows[#rows + 1] = { opt = opt, text = text }
-            if text and text ~= "" then headings[#headings + 1] = text end
         end
-    end
-    local labelWidth = self:LabelColumn(headings, innerWidth)
-
-    -- Toggles and action buttons waiting to be drawn together on one line.
-    -- A run of one action alone keeps its wide button.
-    local toggles, actionsOnly = {}, true
-    local function FlushToggles()
-        if #toggles == 0 then return end
-        local minWidth = (#toggles == 1 and actionsOnly) and M.button * 4 or nil
-        y = self:Flow(toggles, x, y, innerWidth, minWidth) + M.gap
-        toggles, actionsOnly = {}, true
-    end
-
-    for _, row in ipairs(rows) do
-        local opt = row.opt
-        if not IsToggleRow(opt) and type(opt.action) ~= "function" then FlushToggles() end
-        do
-            if IsToggleRow(opt) then
-                local current = CurrentChoice(mod, opt)
-                local first, second = opt.choices[1], opt.choices[2]
-                local shown = (current == second.value) and second or first
-                -- The other side from the one shown, so a tap always changes what
-                -- the button says (a damaged value shows as the first choice).
-                -- Not "and ... or": the value may be false.
-                local nextValue = second.value
-                if shown == second then nextValue = first.value end
-                local function Label(choice)
-                    local text = tostring(choice.label ~= nil and choice.label or choice.value)
-                    if type(opt.label) == "string" and opt.label ~= "" then text = opt.label .. ": " .. text end
-                    return text
-                end
-                actionsOnly = false
-                toggles[#toggles + 1] = {
-                    label = Label(shown),
-                    alts = { Label(first), Label(second) },
-                    style = (current == true) and "on" or "off",
-                    onClick = ChooseHandler(mod, opt, nextValue, refresh),
-                }
-            elseif IsChoiceRow(opt) then
-                local current = CurrentChoice(mod, opt)
-                local items = {}
-                for _, choice in ipairs(opt.choices) do
-                    if type(choice) == "table" then
-                        local value = choice.value
-                        items[#items + 1] = {
-                            label = tostring(choice.label ~= nil and choice.label or value),
-                            selected = (current == value),
-                            onClick = ChooseHandler(mod, opt, value, refresh),
-                        }
-                    end
-                end
-                y = self:LabeledRow(row.text, items, x, y, innerWidth, labelWidth) + M.gap
-            elseif IsNumberRow(opt) then
-                local n = opt.number
-                local current = NumberCurrent(mod, opt)
-                local down, up = NumberSteps(n, current)
-                local box = {
-                    text = NumberText(n, current),
-                    unit = n.unit,
-                    down = down ~= nil and ChooseHandler(mod, opt, down, refresh) or nil,
-                    up = up ~= nil and ChooseHandler(mod, opt, up, refresh) or nil,
-                }
-                y = self:LabeledRow(row.text, { { box = box } }, x, y, innerWidth, labelWidth) + M.gap
-            elseif type(opt.stepper) == "function" then
-                local text = row.text or ""
-                local ok, got = pcall(opt.stepper, mod)
-                if ok and type(got) == "table" then
-                    local function Step(fn)
-                        if type(fn) ~= "function" then return nil end
-                        return PE:Wrap("core", function()
-                            PE:Safe(mod.key, fn, mod)
-                            refresh()
-                        end)
-                    end
-                    local box = { text = got.text, unit = got.unit, down = Step(got.down), up = Step(got.up),
-                        downDim = got.downDim == true, upDim = got.upDim == true }
-                    y = self:LabeledRow(text, { { box = box } }, x, y, innerWidth, labelWidth) + M.gap
-                elseif text ~= "" then
-                    y = y + self:Text("small", text, x, y, innerWidth, COLOR.option) + M.gap * 0.4
-                end
-            elseif type(opt.action) == "function" then
-                toggles[#toggles + 1] = {
-                    label = (type(opt.label) == "string" and opt.label ~= "") and opt.label or "Do it",
+        return self:ChoiceRow(RowName(mod, opt), items, x, y, innerWidth, help)
+    elseif IsNumberRow(opt) then
+        local n = opt.number
+        local current = NumberCurrent(mod, opt)
+        local down, up = NumberSteps(n, current)
+        local box = {
+            text = NumberText(n, current),
+            unit = n.unit,
+            down = down ~= nil and ChooseHandler(mod, opt, down, refresh) or nil,
+            up = up ~= nil and ChooseHandler(mod, opt, up, refresh) or nil,
+        }
+        return self:Row(RowName(mod, opt), help, x, y, innerWidth, function(cx, cy, cw)
+            self:Number(cx, cy, cw, box)
+        end)
+    elseif type(opt.stepper) == "function" then
+        local ok, got = pcall(opt.stepper, mod)
+        local draw
+        if ok and type(got) == "table" then
+            local function Step(fn)
+                if type(fn) ~= "function" then return nil end
+                return PE:Wrap("core", function()
+                    PE:Safe(mod.key, fn, mod)
+                    refresh()
+                end)
+            end
+            local box = { text = got.text, unit = got.unit, down = Step(got.down), up = Step(got.up),
+                downDim = got.downDim == true, upDim = got.upDim == true }
+            draw = function(cx, cy, cw) self:Number(cx, cy, cw, box) end
+        end
+        return self:Row(RowName(mod, opt), help, x, y, innerWidth, draw)
+    elseif type(opt.action) == "function" then
+        local label = (type(opt.label) == "string" and opt.label ~= "") and opt.label or ""
+        local text = (type(opt.button) == "string" and opt.button ~= "") and opt.button or "Open"
+        return self:ActionRow(label, text, PE:Wrap("core", function()
+            PE:Safe(mod.key, opt.action, mod)
+            refresh()
+        end), x, y, innerWidth, "normal", help)
+    elseif type(opt.buttons) == "table" or type(opt.buttons) == "function" then
+        local buttons = opt.buttons
+        if type(buttons) == "function" then
+            local ok, got = pcall(buttons, mod)
+            buttons = ok and got or nil
+        end
+        local items = {}
+        for _, b in ipairs(type(buttons) == "table" and buttons or {}) do
+            if type(b) == "table" and b.text ~= nil and b.action == nil then
+                items[#items + 1] = { text = tostring(b.text) }
+            elseif type(b) == "table" and type(b.action) == "function" then
+                items[#items + 1] = {
+                    label = tostring(b.label ~= nil and b.label or "Do it"),
+                    style = b.style == "disabled" and "disabled" or "normal",
                     onClick = PE:Wrap("core", function()
-                        PE:Safe(mod.key, opt.action, mod)
+                        PE:Safe(mod.key, b.action, mod)
                         refresh()
                     end),
                 }
-            elseif type(opt.buttons) == "table" or type(opt.buttons) == "function" then
-                local text = row.text or ""
-                local buttons = opt.buttons
-                if type(buttons) == "function" then
-                    local ok, got = pcall(buttons, mod)
-                    buttons = ok and got or nil
-                end
-                local items = {}
-                for _, b in ipairs(type(buttons) == "table" and buttons or {}) do
-                    if type(b) == "table" and b.text ~= nil and b.action == nil then
-                        items[#items + 1] = { text = tostring(b.text) }
-                    elseif type(b) == "table" and type(b.action) == "function" then
-                        items[#items + 1] = {
-                            label = tostring(b.label ~= nil and b.label or "Do it"),
-                            -- dim: nothing to do right now (still safe to press)
-                            style = b.style == "disabled" and "disabled" or nil,
-                            onClick = PE:Wrap("core", function()
-                                PE:Safe(mod.key, b.action, mod)
-                                refresh()
-                            end),
-                        }
+            end
+        end
+        local draw
+        if #items > 0 then
+            draw = function(cx, cy, cw)
+                local each = (cw - (#items - 1) * M.gap) / #items
+                for i, item in ipairs(items) do
+                    local bx = cx + (i - 1) * (each + M.gap)
+                    if item.text then
+                        local height, fontString = self:Text("font", item.text, bx, cy, each)
+                        fontString:SetJustifyH("CENTER")
+                        fontString:ClearAllPoints()
+                        fontString:SetPoint("TOPLEFT", self.child, "TOPLEFT", bx, -(cy + max((M.button - height) * 0.5, 0)))
+                    else
+                        self:Button(item.label, bx, cy, each, M.button, item.style, item.onClick)
                     end
-                end
-                if #items > 0 then
-                    y = self:LabeledRow(text, items, x, y, innerWidth, labelWidth) + M.gap
-                elseif text ~= "" then
-                    y = y + self:Text("small", text, x, y, innerWidth, COLOR.option) + M.gap * 0.4
                 end
             end
         end
+        return self:Row(RowName(mod, opt), help, x, y, innerWidth, draw)
     end
-    FlushToggles()
     return y
 end
+
+-- The rows of a feature to draw. opts: { only = { keys }, setup = bool,
+-- onlyAlways = bool }. Without onlyAlways, it follows the feature's state:
+-- all rows while it is on, only `always` rows while it is not.
+function Drawer:OptionList(mod, opts)
+    opts = opts or {}
+    local onlyAlways = opts.onlyAlways
+    if onlyAlways == nil then onlyAlways = PE:GetModuleState(mod.key) ~= "on" end
+    local only
+    if type(opts.only) == "table" then
+        only = {}
+        for _, k in ipairs(opts.only) do only[k] = true end
+    end
+    local rows = {}
+    for _, opt in ipairs(type(mod.options) == "table" and mod.options or {}) do
+        if type(opt) == "table"
+            and (not onlyAlways or opt.always == true)
+            and (not only or (opt.key ~= nil and only[opt.key]))
+            and not (opts.setup and opt.page ~= nil) then
+            rows[#rows + 1] = opt
+        end
+    end
+    return rows
+end
+
+-- The option rows of a feature. New form: Options(mod, x, y, width, opts),
+-- width being the inner width of the card. Old form (the setup guide until it
+-- is redrawn with cards): Options(mod, y, width, onlyAlways).
+-- Returns the new y.
+function Drawer:Options(mod, a, b, c, d)
+    local x, y, innerWidth, opts
+    if type(c) == "number" then
+        x, y, innerWidth, opts = a, b, c, d
+    else
+        -- Only the setup guide uses this form, so rows that open another
+        -- settings page are left out, as in its cards.
+        x, y = M.pad * 2, a
+        innerWidth = b - x - M.gap
+        opts = { onlyAlways = c and true or false, setup = true }
+    end
+    for _, opt in ipairs(self:OptionList(mod, opts)) do
+        local ok, nextY = PE:Safe(mod.key, self.OptionRow, self, mod, opt, x, y, innerWidth)
+        if ok and type(nextY) == "number" then
+            y = nextY
+        else
+            y = max(y, self.lowest) + M.gap
+        end
+    end
+    return y
+end
+
+-- Features whose blue status lines stay out of their card (spec: Bag
+-- sorting). Lines that say it is blocked or failed still show.
+local NO_STATUS_LINES = { bags = true }
 
 -- The lines under a feature's name that say how it is doing: its own status
 -- text (blue), why it cannot be switched on, or that it hit a problem
 -- (amber). failedText: the sentence for the last case. Returns the new y.
-function Drawer:Status(mod, x, y, width, failedText)
+function Drawer:Status(mod, x, y, width, failedText, skipInfo)
     local key = mod.key
     local state, detail = PE:GetModuleState(key)
-    if type(mod.status) == "function" then
+    if type(mod.status) == "function" and not skipInfo then
         local ok, status = PE:Safe(key, mod.status, mod)
         if ok then
             if type(status) == "table" then
@@ -662,77 +693,71 @@ function Drawer:Status(mod, x, y, width, failedText)
                 status = table.concat(lines, "\n")
             end
             if type(status) == "string" and status ~= "" then
-                y = y + self:Text("small", status, x, y, width, COLOR.status) + M.gap * 0.3
+                y = y + M.gap * 0.3
+                y = y + self:Text("small", status, x, y, width, COLOR.status)
             end
         end
     end
     if state == "blocked" then
-        y = y + self:Text("small", detail or "This cannot be switched on right now.", x, y, width, COLOR.warn) + M.gap * 0.3
+        y = y + M.gap * 0.3
+        y = y + self:Text("small", detail or "This cannot be switched on right now.", x, y, width, COLOR.warn)
     elseif state == "failed" then
-        y = y + self:Text("small", failedText, x, y, width, COLOR.warn) + M.gap * 0.3
+        y = y + M.gap * 0.3
+        y = y + self:Text("small", failedText, x, y, width, COLOR.warn)
     end
     return y
 end
 
-local SIZE_CHOICES = {
-    { value = "small", label = "Small" },
-    { value = "medium", label = "Medium" },
-    { value = "large", label = "Large" },
-}
+local SWITCH_STATE = { on = "on", off = "off", blocked = "blocked", failed = "failed" }
 
-local COLOR_CHOICES = {
-    { value = "gold", label = "Gold" },
-    { value = "horde", label = "Horde" },
-    { value = "alliance", label = "Alliance" },
-}
-
--- The settings that belong to no feature: "Button size", "Button colour", "Move the round
--- button" and "Touch screen". Returns the new y.
-function Drawer:CoreChoices(y, width)
-    local x = M.pad * 2
-    local innerWidth = width - x - M.gap
-    local ui = PE.db and PE.db.ui or {}
-    local labelWidth = self:LabelColumn({ "Button size", "Button colour" }, innerWidth)
-
-    local items = {}
-    for i, choice in ipairs(SIZE_CHOICES) do
-        local value = choice.value
-        items[i] = {
-            label = choice.label,
-            selected = (ui.size == value),
-            onClick = PE:Wrap("core", function() PE:SetUISetting("size", value) end),
-        }
-    end
-    y = self:LabeledRow("Button size", items, x, y, innerWidth, labelWidth) + M.gap
-
-    local current = ui.hubColor or "gold"
-    local colors = {}
-    for i, choice in ipairs(COLOR_CHOICES) do
-        local value = choice.value
-        colors[i] = {
-            label = choice.label,
-            selected = (current == value),
-            onClick = PE:Wrap("core", function() PE:SetUISetting("hubColor", value) end),
-        }
-    end
-    y = self:LabeledRow("Button colour", colors, x, y, innerWidth, labelWidth) + M.gap
-
-    if PE.Move and PE.Move.Open then
-        y = self:Flow({ {
-            label = "Move the round button",
-            onClick = PE:Wrap("core", function() PE.Move:Open("hub") end),
-        } }, x, y, innerWidth) + M.gap
-    end
-
-    -- Shows or hides the scroll bar's Up and Down tabs in every window.
-    local touch = PE:UsesTouch()
-    y = self:Flow({ {
-        label = "Touch screen: " .. (touch and "Yes" or "No"),
-        alts = { "Touch screen: Yes", "Touch screen: No" },
-        style = touch and "on" or "off",
-        onClick = PE:Wrap("core", function() PE:SetUISetting("touch", not touch) end),
-    } }, x, y, innerWidth) + M.gap
-    return y
+-- A feature's card: its name, its one-line description (and in the setup
+-- guide a "How:" line), any blocked or failed line, the switch on the right;
+-- then, while it is on, a divider and its option rows (rows marked `always`
+-- show while it is off too). opts = { setup = bool, only = { keys }, how =
+-- text, failedText = text }. Returns the y one gap below the card.
+function Drawer:FeatureCard(mod, x, y, width, opts)
+    opts = opts or {}
+    local key = mod.key
+    local refresh = self.refresh
+    return self:Card(x, y, width, function(ix, iy, iw)
+        local sw = M.button * 2
+        local tw = max(iw - sw - M.gap, 10)
+        local ty = iy
+        local title = Escape(mod.label or key)
+        if mod.experimental then title = title .. "   |cffff9a33Experimental|r" end
+        ty = ty + self:Text("font", title, ix, ty, tw, COLOR.font) + M.gap * 0.2
+        if type(mod.desc) == "string" and mod.desc ~= "" then
+            ty = ty + self:Text("small", mod.desc, ix, ty, tw, COLOR.small)
+        end
+        if opts.setup and type(opts.how) == "string" and opts.how ~= "" then
+            ty = ty + M.gap * 0.3
+            ty = ty + self:Text("small", "|cffffd100How: |r" .. opts.how, ix, ty, tw, COLOR.small)
+        end
+        local state = PE:GetModuleState(key)
+        ty = self:Status(mod, ix, ty, tw, opts.failedText or TEXT_FAILED,
+            NO_STATUS_LINES[key] or state ~= "on")
+        local headerHeight = max(M.button, ty - iy)
+        local switch = self:Switch(ix + iw - sw, iy + (headerHeight - M.button) * 0.5, SWITCH_STATE[state] or "off",
+            PE:Wrap("core", function()
+                if PE:GetModuleState(key) == "blocked" then return end
+                PE:SetModuleEnabled(key, not PE:IsModuleSavedOn(key))
+                refresh()
+            end))
+        switch.peKey = key
+        -- When the controller lands on the switch, bring the whole header into view.
+        switch.peScrollTop, switch.peScrollBottom = iy, iy + headerHeight
+        local y2 = iy + headerHeight + M.gap
+        local rows = self:OptionList(mod, opts)
+        local hasOptions = type(mod.options) == "table" and #mod.options > 0
+        if #rows > 0 then
+            self:Divider(ix, y2 - M.gap * 0.5, iw)
+            y2 = y2 + M.gap * 0.5
+            y2 = self:Options(mod, ix, y2, iw, opts)
+        elseif hasOptions and state ~= "on" and not opts.setup then
+            y2 = y2 + self:Text("small", TEXT_SWITCH_ON_FIRST, ix, y2, iw, COLOR.dim) + M.gap
+        end
+        return y2
+    end)
 end
 
 local function DefaultRefresh()
@@ -753,203 +778,152 @@ function PE:NewListDrawer(spec)
     for name, fn in pairs(Drawer) do drawer[name] = fn end
     -- A dimmed end of a number control: saves nothing, only redraws.
     drawer.noStep = PE:Wrap("core", function() drawer.refresh() end)
-    drawer:AddPool("well", function()
-        local well = CreateFrame("Frame", nil, child)
-        well.border = well:CreateTexture(nil, "BACKGROUND")
-        well.border:SetAllPoints(well)
-        well.border:SetColorTexture(0.62, 0.52, 0.22, 1)
-        well.fill = well:CreateTexture(nil, "BORDER")
-        well.fill:SetColorTexture(0.03, 0.03, 0.04, 1)
-        well.value = UI:CreateText(well, "font")
-        well.value:SetJustifyH("CENTER")
-        well.value:SetWordWrap(false)
-        well.unit = UI:CreateText(well, "small")
-        well.unit:SetJustifyH("CENTER")
-        well.unit:SetWordWrap(false)
-        return well
-    end)
     drawer:AddPool("button", function() return UI:CreateButton(child, "") end)
+    drawer:AddPool("switch", function() return UI:CreateSwitch(child) end)
+    drawer:AddPool("segmented", function() return UI:CreateSegmented(child) end)
+    drawer:AddPool("number", function() return UI:CreateNumber(child) end)
     drawer:AddPool("font", function() return UI:CreateText(child, "font") end)
     drawer:AddPool("small", function() return UI:CreateText(child, "small") end)
     drawer:AddPool("title", function() return UI:CreateText(child, "title") end)
+    drawer:AddPool("card", function()
+        local fill = child:CreateTexture(nil, "BACKGROUND")
+        local c = UI.COLORS.card
+        fill:SetColorTexture(c[1], c[2], c[3], 1)
+        return fill
+    end)
+    drawer:AddPool("divider", function()
+        local line = child:CreateTexture(nil, "ARTWORK")
+        local c = UI.COLORS.divider
+        line:SetColorTexture(c[1], c[2], c[3], 1)
+        return line
+    end)
     drawer:AddPool("line", function()
         local line = child:CreateTexture(nil, "ARTWORK")
         line:SetColorTexture(0.30, 0.30, 0.34, 1)
         return line
     end)
+    drawer:AddPool("icon", function() return child:CreateTexture(nil, "ARTWORK") end)
     return drawer
 end
 
 ---------------------------------------------------------------------------
--- Placing things in this window's list
+-- Feature tabs
 ---------------------------------------------------------------------------
 
-local function PlaceText(kind, text, x, y, width, color)
-    return list:Text(kind, text, x, y, width, color)
-end
-
-local function PlaceLine(y, width)
-    return list:Line(y, width)
-end
-
-local function PlaceButton(text, x, y, width, height, style, onClick)
-    return list:Button(text, x, y, width, height, style, onClick)
-end
-
-local function FlowButtons(items, x0, y, maxWidth, minWidth)
-    return list:Flow(items, x0, y, maxWidth, minWidth)
-end
-
----------------------------------------------------------------------------
--- Main page
----------------------------------------------------------------------------
-
--- The saved folds: { [feature key] = true }. Core.lua keeps this a table;
--- the check here covers a table that was damaged while the game ran.
-local function FoldTable()
-    local ui = PE.db and PE.db.ui
-    if type(ui) ~= "table" then return {} end
-    if type(ui.folded) ~= "table" then ui.folded = {} end
-    return ui.folded
-end
-
--- Fold or unfold one feature's options. A plain saved write: nothing else
--- depends on it, so there is no metrics refresh, only a redraw.
-local function ToggleFold(key)
-    local folded = FoldTable()
-    local nowFolded = folded[key] ~= true
-    folded[key] = nowFolded and true or nil
-    if PE.debugOn then PE:Debug("settings", key .. (nowFolded and " folded" or " unfolded")) end
-    -- The redraw reuses buttons, so remember by feature where the controller
-    -- highlight was, and put it back on that feature's fold button.
-    local focus = panel and panel.peNavFocus
-    refocusKey = (focus and focus.peFoldKey == key) and key or nil
-    PE:RefreshSettings()
-end
-
-local function BuildModuleRow(mod, y, width, separator)
-    if separator then
-        y = y + PlaceLine(y, width) + M.gap
-    else
-        y = y + M.gap * 0.5
+local function BuildFeatureTab(t, width)
+    local y = 0
+    if t.heading then
+        y = list:Card(0, y, width, function(ix, iy, iw)
+            local yy = iy
+            yy = yy + list:Text("font", "Fixes for the game's own interface", ix, yy, iw, COLOR.title) + M.gap * 0.2
+            yy = yy + list:Text("small", "Parts of the default Blizzard UI that are hard to use on a handheld. "
+                .. "Each fix only changes the game's window it names.", ix, yy, iw, COLOR.small)
+            return yy + M.gap
+        end) + M.gap
     end
-    local key = mod.key
-    local state = PE:GetModuleState(key)
-    local savedOn = PE:IsModuleSavedOn(key)
-    local toggleWidth = M.button * 2.8
-    local textX = M.gap
-    local hasOptions, onlyAlways = list:OptionsShown(mod)
-    local folded = hasOptions and FoldTable()[key] == true
-    -- "Hide options" / "Show options" sits left of the switch. 3.4 buttons
-    -- wide holds the longer label at the Large size (about 230 of the
-    -- roughly 780 units the text has beside the switch at 720p).
-    local foldWidth = hasOptions and M.button * 3.4 or 0
-    local textWidth = width - toggleWidth - textX - M.pad - (hasOptions and (foldWidth + M.gap) or 0)
-
-    local title = Escape(mod.label)
-    if mod.experimental then title = title .. "   |cffff9a33Experimental|r" end
-    local ty = y + M.gap * 0.3
-    ty = ty + PlaceText("font", title, textX, ty, textWidth) + M.gap * 0.3
-    if not folded and type(mod.desc) == "string" and mod.desc ~= "" then
-        ty = ty + PlaceText("small", mod.desc, textX, ty, textWidth) + M.gap * 0.3
+    local drawn = 0
+    for _, key in ipairs(t.features or {}) do
+        local mod = PE:GetModule(key)
+        if mod then
+            drawn = drawn + 1
+            -- Each card on its own: one that fails is logged against its
+            -- feature and the rest of the page is still drawn below it.
+            local ok, nextY = PE:Safe(key, list.FeatureCard, list, mod, 0, y, width)
+            if ok and type(nextY) == "number" then
+                y = nextY + M.gap
+            else
+                y = max(y, list.lowest) + M.gap
+            end
+        end
     end
-    ty = list:Status(mod, textX, ty, textWidth, "Switched on, but it hit a problem. See Errors at the bottom of this list.")
-    local rowHeight = max(M.row, ty - y)
-
-    local label, style = PE:GetModuleSwitch(key)
-    -- The switch is placed (and so pooled) before the fold button: the buttons
-    -- after it come and go when it is tapped, and it must keep its own place so
-    -- the controller highlight stays on it.
-    local toggle = PlaceButton(label, width - toggleWidth, y + (M.row - M.button) * 0.5, toggleWidth, M.button, style,
-        PE:Wrap("core", function()
-            if state == "blocked" then return end
-            PE:SetModuleEnabled(key, not savedOn)
-        end))
-    -- When the controller lands on the switch, bring the whole row into view.
-    toggle.peScrollTop, toggle.peScrollBottom = y, y + rowHeight
-    if hasOptions then
-        local fold = PlaceButton(folded and "Show options" or "Hide options",
-            width - toggleWidth - M.gap - foldWidth, y + (M.row - M.button) * 0.5, foldWidth, M.button, nil,
-            PE:Wrap("core", function() ToggleFold(key) end))
-        fold.peFoldKey = key
-        fold.peScrollTop, fold.peScrollBottom = y, y + rowHeight
-        -- Reading order for the d-pad: the fold button, then the switch beside it.
-        local n = #navList
-        navList[n - 1], navList[n] = fold, toggle
-    end
-
-    y = y + rowHeight + M.gap * 0.5
-    if hasOptions and not folded then
-        y = list:Options(mod, y, width, onlyAlways)
+    if drawn == 0 then
+        y = y + list:Text("font", "This part of the addon did not load. See the Errors tab.", 0, y, width) + M.gap
     end
     return y
 end
 
-local function BuildCoreSection(y, width)
-    local x = M.pad * 2
-    local innerWidth = width - x - M.gap
+---------------------------------------------------------------------------
+-- General tab
+---------------------------------------------------------------------------
 
-    y = y + PlaceLine(y, width) + M.gap
-    y = y + PlaceText("title", TITLE_MAIN, M.gap, y, width - M.gap * 2) + M.gap
+local SIZE_CHOICES = {
+    { value = "small", label = "Small" },
+    { value = "medium", label = "Medium" },
+    { value = "large", label = "Large" },
+}
 
-    y = list:CoreChoices(y, width)
-    local positions = PE.Hub and PE.Hub.POSITIONS
-    if type(positions) == "table" then
-        y = y + PlaceText("small", "Tip: press and hold the round button to open this window.", x, y, innerWidth, COLOR.dim) + M.gap
-    end
+local COLOR_CHOICES = {
+    { value = "gold", label = "Gold" },
+    { value = "horde", label = "Horde" },
+    { value = "alliance", label = "Alliance" },
+}
 
-    local count = #PE.errors
-    local items = {
-        {
-            label = "Reload UI",
-            -- Called straight from the tap, in case reloading needs a real button press.
-            onClick = function() PE:ReloadNow() end,
-        },
-        {
-            label = "Errors (" .. count .. ")",
-            style = count > 0 and "warn" or nil,
-            onClick = PE:Wrap("core", function() PE:OpenSettings("errors") end),
-        },
-    }
-    -- Last in the row, so the buttons before it keep their places.
-    if PE.Move and PE.Move.Open then
-        items[#items + 1] = {
-            label = "Move on screen",
-            onClick = PE:Wrap("core", function() PE.Move:Open() end),
-        }
-    end
-    if PE.Setup and PE.Setup.Open then
-        items[#items + 1] = {
-            label = "Setup guide",
-            onClick = PE:Wrap("core", function() PE.Setup:Open("settings") end),
-        }
-    end
-    y = FlowButtons(items, x, y, innerWidth, M.button * 3)
-    return y + M.pad
-end
-
-local function BuildMain(width)
-    local y = 0
-    local mods = PE.moduleList
-    for i = 1, #mods do
-        -- Each row on its own: a row that fails is logged against its
-        -- feature and the rest of the page is still drawn below it.
-        local ok, nextY = PE:Safe(mods[i].key, BuildModuleRow, mods[i], y, width, i > 1)
-        if ok and type(nextY) == "number" then
-            y = nextY
-        else
-            y = max(y, list.lowest) + M.gap
+-- "I play with": saves ui.touch, and moves Bag sorting's Sort button with it
+-- (a controller player sorts with the stick click; a touch player taps the
+-- button). Applied the way Bag sorting's own choice applies it.
+function PE:SetPlayStyle(touch)
+    touch = touch and true or false
+    self:SetUISetting("touch", touch)
+    local bags = self:GetModule("bags")
+    local opts = bags and (bags.opts or (self.db and self.db.options and self.db.options.bags))
+    if type(opts) ~= "table" then return end
+    if (opts.showTab ~= false) == touch then return end
+    opts.showTab = touch
+    for _, opt in ipairs(type(bags.options) == "table" and bags.options or {}) do
+        if type(opt) == "table" and opt.key == "showTab" and type(opt.OnChange) == "function" then
+            self:Safe("bags", opt.OnChange, bags, touch)
         end
     end
-    if #mods == 0 then
-        y = y + M.gap
-        y = y + PlaceText("font", "No features were loaded.", M.gap, y, width - M.gap * 2) + M.gap
+    self:RefreshSettings()
+end
+
+local function Items(choices, current, pick)
+    local items = {}
+    for i, choice in ipairs(choices) do
+        local value = choice.value
+        items[i] = {
+            label = choice.label,
+            selected = (current == value),
+            onClick = PE:Wrap("core", function() pick(value) end),
+        }
     end
-    return BuildCoreSection(y, width)
+    return items
+end
+
+local function BuildGeneral(width)
+    local ui = PE.db and PE.db.ui or {}
+    local y = 0
+    y = list:Card(0, y, width, function(ix, iy, iw)
+        local yy = iy
+        yy = list:ChoiceRow("Button size", Items(SIZE_CHOICES, M.size,
+            function(v) PE:SetUISetting("size", v) end), ix, yy, iw)
+        yy = list:ChoiceRow("Round button colour", Items(COLOR_CHOICES, ui.hubColor or "gold",
+            function(v) PE:SetUISetting("hubColor", v) end), ix, yy, iw)
+        yy = list:ChoiceRow("I play with", Items({
+            { value = true, label = "Touch controls" },
+            { value = false, label = "Controller" },
+        }, PE:UsesTouch(), function(v) PE:SetPlayStyle(v) end), ix, yy, iw)
+        return yy
+    end) + M.gap
+    y = list:Card(0, y, width, function(ix, iy, iw)
+        local yy = iy
+        if PE.Move and PE.Move.Open then
+            yy = list:ActionRow("Move things on screen", "Open",
+                PE:Wrap("core", function() PE.Move:Open() end), ix, yy, iw)
+        end
+        if PE.Setup and PE.Setup.Open then
+            yy = list:ActionRow("Setup guide", "Open",
+                PE:Wrap("core", function() PE.Setup:Open("settings") end), ix, yy, iw)
+        end
+        -- Called straight from the tap, in case reloading needs a real button press.
+        yy = list:ActionRow("Reload the interface", "Reload", function() PE:ReloadNow() end, ix, yy, iw)
+        return yy
+    end) + M.gap
+    return y
 end
 
 ---------------------------------------------------------------------------
--- Errors page
+-- Errors tab
 ---------------------------------------------------------------------------
 
 -- 12345 -> "12,345"
@@ -962,124 +936,129 @@ local function WithCommas(n)
     return text
 end
 
--- The debug log's switch, line count and buttons. The count is read when the
--- page is drawn (on opening, and after the switch or a button), never per
--- logged line.
-local function BuildDebugLog(y, width)
-    local x = M.gap
-    local toggleWidth = M.button * 2.8
-    local textWidth = width - toggleWidth - x - M.pad
-    local on = PE.debugOn == true
-    local ty = y + M.gap * 0.3
-    ty = ty + PlaceText("font", "Debug log", x, ty, textWidth, COLOR.title) + M.gap * 0.3
-    ty = ty + PlaceText("small", "Turn this on, play until the problem happens, tap Save log now, then send the file "
-        .. "WTF/Account/<account>/SavedVariables/PocketEssentials.lua.", x, ty, textWidth) + M.gap * 0.3
-    ty = ty + PlaceText("small", WithCommas(PE:DebugCount()) .. " of " .. WithCommas(PE.DEBUG_CAP) .. " lines",
-        x, ty, textWidth, COLOR.status) + M.gap * 0.3
-    local rowHeight = max(M.row, ty - y)
-    local toggle = PlaceButton(on and "ON" or "OFF", width - toggleWidth, y + (M.row - M.button) * 0.5, toggleWidth, M.button,
-        on and "on" or "off", PE:Wrap("core", function() PE:SetDebug(not PE.debugOn) end))
-    toggle.peScrollTop, toggle.peScrollBottom = y, y + rowHeight
-    y = y + rowHeight + M.gap * 0.5
-    y = FlowButtons({
-        {
-            label = "Save log now",
-            -- A reload is what writes the file. Called straight from the tap,
-            -- in case reloading needs a real button press.
-            onClick = function() PE:ReloadNow() end,
-        },
-        {
-            label = "Clear log",
-            onClick = PE:Wrap("core", function() PE:ClearDebug() end),
-        },
-    }, x, y, width - x * 2, M.button * 3) + M.gap
-    return y + PlaceLine(y, width) + M.gap
+-- The debug log's card: switch, line count and its two rows. The count is
+-- read when the page is drawn (on opening, and after the switch or a
+-- button), never per logged line.
+local function DebugCard(y, width)
+    return list:Card(0, y, width, function(ix, iy, iw)
+        local sw = M.button * 2
+        local tw = max(iw - sw - M.gap, 10)
+        local on = PE.debugOn == true
+        local ty = iy
+        ty = ty + list:Text("font", "Debug log", ix, ty, tw, COLOR.font) + M.gap * 0.2
+        ty = ty + list:Text("small", "Turn it on, play until the problem happens, then tap Save. "
+            .. "Send the file SavedVariables/PocketEssentials.lua.", ix, ty, tw, COLOR.small)
+        ty = ty + M.gap * 0.3
+        ty = ty + list:Text("small", WithCommas(PE:DebugCount()) .. " of " .. WithCommas(PE.DEBUG_CAP) .. " lines",
+            ix, ty, tw, COLOR.status) + M.gap * 0.3
+        list:Switch(ix + iw - sw, iy, on and "on" or "off", PE:Wrap("core", function() PE:SetDebug(not PE.debugOn) end))
+        local yy = max(iy + M.button, ty) + M.gap
+        list:Divider(ix, yy - M.gap * 0.5, iw)
+        yy = yy + M.gap * 0.5
+        -- A reload is what writes the file. Called straight from the tap, in
+        -- case reloading needs a real button press.
+        yy = list:ActionRow("Save the log (reloads)", "Save", function() PE:ReloadNow() end, ix, yy, iw)
+        yy = list:ActionRow("Empty the log", "Empty", PE:Wrap("core", function() PE:ClearDebug() end), ix, yy, iw)
+        return yy
+    end)
+end
+
+local function ErrorsCard(y, width)
+    return list:Card(0, y, width, function(ix, iy, iw)
+        local errors = PE.errors
+        local cw = UI:ControlWidth(iw)
+        local yy = iy
+        local h, label = list:Text("font", "Errors", ix, yy, iw - cw - M.gap, COLOR.font)
+        label:ClearAllPoints()
+        label:SetPoint("TOPLEFT", list.child, "TOPLEFT", ix, -(yy + max((M.button - h) * 0.5, 0)))
+        list:Button("Clear errors", ix + iw - cw, yy, cw, M.button, #errors > 0 and "normal" or "disabled",
+            PE:Wrap("core", function() PE:ClearErrors() end))
+        yy = yy + M.button + M.gap
+        if #errors == 0 then
+            return yy + list:Text("small", "No errors recorded.", ix, yy, iw, COLOR.dim) + M.gap
+        end
+        for i = 1, #errors do
+            local e = errors[i]
+            if type(e) == "table" then
+                local head = Escape(PE:ModuleLabel(e.module)) .. "   x" .. tostring(tonumber(e.count) or 1)
+                if type(e.last) == "number" and e.last > 0 then
+                    local ok, when = pcall(date, "%b %d %H:%M", e.last)
+                    if ok and type(when) == "string" then head = head .. "   last: " .. when end
+                end
+                yy = yy + list:Text("font", head, ix, yy, iw, COLOR.title) + M.gap * 0.3
+                yy = yy + list:Text("small", Escape(e.msg), ix, yy, iw, COLOR.font) + M.gap * 0.3
+                if type(e.stack) == "string" and e.stack ~= "" then
+                    yy = yy + list:Text("small", Escape(e.stack), ix, yy, iw, COLOR.dim)
+                end
+                yy = yy + M.gap
+            end
+        end
+        return yy
+    end)
 end
 
 local function BuildErrors(width)
-    local x = M.gap
-    local innerWidth = width - x * 2
-    local y = M.gap * 0.5
+    local y = 0
     -- On its own, so a problem drawing it still leaves the error list below.
-    local ok, nextY = PE:Safe("core", BuildDebugLog, y, width)
-    y = (ok and type(nextY) == "number") and nextY or (max(y, list.lowest) + M.gap)
-    local list = PE.errors
-    if #list == 0 then
-        return y + PlaceText("font", "No errors recorded.", x, y, innerWidth) + M.gap
-    end
-    local first = true
-    for i = 1, #list do
-        local e = list[i]
-        if type(e) == "table" then
-            if not first then y = y + PlaceLine(y, width) + M.gap end
-            first = false
-            local head = Escape(PE:ModuleLabel(e.module)) .. "   x" .. tostring(tonumber(e.count) or 1)
-            if type(e.last) == "number" and e.last > 0 then
-                local ok, when = pcall(date, "%b %d %H:%M", e.last)
-                if ok and type(when) == "string" then head = head .. "   last: " .. when end
-            end
-            y = y + PlaceText("font", head, x, y, innerWidth, COLOR.title) + M.gap * 0.3
-            y = y + PlaceText("small", Escape(e.msg), x, y, innerWidth, COLOR.font) + M.gap * 0.3
-            if type(e.stack) == "string" and e.stack ~= "" then
-                y = y + PlaceText("small", Escape(e.stack), x, y, innerWidth, COLOR.dim)
-            end
-            y = y + M.gap
-        end
-    end
-    return y
+    local ok, nextY = PE:Safe("core", DebugCard, y, width)
+    y = (ok and type(nextY) == "number") and (nextY + M.gap) or (max(y, list.lowest) + M.gap)
+    return ErrorsCard(y, width) + M.gap
 end
 
 ---------------------------------------------------------------------------
--- Quest Icon Key page
+-- Quest Icon Key page (inside the Quest icons tab)
 ---------------------------------------------------------------------------
 
 local function BuildKey(width)
-    local x = M.gap
-    local y = M.gap * 0.5
+    list:Button("Back", 0, 0, M.button * 3, M.button, "normal", PE:Wrap("core", function() PE:OpenSettings("questIcons") end))
+    local y = M.button + M.gap
     local key = PE.QuestIconKey -- made when QuestIcons.lua loads, so read it here
     if type(key) ~= "table" or #key == 0 then
-        return y + PlaceText("font", "The quest icons part of this addon did not load. See Errors.", x, y, width - x * 2) + M.gap
+        return y + list:Text("font", "The quest icons part of this addon did not load. See the Errors tab.", 0, y, width) + M.gap
     end
-    local side = M.button
-    local textX = x + side + M.gap
-    local textWidth = width - textX - M.pad
-    for i = 1, #key do
-        local entry = key[i]
-        if type(entry) == "table" then
-            if i > 1 then y = y + PlaceLine(y, width) + M.gap end
-            -- A reused texture gets its picture, colour and size set again every time.
-            local icon = list:Acquire("icon")
-            icon:ClearAllPoints()
-            icon:SetPoint("TOPLEFT", area.child, "TOPLEFT", x, -y)
-            icon:SetSize(side, side)
-            icon:SetTexture(entry.tex)
-            local c = type(entry.color) == "table" and entry.color or COLOR.font
-            icon:SetVertexColor(c[1] or 1, c[2] or 1, c[3] or 1)
-            local ty = y
-            ty = ty + PlaceText("font", Escape(entry.label or ""), textX, ty, textWidth) + M.gap * 0.3
-            ty = ty + PlaceText("small", Escape(entry.desc or ""), textX, ty, textWidth)
-            local rowHeight = max(M.row, side, ty - y)
-            if y + rowHeight > list.lowest then list.lowest = y + rowHeight end
-            y = y + rowHeight + M.gap * 0.5
+    return list:Card(0, y, width, function(ix, iy, iw)
+        local side = M.button
+        local tx = ix + side + M.gap
+        local tw = max(iw - side - M.gap, 10)
+        local yy = iy
+        for i = 1, #key do
+            local entry = key[i]
+            if type(entry) == "table" then
+                -- A reused texture gets its picture, colour and size set again every time.
+                local icon = list:Acquire("icon")
+                icon:ClearAllPoints()
+                icon:SetPoint("TOPLEFT", list.child, "TOPLEFT", ix, -yy)
+                icon:SetSize(side, side)
+                icon:SetTexture(entry.tex)
+                local c = type(entry.color) == "table" and entry.color or COLOR.font
+                icon:SetVertexColor(c[1] or 1, c[2] or 1, c[3] or 1)
+                local nameHeight, name = list:Text("font", Escape(entry.label or ""), tx, yy, tw, COLOR.font)
+                local descHeight, desc = list:Text("small", Escape(entry.desc or ""), tx, yy, tw, COLOR.small)
+                local top = yy + max((side - nameHeight - descHeight) * 0.5, 0)
+                name:ClearAllPoints()
+                name:SetPoint("TOPLEFT", list.child, "TOPLEFT", tx, -top)
+                desc:ClearAllPoints()
+                desc:SetPoint("TOPLEFT", list.child, "TOPLEFT", tx, -(top + nameHeight))
+                local rowHeight = max(side, nameHeight + descHeight)
+                list:Reach(yy + rowHeight)
+                yy = yy + rowHeight + M.gap
+            end
         end
-    end
-    y = y + M.gap * 0.5
-    y = y + PlaceText("small", "Tap an icon on the map to see what it is for.", x, y, width - x * 2, COLOR.dim) + M.gap * 0.5
-    y = y + PlaceText("small", "\"Spots per objective\" in Quest icons sets how many spots each objective shows.", x, y, width - x * 2, COLOR.dim) + M.gap
-    return y
+        return yy + list:Text("small", "Tap an icon on the map to see what it is for.", ix, yy, iw, COLOR.dim) + M.gap
+    end) + M.gap
 end
 
 ---------------------------------------------------------------------------
--- Fixed header above the list
+-- Fixed header above the page
 ---------------------------------------------------------------------------
 
-local function LayoutHeader(width)
+local function LayoutHeader(x, width)
     local y = 0
     local content = panel.content
 
     if PE.oldQuestDotsLoaded then
         header.warn:ClearAllPoints()
-        header.warn:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
+        header.warn:SetPoint("TOPLEFT", content, "TOPLEFT", x, -y)
         y = y + SetText(header.warn, "small", "The old QuestDots folder is still installed. Delete it from AddOns.", width, COLOR.warn) + M.gap
         header.warn:Show()
     else
@@ -1087,7 +1066,7 @@ local function LayoutHeader(width)
     end
 
     local reasons = PE.reloadReasons
-    if page == "main" and type(reasons) == "table" and #reasons > 0 then
+    if type(reasons) == "table" and #reasons > 0 then
         local buttonWidth = M.button * 4.5
         local lines = {}
         for i = 1, min(#reasons, 2) do
@@ -1095,10 +1074,10 @@ local function LayoutHeader(width)
         end
         header.reloadButton:ClearAllPoints()
         header.reloadButton:SetSize(buttonWidth, M.button)
-        header.reloadButton:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -y)
+        header.reloadButton:SetPoint("TOPLEFT", content, "TOPLEFT", x + width - buttonWidth, -y)
         header.reloadButton:Show()
         header.reloadText:ClearAllPoints()
-        header.reloadText:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
+        header.reloadText:SetPoint("TOPLEFT", content, "TOPLEFT", x, -y)
         local textHeight = SetText(header.reloadText, "small", table.concat(lines, "\n"), width - buttonWidth - M.gap, COLOR.warn)
         header.reloadText:Show()
         y = y + max(M.button, textHeight) + M.gap
@@ -1107,72 +1086,201 @@ local function LayoutHeader(width)
         header.reloadButton:Hide()
         header.reloadText:Hide()
     end
-
-    if page ~= "main" then
-        local buttonWidth = M.button * 3.5
-        header.back:ClearAllPoints()
-        header.back:SetSize(buttonWidth, M.button)
-        header.back:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
-        header.back:Show()
-        navList[#navList + 1] = header.back
-        if page == "errors" then
-            header.clear:ClearAllPoints()
-            header.clear:SetSize(buttonWidth, M.button)
-            header.clear:SetPoint("TOPLEFT", content, "TOPLEFT", buttonWidth + M.gap, -y)
-            header.clear:Show()
-            navList[#navList + 1] = header.clear
-        else
-            header.clear:Hide()
-        end
-        y = y + M.button + M.gap
-    else
-        header.back:Hide()
-        header.clear:Hide()
-    end
     return y
+end
+
+---------------------------------------------------------------------------
+-- Tabs
+---------------------------------------------------------------------------
+
+-- Any helper of the tab is on.
+local function TabIsOn(t)
+    for _, key in ipairs(t.features or {}) do
+        if PE:IsModuleEnabled(key) then return true end
+    end
+    return false
+end
+
+-- The tab height: one button, or less so that all the tabs fit the window.
+local function TabHeight(contentHeight)
+    local n = #TABS
+    return min(M.button, (contentHeight - (n - 1) * M.border) / n)
+end
+
+local function LayoutTabs(contentHeight, tabsWidth)
+    local th = TabHeight(contentHeight)
+    local b = M.border
+    local colors = UI.COLORS
+    for i, t in ipairs(TABS) do
+        local btn = tabButtons[i]
+        local chosen = t.id == tab
+        btn:ClearAllPoints()
+        btn:SetSize(tabsWidth, th)
+        btn:SetPoint("TOPLEFT", panel.content, "TOPLEFT", 0, -(i - 1) * (th + b))
+        btn:SetStyle(chosen and "tabOn" or "tabItem")
+        btn.peText:ClearAllPoints()
+        btn.peText:SetPoint("LEFT", btn, "LEFT", M.pad, 0)
+        btn.peText:SetWidth(max(tabsWidth - M.pad * 3, 10))
+        btn.peBar:ClearAllPoints()
+        btn.peBar:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
+        btn.peBar:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
+        btn.peBar:SetWidth(max(UI:Px(4), b * 2))
+        btn.peBar:SetShown(chosen)
+        -- The dot: green while any helper of the tab is on.
+        local hasDot = t.features ~= nil
+        if hasDot then
+            local d = M.smallFontSize * 0.55
+            local on = TabIsOn(t)
+            local c = on and colors.dotOn or colors.dotOff
+            btn.peDotAnchor:ClearAllPoints()
+            btn.peDotAnchor:SetSize(d, d)
+            btn.peDotAnchor:SetPoint("RIGHT", btn, "RIGHT", -M.pad, 0)
+            btn.peDot:SetColor(c[1], c[2], c[3], 1)
+            btn.peDot:Layout(btn.peDotAnchor, d)
+            btn.peDotOn = on
+        end
+        btn.peDot:SetShown(hasDot)
+        -- The Errors tab's red badge with the count.
+        local count = (t.id == "errors") and #PE.errors or 0
+        if count > 0 then
+            local d = M.smallFontSize * 1.3
+            btn.peDotAnchor:ClearAllPoints()
+            btn.peDotAnchor:SetSize(d, d)
+            btn.peDotAnchor:SetPoint("RIGHT", btn, "RIGHT", -M.pad, 0)
+            local c = colors.badge
+            btn.peBadgeDisc:SetColor(c[1], c[2], c[3], 1)
+            btn.peBadgeDisc:Layout(btn.peDotAnchor, d)
+            btn.peBadgeDisc:SetShown(true)
+            btn.peCount:ClearAllPoints()
+            btn.peCount:SetPoint("CENTER", btn.peDotAnchor, "CENTER", 0, 0)
+            btn.peCount:SetText(tostring(count))
+            btn.peCount:Show()
+        else
+            btn.peBadgeDisc:SetShown(false)
+            btn.peCount:Hide()
+        end
+        navList[#navList + 1] = btn
+    end
+end
+
+---------------------------------------------------------------------------
+-- Controller: the tabs are one column, the page another
+---------------------------------------------------------------------------
+
+local function IsTab(btn)
+    return btn ~= nil and btn.peTabId ~= nil
+end
+
+local function ChosenTabButton()
+    for i, t in ipairs(TABS) do
+        if t.id == tab then return tabButtons[i] end
+    end
+end
+
+-- The page's stops: everything in the d-pad list that is not a tab.
+local function PageColumn()
+    local out = {}
+    for _, btn in ipairs(navList) do
+        if not IsTab(btn) then out[#out + 1] = btn end
+    end
+    return out
+end
+
+local function NavColumn(focus)
+    if IsTab(focus) then
+        local out = {}
+        for i = 1, #tabButtons do out[i] = tabButtons[i] end
+        return out
+    end
+    return PageColumn()
+end
+
+-- Right from a tab goes to the page's first stop; Left from the first stop
+-- of a page row goes to the chosen tab. Before anything is highlighted the
+-- first press lands on the chosen tab.
+local function NavCross(focus, step, byRow)
+    if focus == nil then return ChosenTabButton() end
+    if byRow then return nil end
+    if IsTab(focus) then
+        if step > 0 then
+            for _, btn in ipairs(navList) do
+                if not IsTab(btn) and btn.peScrollTop then return btn end
+            end
+            return PageColumn()[1]
+        end
+        return focus
+    end
+    if step < 0 then
+        local column = PageColumn()
+        for i, btn in ipairs(column) do
+            if btn == focus then
+                if i == 1 or not UI:NavSameRow(column[i - 1], focus) then return ChosenTabButton() end
+                return nil
+            end
+        end
+    end
+    return nil
 end
 
 ---------------------------------------------------------------------------
 -- Redraw
 ---------------------------------------------------------------------------
 
+local function BuildPage(width)
+    if tab == "questIcons" and page == "key" then return BuildKey(width) end
+    if tab == "general" then return BuildGeneral(width) end
+    if tab == "errors" then return BuildErrors(width) end
+    return BuildFeatureTab(TabById(tab) or TABS[1], width)
+end
+
 local function DoRefresh()
     M = UI:Metrics()
     for i = #navList, 1, -1 do navList[i] = nil end
-    list:Begin()
 
-    panel:SetTitle(page == "errors" and TITLE_ERRORS or page == "key" and TITLE_KEY or TITLE_MAIN)
+    panel:SetTitle(TITLE_MAIN)
     local contentWidth, contentHeight = panel.contentWidth, panel.contentHeight
-    local headerHeight = LayoutHeader(contentWidth)
+    local tabsWidth = M.button * 5
+    LayoutTabs(contentHeight, tabsWidth)
+    local pageX = tabsWidth + M.gap
+    local pageWidth = max(contentWidth - pageX, M.button * 2)
+    local headerHeight = LayoutHeader(pageX, pageWidth)
     area:ClearAllPoints()
-    area:SetPoint("TOPLEFT", panel.content, "TOPLEFT", 0, -headerHeight)
-    area:Layout(contentWidth, max(contentHeight - headerHeight, M.button * 2 + M.gap))
+    area:SetPoint("TOPLEFT", panel.content, "TOPLEFT", pageX, -headerHeight)
+    local areaHeight = max(contentHeight - headerHeight, M.button * 2 + M.gap)
 
-    local width = area.viewWidth
-    local ok, total = PE:Safe("core", page == "errors" and BuildErrors or page == "key" and BuildKey or BuildMain, width)
-    if not ok or type(total) ~= "number" then total = list.lowest + M.pad end
+    -- First with no scroll bar and the whole width. Only a page that turns
+    -- out too long is drawn again, narrower, with the bar.
+    local start = #navList
+    local total
+    for pass = 1, 2 do
+        for i = #navList, start + 1, -1 do navList[i] = nil end
+        list:Begin()
+        area:Layout(pageWidth, areaHeight, pass == 1)
+        local ok
+        ok, total = PE:Safe("core", BuildPage, area.viewWidth)
+        if not ok or type(total) ~= "number" then total = list.lowest + M.pad end
+        if total <= area.viewHeight + 0.5 or not PE:UsesTouch() then break end
+    end
     list:End()
     area:SetContentHeight(total)
 
-    if page ~= "main" and area.upButton:IsShown() then
-        -- Little or nothing in these lists can take the controller
-        -- highlight, so the scroll bar's tabs do.
+    if (tab == "errors" or page == "key") and area.upButton:IsShown() then
+        -- Little in these pages can take the controller highlight, so the
+        -- scroll bar's tabs do.
         navList[#navList + 1] = area.upButton
         navList[#navList + 1] = area.downButton
     end
     navList[#navList + 1] = panel.closeButton
-    if refocusKey then
-        local wanted
-        for i = 1, #navList do
-            if navList[i].peFoldKey == refocusKey then wanted = navList[i] end
+    if tab ~= drawnTab or page ~= drawnPage then
+        local pageChanged = page ~= drawnPage
+        drawnTab, drawnPage = tab, page
+        -- The highlight in use: after a tab change it stays on its tab; on
+        -- another page of the same tab it goes to the page's first stop.
+        local focus = panel.peNavFocus
+        if focus and (pageChanged or not IsTab(focus)) then
+            local first = PageColumn()[1]
+            if pageChanged and first then panel:NavSetFocus(first) else panel:NavSetFocus(ChosenTabButton()) end
         end
-        refocusKey = nil
-        if wanted and panel.peNavFocus then panel:NavSetFocus(wanted) end
-    end
-    if page ~= drawnPage then
-        -- A different page: if the controller highlight is in use, restart it at the top.
-        drawnPage = page
-        if panel.peNavFocus then panel:NavSetFocus(navList[1]) end
     end
     panel:NavRefresh()
 end
@@ -1212,6 +1320,34 @@ local function PanelSize()
     return min(screenWidth * 0.96, UI:Px(1180)), screenHeight * 0.92
 end
 
+local function SelectTab(id)
+    if not TabById(id) then return end
+    if PE.debugOn and (id ~= tab or page ~= "main") then PE:Debug("settings", "tab " .. id) end
+    if id ~= tab or page ~= "main" then
+        tab, page = id, "main"
+        area.offset = 0
+    end
+    Draw()
+end
+
+local function MakeTab(t)
+    local btn = UI:CreateButton(panel.content, t.label)
+    btn.peTabId = t.id
+    btn.peText:SetJustifyH("LEFT")
+    btn.peBar = btn:CreateTexture(nil, "ARTWORK", nil, 2)
+    btn.peBar:SetColorTexture(1, 0.82, 0, 1)
+    btn.peDotAnchor = CreateFrame("Frame", nil, btn)
+    btn.peDot = UI:CreateDisc(btn, "ARTWORK", 3)
+    btn.peBadgeDisc = UI:CreateDisc(btn, "ARTWORK", 3)
+    btn.peBadgeDisc:SetShown(false)
+    btn.peCount = btn:CreateFontString(nil, "OVERLAY", M.smallFont)
+    if not btn.peCount:GetFont() and GameFontHighlight then btn.peCount:SetFontObject(GameFontHighlight) end
+    btn.peCount:SetTextColor(1, 1, 1, 1)
+    btn.peCount:Hide()
+    btn:SetScript("OnClick", PE:Wrap("core", function() SelectTab(t.id) end))
+    return btn
+end
+
 local function Build()
     UI = PE.UI
     M = UI:Metrics()
@@ -1220,7 +1356,8 @@ local function Build()
     area = UI:CreateScrollArea(panel.content)
 
     list = PE:NewListDrawer({ child = area.child, navList = navList })
-    list:AddPool("icon", function() return area.child:CreateTexture(nil, "ARTWORK") end)
+
+    for i, t in ipairs(TABS) do tabButtons[i] = MakeTab(t) end
 
     header.warn = UI:CreateText(panel.content, "small")
     header.reloadText = UI:CreateText(panel.content, "small")
@@ -1228,13 +1365,11 @@ local function Build()
     header.reloadButton:SetStyle("warn")
     -- Called straight from the tap, in case reloading needs a real button press.
     header.reloadButton:SetScript("OnClick", function() PE:ReloadNow() end)
-    header.back = UI:CreateButton(panel.content, "Back")
-    header.back:SetScript("OnClick", PE:Wrap("core", function() PE:OpenSettings() end))
-    header.clear = UI:CreateButton(panel.content, "Clear")
-    header.clear:SetScript("OnClick", PE:Wrap("core", function() PE:ClearErrors() end))
 
     UI:AttachNav(panel, function() return navList end)
     panel.peNavArea = area   -- lets the d-pad page the list when touch is off (UI.lua NavMove)
+    panel.navColumn = NavColumn
+    panel.navCross = NavCross
     panel.navOnFocus = function(btn)
         if btn.peScrollTop then area:ScrollIntoView(btn) end
     end
@@ -1251,6 +1386,8 @@ end
 -- Public entry points (replace the placeholders in Core.lua)
 ---------------------------------------------------------------------------
 
+-- which: nil (the tab shown last), a tab id from PE.SETTINGS_TABS, or "key"
+-- (the Quest Icon Key, in the Quest icons tab).
 function PE:OpenSettings(which)
     if not built and not buildFailed then
         if PE.UI and PE:Safe("core", Build) then
@@ -1265,9 +1402,14 @@ function PE:OpenSettings(which)
         self:PrintErrors()
         return
     end
-    local newPage = (which == "errors" or which == "key") and which or "main"
-    if newPage ~= page then
-        page = newPage
+    local newTab, newPage = tab, page
+    if which == "key" then
+        newTab, newPage = "questIcons", "key"
+    elseif type(which) == "string" and TabById(which) then
+        newTab, newPage = which, "main"
+    end
+    if newTab ~= tab or newPage ~= page then
+        tab, page = newTab, newPage
         area.offset = 0
     end
     -- Never stack on another Pocket Essentials window: every panel made by
@@ -1298,4 +1440,9 @@ end
 -- Does nothing unless the window is open. Several calls in one frame cost one redraw.
 function PE:RefreshSettings()
     QueueDraw()
+end
+
+-- The chosen tab and page, for tests and the debug log.
+function PE:SettingsPage()
+    return tab, page
 end

@@ -180,22 +180,21 @@ end)
 -- Opening and the list of pieces
 ---------------------------------------------------------------------------
 
-test("move: the settings' bottom row has Move on screen after Errors; it closes the settings and opens the panel", function()
-    local c, PE = T.new({})
-    PE:OpenSettings()
+-- The two Open buttons of the General tab, top to bottom: Move things on screen, then Setup guide.
+local function generalOpenButtons(c, PE)
+    PE:OpenSettings("general")
     c:advance(0.2)
+    local open = shownButtons(c, settingsPanel(c), "Open")
+    table.sort(open, function(a, b) return select(2, a:GetCenter()) > select(2, b:GetCenter()) end)
+    return open
+end
+
+test("move: the General tab's Move things on screen row opens the panel and closes the settings", function()
+    local c, PE = T.new({})
     local settings = settingsPanel(c)
-    local moveBtn = shownButtons(c, settings, "Move on screen")
-    eq(#moveBtn, 1, "no Move on screen button in the settings")
-    local errorsBtn
-    for _, b in ipairs(shownButtons(c, settings)) do
-        if T.labelOf(b):find("^Errors") then errorsBtn = b end
-    end
-    local el = errorsBtn:GetCenter()
-    local ml = moveBtn[1]:GetCenter()
-    local _, ey = errorsBtn:GetCenter()
-    local _, my = moveBtn[1]:GetCenter()
-    check(ml > el or my < ey, "Move on screen is not after Errors")
+    local moveBtn = generalOpenButtons(c, PE)
+    settings = settingsPanel(c)
+    eq(#moveBtn, 2, "the General tab does not have its two Open buttons")
     c:click(moveBtn[1])
     c:advance(0.2)
     check(not settings:IsShown(), "the settings stayed open")
@@ -425,13 +424,11 @@ test("move: Reset puts the piece back on its preset", function()
     c:assertClean("reset")
 end)
 
-test("move: settings has Move the round button and no Round button position row", function()
+test("move: settings has no Move the round button and no Round button position row", function()
     local c, PE = T.new({ saved = { version = 1, enabled = {}, options = {}, ui = { size = "medium", hubPos = "LEFT", moved = { hub = { x = 40, y = 40 } } }, errors = {} } })
-    PE:OpenSettings()
-    c:advance(0.2)
+    local b = generalOpenButtons(c, PE)
     eq(#shownButtons(c, settingsPanel(c), "Right"), 0, "a position button is still drawn")
-    local b = shownButtons(c, settingsPanel(c), "Move the round button")
-    eq(#b, 1)
+    eq(#shownButtons(c, settingsPanel(c), "Move the round button"), 0, "Move the round button is still drawn")
     c:click(b[1])
     c:advance(0.2)
     check(movePanel(c) and movePanel(c):IsShown(), "the Move on screen panel did not open")
