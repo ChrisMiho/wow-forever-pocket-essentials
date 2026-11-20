@@ -22,6 +22,10 @@ on a device. Your saved choices carry over as they are.
   line under it says what it does: "Tap the round button to choose who to
   talk to: Say, Party, Guild or someone who whispered you." Chat text size
   stays under it.
+- **The round button moves off the map.** While the map is open at its
+  normal size, the round PE button sits on the map's book icon in the
+  top-left corner; it goes back to its spot when the map closes or goes full
+  screen. Tap and hold work as before. Always on, no setting.
 
 ### Not changed yet
 

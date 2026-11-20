@@ -1031,7 +1031,7 @@ the debug log on (settings, Errors page).
 14. Reload. Everything you changed should still be as you left it. Send the
     saved `PocketEssentials.lua` file.
 
-### 17. Version 0.8.1: clearer labels, and a log for Menu background
+### 17. Version 0.8.1: clearer labels, the round button on the map, and a log for Menu background
 
 Install the 0.8.1 zip (only the `PocketEssentials` folder) and log in.
 
@@ -1048,7 +1048,16 @@ Install the 0.8.1 zip (only the `PocketEssentials` folder) and log in.
    "Tap the round button to choose who to talk to: Say, Party, Guild or
    someone who whispered you." under it. Say whether the name reads clearly
    now. With the switch off, **Chat text size** is still there.
-5. Menu background: settings, **Errors** page, turn **Debug log** on. Turn
+5. Open the map (normal size, with the quest log beside it). The round PE
+   button sits on the map's book icon in the top-left corner, not over the
+   map. Tap it: the chat window opens (with Chat from round button on). Hold
+   it: the settings open. If you have an unanswered whisper, the red number
+   shows on top of the button.
+6. If the map can be made full screen, do it: the button goes back to its
+   usual spot. Back to normal size: it is on the book again.
+7. Close the map: the button is back at its usual spot (or where you moved
+   it with Move on screen). Open the map once in a fight too: same.
+8. Menu background: settings, **Errors** page, turn **Debug log** on. Turn
    **Menu background** on. Open the quest log, tap a quest so its menu
    (Track, Focus, Share, Abandon) opens, look at it, then close it. Back on
    the **Errors** page, tap **Save log now**. Send the saved

@@ -74,6 +74,9 @@ load."). Everything else keeps working.
 - **Tap the round "PE" button** to open the settings. If Chat from round button
   is on, it opens the chat picker instead.
 - **Hold the round button for half a second** to always open the settings.
+- **While the map is open**, the round button sits on the map's book icon
+  in its top-left corner, so it is off the map. It goes back when the map
+  closes (or goes full screen).
 - **Type `/pe`**, or use the addon-list button on the minimap, as other ways
   to open them.
 - **Setup guide:** the "Setup guide" button in the bottom row of the settings
