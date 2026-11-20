@@ -1067,3 +1067,45 @@ Install the 0.8.1 zip (only the `PocketEssentials` folder) and log in.
    Longer ones like **Move the round button** are two widths. Tap
    **Touch screen: Yes**: it reads No and stays the same size. Hide Blue
    Quest Haze and Quest Icon Key are still on one line.
+
+### 18. Version 0.9.0: the new look from the mockups
+
+Install the 0.9.0 zip (delete the old `PocketEssentials` folder first, keep
+`QuestieDB`) and log in. Compare each window with the "Proposed" mockups
+(`docs/ui-review/mockup-0.8.1.html`, 720p, your button size). Report anything
+that looks different from the mockup, cut-off text, or controls that do not
+respond, plus the Errors tab.
+
+1. **Settings tabs.** Tap the round button (hold it if Chat picker is on).
+   Tabs down the left; tap each. Each page has the same row shape: name
+   left, control right. Green dots show which tabs have a helper on.
+2. **Controls.** Flip a switch On and Off. Tap each part of a row of joined
+   choices: the chosen one turns gold. Use − and + on "Spots per objective".
+   With the d-pad: Up/Down move in a column, Right goes from a tab into its
+   page, Left from the first control goes back to the tab, A presses.
+   With General → I play with: Controller, do the same; Up/Down on the tabs
+   must move between tabs, not scroll the page.
+3. **Quest arrow.** Quest arrow tab → "Size of the arrow and its text":
+   step it down (for example to 70%) and up. The arrow and its text change
+   together; Button size no longer changes them. Check the messages: walk
+   past an objective (Here is green), turn away (Turn around, no arrow),
+   unfocus your quest in the open world (No quest focused) and then in a city
+   or inn (it disappears; set the row to Show and it comes back).
+4. **Move on screen** (General → Move things on screen). All three pieces are
+   listed; turn Chat picker off and "Press A to type (off)" is dimmed. Pick
+   the quest arrow: a Size row sits under the arrows.
+5. **Chat picker window.** With Chat picker on, tap PE: a small window with
+   "Talk in" and "Whispers" in 3 columns, no keyboard hint. Chat tab → "Size
+   of the chat picker window": change it and reopen the window.
+6. **Bags.** Bigger bag on: bag pictures in one row at the top. Bag sorting
+   on: the rounded Sort tab beside the bag, with the picture and "Sort". Tap
+   it, and click your chosen stick in: both sort. Set the Sort button to Hide.
+7. **Setup guide** (General → Setup guide). Walk all screens with Next: dots
+   at the bottom, nothing overlapping Skip. On "Your screen", tap "Move things
+   now": the guide hides, Move on screen opens; close it and the guide is back
+   on the same screen. Finish.
+8. **Button size Large** (General): reopen settings and the guide. Look for
+   any cut-off words.
+9. **Menu background** (still open from 0.8.1): Errors tab → Debug log On,
+   Menu background on, open a quest's menu in the quest log, close it, then
+   Errors tab → Save the log, and send the saved `PocketEssentials.lua`.

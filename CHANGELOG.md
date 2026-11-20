@@ -4,6 +4,50 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-11-20
+
+Twenty-second test build. A new look for every window, built from the mockups
+the owner reviewed in four rounds ("i am so happy with this setup, this looks
+incredible"). Spec `docs/superpowers/specs/2026-11-20-0.9.0-ui-redesign.md`;
+mockups `docs/ui-review/mockup-0.8.1.html`. Not yet tested on a device. Your
+saved choices carry over (the old arrow size becomes a percentage once).
+
+### Changed
+
+- **Settings have tabs.** Down the left: Quest icons, Quest arrow, Bags,
+  Vendors, Chat, Menu background, General, Errors. One page at a time on the
+  right. A green dot on a tab means a helper there is on.
+- **Every row looks the same:** the name on the left, one control of one width
+  on the right. There are four controls: an On/Off switch, a row of joined
+  choices (the chosen one is gold), a − number + box, and a single button.
+  The fold buttons, the bottom row of buttons and the "press and hold" tip are
+  gone. The scroll bar shows only when a page is too long.
+- **New names:** Bigger bag (was Bag window), Bag sorting (was Bag sorter),
+  Auto sell junk, Auto repair, Chat picker (was Chat from round button). Each
+  has one short line under its name.
+- **Quest arrow:** one size control, 50% to 150% in steps of 10, for the
+  arrow and its text together. It no longer follows Button size, and it can
+  also be set in Move on screen while you watch the arrow. The quest line is
+  smaller and starts with "Quest:" (or "Turn in:"). "Here" is green. "Turn
+  around" shows no arrow. "No known location" now reads "No map data for this
+  quest". New: "No quest focused" can hide itself in cities and inns (on by
+  default).
+- **Chat picker window:** only as big as its buttons, in 3 columns under
+  "Talk in" and "Whispers", with its own size control (70% to 150%). The
+  "Three-finger tap" hint is gone. Unanswered whispers get a round red dot.
+- **Bigger bag** always puts the bag pictures in one row at the top (the
+  "Bag icons" choice is gone). Off, the game shows its own bag.
+- **Sort tab:** the same size, but rounded on the outside and joined to the
+  bag, with the sort picture and "Sort" in the middle.
+- **General tab:** Button size, Round button colour, "I play with: Touch
+  controls / Controller", Move things on screen, Setup guide, Reload.
+- **Move on screen** always lists all three pieces; one whose helper is off
+  says "(off)". The chat prompt is now listed as "Press A to type".
+- **Setup guide:** 9 shorter screens with dots for progress, the same cards
+  as the settings, every choice included, controller-button pictures on the
+  first screen, a Round button screen, a "Your screen" picture of where each
+  piece starts with a "Move things now" button, and tip tiles at the end.
+
 ## [0.8.1] - 2026-11-19
 
 Twenty-first test build. From the owner, after installing 0.8.0: "im really

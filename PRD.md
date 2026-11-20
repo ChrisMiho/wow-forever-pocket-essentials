@@ -436,6 +436,22 @@ per objective". The owner has more Quest icons ideas to bring after testing.
 Spec `docs/superpowers/specs/2026-11-18-tidier-settings.md`; device steps
 `docs/TESTING.md` 14.
 
+**0.9.0 (2026-11-20, untested):** the UI redesign from mockups. The owner
+asked to plan the look on mockups before any more code ("mockups can then be
+our north star of what it should visually look like, the prd would drive the
+functionality ... keep things simple and lightweight for the mobile
+platform"), reviewed four rounds of them (`docs/ui-review/`), then: "i am so
+happy with this setup, this looks incredible, can you orchestrate agents to
+implement these enhancements". Built: tabbed settings with one row shape and
+four controls; new feature names; quest arrow size by percentage, clearer
+messages, hidden in cities and inns when nothing is focused; chat picker
+window sized to its buttons with its own size; Bigger bag always uses the top
+row; rounded Sort tab; Move on screen lists all pieces; a 9-screen setup
+guide. 0.8.1 was not tested on the device before this; its Menu background
+log step is carried into 0.9.0. Spec
+`docs/superpowers/specs/2026-11-20-0.9.0-ui-redesign.md`; device steps
+`docs/TESTING.md` section 18.
+
 **0.8.1 (2026-11-19, untested):** the owner after installing 0.8.0: "im
 really happy so far ... everything else seems pretty smooth so far". Built:
 "Hide Blue Quest Haze" and "Quest Icon Key" side by side (toggles and action

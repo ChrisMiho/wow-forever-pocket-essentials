@@ -1,4 +1,67 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(scripts/check.sh)",
+      "Bash(scripts/test.sh)",
+      "Bash(scripts/audit-api.sh)",
+      "Bash(scripts/build.sh)",
+      "Bash(scripts/read-log.sh *)",
+      "Bash(scripts/read-probe.sh *)",
+      "Bash(python3 scripts/make_art.py*)",
+      "Bash(luajit *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch)",
+      "Bash(git branch --list*)",
+      "Bash(git worktree list*)",
+      "Bash(git merge-base *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(gh release list*)",
+      "Bash(gh release view *)",
+      "Edit(addons/PocketEssentials/**)",
+      "Edit(tests/**)",
+      "Edit(docs/**)",
+      "Edit(scripts/**)",
+      "Edit(CHANGELOG.md)",
+      "Edit(PRD.md)",
+      "Edit(README.md)",
+      "Read(~/.cache/wow-ui-source/**)"
+    ],
+    "ask": [
+      "Bash(git push*)",
+      "Bash(git merge *)",
+      "Bash(git rebase *)",
+      "Bash(git reset *)",
+      "Bash(git tag *)",
+      "Bash(gh release create*)",
+      "Bash(gh release edit*)",
+      "Bash(gh release upload*)",
+      "Bash(gh pr *)"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)",
+      "Bash(git clean -fdx*)",
+      "Bash(gh release delete*)",
+      "Bash(gh repo delete*)",
+      "Bash(sudo *)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)",
+      "Bash(curl *curseforge*)",
+      "Bash(*upload.curseforge.com*)",
+      "Edit(.claude/settings.json)",
+      "Edit(.claude/settings.local.json)",
+      "Edit(vendor/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.config/gh/**)"
+    ]
+  },
   "hooks": {
     "Stop": [
       {
