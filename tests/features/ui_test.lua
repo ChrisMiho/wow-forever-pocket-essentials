@@ -1012,4 +1012,31 @@ test("quest arrow: Move the arrow is still one wide button on its own line", fun
 end)
 
 
+-- One button width everywhere in a run of buttons: a slot is 3 button heights;
+-- a longer label takes whole slots, and a toggle is as wide as its longest label.
+test("settings buttons: one slot width, long labels take whole slots, toggles keep their width", function()
+    local c, PE = T.new({})
+    openSettings(c, PE)
+    local M = PE.UI:Metrics()
+    local slot = M.button * 3
+    local function near(a, b) return math.abs(a - b) < 0.01 end
+    local function width(label)
+        local b = shownButtons(c, label)[1]
+        check(b, "no button " .. label)
+        return b:GetWidth()
+    end
+    for _, label in ipairs({ "Small", "Medium", "Large", "Gold", "Horde", "Alliance", "Reload UI" }) do
+        check(near(width(label), slot), label .. " is " .. width(label) .. ", not one slot " .. slot)
+    end
+    local move = width("Move the round button")
+    local slots = (move + M.gap) / (slot + M.gap)
+    check(near(slots, math.floor(slots + 0.5)) and slots >= 1.5, "Move the round button is not whole slots: " .. move)
+    local yes = width("Touch screen: Yes")
+    c:click(shownButtons(c, "Touch screen: Yes")[1])
+    c:advance(0.2)
+    check(near(width("Touch screen: No"), yes), "the touch toggle changed width when tapped")
+    c:assertClean("slot widths")
+end)
+
+
 return { known = KNOWN_FAILURES }

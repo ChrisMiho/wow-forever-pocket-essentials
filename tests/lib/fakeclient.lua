@@ -1012,7 +1012,30 @@ function Client.new(opts)
     BlizzMethod(worldMap, "GetPinFrameLevelsManager", function() return pinLevels end)
     BlizzMethod(worldMap, "OnMapChanged", function() end)
     BlizzMethod(worldMap, "OnCanvasScaleChanged", function() end)
+    -- The map's border with its book icon (Blizzard_WorldMap.xml:85, a portrait frame,
+    -- strata HIGH; PortraitFrame.lua:34 GetPortrait). Full screen hides the book
+    -- (Blizzard_WorldMap.lua:62-65, SetPortraitShown(false)).
+    local border = Blizz("Frame", nil, worldMap)
+    border:SetAllPoints(worldMap)
+    border:SetFrameStrata("HIGH")
+    border:SetFrameLevel(20)
+    local portrait = border:CreateTexture(nil, "OVERLAY")
+    portrait:SetSize(60, 60)
+    portrait:SetPoint("TOPLEFT", border, "TOPLEFT", -5, 7)
+    BlizzMethod(border, "GetPortrait", function() return portrait end)
+    rawset(worldMap, "BorderFrame", border)
+    -- WorldMapMixin:Maximize / Minimize, in the game's order: the announcement
+    -- comes before the book is hidden or shown again.
+    BlizzMethod(worldMap, "Maximize", function()
+        c:triggerRegistry("WorldMapMaximized")
+        portrait:Hide()
+    end)
+    BlizzMethod(worldMap, "Minimize", function()
+        c:triggerRegistry("WorldMapMinimized")
+        portrait:Show()
+    end)
     c.worldMap, c.worldMapCanvas, c.blobPin = worldMap, canvas, blobPin
+    c.worldMapBorder, c.worldMapPortrait = border, portrait
     LogBlizzardMutations(blobPin, "QuestBlobPin")
 
     -- Minimap (Blizzard_Minimap/Mainline/Minimap.xml: 198 x 198 in MinimapCluster).
@@ -1943,6 +1966,15 @@ end
 
 function Client:closeWorldMap()
     self.worldMap:Hide()
+end
+
+-- WorldMapMixin:Maximize / Minimize (Blizzard_WorldMap.lua:40-73).
+function Client:maximizeWorldMap()
+    self.worldMap:Maximize()
+end
+
+function Client:minimizeWorldMap()
+    self.worldMap:Minimize()
 end
 
 function Client:openBag()

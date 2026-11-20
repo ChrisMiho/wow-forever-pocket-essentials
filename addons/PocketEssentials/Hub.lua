@@ -3,7 +3,12 @@
 -- the chat feature is on, otherwise the settings. Holding it for a moment
 -- always opens the settings. Also the entry in the minimap's addon list.
 -- Its spot is one of the presets below, moved by the offset saved in "Move
--- things" (Move.lua); choosing a preset clears that offset.
+-- on screen" (Move.lua); choosing a preset clears that offset.
+-- While the world map is open at its normal size, the button sits on the
+-- map's book icon instead (it is only anchored there, never parented), and
+-- goes back to its spot when the map closes or goes full screen (the game
+-- hides the book then). Hooks on the map's show / hide and after its
+-- Maximize / Minimize re-place it; nothing ticks.
 local ADDON_NAME, PE = ...
 
 -- Called by the game's addon list button on the minimap as
@@ -68,6 +73,8 @@ local function SetPressed(pressed)
     fill:SetColor(c[1], c[2], c[3], 1)
 end
 
+local onMap = false -- the button sits on the map's book icon (for the debug line)
+
 local function UpdateBadge()
     if not button then return end
     if not badgeText then
@@ -78,7 +85,7 @@ local function UpdateBadge()
     local m = UI:Metrics()
     if not badge then
         badge = CreateFrame("Frame", nil, button)
-        badge:SetFrameLevel(button:GetFrameLevel() + 3)
+        Hub.badge = badge
         badge.disc = UI:CreateDisc(badge, "ARTWORK", 0, 14)
         badge.disc:SetColor(0.88, 0.08, 0.08, 1)
         badge.text = badge:CreateFontString(nil, "OVERLAY", m.smallFont)
@@ -86,6 +93,7 @@ local function UpdateBadge()
         badge.text:SetPoint("CENTER", badge, "CENTER", 0, 0)
         badge.text:SetTextColor(1, 1, 1, 1)
     end
+    badge:SetFrameLevel(button:GetFrameLevel() + 3) -- every time: the button's level rises on the map
     local size = max(m.smallFontSize * 1.5, m.hub * 0.45)
     badge:SetSize(size, size)
     badge:ClearAllPoints()
@@ -112,6 +120,20 @@ local function Placement()
     return pos.point, x + dx, y + dy, size
 end
 
+-- The map's book icon, while the map is open and the book is shown (not full
+-- screen). Blizzard_SharedXML/PortraitFrame.lua:34; Blizzard_WorldMap.lua:18, :49-50, :64-65.
+local function MapPortrait()
+    local map = WorldMapFrame
+    if type(map) ~= "table" or type(map.IsShown) ~= "function" or not map:IsShown() then return nil end
+    local border = map.BorderFrame
+    if type(border) ~= "table" or type(border.GetPortrait) ~= "function" then return nil end
+    local ok, portrait = pcall(border.GetPortrait, border)
+    if not ok or type(portrait) ~= "table" or type(portrait.IsShown) ~= "function" or not portrait:IsShown() then
+        return nil
+    end
+    return portrait, border
+end
+
 -- Size and place the button from the current settings.
 function Hub:Refresh()
     if not button then return end
@@ -125,8 +147,40 @@ function Hub:Refresh()
     ring:Layout(button, size)
     fill:Layout(button, max(size - max(UI:Px(4), 2) * 2, 1))
     button:ClearAllPoints()
-    button:SetPoint(point, UIParent, point, x, y)
+    local portrait, border = MapPortrait()
+    if portrait then
+        button:SetPoint("CENTER", portrait, "CENTER", 0, 0)
+        -- The map's border is in the same layer (HIGH): draw above it.
+        if type(border.GetFrameLevel) == "function" then
+            button:SetFrameLevel(max(button:GetFrameLevel(), border:GetFrameLevel() + 10))
+        end
+    else
+        button:SetPoint(point, UIParent, point, x, y)
+    end
+    if (portrait ~= nil) ~= onMap then
+        onMap = portrait ~= nil
+        if PE.debugOn then PE:Debug("hub", onMap and "on the map's book icon" or "back to its spot") end
+    end
     UpdateBadge()
+end
+
+-- Hooks on the world map, put on once (hooks cannot be taken off again).
+local mapHooked = false
+local function HookMap()
+    if mapHooked then return true end
+    local map = WorldMapFrame
+    if type(map) ~= "table" or type(map.HookScript) ~= "function" then return false end
+    mapHooked = true
+    local refresh = PE:Wrap("hub", function() Hub:Refresh() end)
+    pcall(map.HookScript, map, "OnShow", refresh)
+    pcall(map.HookScript, map, "OnHide", refresh)
+    -- After full screen on / off (Blizzard_WorldMap.lua:40, :60). Not the game's
+    -- "WorldMapMinimized" announcement: it comes before the book is shown again.
+    if type(hooksecurefunc) == "function" then
+        if type(map.Maximize) == "function" then pcall(hooksecurefunc, map, "Maximize", refresh) end
+        if type(map.Minimize) == "function" then pcall(hooksecurefunc, map, "Minimize", refresh) end
+    end
+    return true
 end
 
 local function OnClick()
@@ -180,6 +234,12 @@ local function Create()
     button:SetScript("OnClick", PE:Wrap("hub", OnClick))
 
     Hub.button = button
+    if not HookMap() then
+        -- The map addon may load later.
+        PE:RegisterCoreEvent("ADDON_LOADED", "hub", function(_, name)
+            if name == "Blizzard_WorldMap" and HookMap() then Hub:Refresh() end
+        end)
+    end
     Hub:Refresh()
     button:Show()
     UI:OnMetricsChanged(function() Hub:Refresh() end)

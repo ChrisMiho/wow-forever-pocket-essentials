@@ -119,6 +119,20 @@ function T.new(opts)
     return c, PE
 end
 
+-- c.calls without the round button's two hooks on the world map, which go on
+-- at login whatever is switched on (spec 2026-11-20-round-button-on-map-design:
+-- always on, the owner's decision): hooksecurefunc(WorldMapFrame, "Maximize" /
+-- "Minimize"). Everything else still counts.
+function T.gameCalls(c)
+    local map, out = rawget(c.env, "WorldMapFrame"), {}
+    for _, call in ipairs(c.calls) do
+        local a = call.args or {}
+        local hubHook = call.name == "hooksecurefunc" and a[1] == map and (a[2] == "Maximize" or a[2] == "Minimize")
+        if not hubHook then out[#out + 1] = call end
+    end
+    return out
+end
+
 -- The addon's chat lines, without the "Pocket Essentials: " tag.
 local TAG = "|cffffd100Pocket Essentials|r: "
 function T.chatLines(c)

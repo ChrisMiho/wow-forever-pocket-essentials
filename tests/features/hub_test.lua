@@ -1,0 +1,121 @@
+-- Rules for the round button over the map's book icon (Hub.lua).
+-- Source: docs/superpowers/specs/2026-11-20-round-button-on-map-design.md and
+-- its plan's Review Focus. Fresh client and addon per test.
+local T = ...
+local test, eq, check = T.test, T.eq, T.check
+
+local KNOWN_FAILURES = {
+}
+
+local function centre(f)
+    local x, y = f:GetCenter()
+    return { x = x, y = y }
+end
+
+local function same(a, b, what)
+    check(math.abs(a.x - b.x) < 0.5 and math.abs(a.y - b.y) < 0.5,
+        (what or "not at the same spot") .. ": " .. a.x .. "," .. a.y .. " vs " .. b.x .. "," .. b.y, 2)
+end
+
+local function onBook(c, PE, what) same(centre(PE.Hub.button), centre(c.worldMapPortrait), what or "not on the book icon") end
+
+test("hub: opening the map puts the round button on the book icon", function()
+    local c, PE = T.new({})
+    c:openWorldMap()
+    onBook(c, PE)
+    c:assertClean("map open")
+end)
+
+test("hub: closing the map puts it back where it was", function()
+    local c, PE = T.new({})
+    local before = centre(PE.Hub.button)
+    c:openWorldMap()
+    c:closeWorldMap()
+    same(centre(PE.Hub.button), before, "not back at its spot")
+end)
+
+test("hub: full screen map leaves it where it was; back to normal size puts it on the book", function()
+    local c, PE = T.new({})
+    local before = centre(PE.Hub.button)
+    c:openWorldMap()
+    c:maximizeWorldMap()
+    same(centre(PE.Hub.button), before, "full screen: not at its spot")
+    c:minimizeWorldMap()
+    onBook(c, PE, "normal size again: not on the book icon")
+end)
+
+test("hub: closing a full screen map and opening it at normal size puts it on the book", function()
+    local c, PE = T.new({})
+    c:openWorldMap()
+    c:maximizeWorldMap()
+    c:closeWorldMap()
+    c:minimizeWorldMap()
+    c:openWorldMap()
+    onBook(c, PE)
+end)
+
+test("hub: on the map the button and its badge are above the map's border", function()
+    local c, PE = T.new({})
+    PE.Hub:SetBadge("2")
+    c:openWorldMap()
+    local button = PE.Hub.button
+    check(button:GetFrameLevel() > c.worldMapBorder:GetFrameLevel(), "the button is under the map's border")
+    check(PE.Hub.badge and PE.Hub.badge:GetFrameLevel() > button:GetFrameLevel(), "the badge is under the button")
+end)
+
+test("hub: a tap on the button while it is on the map still works", function()
+    local c, PE = T.new({ on = { "chat" } })
+    c:openWorldMap()
+    c:click(PE.Hub.button)
+    c:advance(0.2)
+    local panel = rawget(c.env, "PocketEssentialsChatPanel")
+    check(panel and panel:IsShown(), "the chat window did not open")
+end)
+
+test("hub: a moved button is back at its moved spot after the map was open", function()
+    local saved = { version = 1, enabled = {}, options = {}, ui = { size = "medium", hubPos = "LEFT", moved = { hub = { x = 30, y = -20 } } }, errors = {} }
+    local c, PE = T.new({ saved = saved })
+    local before = centre(PE.Hub.button)
+    c:openWorldMap()
+    c:closeWorldMap()
+    same(centre(PE.Hub.button), before, "not back at its moved spot")
+end)
+
+test("hub: hooks go on when the map loads after login", function()
+    local map
+    local c, PE = T.new({ setup = function(c)
+        map = rawget(c.env, "WorldMapFrame")
+        rawset(c.env, "WorldMapFrame", nil)
+    end })
+    rawset(c.env, "WorldMapFrame", map)
+    c:fire("ADDON_LOADED", "Blizzard_WorldMap")
+    c:openWorldMap()
+    onBook(c, PE)
+end)
+
+test("hub: nothing ticks for the map", function()
+    local c, PE = T.new({})
+    local onUpdate, timers = c.stats.addonOnUpdate, c.stats.addonTimers
+    for _ = 1, 2 do
+        c:openWorldMap()
+        c:advance(1)
+        c:closeWorldMap()
+        c:advance(1)
+    end
+    eq(c.stats.addonOnUpdate, onUpdate, "an OnUpdate ran")
+    eq(c.stats.addonTimers, timers, "a timer was started")
+    c:assertClean("hub map")
+end)
+
+test("hub: at first install its only game calls are the two hooks after the map's Maximize and Minimize", function()
+    local c, PE = T.new({})
+    local hooks = {}
+    for _, call in ipairs(c.calls) do
+        if call.name == "hooksecurefunc" then hooks[#hooks + 1] = call.args[2] end
+    end
+    table.sort(hooks)
+    eq(hooks, { "Maximize", "Minimize" })
+    eq(#c.calls, 2, "other game calls at first install")
+end)
+
+return { known = KNOWN_FAILURES }

@@ -47,7 +47,7 @@ test("core: every feature is off on first install", function()
         check(not PE:IsModuleEnabled(key), key .. " is on at first install")
         check(not PE:IsModuleSavedOn(key), key .. " is saved on at first install")
     end
-    eq(#c.calls, 0, "the addon called game functions that change something at first install")
+    eq(#T.gameCalls(c), 0, "the addon called game functions that change something at first install")
 end)
 
 -- Core.lua Login line 714: `PE.db.enabled[mod.key] == true`.
