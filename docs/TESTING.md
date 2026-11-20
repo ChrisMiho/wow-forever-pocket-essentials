@@ -1039,8 +1039,9 @@ Install the 0.8.1 zip (only the `PocketEssentials` folder) and log in.
    and **Quest Icon Key** are on one line, side by side. Tap the toggle: it
    flips to Off and back. Tap **Quest Icon Key**: the key page opens and its
    title says "Quest Icon Key". **Back** returns.
-2. With the d-pad, move to the toggle, then press Right (or Down): the
-   highlight goes to **Quest Icon Key** next.
+2. With the d-pad, move to the toggle, then press Right: the highlight
+   goes to **Quest Icon Key** next. Down goes to the next line, and Left
+   comes back from the key to the toggle.
 3. Open the **Setup guide** and go to the Quest icons screen: the same two
    buttons are side by side there too.
 4. Find the chat switch: it reads **Chat from round button**, with the line

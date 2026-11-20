@@ -16,7 +16,8 @@ on a device. Your saved choices carry over as they are.
 - **Hide Blue Quest Haze** (was "Hide blue haze") and **Quest Icon Key**
   (was "Icon key") sit side by side on one line in the Quest icons options,
   in the settings and in the setup guide. The key page is now called
-  "Pocket Essentials - Quest Icon Key".
+  "Pocket Essentials - Quest Icon Key". With the d-pad, press Right from
+  the toggle to reach Quest Icon Key (Down now goes to the next line).
 - **Chat from round button** is the new name of "Big chat buttons". The
   line under it says what it does: "Tap the round button to choose who to
   talk to: Say, Party, Guild or someone who whispered you." Chat text size
