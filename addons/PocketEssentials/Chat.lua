@@ -11,13 +11,12 @@
 local ADDON_NAME, PE = ...
 
 local type, tostring, pcall, select, pairs = type, tostring, pcall, select, pairs
-local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
+local floor, ceil, max, min, abs = math.floor, math.ceil, math.max, math.min, math.abs
 local tinsert, tremove = table.insert, table.remove
 local issecretvalue = issecretvalue -- nil on clients without secret values
 
 local PANEL_NAME = "PocketEssentialsChatPanel"
 local PANEL_TITLE = "Chat"
-local HINT = "Three-finger tap for the keyboard"
 local MAX_WHISPERS = 6 -- whisperers remembered, and name buttons in the window
 
 local mod -- set at the bottom of the file
@@ -446,34 +445,155 @@ end
 
 ---------------------------------------------------------------------------
 -- The window
+-- As big as its content and centred: a "Talk in" heading and the targets,
+-- then a "Whispers" heading and the names, in three columns of chips. Every
+-- size in it is the shared size times the "Size of the chat picker window"
+-- setting (opts.scale, 70 to 150 per cent), except the border. So the window
+-- lays out its own title bar and has its own three fonts, set again only when
+-- it opens or redraws and a size has changed.
 ---------------------------------------------------------------------------
 
-local UI, M
+local UI, M, S
 local panel, area
 local settingsButton, clearButton
-local hintText, sectionText, emptyText
+local talkText, whispersText, emptyText
 local targetButtons = {} -- reused on every redraw
 local navList = {}       -- tappable buttons in reading order
 local built, buildFailed = false, false
 local onTargetClick, hubClick
 local settingsHooked = false
 
-local function PanelSize()
-    local screenWidth, screenHeight = UIParent:GetWidth(), UIParent:GetHeight()
+local COLS = 3
+local CHIP_WIDTH = 3.4                  -- in buttons
+local SCALE_MIN, SCALE_MAX, SCALE_DEFAULT = 70, 150, 100
+
+local COLOR_HEAD = { 1, 0.82, 0 }
+local COLOR_DIM = { 0.62, 0.62, 0.62 }
+local COLOR_DOT = { 0.88, 0.08, 0.08 }
+
+local function Scale()
+    local n = tonumber(mod and mod.opts and mod.opts.scale)
+    if not n then return SCALE_DEFAULT end
+    return min(max(n, SCALE_MIN), SCALE_MAX)
+end
+
+-- The window's sizes (S): the shared ones times the scale, the border as it
+-- is. A window that would be wider than the screen is made smaller to fit.
+local function ScaledMetrics()
+    M = UI:Metrics()
+    local s = Scale() / 100
+    local screenWidth = UIParent:GetWidth()
     if type(screenWidth) ~= "number" or screenWidth < 100 then screenWidth = 1024 end
-    if type(screenHeight) ~= "number" or screenHeight < 100 then screenHeight = 768 end
-    return min(screenWidth * 0.96, UI:Px(1180)), screenHeight * 0.92
+    local width = (2 * M.pad + COLS * CHIP_WIDTH * M.button + (COLS - 1) * M.gap) * s
+    if width > screenWidth * 0.96 then s = s * screenWidth * 0.96 / width end
+    S = S or {}
+    S.scale = s
+    S.button, S.gap, S.pad, S.row = M.button * s, M.gap * s, M.pad * s, M.row * s
+    S.fontSize, S.smallFontSize = M.fontSize * s, M.smallFontSize * s
+    S.border = M.border
+    return S
 end
 
-local function LineHeight(kind)
-    if kind == "small" then return M.smallFontSize * 1.3 end
-    if kind == "title" then return M.fontSize * 1.12 * 1.3 end
-    return M.fontSize * 1.3
+-- The window's own fonts. Each copies the face of the shared font of its
+-- kind at the window's size. false when one could not be made: that kind
+-- then keeps the shared font (the right face, at the normal size).
+local FONT_NAMES = {
+    font = "PocketEssentialsChatFont",
+    small = "PocketEssentialsChatFontSmall",
+    title = "PocketEssentialsChatFontTitle",
+}
+local FONT_SHARED = { font = "font", small = "smallFont", title = "titleFont" } -- fields of UI:Metrics()
+local FONT_COLOR = { font = { 1, 1, 1 }, small = { 0.84, 0.84, 0.84 }, title = { 1, 0.82, 0 } }
+local fonts, fontSizes = {}, {}
+
+local function SharedFont(kind)
+    local object = _G[M[FONT_SHARED[kind]]]
+    if type(object) == "table" and type(object.GetFont) == "function" then return object end
+    return nil
 end
 
-local COLOR_HINT = { 0.84, 0.84, 0.84 }
-local COLOR_SECTION = { 1, 0.82, 0 }
-local COLOR_PLAIN = { 1, 1, 1 }
+local function UpdateFonts()
+    local sizes = { font = S.fontSize, small = S.smallFontSize, title = S.fontSize * 1.12 }
+    for kind, name in pairs(FONT_NAMES) do
+        local object = fonts[kind]
+        if object == nil then
+            local ok, made = false, nil
+            if type(CreateFont) == "function" then ok, made = pcall(CreateFont, name) end
+            object = (ok and made) or false
+            if object then
+                local c = FONT_COLOR[kind]
+                pcall(object.SetTextColor, object, c[1], c[2], c[3], 1)
+                pcall(object.SetShadowColor, object, 0, 0, 0, 1)
+                pcall(object.SetShadowOffset, object, 1, -1)
+            end
+            fonts[kind] = object
+        end
+        if object and (not fontSizes[kind] or abs(fontSizes[kind] - sizes[kind]) > 0.001) then
+            local shared = SharedFont(kind)
+            local ok, file, _, flags = false, nil, nil, nil
+            if shared then ok, file, _, flags = pcall(shared.GetFont, shared) end
+            if ok and type(file) == "string" and file ~= "" then
+                local set = pcall(object.SetFont, object, file, sizes[kind], type(flags) == "string" and flags or "")
+                if set and object:GetFont() then
+                    fontSizes[kind] = sizes[kind]
+                else
+                    fonts[kind] = false
+                end
+            else
+                fonts[kind] = false
+            end
+        end
+    end
+end
+
+-- The font object for a kind: the window's own, or the shared one.
+local function FontFor(kind)
+    return fonts[kind] or SharedFont(kind)
+end
+
+-- Set once, when the text is made: the object stays the same and its size
+-- follows the window. (Setting a font object again could reset the colour a
+-- button's style gave its label.)
+local function UseFont(fontString, kind)
+    local object = FontFor(kind)
+    if object then fontString:SetFontObject(object) end
+end
+
+-- A button's label inset at the window's size.
+local function FitLabel(btn)
+    btn.peText:ClearAllPoints()
+    btn.peText:SetPoint("LEFT", btn, "LEFT", S.gap * 0.5, 0)
+    btn.peText:SetPoint("RIGHT", btn, "RIGHT", -S.gap * 0.5, 0)
+end
+
+-- The title bar at the window's size: what UI.lua's panel layout does with
+-- the shared sizes, with Settings left of Close.
+local function LayoutChrome(width, height)
+    panel:SetPanelSize(width, height)
+    local b, bar = S.border, S.button + S.gap
+    local close = panel.closeButton
+    close:SetSize(S.button * 2, S.button)
+    close:ClearAllPoints()
+    close:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -(b + S.gap * 0.5), -(b + S.gap * 0.5))
+    FitLabel(close)
+
+    settingsButton:SetSize(S.button * 2.6, S.button)
+    settingsButton:ClearAllPoints()
+    settingsButton:SetPoint("RIGHT", close, "LEFT", -S.gap, 0)
+    FitLabel(settingsButton)
+
+    panel.peTitle:ClearAllPoints()
+    panel.peTitle:SetPoint("LEFT", panel, "TOPLEFT", S.pad, -(b + bar * 0.5))
+    panel.peTitle:SetPoint("RIGHT", settingsButton, "LEFT", -S.gap, 0)
+
+    panel.peLine:ClearAllPoints()
+    panel.peLine:SetPoint("TOPLEFT", panel, "TOPLEFT", b, -(b + bar))
+    panel.peLine:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -b, -(b + bar))
+
+    panel.content:ClearAllPoints()
+    panel.content:SetPoint("TOPLEFT", panel, "TOPLEFT", S.pad, -(b + bar + S.gap))
+    panel.content:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -S.pad, S.pad)
+end
 
 local function PlaceText(fontString, text, y, width, color)
     fontString:ClearAllPoints()
@@ -484,15 +604,40 @@ local function PlaceText(fontString, text, y, width, color)
     fontString:Show()
 end
 
-local function PlaceButton(btn, label, x, y, width, height)
+-- The round red dot at a chip's top-right, for a name waiting for an answer.
+local function SetDot(btn, shown)
+    local dot = btn.peChatDot
+    if not shown then
+        if dot then dot:SetShown(false) end
+        return
+    end
+    if not dot then
+        dot = UI:CreateDisc(btn, "OVERLAY", 5)
+        dot:SetColor(COLOR_DOT[1], COLOR_DOT[2], COLOR_DOT[3], 1)
+        btn.peChatDot = dot
+    end
+    local size, inset = S.smallFontSize * 0.7, S.gap * 0.6
+    dot:Layout(btn, size)
+    dot.texture:ClearAllPoints()
+    dot.texture:SetPoint("CENTER", btn, "TOPRIGHT", -(inset + size * 0.5), -(inset + size * 0.5))
+    dot:SetShown(true)
+end
+
+-- index counts from 1 in a grid whose top is at y.
+local function PlaceChip(btn, label, index, y, style)
+    local chip = S.button * CHIP_WIDTH
+    local col, row = (index - 1) % COLS, floor((index - 1) / COLS)
+    local top = y + row * (S.button + S.gap)
     btn:SetSelected(false)
-    btn:SetStyle("normal")
+    btn:SetStyle(style or "normal")
     btn:SetBadgeText(nil)
+    SetDot(btn, false)
     btn:ClearAllPoints()
     btn:SetLabel(label)
-    btn:SetSize(width, height)
-    btn:SetPoint("TOPLEFT", area.child, "TOPLEFT", x, -y)
-    btn.peScrollTop, btn.peScrollBottom = y, y + height
+    btn:SetSize(chip, S.button)
+    btn:SetPoint("TOPLEFT", area.child, "TOPLEFT", col * (chip + S.gap), -top)
+    FitLabel(btn)
+    btn.peScrollTop, btn.peScrollBottom = top, top + S.button
     btn:Show()
     navList[#navList + 1] = btn
 end
@@ -501,14 +646,23 @@ local function TargetButton(index)
     local btn = targetButtons[index]
     if not btn then
         btn = UI:CreateButton(area.child, "")
+        UseFont(btn.peText, "font")
         btn:SetScript("OnClick", onTargetClick)
         targetButtons[index] = btn
     end
     return btn
 end
 
+-- The height of n chips in rows of three.
+local function GridHeight(n)
+    local rows = ceil(n / COLS)
+    if rows < 1 then return 0 end
+    return rows * S.button + (rows - 1) * S.gap
+end
+
 local function DoRefresh()
-    M = UI:Metrics()
+    ScaledMetrics()
+    UpdateFonts()
     for i = #navList, 1, -1 do navList[i] = nil end
 
     local targets = GatherTargets()
@@ -525,102 +679,68 @@ local function DoRefresh()
         PE:Debug("chat", "picker drawn: " .. #targets .. " targets, " .. #shown .. " whisper entries, " .. marked .. " marked")
     end
 
-    local gap = M.gap
-    local width, height = panel.contentWidth, panel.contentHeight
-    local hintHeight, sectionHeight, emptyHeight = LineHeight("small"), LineHeight("title"), LineHeight("font")
+    local gap, b = S.gap, S.border
+    local contentWidth = COLS * S.button * CHIP_WIDTH + (COLS - 1) * gap
+    local lineHeight = S.smallFontSize * 1.15
+    local head = lineHeight + gap * 0.4
+    local contentHeight = head + GridHeight(#targets) + gap * 1.5 + head
+        + (#shown > 0 and GridHeight(#shown + 1) or lineHeight)
 
-    local function Columns(forWidth)
-        return max(1, min(4, floor((forWidth + gap) / (M.button * 4.4 + gap))))
-    end
-    local function TotalHeight(cols, buttonHeight)
-        local total = hintHeight + gap + ceil(#targets / cols) * (buttonHeight + gap) + sectionHeight + gap * 0.5
-        if #shown == 0 then
-            total = total + emptyHeight + gap
-        else
-            total = total + ceil(#shown / cols) * (buttonHeight + gap)
-        end
-        if marked > 0 then total = total + buttonHeight + gap end
-        return total - gap
-    end
+    -- As tall as the content. Only if that is taller than the screen allows
+    -- does the list scroll, with its bar beside the chips.
+    local chrome = b + S.button + gap + gap + S.pad
+    local screenHeight = UIParent:GetHeight()
+    if type(screenHeight) ~= "number" or screenHeight < 100 then screenHeight = 768 end
+    local maxHeight = screenHeight * 0.92
+    local scroll = chrome + contentHeight > maxHeight
+    local barWidth = (scroll and PE:UsesTouch()) and (M.button * 0.75 + M.gap) or 0
+    local viewHeight = scroll and max(maxHeight - chrome, S.button) or contentHeight
 
-    -- Tall buttons if everything fits, plain ones if that is what it takes,
-    -- and only then a list that scrolls.
+    LayoutChrome(2 * S.pad + contentWidth + barWidth, chrome + viewHeight)
     area:ClearAllPoints()
     area:SetPoint("TOPLEFT", panel.content, "TOPLEFT", 0, 0)
-    area:Layout(width, height)
-    local narrowWidth = area.viewWidth -- what is left beside the paging buttons
-    local cols, buttonHeight, scroll = Columns(width), M.button * 1.25, false
-    if TotalHeight(cols, buttonHeight) > height then
-        buttonHeight = M.button
-        if TotalHeight(cols, buttonHeight) > height then
-            scroll = true
-            cols = Columns(narrowWidth)
-        end
-    end
-    if not scroll then
-        -- No scrolling needed: widen the area so the list gets the whole
-        -- window and the (hidden) paging buttons sit outside it.
-        area:Layout(width + (width - narrowWidth), height)
-    end
-    area:SetBarShown(scroll)
-    local viewWidth = scroll and narrowWidth or min(area.viewWidth, width)
-    local colWidth = max((viewWidth - (cols - 1) * gap) / cols, 1)
+    area:Layout(contentWidth + barWidth, viewHeight, not scroll)
 
     local y = 0
-    PlaceText(hintText, HINT, y, viewWidth, COLOR_HINT)
-    y = y + hintHeight + gap
-
+    PlaceText(talkText, "Talk in", y, contentWidth, COLOR_HEAD)
+    y = y + head
     for i = 1, #targets do
         local btn = TargetButton(i)
-        PlaceButton(btn, targets[i].label, ((i - 1) % cols) * (colWidth + gap),
-            y + floor((i - 1) / cols) * (buttonHeight + gap), colWidth, buttonHeight)
+        PlaceChip(btn, targets[i].label, i, y)
         btn.peChatTarget, btn.peChatEntry = targets[i], nil
     end
-    y = y + ceil(#targets / cols) * (buttonHeight + gap)
+    y = y + GridHeight(#targets) + gap * 1.5
     local used = #targets
 
-    PlaceText(sectionText, "Whispers", y, viewWidth, COLOR_SECTION)
-    y = y + sectionHeight + gap * 0.5
+    PlaceText(whispersText, "Whispers", y, contentWidth, COLOR_HEAD)
+    y = y + head
 
     if #shown == 0 then
-        PlaceText(emptyText, "No whispers yet.", y, viewWidth, COLOR_PLAIN)
-        y = y + emptyHeight + gap
+        PlaceText(emptyText, "No whispers yet.", y, contentWidth, COLOR_DIM)
+        clearButton:Hide()
+        y = y + lineHeight
     else
         emptyText:Hide()
         for i = 1, #shown do
             local entry = shown[i]
             local btn = TargetButton(used + i)
-            PlaceButton(btn, Escape(entry.name), ((i - 1) % cols) * (colWidth + gap),
-                y + floor((i - 1) / cols) * (buttonHeight + gap), colWidth, buttonHeight)
+            PlaceChip(btn, Escape(entry.name), i, y, entry.unanswered and "warn" or "normal")
             btn.peChatTarget, btn.peChatEntry = nil, entry
-            if entry.unanswered then
-                btn:SetStyle("warn")
-                btn:SetBadgeText("NEW")
-            end
+            if entry.unanswered then SetDot(btn, true) end
         end
-        y = y + ceil(#shown / cols) * (buttonHeight + gap)
+        -- Always the last chip, so it is always in the same place.
+        PlaceChip(clearButton, "Clear marks", #shown + 1, y, "off")
+        y = y + GridHeight(#shown + 1)
         used = used + #shown
     end
 
-    if marked > 0 then
-        PlaceButton(clearButton, "Clear marks", 0, y, colWidth, buttonHeight)
-        y = y + buttonHeight + gap
-    else
-        clearButton:Hide()
-    end
-
     for i = used + 1, #targetButtons do targetButtons[i]:Hide() end
-    area:SetContentHeight(max(y - gap, 1))
+    area:SetContentHeight(max(y, 1))
 
     if scroll and area.upButton:IsShown() then
         navList[#navList + 1] = area.upButton
         navList[#navList + 1] = area.downButton
     end
-
-    -- In the title bar, left of Close.
-    settingsButton:SetSize(M.button * 2.6, M.button)
-    settingsButton:ClearAllPoints()
-    settingsButton:SetPoint("RIGHT", panel.closeButton, "LEFT", -gap, 0)
     navList[#navList + 1] = settingsButton
     navList[#navList + 1] = panel.closeButton
     panel:NavRefresh()
@@ -698,24 +818,30 @@ end
 
 local function Build()
     UI = PE.UI
-    M = UI:Metrics()
     onTargetClick = mod:Wrap(TargetClicked)
+    ScaledMetrics()
+    UpdateFonts()
 
-    local width, height = PanelSize()
-    panel = UI:CreatePanel(PANEL_NAME, PANEL_TITLE, width, height)
+    -- The size is set each time the window is drawn (DoRefresh).
+    panel = UI:CreatePanel(PANEL_NAME, PANEL_TITLE, UI:Px(600), UI:Px(400))
     area = UI:CreateScrollArea(panel.content)
+    UseFont(panel.peTitle, "title")
+    UseFont(panel.closeButton.peText, "font")
 
-    hintText = UI:CreateText(area.child, "small")
-    sectionText = UI:CreateText(area.child, "title")
-    emptyText = UI:CreateText(area.child, "font")
-    hintText:SetWordWrap(false)
-    sectionText:SetWordWrap(false)
-    emptyText:SetWordWrap(false)
+    talkText = UI:CreateText(area.child, "small")
+    whispersText = UI:CreateText(area.child, "small")
+    emptyText = UI:CreateText(area.child, "small")
+    for _, text in ipairs({ talkText, whispersText, emptyText }) do
+        UseFont(text, "small")
+        text:SetWordWrap(false)
+    end
 
     clearButton = UI:CreateButton(area.child, "Clear marks")
+    UseFont(clearButton.peText, "font")
     clearButton:SetScript("OnClick", mod:Wrap(ClearMarks))
 
     settingsButton = UI:CreateButton(panel, "Settings")
+    UseFont(settingsButton.peText, "font")
     settingsButton:SetScript("OnClick", mod:Wrap(function()
         panel:Hide()
         PE:OpenSettings()
@@ -728,11 +854,9 @@ local function Build()
         if btn.peScrollTop then area:ScrollIntoView(btn) end
     end
 
+    -- A new button size or screen: drawn again if open, else when it next opens.
     UI:OnMetricsChanged(mod:Wrap(function()
-        if not built then return end
-        local newWidth, newHeight = PanelSize()
-        panel:SetPanelSize(newWidth, newHeight)
-        Refresh()
+        if built then Refresh() end
     end))
 end
 
@@ -784,7 +908,7 @@ end
 -- The steps are the game's own list, read when the row is drawn or tapped,
 -- then two larger sizes. Nothing is saved here: the game keeps the size, and
 -- nothing is changed until one of the two buttons is tapped. The row is
--- drawn whether "Chat from round button" is on or off.
+-- drawn whether Chat picker is on or off.
 ---------------------------------------------------------------------------
 
 -- Our copy of the game's list (CHAT_FONT_HEIGHTS, FloatingChatFrame.lua:33),
@@ -967,13 +1091,16 @@ end
 
 mod = PE:RegisterModule({
     key = "chat",
-    label = "Chat from round button",
-    desc = "Tap the round button to choose who to talk to: Say, Party, Guild or someone who whispered you.",
+    label = "Chat picker",
+    desc = "Tap the round button to pick who to talk to.",
     order = 60,
-    defaults = { whispers = {} },
+    defaults = { whispers = {}, scale = SCALE_DEFAULT },
 
     options = {
-        { label = "Chat text size", value = TextSizeValue, stepper = TextSizeStepper, always = true },
+        { label = "Chat text size", value = TextSizeValue, stepper = TextSizeStepper, always = true,
+          help = "For every chat window, even with Chat picker off." },
+        { key = "scale", label = "Size of the chat picker window",
+          number = { min = SCALE_MIN, max = SCALE_MAX, step = 10, default = SCALE_DEFAULT, suffix = "%", unit = "of normal" } },
     },
 
     OnEnable = function(self)

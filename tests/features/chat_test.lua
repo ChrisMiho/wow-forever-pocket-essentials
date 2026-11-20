@@ -1,4 +1,4 @@
--- Rules for "Chat from round button" (Chat.lua).
+-- Rules for "Chat picker" (Chat.lua), called "Chat from round button" before 0.9.0.
 -- Sources: Chat.lua's header and comments; docs/DECISIONS.md, part "Chat" of
 -- "Decisions made without the maintainer"; PRD.md goals 3 and 4.
 -- Each test names its source in a comment. Fresh client and addon per test.
@@ -247,9 +247,8 @@ test("chat: Clear marks clears every mark and the badge, and keeps the whisperer
     eq(badge(c, PE), nil)
     eq(savedList(PE), { { name = "Bob", unanswered = false }, { name = "Ann", unanswered = false } })
     eq(readPicker(c).whispers, { "Bob", "Ann" })
-    for _, b in ipairs(visibleButtons(c, panelOf(c))) do
-        check(T.labelOf(b) ~= "Clear marks", "the Clear marks button is still showing with nothing to clear")
-    end
+    -- Spec 0.9.0 "Chat window": Clear marks is always the last chip while names are listed.
+    check(buttonLabelled(c, "Clear marks"), "Clear marks went away while names are listed")
 end)
 
 -- DECISIONS "Chat": "A whisper arriving while the picker is open updates the badge only".
@@ -960,8 +959,9 @@ test("chat size: nothing is called or saved until a button is tapped", function(
     eq(#sizeCalls(c), 0)
     local saved = rawget(c.env, "PocketEssentialsDB").options.chat
     eq(saved.whispers, {})
+    -- The window size (spec 0.9.0, key scale) is the picker's own setting, not the text size.
     local keys = 0
-    for _ in pairs(saved) do keys = keys + 1 end
+    for key in pairs(saved) do if key ~= "scale" then keys = keys + 1 end end
     eq(keys, 1, "the chat feature saved something besides its whisper list")
 end)
 
@@ -1197,7 +1197,8 @@ test("chat size: with the feature off nothing is saved and nothing is called unt
     c:click(shownButton(c, "+"))
     local saved = rawget(c.env, "PocketEssentialsDB").options.chat
     for key in pairs(type(saved) == "table" and saved or {}) do
-        eq(key, "whispers", "the chat feature saved something besides its whisper list")
+        -- scale: the picker window's size (spec 0.9.0), not the text size.
+        if key ~= "scale" then eq(key, "whispers", "the chat feature saved something besides its whisper list") end
     end
 end)
 
@@ -1216,8 +1217,10 @@ test("chat size: a tap in a fight with the feature off is held and applied when 
 end)
 
 -- Spec 3: "If the function or the main chat window is missing, the row says 'Not available...'".
+-- With Chat picker off, so the only - and + would be the text size row's (the
+-- picker's window size row has its own; spec 0.9.0).
 test("chat size: without the game's function the row says so and has no buttons", function()
-    local c, PE = newChat(function(cc) rawset(cc.env, "FCF_SetChatWindowFontSize", nil) end)
+    local c, PE = T.new({ setup = function(cc) rawset(cc.env, "FCF_SetChatWindowFontSize", nil) end })
     PE:OpenSettings()
     c:advance(0.2)
     check(hasText(c, "Chat text size: Not available on this version of the game"), table.concat(settingsTexts(c), " | "))
@@ -1225,7 +1228,7 @@ test("chat size: without the game's function the row says so and has no buttons"
 end)
 
 test("chat size: without a main chat window the row says so and has no buttons", function()
-    local c, PE = newChat(function(cc) rawset(cc.env, "DEFAULT_CHAT_FRAME", nil) end)
+    local c, PE = T.new({ setup = function(cc) rawset(cc.env, "DEFAULT_CHAT_FRAME", nil) end })
     PE:OpenSettings()
     c:advance(0.2)
     check(hasText(c, "Chat text size: Not available on this version of the game"), table.concat(settingsTexts(c), " | "))
@@ -1454,12 +1457,258 @@ test("chat: move: moving with no prompt showing never shows or hides it", functi
     eq(#c:problems(), 0, table.concat(c:problems(), " / "))
 end)
 
--- Spec 2026-11-19-0.8.1-clearer-labels, section 3.
-test("chat: the switch is called Chat from round button, with the new line under it", function()
+-- Spec 2026-11-20-0.9.0-ui-redesign, "Feature names and lines".
+test("chat: the switch is called Chat picker, with its line under it", function()
     local c, PE = T.new({})
     local mod = PE:GetModule("chat")
-    eq(mod.label, "Chat from round button")
-    eq(mod.desc, "Tap the round button to choose who to talk to: Say, Party, Guild or someone who whispered you.")
+    eq(mod.label, "Chat picker")
+    eq(mod.desc, "Tap the round button to pick who to talk to.")
+end)
+
+---------------------------------------------------------------------------
+-- Spec 2026-11-20-0.9.0-ui-redesign: "Chat window" and the Chat picker rows.
+---------------------------------------------------------------------------
+
+-- The window's size rules at a scale (s = scale/100), straight from the spec.
+local function expectedWidth(PE, s)
+    local M = PE.UI:Metrics()
+    return 2 * M.pad * s + 3 * (3.4 * M.button * s) + 2 * M.gap * s
+end
+-- Rows of targets, and of names plus Clear marks (0: the "No whispers yet." line).
+local function expectedHeight(PE, s, targetRows, nameRows)
+    local M = PE.UI:Metrics()
+    local button, gap, pad, small = M.button * s, M.gap * s, M.pad * s, M.smallFontSize * s
+    local head = small * 1.15 + gap * 0.4
+    local function grid(rows) return rows * button + (rows - 1) * gap end
+    local content = head + grid(targetRows) + gap * 1.5 + head
+        + (nameRows > 0 and grid(nameRows) or small * 1.15)
+    return M.border + (button + gap) + gap + content + pad
+end
+
+local function panelSize(c)
+    local l, r, t, b = c._rect(panelOf(c))
+    return r - l, t - b
+end
+
+local function near(a, b, what)
+    check(type(a) == "number" and math.abs(a - b) < 0.01, what .. ": " .. tostring(a) .. ", wanted " .. tostring(b))
+end
+
+-- Every shown text in the chat window.
+local function windowTexts(c)
+    local out = {}
+    walk(c, panelOf(c), function(w)
+        if not w:IsVisible() then return end
+        for _, r in ipairs(c._state(w).regions) do
+            local st = c._state(r)
+            if st.type == "FontString" and st.shown and st.text and st.text ~= "" then out[#out + 1] = st.text end
+        end
+    end)
+    return out
+end
+
+-- The chips: the buttons in the window's list (not Settings and Close in the title bar).
+local function chips(c)
+    local out = {}
+    for _, b in ipairs(visibleButtons(c, panelOf(c))) do
+        local l = T.labelOf(b)
+        if l ~= "Settings" and l ~= "Close" then out[#out + 1] = b end
+    end
+    return out
+end
+
+-- A shown red dot on a button: a texture tinted (.88, .08, .08).
+local function redDot(c, btn)
+    for _, r in ipairs(c._state(btn).regions) do
+        local st = c._state(r)
+        local v = st.vertexColor
+        if st.type == "Texture" and st.shown and v and math.abs(v[1] - 0.88) < 0.001
+            and math.abs(v[2] - 0.08) < 0.001 and math.abs(v[3] - 0.08) < 0.001 then return r end
+    end
+    return nil
+end
+
+test("chat window: the width is 3 chips of 3.4 buttons plus the gaps and padding, at the normal size", function()
+    local c, PE = newChat()
+    openPicker(c, PE)
+    local w = panelSize(c)
+    near(w, expectedWidth(PE, 1), "width")
+    local M = PE.UI:Metrics()
+    local l, r, t, b = c._rect(buttonLabelled(c, "Say"))
+    near(r - l, 3.4 * M.button, "chip width")
+    near(t - b, M.button, "chip height")
+end)
+
+test("chat window: the size follows the Size of the chat picker window setting", function()
+    local c, PE = newChat()
+    eq(PE:GetModule("chat").opts.scale, 100, "the default")
+    c:whisperIn("Ann", "hi")
+    c:whisperIn("Bob", "hi")
+    PE:GetModule("chat").opts.scale = 150
+    openPicker(c, PE)
+    local w, h = panelSize(c)
+    near(w, expectedWidth(PE, 1.5), "width at 150%")
+    near(h, expectedHeight(PE, 1.5, 1, 1), "height at 150%")
+    local M = PE.UI:Metrics()
+    local l, r, t, b = c._rect(buttonLabelled(c, "Say"))
+    near(r - l, 3.4 * M.button * 1.5, "chip width at 150%")
+    near(t - b, M.button * 1.5, "chip height at 150%")
+    tapHub(c, PE)
+    PE:GetModule("chat").opts.scale = 70
+    openPicker(c, PE)
+    w, h = panelSize(c)
+    near(w, expectedWidth(PE, 0.7), "width at 70%")
+    near(h, expectedHeight(PE, 0.7, 1, 1), "height at 70%")
+end)
+
+test("chat window: the text follows the window's size too", function()
+    local c, PE = newChat()
+    PE:GetModule("chat").opts.scale = 150
+    openPicker(c, PE)
+    local M = PE.UI:Metrics()
+    local _, size = buttonLabelled(c, "Say").peText:GetFont()
+    near(size, M.fontSize * 1.5, "chip text size at 150%")
+    tapHub(c, PE)
+    PE:GetModule("chat").opts.scale = 100
+    openPicker(c, PE)
+    _, size = buttonLabelled(c, "Say").peText:GetFont()
+    near(size, M.fontSize, "chip text size back at 100%")
+end)
+
+test("chat window: the height follows the content", function()
+    local c, PE = newChat()
+    openPicker(c, PE)
+    local _, h = panelSize(c)
+    near(h, expectedHeight(PE, 1, 1, 0), "Say and Yell, no whispers")
+    tapHub(c, PE)
+    c:whisperIn("Ann", "hi")
+    c:whisperIn("Bob", "hi")
+    openPicker(c, PE)
+    _, h = panelSize(c)
+    near(h, expectedHeight(PE, 1, 1, 1), "two names and Clear marks: one row")
+    tapHub(c, PE)
+    c:whisperIn("Cat", "hi")
+    openPicker(c, PE)
+    _, h = panelSize(c)
+    near(h, expectedHeight(PE, 1, 1, 2), "three names and Clear marks: two rows")
+    local w = panelSize(c)
+    near(w, expectedWidth(PE, 1), "the width does not change with the content")
+end)
+
+test("chat window: content taller than the screen scrolls inside a window that fits", function()
+    local c, PE = newChat(function(c)
+        c.world.group, c.world.guild = "raid", "Pocket Guild"
+        local list = {}
+        for i = 1, 10 do list[i] = { id = i, name = "Channel " .. i } end
+        c.world.channels = list
+    end)
+    for _, n in ipairs({ "Ann", "Bob", "Cat", "Dan", "Eve", "Fay" }) do c:whisperIn(n, "hi") end
+    PE:GetModule("chat").opts.scale = 150
+    local p = openPicker(c, PE)
+    eq(#p.whispers, 6)
+    local _, h = panelSize(c)
+    local screenHeight = rawget(c.env, "UIParent"):GetHeight()
+    check(h <= screenHeight * 0.92 + 0.01, "the window is taller than the screen: " .. h)
+    local w = panelSize(c)
+    check(w <= rawget(c.env, "UIParent"):GetWidth(), "the window is wider than the screen: " .. w)
+    c:assertClean("a long chat picker")
+end)
+
+test("chat window: the chips are in 3 columns", function()
+    local c, PE = newChat(function(c)
+        c.world.group, c.world.guild = "party", "Pocket Guild"
+        c.world.channels = { { id = 1, name = "General" }, { id = 2, name = "Trade" } }
+    end)
+    local p = openPicker(c, PE)
+    eq(#p.targets, 6, "targets: " .. table.concat(p.targets, ", "))
+    local xs, ys = {}, {}
+    for i, label in ipairs(p.targets) do
+        local l, _, t = c._rect(buttonLabelled(c, label))
+        xs[i], ys[i] = l, t
+    end
+    check(xs[1] < xs[2] and xs[2] < xs[3], "the first row is not three across")
+    near(ys[1], ys[3], "first row")
+    near(xs[4], xs[1], "the fourth chip starts the second row")
+    check(ys[4] < ys[1], "the fourth chip is not below the first")
+end)
+
+test("chat window: the keyboard hint is gone, the headings are Talk in and Whispers", function()
+    local c, PE = newChat()
+    openPicker(c, PE)
+    local texts = table.concat(windowTexts(c), " | ")
+    check(not texts:find("Three-finger", 1, true), "the hint is still there: " .. texts)
+    check(texts:find("Talk in", 1, true), "no Talk in heading: " .. texts)
+    check(texts:find("Whispers", 1, true), "no Whispers heading: " .. texts)
+    check(texts:find("No whispers yet.", 1, true), "no empty line: " .. texts)
+    check(not texts:find("Clear marks", 1, true), "Clear marks with no names: " .. texts)
+end)
+
+test("chat window: Clear marks is the last chip, in the off style, even with nothing marked", function()
+    local c, PE = newChat()
+    c:whisperIn("Ann", "hi")
+    c:whisperIn("Bob", "hi")
+    c:whisperOut("Bob", "hello")
+    openPicker(c, PE)
+    local list = chips(c)
+    local last = list[#list]
+    eq(T.labelOf(last), "Clear marks")
+    eq(last.peStyle, "off")
+    local texts = table.concat(windowTexts(c), " | ")
+    check(not texts:find("No whispers yet.", 1, true), "the empty line shows with names listed")
+    c:whisperOut("Ann", "hello")
+    tapHub(c, PE)
+    openPicker(c, PE)
+    list = chips(c)
+    eq(T.labelOf(list[#list]), "Clear marks", "with no marks at all")
+end)
+
+test("chat window: an unanswered name has the warn style and a red dot at its top-right, no NEW", function()
+    local c, PE = newChat()
+    c:whisperIn("Ann", "hi")
+    c:whisperIn("Bob", "hi")
+    c:whisperOut("Bob", "hello")
+    openPicker(c, PE)
+    local ann, bob = buttonLabelled(c, "Ann"), buttonLabelled(c, "Bob")
+    eq(ann.peStyle, "warn")
+    eq(bob.peStyle, "normal")
+    check(redDot(c, bob) == nil, "a dot on an answered name")
+    local dot = redDot(c, ann)
+    check(dot, "no red dot on the unanswered name")
+    local M = PE.UI:Metrics()
+    local d, inset = M.smallFontSize * 0.7, M.gap * 0.6
+    local _, br, bt = c._rect(ann)
+    local dl, dr, dt, db = c._rect(dot)
+    near((dl + dr) / 2, br - inset - d / 2, "dot centre x")
+    near((dt + db) / 2, bt - inset - d / 2, "dot centre y")
+    check(dr - dl >= d - 0.01 and dr - dl <= d * 1.05, "dot size " .. (dr - dl))
+    local texts = table.concat(windowTexts(c), " | ")
+    check(not texts:find("NEW", 1, true), "NEW is still shown: " .. texts)
+end)
+
+test("chat window: Settings and Close stay in the title bar", function()
+    local c, PE = newChat()
+    openPicker(c, PE)
+    local M = PE.UI:Metrics()
+    local _, pr, pt = c._rect(panelOf(c))
+    local close, settings = buttonLabelled(c, "Close"), buttonLabelled(c, "Settings")
+    local _, cr, ct = c._rect(close)
+    local _, sr, st = c._rect(settings)
+    check(pt - ct < M.button, "Close is not in the title bar")
+    near(st, ct, "Settings is not beside Close")
+    check(sr < cr and cr < pr, "Settings is not left of Close")
+end)
+
+test("chat options: Chat text size keeps always and gains help; the window size is a number from 70 to 150", function()
+    local c, PE = T.new({})
+    local opts = PE:GetModule("chat").options
+    eq(opts[1].label, "Chat text size")
+    eq(opts[1].always, true)
+    eq(opts[1].help, "For every chat window, even with Chat picker off.")
+    local n = opts[2]
+    eq(n.key, "scale")
+    eq(n.label, "Size of the chat picker window")
+    eq(n.number, { min = 70, max = 150, step = 10, default = 100, suffix = "%", unit = "of normal" })
+    eq(PE:GetModule("chat").opts.scale, 100)
 end)
 
 return { known = KNOWN_FAILURES }
