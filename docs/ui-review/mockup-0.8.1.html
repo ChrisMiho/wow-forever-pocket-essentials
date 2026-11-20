@@ -1,0 +1,1024 @@
+<title>Pocket Essentials UI</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Tenor+Sans&display=swap">
+<style>
+/* Layout: a tool bar on top, a list of screens on the left, the game screen drawn to scale in the middle, notes under it. */
+:root{
+  --bg:#f3f2ef; --panel:#ffffff; --fg:#1d1c1a; --muted:#6b675f; --line:#dedad2;
+  --accent:#9a7410; --accent-soft:#f3e7c4; --stage:#111113;
+  --ui:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --game:"Tenor Sans","Trebuchet MS",sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141413; --panel:#1d1c1a; --fg:#ecebe7; --muted:#a09c93; --line:#34322e;
+  --accent:#e0b43c; --accent-soft:#3a3018; --stage:#0b0b0c; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141413; --panel:#1d1c1a; --fg:#ecebe7; --muted:#a09c93; --line:#34322e;
+  --accent:#e0b43c; --accent-soft:#3a3018; --stage:#0b0b0c; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--ui);font-size:14px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px}
+header{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;margin-bottom:14px}
+h1{font-size:18px;font-weight:600;margin:0;letter-spacing:-.01em}
+h1 small{font-weight:500;color:var(--muted);font-size:13px;margin-left:8px}
+.controls{display:flex;flex-wrap:wrap;gap:10px 18px}
+.seg{display:flex;align-items:center;gap:6px}
+.seg>span{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.seg button{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--fg);padding:4px 10px;cursor:pointer}
+.seg button:first-of-type{border-radius:6px 0 0 6px}.seg button:last-of-type{border-radius:0 6px 6px 0}
+.seg button+button{margin-left:-7px}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--fg);font-weight:600;position:relative}
+.seg button:focus-visible,nav button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{display:grid;grid-template-columns:210px minmax(0,1fr);gap:18px;align-items:start}
+nav{display:flex;flex-direction:column;gap:2px;position:sticky;top:env(safe-area-inset-top,0px)}
+nav h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:12px 8px 4px;font-weight:600}
+nav h2:first-child{margin-top:0}
+nav button{font:inherit;text-align:left;background:none;border:0;color:var(--fg);padding:6px 8px;border-radius:6px;cursor:pointer}
+nav button:hover{background:var(--line)}
+nav button[aria-current="true"]{background:var(--accent-soft);font-weight:600}
+main{min-width:0}
+.stagebox{background:var(--stage);border-radius:8px;overflow:hidden;position:relative}
+.stagebox.actual{overflow:auto}
+.scaler{transform-origin:0 0}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-width:0}
+.card h3{margin:0 0 6px;font-size:13px;font-weight:600}
+.card ul{margin:0;padding-left:18px}.card li{margin:2px 0}
+.card .n{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:600}
+.sub{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}
+.hint{color:var(--muted);font-size:12.5px;margin:8px 0 0}
+@media (max-width:760px){.wrap{grid-template-columns:1fr}nav{position:static;flex-direction:row;flex-wrap:wrap}nav h2{width:100%}}
+
+/* ---- the game screen (always dark: it is the game) ---- */
+.screen{position:relative;overflow:hidden;font-family:var(--game);color:#fff;
+  background:radial-gradient(120% 90% at 50% 60%,#3b3326 0%,#231e17 55%,#141210 100%)}
+.screen *{position:absolute}
+.screen .t{white-space:pre-line;overflow-wrap:break-word;line-height:1.15}
+.screen .lbl{white-space:nowrap;overflow:hidden;text-align:center;line-height:1}
+.gameframe{border:1px dashed rgba(255,255,255,.35);background:rgba(0,0,0,.35)}
+.gameframe>.gtag{font-family:var(--ui);color:rgba(255,255,255,.55);white-space:nowrap}
+.press{cursor:pointer}
+.tex{-webkit-mask-size:100% 100%;mask-size:100% 100%;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
+</style>
+
+<header>
+  <h1>Pocket Essentials UI <small>how 0.8.1 draws today</small></h1>
+  <div class="controls">
+    <div class="seg" id="seg-ver"><span>Version</span><button data-v="today">Today (0.8.1)</button><button data-v="proposed">Proposed</button></div>
+    <div class="seg" id="seg-res"><span>Screen</span><button data-v="720">720p</button><button data-v="1080">1080p</button></div>
+    <div class="seg" id="seg-size"><span>Button size</span><button data-v="small">Small</button><button data-v="medium">Medium</button><button data-v="large">Large</button></div>
+    <div class="seg" id="seg-zoom"><span>View</span><button data-v="fit">Fit</button><button data-v="actual">Pixel for pixel</button></div>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav id="nav"></nav>
+  <main>
+    <div class="sub" id="sub"></div>
+    <div class="stagebox" id="stagebox"><div class="scaler" id="scaler"></div></div>
+    <p class="hint" id="hint"></p>
+    <div class="notes" id="notes"></div>
+  </main>
+</div>
+
+<script>
+const ICONS = {"arrow": "data:image/png;base64,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", "loot_mono": "data:image/png;base64,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", "object_mono": "data:image/png;base64,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", "slay_mono": "data:image/png;base64,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"};
+
+/* ---------- numbers from the code (UI.lua, 720p units) ---------- */
+const PRESET = {
+  small:  {row:56,button:48,gap:8, pad:12,font:22,small:18,hub:56},
+  medium: {row:66,button:56,gap:10,pad:14,font:25,small:20,hub:60},
+  large:  {row:80,button:68,gap:12,pad:16,font:29,small:23,hub:72},
+};
+const C = (r,g,b,a=1)=>`rgba(${Math.round(r*255)},${Math.round(g*255)},${Math.round(b*255)},${a})`;
+const COL = { font:C(1,1,1), small:C(.84,.84,.84), title:C(1,.82,0), option:C(1,.82,0),
+  status:C(.65,.85,1), warn:C(1,.60,.20), dim:C(.62,.62,.62) };
+const STYLE = {
+  normal:  [C(.15,.16,.19),C(.52,.52,.57),C(1,1,1)],
+  on:      [C(.07,.40,.13),C(.35,.92,.45),C(1,1,1)],
+  off:     [C(.25,.25,.27),C(.52,.52,.54),C(.82,.82,.82)],
+  warn:    [C(.52,.28,.03),C(1,.62,.15),C(1,1,1)],
+  tab:     [C(.07,.06,.04),C(.80,.64,.20),C(1,.82,0)],
+  disabled:[C(.11,.11,.12),C(.27,.27,.29),C(.5,.5,.5)],
+  step:    [C(.15,.16,.19),C(.62,.52,.22),C(1,.82,0)],
+  stepDim: [C(.11,.11,.12),C(.62,.52,.22),C(.33,.32,.29)],
+  selected:[C(.56,.42,.03),C(1,.82,0),C(1,1,1)],
+};
+const GOLDBROWN = C(.62,.52,.22), PANELFILL = C(.05,.05,.07);
+const HUB = { gold:[C(1,.82,0),C(.07,.07,.10),C(.45,.36,.06)], horde:[C(.85,.15,.10),C(.18,.03,.03),C(.45,.07,.05)],
+  alliance:[C(.35,.62,1),C(.03,.08,.24),C(.10,.25,.55)] };
+const KIND = { slay:['slay_mono',C(1,.45,.40)], loot:['loot_mono',C(1,.85,.30)], object:['object_mono',C(.5,.8,1)],
+  event:['object_mono',C(.75,.55,1)] };
+
+/* ---------- state (an example: every helper switched on) ---------- */
+const S = {
+  res:720, size:'medium', zoom:'fit', view:'hud', ver:'proposed', ptab:'questIcons', resting:false, promptScale:100,
+  settingsPage:'main', setupIdx:0, arrowMsg:'distance', errorsSample:false, hubColor:'gold',
+  touch:true, chatSize:14, scroll:{}, folded:{}, movePiece:'hub', hubPressed:false,
+  on:{questIcons:true,questArrow:true,bags:true,bagWindow:true,sellJunk:true,repair:true,chat:true,menuBg:true},
+  opt:{ questIcons:{show:'tracked',iconsOn:'both',size:'medium',cluster:2,spots:5,hideHaze:true},
+        questArrow:{size:'normal',scale:100,restHide:true}, chat:{scale:100}, bags:{showTab:true,sortKey:'l3'}, bagWindow:{size:'normal',iconRow:false} },
+};
+try{ const saved = JSON.parse(localStorage.getItem('pe-mock')||'{}'); for(const k of ['res','size','zoom','view','ver']) if(saved[k]) S[k]=saved[k]; }catch(e){}
+function save(){ try{ localStorage.setItem('pe-mock',JSON.stringify({res:S.res,size:S.size,zoom:S.zoom,view:S.view,ver:S.ver})); }catch(e){} }
+
+const CHAT_SIZES=[12,14,16,18,20,24,27,30,34];
+const FEATURES = [
+ {key:'questIcons',label:'Quest icons',desc:'Shows where quest objectives are on the map and minimap.',options:[
+   {type:'choice',key:'show',label:'Show icons for',choices:[['tracked','Tracked quests'],['focus','Focused quest'],['all','All quests']]},
+   {type:'choice',key:'iconsOn',label:'Icons on',choices:[['both','Map and minimap'],['map','Map only'],['mini','Minimap only']]},
+   {type:'choice',key:'size',label:'Icon size',choices:[['xsmall','Extra small'],['small','Small'],['medium','Medium'],['large','Large']]},
+   {type:'number',key:'cluster',label:'Merge icons closer than',min:0,max:10,unit:'of map',suffix:'%',offLabel:'Off'},
+   {type:'number',key:'spots',label:'Spots per objective',min:1,max:20,all:0,unit:'spots'},
+   {type:'toggle',key:'hideHaze',label:'Hide Blue Quest Haze',choices:[[true,'On'],[false,'Off']]},
+   {type:'action',label:'Quest Icon Key',go:()=>{S.settingsPage='key';}}]},
+ {key:'questArrow',label:'Quest arrow',desc:'Points to your focused quest. Focus a quest from the quest log.',options:[
+   {type:'action',label:'Move the arrow',go:()=>{S.view='move';S.movePiece='questArrow';}},
+   {type:'choice',key:'size',label:'Arrow size',choices:[['small','Small'],['normal','Normal'],['large','Large']]}]},
+ {key:'bags',label:'Bag sorter',desc:'Sort your bags with a big button or a stick click.',
+   status:()=>{const o=S.opt.bags;const l=['Controller: click the '+(o.sortKey==='l3'?'left':'right')+' stick to sort while the bag is open.'];
+     l.push(o.showTab?'D-pad: press Left from the first column to reach Sort, then A.':'The Sort button is hidden; turn Sort button On to bring it back.');return l.join('\n');},
+   options:[{type:'toggle',key:'showTab',label:'Sort button',choices:[[false,'Off'],[true,'On']]},
+            {type:'toggle',key:'sortKey',label:'Sort stick',choices:[['l3','Left'],['r3','Right']]}]},
+ {key:'bagWindow',label:'Bag window',desc:'Makes the bag window bigger and tidier.',
+   status:()=>S.opt.bagWindow.iconRow?'Bag icons are in one row at the top of the bag.':'',
+   options:[{type:'choice',key:'size',label:'Bag size',choices:[['normal','Normal'],['large','Large'],['xlarge','Extra large']]},
+            {type:'toggle',key:'iconRow',label:'Bag icons',choices:[[false,'In the grid'],[true,'One row at the top']]}]},
+ {key:'sellJunk',label:'Sell junk automatically',desc:'Sells grey items when you open a vendor.'},
+ {key:'repair',label:'Repair automatically',desc:'Repairs your gear at vendors that can, using your own money.'},
+ {key:'chat',label:'Chat from round button',desc:'Tap the round button to choose who to talk to: Say, Party, Guild or someone who whispered you.',
+   options:[{type:'stepper',label:'Chat text size',always:true}]},
+ {key:'menuBg',label:'Menu background',desc:"Puts a dark panel behind the game's pop-up menus, such as the menu on a quest in the quest log, so the text is easy to read."},
+];
+const FEAT = Object.fromEntries(FEATURES.map(f=>[f.key,f]));
+
+/* ---------- drawing helpers (all positions in 720p units) ---------- */
+let K=1, M=null;
+const u = n => (n*K)+'px';
+const RAW = () => S.res/768; // a raw UI unit, not scaled by Px
+function el(tag,parent,css,cls){ const d=document.createElement(tag); if(cls) d.className=cls; if(css) Object.assign(d.style,css); if(parent) parent.appendChild(d); return d; }
+function rect(parent,x,y,w,h,color,extra){ return el('div',parent,Object.assign({left:u(x),top:u(y),width:u(w),height:u(h),background:color},extra||{})); }
+function fontPx(kind){ if(typeof kind==='number') return kind; return kind==='small'?M.small:kind==='title'?M.font*1.12:M.font; }
+function shadow(){ const r=RAW(); return `${r}px ${r}px 0 #000`; }
+function text(parent,kind,str,x,y,w,color,align){
+  const d=el('div',parent,{left:u(x),top:u(y),width:u(Math.max(w,10)),fontSize:u(fontPx(kind)),color:color||COL[kind],
+    textShadow:shadow(),textAlign:align||'left'},'t');
+  if(Array.isArray(str)){ for(const [t,c] of str){ const s=document.createElement('span'); s.style.position='static'; if(c) s.style.color=c; s.textContent=t; d.appendChild(s);} }
+  else d.textContent=str;
+  return d.offsetHeight/K;
+}
+const canvas=document.createElement('canvas').getContext('2d');
+function measure(kind,str){ canvas.font=`${fontPx(kind)*10}px "Tenor Sans"`; return canvas.measureText(str).width/10; }
+function button(parent,label,x,y,w,h,style,selected,onClick,opts){
+  const st=STYLE[selected?'selected':(style||'normal')]; const b=M.border*(selected?2:1);
+  const d=rect(parent,x,y,w,h,st[1]); if(onClick){d.classList.add('press');d.onclick=e=>{e.stopPropagation();onClick();render();};}
+  rect(d,b,b,w-2*b,h-2*b,st[0]);
+  const l=el('div',d,{left:u(M.gap*.5),width:u(w-M.gap),top:'0',height:u(h),lineHeight:u(h),fontSize:u(M.font),color:st[2],textShadow:shadow()},'lbl');
+  l.textContent=label;
+  if(opts&&opts.badge){ const bh=M.small*1.25,bw=Math.max(bh,M.small*.62*opts.badge.length+M.small*.5);
+    const bd=rect(d,w-bw+M.border,-M.border,bw,bh,C(.85,.08,.08));
+    const t=el('div',bd,{left:0,top:0,width:u(bw),height:u(bh),lineHeight:u(bh),fontSize:u(M.small),textShadow:shadow()},'lbl'); t.textContent=opts.badge; }
+  return d;
+}
+function fitWidth(label){ return measure('font',label)+M.pad*2; }
+function slotsWidth(n){ return n*M.button*3+(n-1)*M.gap; }
+function slotFit(needed,maxW){ const n=Math.max(Math.ceil((needed-0.01+M.gap)/(M.button*3+M.gap)),1); let w=slotsWidth(n); if(maxW) w=Math.min(w,maxW); return w; }
+function tint(parent,x,y,w,h,icon,color,extra){ return rect(parent,x,y,w,h,color,Object.assign({WebkitMaskImage:`url(${ICONS[icon]})`,maskImage:`url(${ICONS[icon]})`},extra||{})).classList.add('tex'); }
+function gameFrame(parent,x,y,w,h,tag,round){
+  const d=rect(parent,x,y,w,h,'',round?{borderRadius:'50%'}:null); d.className='gameframe';
+  if(tag){ const t=el('div',d,{left:u(8),top:u(6),fontSize:u(11)},'gtag'); t.textContent=tag; }
+  return d;
+}
+
+/* ---------- panel and scroll area (UI.lua CreatePanel / CreateScrollArea) ---------- */
+function panel(parent,title,w,h,x,y){
+  const b=M.border, bar=M.button+M.gap;
+  if(x===undefined){ x=(1280-w)/2; y=(720-h)/2; }
+  const p=rect(parent,x,y,w,h,GOLDBROWN); rect(p,b,b,w-2*b,h-2*b,PANELFILL);
+  rect(p,b,b+bar,w-2*b,b,GOLDBROWN);
+  const cw=M.button*2, cx=w-(b+M.gap*.5)-cw, cy=b+M.gap*.5;
+  const th=M.font*1.12*1.15; text(p,'title',title,M.pad,b+bar/2-th/2,cx-M.gap-M.pad,null);
+  button(p,'Close',cx,cy,cw,M.button,'normal',false,()=>{S.view='hud';});
+  const top=b+bar+M.gap;
+  return {el:p,x,y,w,h,closeX:cx,closeY:cy,content:{x:M.pad,y:top,w:w-2*M.pad,h:h-top-M.pad}};
+}
+function scrollArea(parent,x,y,w,h,key,draw,mode){
+  // mode: 'always' (settings: bar whenever touch is on), 'twopass' (setup), 'none'
+  const barW=M.button*.75;
+  const tryDraw = withBar => {
+    const viewW = withBar? w-barW-M.gap : w;
+    const clip=el('div',parent,{left:u(x),top:u(y),width:u(viewW),height:u(h),overflow:'hidden'});
+    const child=el('div',clip,{left:0,top:0,width:u(viewW),height:'1px'});
+    const total=draw(new Drawer(child),viewW);
+    return {clip,child,total,viewW};
+  };
+  let withBar = S.touch && mode!=='none';
+  let r = tryDraw(mode==='twopass'?false:withBar);
+  if(mode==='twopass'){ if(r.total>h+0.5 && S.touch){ r.clip.remove(); r=tryDraw(true);} else withBar=false; }
+  const range=Math.max(r.total-h,0); let off=Math.min(Math.max(S.scroll[key]||0,0),range); S.scroll[key]=off;
+  r.child.style.top=u(-off);
+  const pageBy=Math.max(h-M.row,M.row);
+  r.clip.onwheel=e=>{ if(range<=0) return; e.preventDefault(); S.scroll[key]=off+(e.deltaY>0?M.row:-M.row); render(); };
+  if(withBar){
+    const bx=x+w-barW;
+    button(parent,'^',bx,y,barW,M.button,off>0?'step':'stepDim',false,()=>{S.scroll[key]=off-pageBy;});
+    button(parent,'v',bx,y+h-M.button,barW,M.button,off<range?'step':'stepDim',false,()=>{S.scroll[key]=off+pageBy;});
+    const ty=y+M.button+M.gap, th=h-2*(M.button+M.gap);
+    const track=rect(parent,bx,ty,barW,th,GOLDBROWN); const raw=RAW()/K;
+    rect(track,raw,raw,barW-2*raw,th-2*raw,C(.03,.03,.04));
+    const thumbH=Math.min(th,Math.max(th*Math.min(1,h/Math.max(r.total,1)),M.button*.5));
+    const thumbY=range>0?(th-thumbH)*off/range:0;
+    rect(track,0,thumbY,barW,thumbH,C(1,.82,0));
+  }
+  return r;
+}
+
+/* ---------- the settings list drawer (Settings.lua Drawer) ---------- */
+function Drawer(child){ this.c=child; }
+Drawer.prototype.text=function(kind,str,x,y,w,color){ return text(this.c,kind,str,x,y,w,color); };
+Drawer.prototype.line=function(y,w){ rect(this.c,0,y,w,M.border,C(.30,.30,.34)); return M.border; };
+Drawer.prototype.button=function(label,x,y,w,h,style,fn){ return button(this.c,label,x,y,w,h,style,false,fn); };
+Drawer.prototype.mark=function(){ return this.c.childNodes.length; };
+Drawer.prototype.rewind=function(m){ while(this.c.childNodes.length>m) this.c.lastChild.remove(); };
+Drawer.prototype.numberBox=function(box,x,y){
+  const ew=M.button, ww=M.button*2.2, b=M.border;
+  button(this.c,'-',x,y,ew,M.button,(box.down&&!box.downDim)?'step':'stepDim',false,box.down||(()=>{}));
+  const wx=x+ew-b; const well=rect(this.c,wx,y,ww,M.button,GOLDBROWN); rect(well,b,b,ww-2*b,M.button-2*b,C(.03,.03,.04));
+  const inner=ww-2*b, lh=1.15;
+  const showUnit=box.unit && M.font+M.small<=M.button-2*b;
+  const vh=M.font*lh, uh=M.small*lh, top=showUnit?Math.max((M.button-vh-uh)/2,b):Math.max((M.button-vh)/2,0);
+  text(well,'font',box.text,b,top,inner,COL.option,'center');
+  if(showUnit) text(well,'small',box.unit,b,top+vh,inner,COL.dim,'center');
+  button(this.c,'+',wx+ww-b,y,ew,M.button,(box.up&&!box.upDim)?'step':'stepDim',false,box.up||(()=>{}));
+  return M.button*2+M.button*2.2-2*b;
+};
+Drawer.prototype.flow=function(items,x0,y,maxW,minW){
+  let x=x0; const h=M.button;
+  for(const it of items){
+    let w;
+    if(it.box){ w=M.button*2+M.button*2.2-2*M.border; if(x>x0&&x+w>x0+maxW){x=x0;y+=h+M.gap;} this.numberBox(it.box,x,y); }
+    else { let need=minW||0; for(const a of (it.alts||[])) need=Math.max(need,fitWidth(a)); need=Math.max(need,fitWidth(it.label));
+      w=slotFit(need,maxW); if(x>x0&&x+w>x0+maxW){x=x0;y+=h+M.gap;}
+      button(this.c,it.label,x,y,w,h,it.style,it.selected,it.onClick); }
+    x+=w+M.gap;
+  }
+  return y+h;
+};
+Drawer.prototype.labelColumn=function(texts,inner){ let wid=0; for(const t of texts) wid=Math.max(wid,measure('small',t)); return wid<=0?0:Math.min(wid+M.gap*1.5,inner*.4); };
+Drawer.prototype.labeledRow=function(t,items,x,y,inner,lw){
+  if(t&&lw>0&&measure('small',t)<=lw-M.gap){
+    const m=this.mark(); const bottom=this.flow(items,x+lw,y,inner-lw);
+    if(bottom<=y+M.button+0.01){ const th=M.small*1.15; this.text('small',t,x,y+Math.max((M.button-th)/2,0),lw-M.gap,COL.option); return bottom; }
+    this.rewind(m);
+  }
+  if(t) y+=this.text('small',t,x,y,inner,COL.option)+M.gap*.4;
+  return this.flow(items,x,y,inner);
+};
+function optValue(f,o){ return S.opt[f.key][o.key]; }
+Drawer.prototype.options=function(f,y,width,onlyAlways){
+  const x=M.pad*2, inner=width-x-M.gap;
+  const rows=f.options.filter(o=>!onlyAlways||o.always);
+  const heads=rows.filter(o=>o.type==='choice'||o.type==='number'||o.type==='stepper').map(o=>o.label);
+  const lw=this.labelColumn(heads,inner);
+  let tog=[], actionsOnly=true;
+  const flush=()=>{ if(!tog.length) return; const minW=(tog.length===1&&actionsOnly)?M.button*4:null; y=this.flow(tog,x,y,inner,minW)+M.gap; tog=[]; actionsOnly=true; };
+  for(const o of rows){
+    if(o.type!=='toggle'&&o.type!=='action') flush();
+    if(o.type==='toggle'){
+      const cur=optValue(f,o), [a,b]=o.choices, shown=cur===b[0]?b:a, next=shown===b?a[0]:b[0];
+      actionsOnly=false;
+      tog.push({label:o.label+': '+shown[1],alts:[o.label+': '+a[1],o.label+': '+b[1]],style:cur===true?'on':'off',onClick:()=>{S.opt[f.key][o.key]=next;}});
+    } else if(o.type==='action'){ tog.push({label:o.label,onClick:o.go}); }
+    else if(o.type==='choice'){
+      const cur=optValue(f,o);
+      y=this.labeledRow(o.label,o.choices.map(([v,l])=>({label:l,selected:cur===v,onClick:()=>{S.opt[f.key][o.key]=v;}})),x,y,inner,lw)+M.gap;
+    } else if(o.type==='number'){
+      const v=optValue(f,o), hasAll=o.all!==undefined;
+      let down,up; if(hasAll&&v===o.all){down=o.max;} else { down=v>o.min?v-1:undefined; up=v<o.max?v+1:(hasAll?o.all:undefined); }
+      const txt=(hasAll&&v===o.all)?'All':(v===0&&o.offLabel)?o.offLabel:v+(o.suffix||'');
+      const set=n=>n===undefined?null:()=>{S.opt[f.key][o.key]=n;};
+      y=this.labeledRow(o.label,[{box:{text:txt,unit:o.unit,down:set(down),up:set(up)}}],x,y,inner,lw)+M.gap;
+    } else if(o.type==='stepper'){
+      const i=CHAT_SIZES.indexOf(S.chatSize);
+      const box={text:String(S.chatSize),unit:'text size',down:i>0?()=>{S.chatSize=CHAT_SIZES[i-1];}:null,up:i<CHAT_SIZES.length-1?()=>{S.chatSize=CHAT_SIZES[i+1];}:null};
+      y=this.labeledRow(o.label,[{box}],x,y,inner,lw)+M.gap;
+    }
+  }
+  flush(); return y;
+};
+function featureState(k){ return S.on[k]?'on':'off'; }
+function optionsShown(f){ if(!f.options) return [false,false]; const only=!S.on[f.key]; return [only?f.options.some(o=>o.always):f.options.length>0,only]; }
+Drawer.prototype.status=function(f,x,y,w){ const s=f.status&&S.on[f.key]?f.status():''; if(s) y+=this.text('small',s,x,y,w,COL.status)+M.gap*.3; return y; };
+
+/* ---------- Settings window (Settings.lua) ---------- */
+function settingsSize(){ return [Math.min(1280*.96,1180),720*.92]; }
+function drawModuleRow(d,f,y,width,sep){
+  y += sep ? d.line(y,width)+M.gap : M.gap*.5;
+  const tw=M.button*2.8, tx=M.gap; const [has,only]=optionsShown(f); const folded=has&&S.folded[f.key];
+  const fw=has?M.button*3.4:0; const textW=width-tw-tx-M.pad-(has?fw+M.gap:0);
+  let ty=y+M.gap*.3; ty+=d.text('font',f.label,tx,ty,textW)+M.gap*.3;
+  if(!folded&&f.desc) ty+=d.text('small',f.desc,tx,ty,textW)+M.gap*.3;
+  ty=d.status(f,tx,ty,textW);
+  const rh=Math.max(M.row,ty-y), by=y+(M.row-M.button)/2;
+  d.button(S.on[f.key]?'ON':'OFF',width-tw,by,tw,M.button,S.on[f.key]?'on':'off',()=>{S.on[f.key]=!S.on[f.key];});
+  if(has) d.button(folded?'Show options':'Hide options',width-tw-M.gap-fw,by,fw,M.button,'normal',()=>{S.folded[f.key]=!S.folded[f.key];});
+  y+=rh+M.gap*.5;
+  if(has&&!folded) y=d.options(f,y,width,only);
+  return y;
+}
+function drawCore(d,y,width){
+  const x=M.pad*2, inner=width-x-M.gap;
+  y+=d.line(y,width)+M.gap; y+=d.text('title','Pocket Essentials',M.gap,y,width-M.gap*2)+M.gap;
+  const lw=d.labelColumn(['Button size','Button colour'],inner);
+  y=d.labeledRow('Button size',[['small','Small'],['medium','Medium'],['large','Large']].map(([v,l])=>({label:l,selected:S.size===v,onClick:()=>{S.size=v;save();syncSegs();}})),x,y,inner,lw)+M.gap;
+  y=d.labeledRow('Button colour',[['gold','Gold'],['horde','Horde'],['alliance','Alliance']].map(([v,l])=>({label:l,selected:S.hubColor===v,onClick:()=>{S.hubColor=v;}})),x,y,inner,lw)+M.gap;
+  y=d.flow([{label:'Move the round button',onClick:()=>{S.view='move';S.movePiece='hub';}}],x,y,inner)+M.gap;
+  y=d.flow([{label:'Touch screen: '+(S.touch?'Yes':'No'),alts:['Touch screen: Yes','Touch screen: No'],style:S.touch?'on':'off',onClick:()=>{S.touch=!S.touch;}}],x,y,inner)+M.gap;
+  y+=d.text('small','Tip: press and hold the round button to open this window.',x,y,inner,COL.dim)+M.gap;
+  const n=S.errorsSample?1:0;
+  y=d.flow([{label:'Reload UI'},{label:`Errors (${n})`,style:n?'warn':null,onClick:()=>{S.settingsPage='errors';}},
+    {label:'Move on screen',onClick:()=>{S.view='move';}},{label:'Setup guide',onClick:()=>{S.view='setup';S.setupIdx=0;}}],x,y,inner,M.button*3);
+  return y+M.pad;
+}
+function drawErrors(d,width){
+  const x=M.gap, inner=width-x*2; let y=M.gap*.5;
+  const tw=M.button*2.8, textW=width-tw-x-M.pad;
+  let ty=y+M.gap*.3;
+  ty+=d.text('font','Debug log',x,ty,textW,COL.title)+M.gap*.3;
+  ty+=d.text('small','Turn this on, play until the problem happens, tap Save log now, then send the file WTF/Account/<account>/SavedVariables/PocketEssentials.lua.',x,ty,textW)+M.gap*.3;
+  ty+=d.text('small','0 of 10,000 lines',x,ty,textW,COL.status)+M.gap*.3;
+  const rh=Math.max(M.row,ty-y); d.button('OFF',width-tw,y+(M.row-M.button)/2,tw,M.button,'off');
+  y+=rh+M.gap*.5;
+  y=d.flow([{label:'Save log now'},{label:'Clear log'}],x,y,width-x*2,M.button*3)+M.gap;
+  y+=d.line(y,width)+M.gap;
+  if(!S.errorsSample) return y+d.text('font','No errors recorded.',x,y,inner)+M.gap;
+  y+=d.text('font','Quest arrow   x3   last: Nov 19 21:14',x,y,inner,COL.title)+M.gap*.3;
+  y+=d.text('small',"Interface/AddOns/PocketEssentials/QuestArrow.lua:512: attempt to index a nil value (example)",x,y,inner,COL.font)+M.gap*.3;
+  y+=d.text('small',"[QuestArrow.lua]:512: in function 'Update'\n[Core.lua]:88: in function <Core.lua:80>",x,y,inner,COL.dim);
+  return y+M.gap;
+}
+function drawKey(d,width){
+  const x=M.gap; let y=M.gap*.5; const side=M.button, tx=x+side+M.gap, tw=width-tx-M.pad;
+  const rows=[['slay','Kill','A creature to kill.'],['loot','Loot','A creature that drops a quest item.'],
+    ['object','Use','An object in the world to click, use or open. It may hold a quest item.'],
+    ['event','Explore','A place to go to, or someone to talk to.'],['turnin','Turn in','Where to hand the quest in, once you have done everything it asks.']];
+  rows.forEach(([k,l,desc],i)=>{
+    if(i) y+=d.line(y,width)+M.gap;
+    if(k==='turnin') turnInIcon(d.c,x,y,side); else tint(d.c,x,y,side,side,KIND[k][0],KIND[k][1]);
+    let ty=y; ty+=d.text('font',l,tx,ty,tw)+M.gap*.3; ty+=d.text('small',desc,tx,ty,tw);
+    y+=Math.max(M.row,side,ty-y)+M.gap*.5;
+  });
+  y+=M.gap*.5;
+  y+=d.text('small','Tap an icon on the map to see what it is for.',x,y,width-x*2,COL.dim)+M.gap*.5;
+  y+=d.text('small','"Spots per objective" in Quest icons sets how many spots each objective shows.',x,y,width-x*2,COL.dim)+M.gap;
+  return y;
+}
+function turnInIcon(parent,x,y,s){ // stand-in for Blizzard's ActiveQuestIcon
+  const t=el('div',parent,{left:u(x),top:u(y),width:u(s),height:u(s),lineHeight:u(s),fontSize:u(s*.9),color:C(1,.82,0),fontWeight:'700',
+    textShadow:`0 0 ${u(2)} #000, ${RAW()}px ${RAW()}px 0 #000`,fontFamily:'Georgia,serif'},'lbl'); t.textContent='?';
+}
+function drawSettings(scr){
+  const [w,h]=settingsSize(); const page=S.settingsPage;
+  const p=panel(scr,page==='errors'?'Pocket Essentials - Errors':page==='key'?'Pocket Essentials - Quest Icon Key':'Pocket Essentials',w,h);
+  const c=p.content; let hy=0;
+  if(page!=='main'){ const bw=M.button*3.5;
+    button(p.el,'Back',c.x,c.y,bw,M.button,'normal',false,()=>{S.settingsPage='main';});
+    if(page==='errors') button(p.el,'Clear',c.x+bw+M.gap,c.y,bw,M.button,'normal',false,()=>{S.errorsSample=false;});
+    hy=M.button+M.gap; }
+  scrollArea(p.el,c.x,c.y+hy,c.w,Math.max(c.h-hy,M.button*2+M.gap),'settings-'+page,(d,width)=>{
+    if(page==='errors') return drawErrors(d,width);
+    if(page==='key') return drawKey(d,width);
+    let y=0; FEATURES.forEach((f,i)=>{ y=drawModuleRow(d,f,y,width,i>0); }); return drawCore(d,y,width);
+  },'always');
+}
+
+/* ---------- Setup guide (Setup.lua) ---------- */
+const SETUP=[
+ {id:'welcome',title:'Welcome to Pocket Essentials',text:['Pocket Essentials adds a few helpers for playing on a handheld. Every helper starts switched off. The next screens take them one at a time. Switch on the ones you want; a helper\'s choices appear under its switch once it is on, so you can set it up there and then.','Use the touch screen, or the d-pad to move the blue highlight, A to press and B to close.','Nothing here is final. You can change all of this later in the settings, and open this guide again from there.']},
+ {id:'questIcons',title:'Quest icons',text:['Quest icons and Quest arrow show where to go for the quests in your quest log. They get their locations from the QuestieDB addon, which comes with Pocket Essentials.'],
+  rows:[{key:'questIcons',text:['Puts an icon on the world map and the minimap at each place where a quest objective is: something to kill, loot, use or hand in. Tap an icon on the map to read what it is.']}]},
+ {id:'questArrow',title:'Quest arrow',text:['The arrow works on the quest you have focused. To focus a quest, open the quest log, select the quest and choose Focus in its menu.'],
+  rows:[{key:'questArrow',text:["Shows an arrow on screen that points to the nearest objective of your focused quest, with the distance and the quest's name. If the quest is in another zone, it names the zone to head to instead of pointing."]}]},
+ {id:'menuBg',title:'Menu background',text:['The menu on a quest in the quest log (Track, Focus, Share, Abandon) is drawn by this game with no background, which makes it hard to read.'],
+  rows:[{key:'menuBg',text:["Puts a plain dark panel behind the game's pop-up menus while they are open, so the text is easy to read. It does not need QuestieDB."]}]},
+ {id:'bags',title:'Bags',text:['With the game\'s controller style on, all your bags already show as one window. These two helpers make it bigger and easier to tidy. Each has its own switch.','If you play without the controller style, the game needs a reload to join the bags into one window. The last screen of this guide offers it.'],
+  rows:[{key:'bagWindow',text:['"Bag size" makes the bag window bigger. "Bag icons": "One row at the top" puts the pictures of your equipped bags side by side above your items, not in among them.']},
+        {key:'bags',text:['Adds a big Sort button to the bag window ("Sort button"). A click on the stick you pick in "Sort stick" sorts too, while the bag is open.','Whenever the Sort button shows, press Left from the bag\'s first column to reach it, then A presses it. This works with the controller style on.']}]},
+ {id:'vendors',title:'Vendors',text:["Two chores done for you each time you open a vendor's window. Each has its own switch."],
+  rows:[{key:'sellJunk',text:["Sells every grey item in your bags as soon as a vendor's window opens, and says in chat how many it sold and for how much. Bags you told the game to leave out of junk selling are not touched. Careful: only the last 12 items sold can be bought back."]},
+        {key:'repair',text:["Repairs all your gear when you open a vendor who can repair, paying with your own money, never the guild's. A line in chat says what it cost. If you cannot afford it, it says so and does nothing."]}]},
+ {id:'chat',title:'Chat',text:['Chat targets are small on a handheld. This helper gives you big buttons to pick who you talk to.'],
+  rows:[{key:'chat',text:['While this is on, a tap on the round PE button opens a window with one big button for each place you can talk (Say, Party, Guild, General, Trade and so on) and for the last six people who whispered you. Tap one, then press A when "Press A to type" appears: the game\'s chat box opens, already set to that channel or person. A red number on the round button counts whispers you have not answered. With this on, hold the round button to open the settings.','Chat text size is for every chat window. It works whether this switch is on or off.']}]},
+ {id:'layout',title:'The round button and Move on screen',text:['The round PE button is always on screen. Tap it to open the settings (or the chat window, when Chat from round button is on). Hold it for a moment to always open the settings. While the map is open, it sits on the map\'s book icon.','In the settings you can choose how big all Pocket Essentials buttons are: Small, Medium or Large. "Move the round button" there, and "Move the arrow" in the quest arrow\'s options, open "Move on screen".','Button colour in the settings paints the round button Gold, Horde or Alliance. Touch screen: No hides the scroll bar\'s arrows, and the d-pad scrolls long pages by itself.','"Move on screen", also in the bottom row of the settings, lets you nudge the quest arrow, the "Press A to type" text and the round button to exactly where you want them, with on-screen arrows or the d-pad.']},
+ {id:'finish',title:'All set',text:['You can change all of this at any time. Tap the round PE button to open the settings (hold it if the chat window opens instead), or pick Pocket Essentials in the addon list at the minimap. The "Setup guide" button at the bottom of the settings opens this guide again.']},
+];
+function paragraphs(d,kind,list,x,y,w,color){ for(const t of list||[]) y+=d.text(kind,t,x,y,w,color)+M.gap; return y; }
+function drawSetup(scr){
+  const [w,h]=settingsSize(); const i=Math.min(S.setupIdx,SETUP.length-1), n=SETUP.length, e=SETUP[i];
+  const p=panel(scr,`Pocket Essentials - Setup guide (${i+1} of ${n})`,w,h); const c=p.content; const bw=M.button*3.5;
+  if(i>0) button(p.el,'Back',c.x,c.y+c.h-M.button,bw,M.button,'normal',false,()=>{S.setupIdx--;});
+  if(i<n-1) button(p.el,'Skip',c.x+bw+M.gap,c.y+c.h-M.button,bw,M.button,'normal',false,()=>{S.view='hud';});
+  button(p.el,i===n-1?'Finish':i===0?'Start':'Next',c.x+c.w-bw,c.y+c.h-M.button,bw,M.button,i===n-1?'on':'normal',false,()=>{ if(i<n-1) S.setupIdx++; else S.view='hud'; });
+  scrollArea(p.el,c.x,c.y,c.w,Math.max(c.h-M.button-M.gap,M.button*2+M.gap),'setup-'+i,(d,width)=>{
+    const x=M.gap; let y=M.gap*.5;
+    y+=d.text('title',e.title,x,y,width-x*2)+M.gap;
+    if(e.id==='finish'){
+      const on=FEATURES.filter(f=>S.on[f.key]).map(f=>f.label), off=FEATURES.filter(f=>!S.on[f.key]).map(f=>f.label);
+      y+=d.text('font',on.length?'Switched on: '+on.join(', ')+'.':'Nothing is switched on yet. That is fine: you can do it later in the settings.',x,y,width-x*2)+M.gap;
+      if(off.length) y+=d.text('font','Still off: '+off.join(', ')+'.',x,y,width-x*2)+M.gap;
+      return paragraphs(d,'font',e.text,x,y,width-x*2)+M.pad;
+    }
+    y=paragraphs(d,'font',e.text,x,y,width-x*2);
+    if(e.id==='welcome'){ y+=M.gap; y=d.labeledRow('Do you use the touch screen?',[{label:'Yes',selected:S.touch,onClick:()=>{S.touch=true;}},{label:'No',selected:!S.touch,onClick:()=>{S.touch=false;S.opt.bags.showTab=false;}}],x,y,width-x*2,0)+M.gap; }
+    const tw=M.button*2.8, textW=width-tw-x-M.pad;
+    for(const r of e.rows||[]){ const f=FEAT[r.key];
+      y+=d.line(y,width)+M.gap;
+      let ty=y+M.gap*.3; ty+=d.text('font',f.label,x,ty,textW,COL.title)+M.gap*.3;
+      ty=paragraphs(d,'small',r.text,x,ty,textW); ty=d.status(f,x,ty,textW);
+      const rh=Math.max(M.row,ty-y);
+      d.button(S.on[f.key]?'ON':'OFF',width-tw,y+(M.row-M.button)/2,tw,M.button,S.on[f.key]?'on':'off',()=>{S.on[f.key]=!S.on[f.key];});
+      y+=rh+M.gap*.5; const [has,only]=optionsShown(f); if(has) y=d.options(f,y,width,only);
+    }
+    return y+M.pad;
+  },'twopass');
+}
+
+/* ---------- Chat window and prompt (Chat.lua) ---------- */
+function drawChat(scr){
+  const w=Math.min(1280*.96,1180), h=720*.92; const p=panel(scr,'Chat',w,h); const c=p.content;
+  const sw=M.button*2.6; button(p.el,'Settings',p.closeX-M.gap-sw,p.closeY,sw,M.button,'normal',false,()=>{S.view='settings';S.settingsPage='main';});
+  const targets=['Say','Yell','Party','Guild','1. General','2. Trade','4. LocalDefense'];
+  const whispers=[['Mirabel',true],['Tobin',false],['Kessa',true]];
+  scrollArea(p.el,c.x,c.y,c.w,c.h,'chat',(d,width)=>{
+    let cols=Math.min(Math.max(Math.floor((width+M.gap)/(M.button*4.4+M.gap)),1),4); const cw=(width-M.gap*(cols-1))/cols, bh=M.button*1.25;
+    let y=0; y+=d.text('small','Three-finger tap for the keyboard',0,y,width)+M.gap;
+    const grid=(labels,styleFn,badgeFn)=>{ labels.forEach((l,i)=>{ const col=i%cols,row=Math.floor(i/cols);
+      button(d.c,l,col*(cw+M.gap),y+row*(bh+M.gap),cw,bh,styleFn?styleFn(i):'normal',false,()=>{S.view='prompt';},badgeFn&&badgeFn(i)?{badge:'NEW'}:null); });
+      y+=Math.ceil(labels.length/cols)*(bh+M.gap); };
+    grid(targets);
+    y+=d.text('title','Whispers',0,y,width)+M.gap*.5;
+    grid(whispers.map(w=>w[0]),i=>whispers[i][1]?'warn':'normal',i=>whispers[i][1]);
+    button(d.c,'Clear marks',0,y,cw,bh,'normal',false,()=>{});
+    return y+bh;
+  },'none');
+}
+function drawPrompt(scr,dx=0,dy=0){
+  const pad=M.pad, t1='Press A to type', t2='Chat is set to Say';
+  const wid=Math.max(measure('title',t1),measure('font',t2),240)+pad*2;
+  const th=M.font*1.12*1.15, lh=M.font*1.15, h=th+lh+pad*3;
+  const x=640-wid/2+dx, y=360-110-h/2-dy;
+  const b=rect(scr,x,y,wid,h,'rgba(0,0,0,.75)');
+  text(b,'title',t1,0,pad,wid,null,'center'); text(b,'font',t2,0,pad+th+pad,wid,null,'center');
+  return {x,y,w:wid,h};
+}
+
+/* ---------- On-screen pieces ---------- */
+function drawHub(scr,cx,cy,opts={}){
+  const d=M.hub, [ring,fill,pressed]=HUB[S.hubColor]; const ringW=Math.max(4,2);
+  const b=rect(scr,cx-d/2,cy-d/2,d,d,ring,{borderRadius:'50%',cursor:'pointer'});
+  b.onclick=()=>{ S.hubPressed=true; render(); setTimeout(()=>{S.hubPressed=false;render();},150);
+    if(opts.tap) opts.tap(); };
+  rect(b,ringW,ringW,d-2*ringW,d-2*ringW,S.hubPressed?pressed:fill,{borderRadius:'50%'});
+  const l=el('div',b,{left:0,top:0,width:u(d),height:u(d),lineHeight:u(d),fontSize:u(M.font),color:ring,textShadow:shadow()},'lbl'); l.textContent='PE';
+  if(opts.badge){ const bd=Math.max(M.small*1.5,d*.45), bx=d-.22*bd-bd/2, by=.22*bd-bd/2;
+    const e=rect(b,bx,by,bd,bd,C(.88,.08,.08),{borderRadius:'50%'});
+    const t=el('div',e,{left:0,top:0,width:u(bd),height:u(bd),lineHeight:u(bd),fontSize:u(M.small),textShadow:shadow()},'lbl'); t.textContent=opts.badge; }
+  return b;
+}
+function hubHome(){ return [10+M.hub/2,360]; }
+const ARROW_SIZE={small:56,normal:76,large:112};
+function drawArrow(scr,msg,dx=0,dy=0){
+  const box=ARROW_SIZE[S.opt.questArrow.size], tw=Math.max(280,M.font*16), x=640-tw/2+dx, y=40-dy;
+  const th=M.font*1.12*1.15; const quest='Clearing the Ridge';
+  let showArrow=true, big='120 yd', small=quest, color=C(1,.82,0), turn=false;
+  if(msg==='here'){ big='Here'; color=C(.35,1,.45); }
+  if(msg==='turnin'){ small='Turn in: '+quest; big='45 yd'; }
+  if(msg==='behind'){ turn=true; }
+  if(msg==='nofocus'){ showArrow=false; big='No quest focused'; small='Focus one in your quest log'; }
+  if(msg==='zone'){ showArrow=false; big='Outside this zone'; small='Head to Mulgore'; }
+  if(msg==='nowhere'){ showArrow=false; big='No known location'; }
+  let ty=y;
+  if(showArrow){
+    if(turn) text(scr,'title','Turn around',x,y+box/2-th/2,tw,null,'center');
+    else tint(scr,x+tw/2-box/2,y,box,box,'arrow',color,{transform:'rotate(35deg)'});
+    ty=y+box+4;
+  }
+  if(!turn){ text(scr,'title',big,x,ty,tw,null,'center'); }
+  else { text(scr,'title','120 yd',x,ty,tw,null,'center'); }
+  text(scr,'font',small,x,ty+th+2,tw,null,'center');
+  return {x,y,w:tw,h:box+4+M.font*3.8};
+}
+function pin(parent,cx,cy,size,kind,extra){
+  if(kind==='turnin') return turnInIcon(parent,cx-size/2,cy-size/2,size);
+  tint(parent,cx-size/2,cy-size/2,size,size,KIND[kind][0],KIND[kind][1],extra);
+}
+const MAP_PIN={xsmall:18,small:22,medium:28,large:36}, MINI_PIN={xsmall:11,small:14,medium:18,large:22};
+function drawMinimap(scr,withPins){
+  const d=180, x=1280-d-26, y=34; const g=gameFrame(scr,x,y,d,d,'',true);
+  const t=el('div',scr,{left:u(x),top:u(y+d+4),width:u(d),fontSize:u(11),textAlign:'center'},'gtag'); t.style.color='rgba(255,255,255,.5)'; t.style.fontFamily='var(--ui)'; t.textContent="game's minimap";
+  if(withPins){ const s=MINI_PIN[S.opt.questIcons.size];
+    [[60,70,'slay'],[110,52,'loot'],[124,120,'object'],[70,128,'event']].forEach(([px,py,k])=>pin(g,px,py,s,k));
+    // a turn-in past the edge sits on the rim, faded
+    const tr=el('div',g,{opacity:.6}); pin(tr,d-8,d/2,s,'turnin'); }
+  return {x,y,d};
+}
+function tapLabel(scr,x,y,below){
+  const inner=380, pad=10; const box=el('div',scr,{left:u(x-(inner+2*pad)/2),width:u(inner+2*pad),background:C(.52,.52,.57)});
+  const fill=el('div',box,{left:u(2),top:u(2),right:u(2),bottom:u(2),background:C(.06,.06,.08,.96)});
+  const lines=[['Clearing the Ridge',C(1,.82,0)],['Bristleback Quilboar slain: 3/10',COL.small],['Kill: Bristleback Quilboar',C(.70,.70,.70)]];
+  let ty=pad; for(const [t,c] of lines) ty+=text(box,'small',t,pad,ty,inner,c);
+  const h=ty+pad; box.style.height=u(h); box.style.top=u(below?y:y-h);
+  return box;
+}
+
+/* ---------- views ---------- */
+const VIEWS=[
+ ['While playing',[['hud','Whole screen'],['hub','Round button'],['arrow','Quest arrow'],['prompt','Press A to type']]],
+ ['Windows',[['settings','Settings'],['setup','Setup guide'],['chat','Chat window'],['move','Move on screen']]],
+ ['On game windows',[['icons','Quest icons and tap label'],['mapbutton','Round button on the map'],['bag','Bag Sort tab'],['menu','Menu background']]],
+];
+const NOTES={
+ hud:{what:['The pieces that sit on screen during play: the round button, the quest arrow and the minimap icons.','Dashed shapes are the game\'s own frames, drawn only to show where ours attach.'],fix:[]},
+ hub:{what:['Tap it: it presses for 0.15 s. The red number is unanswered whispers (Chat on).','Holding it for 0.6 s opens the settings, but nothing shows the hold.'],fix:[[3,'its badge is round; the chat window\'s NEW badge is square, sized by another rule'],[4,'the ring is 4 units thick; other edges are 2, 4 or 5'],[17,'the "press and hold" tip shows in the settings and the setup guide']]},
+ arrow:{what:['Sits in the background layer at the top centre, so any window covers it.','Pick a message below to see every text the arrow can show.'],fix:[[7,'the arrow turns green at "Here", but the word "Here" stays gold'],[12,'messages have no full stops; status lines in the settings do'],[25,'four more arrow positions are still in the code, but no setting reaches them']]},
+ prompt:{what:['Shows for 12 s after you pick a chat target, 110 above the middle of the screen.'],fix:[[1,'a plain black box with no edge: the fourth look for a dark box']]},
+ settings:{what:['Every switch, fold button and choice here works. The example starts with every helper on.','Errors (N), Quest Icon Key, Move and Setup guide go to their pages.'],fix:[[5,'green means "the saved value is true": Sort stick is always grey, Bag icons turns green'],[8,'"Hide Blue Quest Haze" and "Quest Icon Key" are in Title Case'],[9,'ON/OFF, On/Off and Yes/No; Haze lists On first, Sort button lists Off first'],[14,'three ways into Move on screen'],[15,'Reload UI here, Reload now in the header'],[18,'Chat shows options while it is off'],[21,'"Move the arrow" is 2 slots wide, as a lone action is'],[23,'the scroll bar takes width even when the page is short'],[24,'headings sit beside their buttons on some rows and above on others']]},
+ setup:{what:['Back, Skip and Next work. Switches and options work the same as in the settings.'],fix:[[6,'feature names are gold here, white in the settings'],[10,'screens are called Bags, Vendors, Chat; the features have other names'],[13,'its problem line says "See Errors in the settings"'],[19,'screen 8 is four paragraphs about settings, with no controls'],[20,'"No" to touch screen quietly turns off the bag Sort button']]},
+ chat:{what:['Buttons are 4 columns, 1.25 buttons tall when everything fits. Names are an example.'],fix:[[3,'the NEW badge is square and sticks out of the corner'],[1,'unanswered names use the amber warning style']]},
+ move:{what:['Pick a piece on the left; the gold outline shows what moves. The arrows nudge by 2.'],fix:[[11,'the arrows say Up/Down/Left/Right here and ^/v on the scroll bar'],[14,'opened from three places in the settings']]},
+ icons:{what:['Icon size follows the Quest icons "Icon size" choice in the settings.','The tap label hangs above a map icon, or under the minimap for a minimap icon.'],fix:[[1,'the tap label has a grey edge; windows have a gold-brown edge'],[26,'under the minimap the label is 400 wide and covers the quest tracker and buffs'],[8,'the key calls it "Use"; its text says "click, use or open"']]},
+ mapbutton:{what:['While the map is open (not full screen), the round button sits on the map\'s book icon. The map here is a rough stand-in.'],fix:[]},
+ bag:{what:['The tab hangs off the bag\'s left edge, below the bag picture. Its height is at least 3.5 buttons, or half the bag.'],fix:[[1,'the tab edge is a third gold (.80/.64/.20)'],[2,'three golds for edges across the addon']]},
+ menu:{what:['A dark panel 6 units wider and 3 taller than the game\'s menu, behind it.'],fix:[[4,'its 1-unit edge does not grow with the screen; on 1080p it looks thinner']]},
+};
+
+function drawView(scr){
+  const v=S.view;
+  if(S.ver==='proposed'&&PROPOSED[v]){ PROPOSED[v](scr); return; }
+  if(v==='hud'){ const [hx,hy]=hubHome(); drawHub(scr,hx,hy,{badge:S.on.chat?'2':null,tap:()=>{S.view=S.on.chat?'chat':'settings';}}); drawArrow(scr,'distance'); drawMinimap(scr,true); }
+  if(v==='hub'){ const [hx,hy]=hubHome(); drawHub(scr,hx,hy,{badge:S.on.chat?'2':null}); }
+  if(v==='arrow') drawArrow(scr,S.arrowMsg);
+  if(v==='prompt') drawPrompt(scr);
+  if(v==='settings') drawSettings(scr);
+  if(v==='setup') drawSetup(scr);
+  if(v==='chat') drawChat(scr);
+  if(v==='move') drawMove(scr);
+  if(v==='icons') drawIcons(scr);
+  if(v==='mapbutton'){ const m=mapFrame(scr); drawHub(scr,m.x+34,m.y+30); }
+  if(v==='bag') drawBag(scr);
+  if(v==='menu') drawMenu(scr);
+  if(v!=='hud'&&v!=='hub'&&v!=='mapbutton'&&!['settings','setup','chat','move'].includes(v)){ const [hx,hy]=hubHome(); drawHub(scr,hx,hy,{badge:S.on.chat?'2':null}); }
+}
+function mapFrame(scr){ const w=820,h=560,x=(1280-w)/2,y=(720-h)/2-10; const g=gameFrame(scr,x,y,w,h,"game's world map (size approximate)");
+  gameFrame(scr,x+4,y+4,60,52,'',true); return {x,y,w,h,g}; }
+function drawIcons(scr){
+  const m=mapFrame(scr); const s=MAP_PIN[S.opt.questIcons.size];
+  const spots=[[300,240,'slay'],[330,262,'slay'],[352,232,'slay'],[520,330,'loot'],[548,350,'loot'],[210,400,'object'],[640,190,'event'],[460,150,'turnin']];
+  spots.forEach(([x,y,k])=>pin(m.g,x,y,s,k));
+  tapLabel(scr,m.x+330,m.y+262-s/2-6,false);
+  const mm=drawMinimap(scr,true);
+}
+function drawBag(scr){
+  const bx=860,by=283,bw=400,bh=357; gameFrame(scr,bx,by,bw,bh,"game's combined bag");
+  gameFrame(scr,bx+8,by+6,38,38,'',true);
+  if(!(S.on.bags&&S.opt.bags.showTab)){ text(scr,'small','Sort tab is off (Bag sorter off or Sort button Off).',bx-420,by+60,400,COL.dim); return; }
+  const drop=Math.max(56,58), w=M.button, h=Math.max(M.button*3.5,bh*.5), x=bx-w, y=by+drop;
+  const t=button(scr,'',x,y,w,h,'tab',false,()=>{});
+  const icon=M.button-10;
+  // Blizzard's sort icon stand-in: two little brooms are not ours to draw, so a plain mark
+  const ic=rect(t,(w-icon)/2,5,icon,icon,'rgba(255,255,255,.08)',{border:`${u(1)} dashed rgba(255,255,255,.35)`});
+  const top=56, avail=h-top-5;
+  const letters=el('div',t,{left:0,top:u(top),width:u(w),height:u(avail),display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',fontSize:u(M.font),color:C(1,.82,0),textShadow:shadow(),lineHeight:1.05});
+  letters.style.position='absolute'; letters.textContent='S\no\nr\nt'; letters.style.whiteSpace='pre'; letters.style.textAlign='center';
+}
+function drawMenu(scr){
+  const x=560,y=260,w=170,h=150; const pad=6*RAW()/K, padY=3*RAW()/K;
+  if(S.on.menuBg){ const p=rect(scr,x-pad,y-padY,w+2*pad,h+2*padY,C(.52,.52,.57)); const r=RAW()/K; rect(p,r,r,w+2*pad-2*r,h+2*padY-2*r,C(.05,.05,.05,.95)); }
+  const g=gameFrame(scr,x,y,w,h,"game's menu"); g.style.background='transparent';
+  ['Track','Focus','Share','Abandon'].forEach((t,i)=>text(scr,'small',t,x+14,y+26+i*28,w-20,'#fff'));
+}
+function drawMove(scr){
+  const pieces=[]; if(S.on.questArrow) pieces.push(['questArrow','Quest arrow']); if(S.on.chat) pieces.push(['chatPrompt','Chat prompt']); pieces.push(['hub','Round button']);
+  if(!pieces.find(p=>p[0]===S.movePiece)) S.movePiece='hub';
+  // the piece being moved, with its outline
+  let box; if(S.movePiece==='questArrow'){ const a=drawArrow(scr,'distance'); box=a; }
+  else if(S.movePiece==='chatPrompt'){ box=drawPrompt(scr); }
+  else { const [hx,hy]=hubHome(); drawHub(scr,hx,hy); box={x:hx-M.hub/2,y:hy-M.hub/2,w:M.hub,h:M.hub}; }
+  if(S.movePiece!=='hub'){ const [hx,hy]=hubHome(); drawHub(scr,hx,hy); }
+  const e=3; rect(scr,box.x,box.y,box.w,box.h,C(1,.82,0,.15));
+  [[box.x-e,box.y-e,box.w+2*e,e],[box.x-e,box.y+box.h,box.w+2*e,e],[box.x-e,box.y,e,box.h],[box.x+box.w,box.y,e,box.h]].forEach(r=>rect(scr,...r,C(1,.82,0)));
+  const name=pieces.find(p=>p[0]===S.movePiece)[1]; const th=M.font*1.12*1.15;
+  const above=box.y-th-e-M.gap*.3>0; el('div',scr,{left:u(box.x),top:u(above?box.y-e-M.gap*.3-th:box.y+box.h+e+M.gap*.3),fontSize:u(M.font*1.12),color:C(1,.82,0),textShadow:shadow(),whiteSpace:'nowrap'}).textContent=name;
+  const pw=M.button*3.4, cell=M.button*1.8, cross=3*cell+2*M.gap;
+  const w=2*M.pad+pw+2*M.gap+cross, rows=Math.max(pieces.length,3); const content=Math.max(rows*M.button+(rows-1)*M.gap,188);
+  const h=M.border+M.button+M.gap+M.gap+content+M.pad;
+  const p=panel(scr,'Move on screen',w,h,1280-10-w,720-10-h); const c=p.content;
+  pieces.forEach(([k,l],i)=>button(p.el,l,c.x,c.y+i*(M.button+M.gap),pw,M.button,'normal',S.movePiece===k,()=>{S.movePiece=k;}));
+  const cx=c.x+pw+2*M.gap; const cellAt=(col,row,l)=>button(p.el,l,cx+col*(cell+M.gap),c.y+row*(M.button+M.gap),cell,M.button,'normal',false,()=>{});
+  cellAt(1,0,'Up'); cellAt(0,1,'Left'); cellAt(1,1,'Reset'); cellAt(2,1,'Right'); cellAt(1,2,'Down');
+}
+
+/* ===================== PROPOSED ===================== */
+/* One rule for every settings row: the name on the left, one control of one
+   width on the right. Controls: a switch, a segmented choice, a number, or a
+   single action button. Selected always means the gold fill. */
+const PC={card:C(.085,.085,.10),line:C(.22,.22,.25)};
+function ctlWidth(iw){ return Math.min(iw*.58,M.button*9); }
+function segmented(parent,x,y,w,choices,cur,onPick){
+  const n=choices.length,b=M.border,h=M.button; rect(parent,x,y,w,h,STYLE.normal[1]);
+  const sw=(w-b*(n+1))/n;
+  choices.forEach(([v,l],i)=>{ const sel=cur===v; const sx=x+b+i*(sw+b);
+    const s=rect(parent,sx,y+b,sw,h-2*b,sel?STYLE.selected[0]:STYLE.normal[0]); s.classList.add('press');
+    s.onclick=e=>{e.stopPropagation();onPick(v);render();};
+    if(sel){ rect(parent,sx,y+h-b-Math.max(3,b*1.5),sw,Math.max(3,b*1.5),C(1,.82,0)); }
+    const t=el('div',s,{left:u(M.gap*.4),width:u(sw-M.gap*.8),top:0,height:u(h-2*b),lineHeight:u(h-2*b),fontSize:u(M.font),color:sel?'#fff':C(.82,.82,.82),textShadow:shadow()},'lbl'); t.textContent=l; });
+}
+function switchCtl(parent,x,y,on,onTap){
+  const w=M.button*2,h=M.button,b=M.border; const st=on?STYLE.on:STYLE.off;
+  const d=rect(parent,x,y,w,h,st[1]); d.classList.add('press'); d.onclick=e=>{e.stopPropagation();onTap();render();};
+  rect(d,b,b,w-2*b,h-2*b,st[0]); const k=h-4*b-M.gap*.4;
+  rect(d,on?w-2*b-k-M.gap*.2:2*b+M.gap*.2,(h-k)/2,k,k,on?C(.9,1,.92):C(.62,.62,.64));
+  const t=el('div',d,{left:u(on?M.gap*.4:k+M.gap*.6),width:u(w-k-M.gap),top:0,height:u(h),lineHeight:u(h),fontSize:u(M.small),color:st[2],textShadow:shadow()},'lbl'); t.textContent=on?'On':'Off';
+}
+function numberCtl(parent,x,y,w,txt,unit,down,up){
+  const b=M.border,e=M.button; const fn=f=>f?()=>{f();}:(()=>{});
+  button(parent,'-',x,y,e,e,down?'step':'stepDim',false,fn(down));
+  const ww=w-2*e+2*b; const well=rect(parent,x+e-b,y,ww,e,GOLDBROWN); rect(well,b,b,ww-2*b,e-2*b,C(.03,.03,.04));
+  const vh=M.font*1.15,uh=M.small*1.15; const show=unit&&M.font+M.small<=e-2*b; const top=show?Math.max((e-vh-uh)/2,b):(e-vh)/2;
+  text(well,'font',txt,b,top,ww-2*b,COL.option,'center'); if(show) text(well,'small',unit,b,top+vh,ww-2*b,COL.dim,'center');
+  button(parent,'+',x+e-b+ww-b,y,e,e,up?'step':'stepDim',false,fn(up));
+}
+function numSpec(spec,v){ // returns [text,down,up]
+  const hasAll=spec.all!==undefined; const st=spec.step||1;
+  if(hasAll&&v===spec.all) return ['All',spec.max,undefined];
+  const down=v>spec.min?v-st:undefined, up=v<spec.max?v+st:(hasAll?spec.all:undefined);
+  return [(v===0&&spec.offLabel)?spec.offLabel:v+(spec.suffix||''),down,up];
+}
+const POPTS={
+ questIcons:[
+  {label:'Show icons for',key:'show',seg:[['tracked','Tracked'],['focus','Focused'],['all','All']],setup:true},
+  {label:'Icons on',key:'iconsOn',seg:[['both','Both'],['map','Map'],['mini','Minimap']]},
+  {label:'Icon size',key:'size',seg:[['xsmall','Tiny'],['small','Small'],['medium','Medium'],['large','Large']]},
+  {label:'Merge icons closer than',key:'cluster',num:{min:0,max:10,suffix:'%',unit:'of map',offLabel:'Off'}},
+  {label:'Spots per objective',key:'spots',num:{min:1,max:20,all:0,unit:'spots'}},
+  {label:'Blizzard blue quest haze',key:'hideHaze',seg:[[true,'Hide'],[false,'Show']]},
+  {label:'Icon key',act:'Open',go:()=>{S.ptab='key';}}],
+ questArrow:[
+  {label:'Size of the arrow and its text',key:'scale',num:{min:50,max:150,step:10,suffix:'%',unit:'of normal'},setup:true},
+  {label:'"No quest focused" in cities and inns',key:'restHide',seg:[[true,'Hide'],[false,'Show']]},
+  {label:'Position on screen',act:'Move the arrow',go:()=>{S.view='move';S.movePiece='questArrow';}}],
+ bagWindow:[
+  {label:'Bag size',key:'size',seg:[['normal','Normal'],['large','Large'],['xlarge','Extra large']],setup:true}],
+ bags:[
+  {label:'Sort button on the bag',key:'showTab',seg:[[true,'Show'],[false,'Hide']],setup:true},
+  {label:'Click a stick in to sort',key:'sortKey',seg:[['l3','Left stick'],['r3','Right stick']],setup:true}],
+ chat:[{label:'Chat text size',stepper:true,always:true,setup:true,help:'For every chat window, even with Chat picker off.'},
+  {label:'Size of the chat picker window',key:'scale',num:{min:70,max:150,step:10,suffix:'%',unit:'of normal'}}],
+};
+const PNAME={questIcons:'Quest icons',questArrow:'Quest arrow',bagWindow:'Bigger bag',bags:'Bag sorting',sellJunk:'Auto sell junk',repair:'Auto repair',chat:'Chat picker',menuBg:'Menu background'};
+const PDESC={questIcons:'Icons on the map and minimap where your quest objectives are.',questArrow:'Points to the nearest objective of your focused quest.',
+ bagWindow:'A bigger and better organized bag window.',bags:'Sort your bags with one press.',sellJunk:'Sells grey items when you open a vendor.',
+ repair:'Repairs your gear at vendors, with your own gold.',chat:'Tap the round button to pick who to talk to.',menuBg:'A dark panel behind pop-up menus, so they are easy to read.'};
+function pRow(d,x,y,iw,label,draw,help){
+  const cw=ctlWidth(iw), lw=iw-cw-M.gap;
+  const lh=text(d.c,'font',label,x,0,lw); d.c.lastChild.remove();
+  let hh=0; if(help){ hh=text(d.c,'small',help,x,0,lw)+M.gap*.15; d.c.lastChild.remove(); }
+  const th=lh+hh, h=Math.max(M.button,th), top=y+(h-th)/2;
+  text(d.c,'font',label,x,top,lw,C(.92,.92,.92)); if(help) text(d.c,'small',help,x,top+lh+M.gap*.15,lw,COL.dim);
+  draw(x+iw-cw,y+(h-M.button)/2,cw); return y+h+M.gap;
+}
+function pOptionRow(d,f,o,x,y,iw){
+  const key=f?f.key:null;
+  return pRow(d,x,y,iw,o.label,(cx,cy,cw)=>{
+    if(o.seg) segmented(d.c,cx,cy,cw,o.seg,o.get?o.get():S.opt[key][o.key],v=>{ if(o.set) o.set(v); else S.opt[key][o.key]=v; });
+    else if(o.num){ const [t,dn,up]=numSpec(o.num,S.opt[key][o.key]); numberCtl(d.c,cx,cy,cw,t,o.num.unit,dn===undefined?null:()=>{S.opt[key][o.key]=dn;},up===undefined?null:()=>{S.opt[key][o.key]=up;}); }
+    else if(o.stepper){ const i=CHAT_SIZES.indexOf(S.chatSize); numberCtl(d.c,cx,cy,cw,String(S.chatSize),'text size',i>0?()=>{S.chatSize=CHAT_SIZES[i-1];}:null,i<CHAT_SIZES.length-1?()=>{S.chatSize=CHAT_SIZES[i+1];}:null); }
+    else if(o.act) button(d.c,o.act,cx,cy,cw,M.button,'normal',false,o.go||(()=>{}));
+  },o.help);
+}
+function pCard(d,x,y,w,body){ // a card: a slightly lighter box with its rows inside
+  const bg=rect(d.c,x,y,w,10,PC.card); const end=body(x+M.pad,y+M.pad,w-2*M.pad); bg.style.height=u(end-y+M.pad-M.gap); return end+M.pad;
+}
+const PHOW={questIcons:'Tap an icon on the map to see what it is for.',questArrow:'Focus a quest in your quest log, and the arrow points to it.',
+ chat:'Tap PE, pick who to talk to, then press A to type.',menuBg:'For menus like Track, Focus and Share on a quest.'};
+function pFeature(d,f,x,y,w,setup,onlyKeys){
+  return pCard(d,x,y,w,(ix,iy,iw)=>{
+    const sw=M.button*2, tw=iw-sw-M.gap; let ty=iy;
+    ty+=text(d.c,'font',PNAME[f.key],ix,ty,tw)+M.gap*.2;
+    ty+=text(d.c,'small',PDESC[f.key],ix,ty,tw);
+    if(setup&&PHOW[f.key]){ const hw=typeof PHOW[f.key]==='function'?PHOW[f.key]():PHOW[f.key]; ty+=M.gap*.3+text(d.c,'small',[['How: ',C(1,.82,0)],[hw,C(.84,.84,.84)]],ix,ty+M.gap*.3,tw); }
+    const st=f.status&&S.on[f.key]&&f.key!=='bags'?f.status():''; if(st) ty+=M.gap*.3+text(d.c,'small',st,ix,ty+M.gap*.3,tw,COL.status);
+    const hh=Math.max(M.button,ty-iy); switchCtl(d.c,ix+iw-sw,iy+(hh-M.button)/2,S.on[f.key],()=>{S.on[f.key]=!S.on[f.key];});
+    let y2=iy+hh+M.gap;
+    const rows=(POPTS[f.key]||[]).filter(o=>(S.on[f.key]||o.always)&&(!onlyKeys||onlyKeys.includes(o.key))&&!(setup&&o.act==='Open'));
+    if(setup&&!rows.length){}
+    else if(rows.length){ rect(d.c,ix,y2-M.gap*.5,iw,M.border*.5,PC.line); y2+=M.gap*.5; for(const o of rows) y2=pOptionRow(d,f,o,ix,y2,iw); }
+    else if(POPTS[f.key]&&!S.on[f.key]){ y2+=text(d.c,'small','Switch it on to choose how it works.',ix,y2,iw,COL.dim)+M.gap; }
+    return y2;
+  });
+}
+const PTABS=[['questIcons','Quest icons',['questIcons']],['questArrow','Quest arrow',['questArrow']],['bags','Bags',['bagWindow','bags']],
+ ['vendors','Vendors',['sellJunk','repair']],['chat','Chat',['chat']],['menuBg','Menu background',['menuBg']],['general','General',[]],['errors','Errors',[]]];
+function pSettings(scr){
+  const [w,h]=settingsSize(); const p=panel(scr,'Pocket Essentials',w,h); const c=p.content;
+  const nw=M.button*5, b=M.border, n=PTABS.length; const th=Math.min(M.button,(c.h-(n-1)*b)/n);
+  const cur=S.ptab==='key'?'questIcons':S.ptab;
+  PTABS.forEach(([id,label,feats],i)=>{ const ty=c.y+i*(th+b); const sel=cur===id;
+    const t=rect(p.el,c.x,ty,nw,th,sel?STYLE.selected[0]:PC.card); t.classList.add('press'); t.onclick=()=>{S.ptab=id;S.scroll['p-'+id]=0;render();};
+    if(sel) rect(t,0,0,Math.max(4,b*2),th,C(1,.82,0));
+    const lab=el('div',t,{left:u(M.pad),width:u(nw-M.pad*3),top:0,height:u(th),lineHeight:u(th),fontSize:u(M.font),color:sel?'#fff':C(.88,.88,.88),textShadow:shadow(),textAlign:'left'},'lbl'); lab.textContent=label;
+    if(feats.length){ const on=feats.some(k=>S.on[k]); const dd=M.small*.55; rect(t,nw-M.pad-dd,(th-dd)/2,dd,dd,on?C(.35,.92,.45):C(.40,.40,.43),{borderRadius:'50%'}); }
+    if(id==='errors'&&S.errorsSample){ const bd=M.small*1.3; const e=rect(t,nw-M.pad-bd,(th-bd)/2,bd,bd,C(.85,.08,.08),{borderRadius:'50%'}); const tt=el('div',e,{left:0,top:0,width:u(bd),height:u(bd),lineHeight:u(bd),fontSize:u(M.small),textShadow:shadow()},'lbl'); tt.textContent='1'; }
+  });
+  const px=c.x+nw+M.gap, pw=c.w-nw-M.gap;
+  scrollArea(p.el,px,c.y,pw,c.h,'p-'+S.ptab,(d,width)=>{
+    let y=0; const tab=PTABS.find(t=>t[0]===cur);
+    if(S.ptab==='key'){ button(d.c,'Back',0,0,M.button*3,M.button,'normal',false,()=>{S.ptab='questIcons';}); y=M.button+M.gap; y=pCard(d,0,y,width,(ix,iy,iw)=>{ const dd=new Drawer(d.c); return iy+drawKeyRows(dd,ix,iy,iw); }); return y; }
+    if(cur==='menuBg'){ y=pCard(d,0,y,width,(ix,iy,iw)=>{ let yy=iy;
+        yy+=text(d.c,'font','Fixes for the game\'s own interface',ix,yy,iw,C(1,.82,0))+M.gap*.2;
+        yy+=text(d.c,'small','Parts of the default Blizzard UI that are hard to use on a handheld. Each fix only changes the game\'s window it names.',ix,yy,iw,C(.84,.84,.84));
+        return yy+M.gap; })+M.gap; }
+    for(const k of tab[2]) y=pFeature(d,FEAT[k],0,y,width)+M.gap;
+    if(cur==='general'){
+      y=pCard(d,0,y,width,(ix,iy,iw)=>{ let yy=iy;
+        yy=pOptionRow(d,null,{label:'Button size',seg:[['small','Small'],['medium','Medium'],['large','Large']],get:()=>S.size,set:v=>{S.size=v;save();syncSegs();}},ix,yy,iw);
+        yy=pOptionRow(d,null,{label:'Round button colour',seg:[['gold','Gold'],['horde','Horde'],['alliance','Alliance']],get:()=>S.hubColor,set:v=>{S.hubColor=v;}},ix,yy,iw);
+        yy=pOptionRow(d,null,{label:'I play with',seg:[[true,'Touch controls'],[false,'Controller']],get:()=>S.touch,set:v=>{S.touch=v; S.opt.bags.showTab=v;}},ix,yy,iw);
+        return yy; })+M.gap;
+      y=pCard(d,0,y,width,(ix,iy,iw)=>{ let yy=iy;
+        yy=pOptionRow(d,null,{label:'Move things on screen',act:'Open',go:()=>{S.view='move';}},ix,yy,iw);
+        yy=pOptionRow(d,null,{label:'Setup guide',act:'Open',go:()=>{S.view='setup';S.setupIdx=0;}},ix,yy,iw);
+        yy=pOptionRow(d,null,{label:'Reload the interface',act:'Reload'},ix,yy,iw);
+        return yy; });
+    }
+    if(cur==='errors'){
+      y=pCard(d,0,y,width,(ix,iy,iw)=>{ let yy=iy; const sw=M.button*2;
+        let ty=yy; ty+=text(d.c,'font','Debug log',ix,ty,iw-sw-M.gap)+M.gap*.2;
+        ty+=text(d.c,'small','Turn it on, play until the problem happens, then tap Save. Send the file SavedVariables/PocketEssentials.lua.',ix,ty,iw-sw-M.gap);
+        ty+=text(d.c,'small','0 of 10,000 lines',ix,ty+M.gap*.3,iw-sw-M.gap,COL.status)+M.gap*.3;
+        switchCtl(d.c,ix+iw-sw,yy,false,()=>{}); yy=Math.max(yy+M.button,ty)+M.gap;
+        rect(d.c,ix,yy-M.gap*.5,iw,M.border*.5,PC.line); yy+=M.gap*.5;
+        yy=pOptionRow(d,null,{label:'Save the log (reloads)',act:'Save'},ix,yy,iw);
+        yy=pOptionRow(d,null,{label:'Empty the log',act:'Empty'},ix,yy,iw);
+        return yy; })+M.gap;
+      y=pCard(d,0,y,width,(ix,iy,iw)=>{ let yy=iy; const bw=ctlWidth(iw);
+        text(d.c,'font','Errors',ix,yy+(M.button-M.font*1.15)/2,iw-bw-M.gap);
+        button(d.c,'Clear errors',ix+iw-bw,yy,bw,M.button,S.errorsSample?'normal':'disabled',false,()=>{S.errorsSample=false;}); yy+=M.button+M.gap;
+        if(!S.errorsSample) return yy+text(d.c,'small','No errors recorded.',ix,yy,iw,COL.dim)+M.gap;
+        yy+=text(d.c,'font','Quest arrow   x3   last: Nov 19 21:14',ix,yy,iw,COL.title)+M.gap*.3;
+        yy+=text(d.c,'small','QuestArrow.lua:512: attempt to index a nil value (example)',ix,yy,iw,COL.font)+M.gap*.3;
+        yy+=text(d.c,'small',"[QuestArrow.lua]:512: in function 'Update'",ix,yy,iw,COL.dim)+M.gap;
+        return yy; });
+    }
+    return y;
+  },'twopass');
+}
+function drawKeyRows(d,x,y0,w){
+  let y=y0; const side=M.button, tx=x+side+M.gap, tw=w-side-M.gap;
+  [['slay','Kill','A creature to kill.'],['loot','Loot','A creature that drops a quest item.'],['object','Use','An object to click, use or open.'],['event','Explore','A place to go to, or someone to talk to.'],['turnin','Turn in','Where to hand the quest in.']].forEach(([k,l,desc])=>{
+    if(k==='turnin') turnInIcon(d.c,x,y,side); else tint(d.c,x,y,side,side,KIND[k][0],KIND[k][1]);
+    let ty=y+(side-M.font*1.15-M.small*1.15)/2; ty+=text(d.c,'font',l,tx,ty,tw); ty+=text(d.c,'small',desc,tx,ty,tw);
+    y+=Math.max(side,ty-y)+M.gap; });
+  y+=text(d.c,'small','Tap an icon on the map to see what it is for.',x,y,w,COL.dim)+M.gap;
+  return y-y0;
+}
+function pChat(scr){ // the whole window follows its own size control
+  const keep=M, s=S.opt.chat.scale/100; M={}; for(const k in keep) M[k]=keep[k]*s; M.border=keep.border;
+  try{ pChatDraw(scr); } finally { M=keep; }
+}
+function pChatDraw(scr){
+  const cols=3, cw=M.button*3.4, b=M.border, bar=M.button+M.gap;
+  const targets=['Say','Yell','Party','Guild','1. General','2. Trade'], whispers=[['Mirabel',true],['Tobin',false],['Kessa',true]];
+  const head=M.small*1.15+M.gap*.4; const rows=n=>Math.ceil(n/cols);
+  const gridH=n=>rows(n)*M.button+(rows(n)-1)*M.gap;
+  const contentH=head+gridH(targets.length)+M.gap*1.5+head+gridH(whispers.length+1);
+  const w=2*M.pad+cols*cw+(cols-1)*M.gap, h=b+bar+M.gap+contentH+M.pad;
+  const p=panel(scr,'Chat',w,h); const c=p.content;
+  const sw=M.button*2.6; button(p.el,'Settings',p.closeX-M.gap-sw,p.closeY,sw,M.button,'normal',false,()=>{S.view='settings';});
+  let y=c.y; const grid=(items)=>{ items.forEach(([l,st,dot,fn],i)=>{ const bx=c.x+(i%cols)*(cw+M.gap), by=y+Math.floor(i/cols)*(M.button+M.gap);
+      const bt=button(p.el,l,bx,by,cw,M.button,st,false,fn||(()=>{S.view='prompt';}));
+      if(dot){ const dd=M.small*.7; rect(bt,cw-dd-M.gap*.6,M.gap*.6,dd,dd,C(.88,.08,.08),{borderRadius:'50%'}); } }); y+=gridH(items.length); };
+  text(p.el,'small','Talk in',c.x,y,c.w,COL.option); y+=head;
+  grid(targets.map(t=>[t,'normal'])); y+=M.gap*1.5;
+  text(p.el,'small','Whispers',c.x,y,c.w,COL.option); y+=head;
+  grid([...whispers.map(([n,u])=>[n,u?'warn':'normal',u]),['Clear marks','off',false,()=>{}]]);
+}
+function arrowP(scr,msg,dx=0,dy=0){
+  const s=S.opt.questArrow.scale/100, box=76*s, tw=400*s, big=28*s, sm=20*s, x=640-tw/2+dx, y=40-dy;
+  if(msg==='nofocus'&&S.resting&&S.opt.questArrow.restHide){
+    const t=el('div',scr,{left:u(x),top:u(y),width:u(tw),fontSize:u(12),textAlign:'center',color:'rgba(255,255,255,.5)',fontFamily:'var(--ui)'}); t.textContent='(arrow hidden: resting in a city or inn, no quest focused)'; return {x,y,w:tw,h:30}; }
+  const quest='Clearing the Ridge', gold=C(1,.82,0), green=C(.35,1,.45), dimGold=C(.85,.72,.35);
+  const Q=(p)=>[[p||'Quest: ',dimGold],[quest,'#fff']];
+  let arrow=true, rot=35, color=gold, line1='120 yd', line1c=gold, line2=Q();
+  if(msg==='here'){ color=green; line1='Here'; line1c=green; }
+  if(msg==='behind'){ arrow=false; line1='Turn around'; }
+  if(msg==='turnin'){ line1='45 yd'; line2=Q('Turn in: '); }
+  if(msg==='nofocus'){ arrow=false; line1='No quest focused'; line2=[['Focus one in your quest log',C(.84,.84,.84)]]; }
+  if(msg==='zone'){ arrow=false; line1='Outside this zone'; line2=[['Head to ',dimGold],['Mulgore','#fff']]; }
+  if(msg==='nowhere'){ arrow=false; line1='No map data for this quest'; line2=Q(); }
+  let ty=y; if(arrow){ tint(scr,x+tw/2-box/2,y,box,box,'arrow',color,{transform:`rotate(${rot}deg)`}); ty+=box+4*s; }
+  ty+=text(scr,big,line1,x,ty,tw,line1c,'center')+2*s;
+  text(scr,sm,line2,x,ty,tw,null,'center');
+  return {x,y,w:tw,h:box+4*s+big*1.15+sm*2.3};
+}
+function pMove(scr){
+  // All three pieces are always listed; one whose helper is off is dimmed and says so.
+  const pieces=[['questArrow','Quest arrow',S.on.questArrow],['chatPrompt','"Press A to type"',S.on.chat],['hub','Round button',true]];
+  if(!pieces.find(p=>p[0]===S.movePiece&&p[2])) S.movePiece='hub';
+  let box; const [hx,hy]=hubHome();
+  if(S.movePiece==='questArrow') box=arrowP(scr,'distance'); else if(S.movePiece==='chatPrompt') box=drawPrompt(scr);
+  drawHub(scr,hx,hy); if(S.movePiece==='hub') box={x:hx-M.hub/2,y:hy-M.hub/2,w:M.hub,h:M.hub};
+  const e=3; rect(scr,box.x,box.y,box.w,box.h,C(1,.82,0,.15));
+  [[box.x-e,box.y-e,box.w+2*e,e],[box.x-e,box.y+box.h,box.w+2*e,e],[box.x-e,box.y,e,box.h],[box.x+box.w,box.y,e,box.h]].forEach(r=>rect(scr,...r,C(1,.82,0)));
+  const pw=M.button*4.2, cell=M.button*1.8, cross=3*cell+2*M.gap; const sized=S.movePiece==='questArrow';
+  const w=2*M.pad+pw+2*M.gap+cross, rows=Math.max(pieces.length,3); const content=rows*M.button+(rows-1)*M.gap+(sized?M.button+M.gap:0);
+  const h=M.border+M.button+M.gap+M.gap+content+M.pad;
+  const p=panel(scr,'Move on screen',w,h,1280-10-w,720-10-h); const c=p.content;
+  pieces.forEach(([k,l,on],i)=>button(p.el,on?l:l+' (off)',c.x,c.y+i*(M.button+M.gap),pw,M.button,on?'normal':'disabled',S.movePiece===k,on?()=>{S.movePiece=k;}:()=>{}));
+  const cx=c.x+pw+2*M.gap; const cellAt=(col,row,l)=>button(p.el,l,cx+col*(cell+M.gap),c.y+row*(M.button+M.gap),cell,M.button,'normal',false,()=>{});
+  cellAt(1,0,'Up'); cellAt(0,1,'Left'); cellAt(1,1,'Reset'); cellAt(2,1,'Right'); cellAt(1,2,'Down');
+  if(sized){ const yy=c.y+3*(M.button+M.gap); text(p.el,'font','Size',c.x,yy+(M.button-M.font*1.15)/2,pw);
+    const o=S.opt.questArrow; const [t,dn,up]=numSpec({min:50,max:150,step:10,suffix:'%'},o.scale);
+    numberCtl(p.el,cx,yy,cross,t,'of normal',dn===undefined?null:()=>{o.scale=dn;},up===undefined?null:()=>{o.scale=up;}); }
+}
+const PSETUP=[
+ {title:'Welcome',lines:['A few helpers for playing on a handheld. They all start off: switch on the ones you want.','You can change everything later in the settings.'],touch:true},
+ {title:'Quest icons',lines:['Quest locations come from QuestieDB, which is included.'],feats:['questIcons'],only:{questIcons:['show','iconsOn','size']}},
+ {title:'Quest icon details',detail:'questIcons'},
+ {title:'Quest arrow',feats:['questArrow']},
+ {title:'Bags',feats:['bagWindow','bags']},
+ {title:'Vendors and menus',feats:['sellJunk','repair','menuBg']},
+ {title:'Round button and chat',lines:['The PE button is always on screen. With Chat picker on, a tap opens the chat window.'],hub:true,feats:['chat']},
+ {title:'Your screen',lines:['This is where each piece sits to start with. Move any of them to suit your screen.'],layout:true},
+ {title:'All set',finish:true},
+];
+function glyph(parent,x,y,d,label){ // a round controller-button picture, like the game's A / B icons
+  const g=rect(parent,x,y,d,d,C(.70,.70,.72),{borderRadius:'50%'}); rect(g,M.border,M.border,d-2*M.border,d-2*M.border,C(.16,.16,.18),{borderRadius:'50%'});
+  const t=el('div',g,{left:0,top:0,width:u(d),height:u(d),lineHeight:u(d),fontSize:u(d*.55),color:'#fff',textShadow:shadow()},'lbl'); t.textContent=label;
+}
+function dpadGlyph(parent,x,y,d){ const a=d/3, col=C(.70,.70,.72);
+  rect(parent,x+a,y,a,d,col); rect(parent,x,y+a,d,a,col); rect(parent,x+a+M.border,y+a+M.border,a-2*M.border,a-2*M.border,C(.16,.16,.18)); }
+function screenPreview(parent,x,y,w){ // the whole screen, small, with each piece's starting spot
+  const f=w/1280, h=720*f; const s=rect(parent,x,y,w,h,C(.20,.17,.13),{border:`${u(1)} solid ${C(.35,.35,.38)}`});
+  const spot=(bx,by,bw,bh,label,round)=>{ const b=rect(s,bx*f,by*f,bw*f,bh*f,C(1,.82,0,.15),{border:`${u(1.5)} dashed ${C(1,.82,0)}`,borderRadius:round?'50%':'0'});
+    const t=el('div',s,{left:u(Math.max(bx*f-40,2)),top:u((by+bh)*f+3),width:u(bw*f+80),fontSize:u(M.small*.8),color:C(1,.82,0),textAlign:'center',textShadow:shadow(),whiteSpace:'nowrap'}); t.textContent=label; };
+  const s100=S.opt.questArrow.scale/100; spot(640-200*s100,40,400*s100,(76+4+28*1.15+20*2.3)*s100,'Quest arrow');
+  spot(10,360-M.hub/2,M.hub,M.hub,'Round button',true);
+  spot(640-170,360-110-45,340,90,'Press A to type');
+  const mm=el('div',s,{left:u((1280-206)*f),top:u(34*f),width:u(180*f),height:u(180*f),borderRadius:'50%',border:`${u(1)} dashed rgba(255,255,255,.35)`});
+  return h;
+}
+function tipTiles(d,x,y,w){
+  // Every tile the same height, the picture in a box of one fixed size, the
+  // title on one shared line and the text below it, so the three line up.
+  const n=3, tw=(w-(n-1)*M.gap)/n, hd=M.hub*.8, box=hd+14; const bgs=[];
+  const tiles=[['Tap','Opens the settings, or Chat picker when it is on.'],['Hold','Always opens the settings.'],['Move things','Settings, General tab.']];
+  let descH=0; tiles.forEach(([,desc])=>{ descH=Math.max(descH,text(d.c,'small',desc,0,0,tw-2*M.pad)); d.c.lastChild.remove(); });
+  const tileH=M.pad+box+M.gap+M.font*1.15+M.gap*.3+descH+M.pad;
+  tiles.forEach(([t,desc],i)=>{ const tx=x+i*(tw+M.gap); const bg=rect(d.c,tx,y,tw,tileH,C(.12,.12,.14)); bgs.push(bg);
+    let yy=M.pad+7;
+    if(i<2){ const [ring,fill]=HUB[S.hubColor]; const hb=rect(bg,tw/2-hd/2,yy,hd,hd,ring,{borderRadius:'50%'}); rect(hb,3,3,hd-6,hd-6,fill,{borderRadius:'50%'});
+      const l=el('div',hb,{left:0,top:0,width:u(hd),height:u(hd),lineHeight:u(hd),fontSize:u(M.font*.8),color:ring,textShadow:shadow()},'lbl'); l.textContent='PE';
+      if(i===1){ const r=rect(bg,tw/2-hd/2-5,yy-5,hd+10,hd+10,'transparent',{borderRadius:'50%',border:`${u(2)} dashed ${ring}`}); } }
+    else { const e=3, bx=tw/2-hd/2; rect(bg,bx,yy,hd,hd,C(1,.82,0,.15)); [[bx-e,yy-e,hd+2*e,e],[bx-e,yy+hd,hd+2*e,e],[bx-e,yy,e,hd],[bx+hd,yy,e,hd]].forEach(r=>rect(bg,...r,C(1,.82,0))); }
+    yy=M.pad+box+M.gap; text(bg,'font',t,M.pad,yy,tw-2*M.pad,C(1,.82,0),'center'); yy+=M.font*1.15+M.gap*.3; text(bg,'small',desc,M.pad,yy,tw-2*M.pad,C(.84,.84,.84),'center'); });
+  return y+tileH;
+}
+function pSetup(scr){
+  const [w,h]=settingsSize(); const i=Math.min(S.setupIdx,PSETUP.length-1), n=PSETUP.length, e=PSETUP[i];
+  const p=panel(scr,'Setup',w,h); const c=p.content; const bw=M.button*3.5;
+  // step dots between Skip and Next
+  const dd=M.small*.6, dg=M.gap, dotsW=n*dd+(n-1)*dg; const dy=c.y+c.h-M.button/2-dd/2;
+  for(let k=0;k<n;k++) rect(p.el,c.x+c.w/2-dotsW/2+k*(dd+dg),dy,dd,dd,k===i?C(1,.82,0):C(.35,.35,.38),{borderRadius:'50%'});
+  if(i>0) button(p.el,'Back',c.x,c.y+c.h-M.button,bw,M.button,'normal',false,()=>{S.setupIdx=i-1;});
+  if(i<n-1) button(p.el,'Skip',c.x+bw+M.gap,c.y+c.h-M.button,bw,M.button,'normal',false,()=>{S.view='hud';});
+  button(p.el,i===n-1?'Finish':i===0?'Start':'Next',c.x+c.w-bw,c.y+c.h-M.button,bw,M.button,i===n-1?'on':'normal',false,()=>{ if(i<n-1) S.setupIdx=i+1; else S.view='hud'; });
+  scrollArea(p.el,c.x,c.y,c.w,Math.max(c.h-M.button-M.gap,M.button*2+M.gap),'psetup-'+i,(d,width)=>{
+    let y=0; y+=text(d.c,'title',e.title,0,y,width)+M.gap*.5;
+    for(const l of e.lines||[]) y+=text(d.c,'font',l,0,y,width,C(.88,.88,.88))+M.gap*.5;
+    y+=M.gap*.5;
+    if(e.touch){ y=pCard(d,0,y,width,(ix,iy,iw)=>pOptionRow(d,null,{label:'How do you play?',seg:[[true,'Touch controls'],[false,'Controller']],get:()=>S.touch,set:v=>{S.touch=v;S.opt.bags.showTab=v;}},ix,iy,iw))+M.gap;
+      y=pCard(d,0,y,width,(ix,iy,iw)=>{ let yy=iy;
+        yy+=text(d.c,'small','Getting around these windows',ix,yy,iw,COL.option)+M.gap*.6;
+        const gd=M.button*.75, cw=(iw-2*M.gap)/3;
+        [['dpad','Move the blue highlight'],['A','Press the highlighted button'],['B','Close the window']].forEach(([k,v],i)=>{ const cx=ix+i*(cw+M.gap);
+          if(k==='dpad') dpadGlyph(d.c,cx,yy,gd); else glyph(d.c,cx,yy,gd,k);
+          text(d.c,'font',v,cx+gd+M.gap,yy+(gd-M.font*1.15*(measure('font',v)>cw-gd-M.gap?2:1))/2,cw-gd-M.gap,C(.92,.92,.92)); });
+        yy+=gd+M.gap*.8;
+        yy+=text(d.c,'small',S.touch?'Or just tap any button on the screen.':'Touch works too, any time.',ix,yy,iw,COL.dim);
+        return yy+M.gap; }); }
+    if(e.hub){ y=pCard(d,0,y,width,(ix,iy,iw)=>{ let yy=iy; const pv=M.hub*1.6;
+        drawHub(d.c,ix+pv/2,yy+pv/2,{}); const rx=ix+pv+M.gap*2, rw=iw-pv-M.gap*2;
+        let ry=yy; ry=pOptionRow(d,null,{label:'Colour',seg:[['gold','Gold'],['horde','Horde'],['alliance','Alliance']],get:()=>S.hubColor,set:v=>{S.hubColor=v;}},rx,ry,rw);
+        ry=pOptionRow(d,null,{label:'Size of all Pocket Essentials buttons',seg:[['small','Small'],['medium','Medium'],['large','Large']],get:()=>S.size,set:v=>{S.size=v;save();syncSegs();}},rx,ry,rw);
+        return Math.max(yy+pv+M.gap,ry); }); }
+    if(e.layout){ y=pCard(d,0,y,width,(ix,iy,iw)=>{ const pw=Math.min(iw*.62,(Math.max(c.h-M.button-M.gap,0)-M.button*3)*16/9);
+        const ph=screenPreview(d.c,ix,iy,pw); const rx=ix+pw+M.gap*2, rw=iw-pw-M.gap*2; let ry=iy;
+        ry+=text(d.c,'font','Gold boxes show where each piece starts.',rx,ry,rw,C(.92,.92,.92))+M.gap;
+        button(d.c,'Move things now',rx,ry,rw,M.button,'normal',false,()=>{S.view='move';}); ry+=M.button+M.gap*.6;
+        ry+=text(d.c,'small','You can do this later too: Settings, General tab.',rx,ry,rw,COL.dim);
+        return iy+Math.max(ph,ry-iy)+M.gap; }); }
+    for(const k of e.feats||[]) y=pFeature(d,FEAT[k],0,y,width,true,e.only&&e.only[k])+M.gap;
+    if(e.detail){ const f=FEAT[e.detail];
+      if(!S.on[f.key]) y+=text(d.c,'font','Quest icons is off, so the guide skips this screen.',0,y,width,COL.dim)+M.gap;
+      else { y=pCard(d,0,y,width,(ix,iy,iw)=>{ let yy=iy; for(const o of POPTS.questIcons.filter(o=>['cluster','spots','hideHaze'].includes(o.key))) yy=pOptionRow(d,f,o,ix,yy,iw); return yy; })+M.gap;
+        y=pCard(d,0,y,width,(ix,iy,iw)=>{ const lw=(iw-M.gap)/2; let yy=iy; yy+=text(d.c,'small','What the icons mean',ix,yy,iw,COL.option)+M.gap*.6;
+          const items=[['slay','Kill'],['loot','Loot'],['object','Use'],['event','Explore'],['turnin','Turn in']]; const side=M.button*.7, colW=iw/5;
+          items.forEach(([k,l],i)=>{ const cx=ix+i*colW; if(k==='turnin') turnInIcon(d.c,cx,yy,side); else tint(d.c,cx,yy,side,side,KIND[k][0],KIND[k][1]);
+            text(d.c,'font',l,cx+side+M.gap*.5,yy+(side-M.font*1.15)/2,colW-side-M.gap,C(.92,.92,.92)); });
+          return yy+side+M.gap; }); } }
+    if(e.finish){
+      const on=FEATURES.filter(f=>S.on[f.key]).map(f=>PNAME[f.key]), off=FEATURES.filter(f=>!S.on[f.key]).map(f=>PNAME[f.key]);
+      y=pCard(d,0,y,width,(ix,iy,iw)=>{ let yy=iy;
+        yy+=text(d.c,'font',[['On: ',C(.35,.92,.45)],[on.join(', ')||'nothing yet',C(.92,.92,.92)]],ix,yy,iw)+M.gap*.5;
+        if(off.length) yy+=text(d.c,'font',[['Off: ',C(.62,.62,.64)],[off.join(', '),C(.92,.92,.92)]],ix,yy,iw)+M.gap*.5;
+        return yy+M.gap*.5; })+M.gap;
+      y=tipTiles(d,0,y,width);
+    }
+    return y;
+  },'twopass');
+}
+function pBag(scr){
+  const [hx,hy]=hubHome(); drawHub(scr,hx,hy,{badge:S.on.chat?'2':null});
+  const bx=860,by=283,bw=400,bh=357; gameFrame(scr,bx,by,bw,bh,"game's combined bag"); gameFrame(scr,bx+8,by+6,38,38,'',true);
+  if(!(S.on.bags&&S.opt.bags.showTab)){ text(scr,'small','Sort button is hidden.',bx-420,by+60,400,COL.dim); return; }
+  // Same size as today (easy to hit), but one soft shape: rounded on the outer side,
+  // open against the bag, one gold edge, the sort picture and the word "Sort" in
+  // the middle instead of stacked letters.
+  const w=M.button, h=Math.max(M.button*3.5,bh*.5), x=bx-w+M.border, y=by+56, r=M.button*.28, b=M.border;
+  const t=el('div',scr,{left:u(x),top:u(y),width:u(w),height:u(h),background:GOLDBROWN,borderRadius:`${u(r)} 0 0 ${u(r)}`,cursor:'pointer'});
+  el('div',t,{left:u(b),top:u(b),width:u(w-b),height:u(h-2*b),background:`linear-gradient(90deg,${C(.13,.12,.10)},${C(.07,.07,.08)})`,borderRadius:`${u(r-b)} 0 0 ${u(r-b)}`});
+  const ic=M.button*.5, cy=h/2-(ic+M.gap*.6+M.small*1.15)/2;
+  [1,.72,.44].forEach((f,i)=>rect(t,w/2-ic/2,cy+i*ic*.36,ic*f,ic*.2,C(1,.82,0),{borderRadius:u(ic*.1)})); // stand-in for the game's sort picture
+  text(t,'small','Sort',0,cy+ic+M.gap*.6,w,C(1,.82,0),'center');
+  t.onclick=()=>{ const f=el('div',t,{left:0,top:0,width:u(w),height:u(h),background:'rgba(255,255,255,.3)',borderRadius:`${u(r)} 0 0 ${u(r)}`,transition:'opacity .3s'}); requestAnimationFrame(()=>{f.style.opacity=0;}); setTimeout(()=>f.remove(),320); };
+}
+const PROPOSED={
+  bag:pBag,
+  hud:scr=>{ const [hx,hy]=hubHome(); drawHub(scr,hx,hy,{badge:S.on.chat?'2':null,tap:()=>{S.view=S.on.chat?'chat':'settings';}}); arrowP(scr,'distance'); drawMinimap(scr,true); },
+  arrow:scr=>{ const [hx,hy]=hubHome(); drawHub(scr,hx,hy,{badge:S.on.chat?'2':null}); arrowP(scr,S.arrowMsg); },
+  settings:pSettings, chat:pChat, move:pMove, setup:pSetup,
+};
+const NOTES_P={
+ hud:{what:['The same pieces, with the quest arrow at your chosen size. Try the size control on the Quest arrow view.'],fix:[]},
+ arrow:{what:['One size control (50% to 150%, in steps of 10) sets the arrow and its text together. It no longer follows Button size, and there are no fixed Small/Normal/Large choices.','Change it in Move on screen while you watch the arrow, or in the settings under Quest arrow.','The quest line is smaller and starts with "Quest:", the same way turn-ins start with "Turn in:".','Turn around shows no arrow: just "Turn around" with the quest line under it, so there is no gap.','"No location" now reads "No map data for this quest".','In a city or inn with no quest focused, the hint is hidden (a choice in the settings).'],fix:[[7,'"Here" is green in both the arrow and the text'],[25,'the old fixed positions and sizes go']]},
+ settings:{what:['Tabs on the left, one page at a time on the right. Bags and Vendors each hold their two helpers, matching the setup guide.','Every row is the same: the name on the left, one control of one width on the right. A green dot on a tab means a helper there is on.','Only one tab is drawn at a time, so less is built and kept on screen: lighter for the handheld.','Feature names are suggestions (Bigger bag, Bag sorting, Sell junk, Repair gear, Chat picker); say which you prefer.','Bigger bag always puts the bag pictures in one row at the top, so its "Bag pictures" choice is gone. Off, the game shows its own bag.','The choices explain themselves ("Show, to tap" / "Hide", "Left stick" / "Right stick"), and each section has one plain line under its name.','General: "I play with: Touch controls / Controller" takes the place of "Touch screen: Yes/No". It is the same question the setup guide asks.','A row can still have one short grey line when it needs it (Chat text size).'],fix:[[5,'switches are On/Off only; two-way choices are segmented, so green no longer means "the second choice"'],[8,'sentence case everywhere'],[9,'one switch shape for every helper'],[10,'tab names match the setup guide'],[15,'one Reload, under General'],[16,'Save, Empty the log and Clear errors are on separate rows'],[17,'the "press and hold" tip is gone'],[18,'Chat text size has its own tab, so it no longer forces options to show'],[21,'every control has the same width'],[23,'the scroll bar shows only when a page is too long'],[24,'names always sit left of their control']]},
+ setup:{what:['9 screens, each about as full as the next: Welcome, Quest icons, Quest icon details, Quest arrow, Bags, Vendors and menus, Round button and chat, Your screen, All set.','Every choice a helper has is now in the guide. Quest icons is split across two screens so neither is crammed; the second one also shows what the icons mean, and is skipped when Quest icons is off.','The small ones are joined: Auto sell junk, Auto repair and Menu background share a screen; the round button\'s look shares a screen with Chat picker.','Welcome asks "How do you play? Touch controls / Controller", then shows controller-button pictures for getting around the windows.','Round button: pick its colour and the size of all buttons, with the button drawn beside so you see it change.','Your screen: a small picture of the screen with a gold box where each piece starts, and a "Move things now" button.','All set: what is on and off, then three tip tiles of the same size, with pictures, titles and text on shared lines.','Menu background moved onto the Quests screen, since it is mostly for the quest log menu.'],fix:[[6,'helper names look the same as in the settings'],[10,'screens are named like the settings tabs'],[19,'the 4-paragraph screen is now three tips on All set'],[20,'"Controller only" says it hides the Sort button']]},
+ bag:{what:['The same size, so it stays easy to hit, but one soft shape: rounded on the outer side, joined to the bag edge, with one gold edge.','The sort picture and the word "Sort" sit together in the middle, in place of the stacked S-o-r-t letters.','The rounded corners need one small picture file in the addon (a few KB). Square corners need nothing.','The three gold bars are a stand-in for the game\'s own sort picture, which the real tab uses.'],fix:[[1,'the tab uses the same gold edge as the windows'],[2,'one less gold shade']]},
+ move:{what:['All three pieces are always listed. One whose helper is off is dimmed and says "(off)", so nothing seems to be missing.','The second piece is now named "Press A to type", the text you actually see.','With the quest arrow picked, a Size row sits under the arrows.'],fix:[]},
+ chat:{what:['The window has its own size control (70% to 150%), under Chat in the settings, the same kind as the quest arrow\'s. The slider above changes it here.','The window is only as big as its buttons, centred, 3 columns. "Three-finger tap for the keyboard" is gone.','Tapping a button picks the target and shows "Press A to type", as today.','Unanswered whispers keep the amber colour and get a round red dot, like the round button\'s badge.'],fix:[[3,'one round badge shape everywhere']]},
+};
+
+/* ---------- page chrome ---------- */
+const nav=document.getElementById('nav');
+VIEWS.forEach(([group,items])=>{ el('h2',nav).textContent=group; items.forEach(([k,l])=>{ const b=el('button',nav); b.textContent=l; b.dataset.v=k; b.onclick=()=>{S.view=k; if(k==='settings') S.settingsPage='main'; save(); render();}; }); });
+function seg(id,key,after){ document.querySelectorAll('#'+id+' button').forEach(b=>{ b.onclick=()=>{ S[key]=key==='res'?+b.dataset.v:b.dataset.v; save(); syncSegs(); render(); if(after) after(); }; }); }
+function syncSegs(){ [['seg-ver','ver'],['seg-res','res'],['seg-size','size'],['seg-zoom','zoom']].forEach(([id,k])=>document.querySelectorAll('#'+id+' button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.v===String(S[k]))))); }
+seg('seg-ver','ver'); seg('seg-res','res'); seg('seg-size','size'); seg('seg-zoom','zoom');
+
+function subControls(){
+  const sub=document.getElementById('sub'); sub.innerHTML='';
+  const mk=(label,opts,key)=>{ const g=el('div',sub,null,'seg'); el('span',g).textContent=label; opts.forEach(([v,l])=>{ const b=el('button',g); b.textContent=l; b.setAttribute('aria-pressed',String(S[key]===v)); b.onclick=()=>{S[key]=v;render();}; }); };
+  if(S.view==='arrow') mk('Message',[['distance','Distance'],['here','Here'],['behind','Turn around'],['turnin','Turn in'],['nofocus','No quest'],['zone','Other zone'],['nowhere','No location']],'arrowMsg');
+  if(S.view==='arrow'&&S.ver==='proposed'){
+    const g=el('div',sub,null,'seg'); el('span',g).textContent='Size'; const r=el('input',g); r.type='range'; r.id='arrow-scale'; r.min=50; r.max=150; r.step=10; r.value=S.opt.questArrow.scale;
+    const out=el('span',g); out.textContent=S.opt.questArrow.scale+'%'; r.oninput=()=>{S.opt.questArrow.scale=+r.value; out.textContent=r.value+'%'; render(true);};
+    mk('Resting in a city or inn',[[false,'No'],[true,'Yes']],'resting'); }
+  if(S.view==='chat'&&S.ver==='proposed'){
+    const g=el('div',sub,null,'seg'); el('span',g).textContent='Window size'; const r=el('input',g); r.type='range'; r.min=70; r.max=150; r.step=10; r.value=S.opt.chat.scale;
+    const out=el('span',g); out.textContent=S.opt.chat.scale+'%'; r.oninput=()=>{S.opt.chat.scale=+r.value; out.textContent=r.value+'%'; render(true);}; }
+  if(S.view==='settings'&&S.ver==='proposed'){ mk('Errors',[[false,'None'],[true,'One example']],'errorsSample'); }
+  else if(S.view==='settings'){ mk('Page',[['main','Main'],['errors','Errors'],['key','Quest Icon Key']],'settingsPage'); mk('Errors',[[false,'None'],[true,'One example']],'errorsSample'); }
+  if(S.view==='setup') mk('Screen',(S.ver==='proposed'?PSETUP:SETUP).map((s,i)=>[i,String(i+1)]),'setupIdx');
+  if(['hud','hub','settings','mapbutton','move'].includes(S.view)) mk('Round button colour',[['gold','Gold'],['horde','Horde'],['alliance','Alliance']],'hubColor');
+  sub.hidden=!sub.childNodes.length;
+}
+function renderNotes(){
+  const prop=S.ver==='proposed'&&NOTES_P[S.view];
+  const n=prop||NOTES[S.view]||{what:[],fix:[]}; const box=document.getElementById('notes'); box.innerHTML='';
+  const a=el('div',box,null,'card'); el('h3',a).textContent=prop?'Proposed':(S.ver==='proposed'?'Today (no change proposed yet)':'What you are looking at'); const ul=el('ul',a); n.what.forEach(t=>el('li',ul).textContent=t);
+  const m=M, k=S.res/720; const li=el('li',ul); li.textContent=`At ${S.res}p, ${S.size}: buttons are ${+(m.button*k).toFixed(1)} px tall, text ${+(m.font*k).toFixed(1)} px, the round button ${+(m.hub*k).toFixed(1)} px.`;
+  if(n.fix.length){ const b=el('div',box,null,'card'); el('h3',b).textContent=prop?'List items this fixes':'Cleanup candidates seen here'; const ul2=el('ul',b);
+    n.fix.forEach(([num,t])=>{ const li=el('li',ul2); const s=el('span',li,null,'n'); s.textContent='#'+num+' '; li.appendChild(document.createTextNode(t)); }); }
+  document.getElementById('hint').textContent='Numbers after # match the list in docs/ui-review/2026-11-20-ui-inventory-0.8.1.md. The font is a stand-in for the game\'s Friz Quadrata, so text widths are close, not exact. Game frames are dashed outlines.';
+}
+const stagebox=document.getElementById('stagebox'), scaler=document.getElementById('scaler');
+function render(keepSub){
+  M=Object.assign({border:2},PRESET[S.size]); K=S.res/720;
+  scaler.innerHTML=''; const W=1280*K,H=720*K;
+  const scr=el('div',scaler,{width:W+'px',height:H+'px',position:'relative'},'screen');
+  drawView(scr);
+  document.querySelectorAll('nav button').forEach(b=>b.setAttribute('aria-current',String(b.dataset.v===S.view)));
+  fit(); if(keepSub!==true) subControls(); renderNotes();
+}
+function fit(){
+  const W=1280*K,H=720*K; const avail=stagebox.clientWidth||W;
+  if(S.zoom==='actual'){ stagebox.classList.add('actual'); scaler.style.transform='none'; stagebox.style.height=Math.min(H,window.innerHeight*.8)+'px'; }
+  else { stagebox.classList.remove('actual'); const s=Math.min(1,avail/W); scaler.style.transform=`scale(${s})`; stagebox.style.height=(H*s)+'px'; }
+}
+new ResizeObserver(()=>fit()).observe(stagebox);
+syncSegs();
+(document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve()).then(render);
+render();
+</script>
