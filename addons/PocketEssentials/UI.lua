@@ -195,7 +195,7 @@ local STYLES = {
     warn     = { fill = { 0.52, 0.28, 0.03 }, border = { 1.00, 0.62, 0.15 }, text = { 1, 1, 1 } },
     tab      = { fill = { 0.07, 0.06, 0.04 }, border = { 0.80, 0.64, 0.20 }, text = { 1, 0.82, 0 } },
     disabled = { fill = { 0.11, 0.11, 0.12 }, border = { 0.27, 0.27, 0.29 }, text = { 0.50, 0.50, 0.50 } },
-    -- The ends of a number control (Settings.lua NumberBox): gold edge, gold
+    -- The ends of a number control (UI:CreateNumber): gold edge, gold
     -- sign; stepDim when that side has no further step.
     step     = { fill = { 0.15, 0.16, 0.19 }, border = { 0.62, 0.52, 0.22 }, text = { 1, 0.82, 0 } },
     stepDim  = { fill = { 0.11, 0.11, 0.12 }, border = { 0.62, 0.52, 0.22 }, text = { 0.33, 0.32, 0.29 } },
@@ -514,6 +514,14 @@ function SwitchMethods:LayoutSwitch()
     end
     local label = self.peText
     label:ClearAllPoints()
+    -- Failed: no knob, and the longer word "Problem" uses the whole width.
+    if self.peSwitchState == "failed" then
+        self.peKnob:Hide()
+        label:SetPoint("CENTER", self, "CENTER", 0, 0)
+        label:SetWidth(max(width - m.gap * 0.4, 1))
+        return
+    end
+    self.peKnob:Show()
     label:SetPoint("LEFT", self, "LEFT", on and m.gap * 0.4 or (knob + m.gap * 0.6), 0)
     label:SetWidth(max(width - knob - m.gap, 1))
 end
@@ -561,6 +569,16 @@ function SegmentedMethods:Set(width, items)
         part.peText:SetPoint("LEFT", part, "LEFT", m.gap * 0.4, 0)
         part.peText:SetPoint("RIGHT", part, "RIGHT", -m.gap * 0.4, 0)
         part:SetLabel(item.label)
+        -- A label that does not fit its part (at Large: "Extra large", or
+        -- "Medium" in a part of four) uses the small font instead.
+        local label = part.peText
+        pcall(label.SetFontObject, label, m.font)
+        local ok, textWidth = pcall(label.GetUnboundedStringWidth, label)
+        if not ok or type(textWidth) ~= "number" or textWidth <= 0 then
+            textWidth = #(label:GetText() or "") * m.fontSize * 0.55
+        end
+        part.peSmallLabel = textWidth > partWidth - m.gap * 0.8
+        if part.peSmallLabel then pcall(label.SetFontObject, label, m.smallFont) end
         part:SetStyle(item.selected and "segmentOn" or "segment")
         part.peBar:ClearAllPoints()
         part.peBar:SetPoint("BOTTOMLEFT", part, "BOTTOMLEFT", 0, 0)
@@ -790,6 +808,12 @@ end
 
 local AreaMethods = {}
 
+-- The sizes the area is laid out with: its own (Layout's metrics) or the
+-- shared ones.
+local function AreaMetrics(area)
+    return area.peMetrics or UI:Metrics()
+end
+
 function AreaMethods:GetRange()
     return max(self.contentHeight - self.viewHeight, 0)
 end
@@ -809,7 +833,7 @@ end
 function AreaMethods:PlaceThumb()
     local trackHeight = self.trackHeight or 1
     local ratio = min(self.viewHeight / max(self.contentHeight, 1), 1)
-    local thumbHeight = min(max(trackHeight * ratio, UI:Metrics().button * 0.5), trackHeight)
+    local thumbHeight = min(max(trackHeight * ratio, AreaMetrics(self).button * 0.5), trackHeight)
     local range = self:GetRange()
     local fraction = range > 0 and (self.offset / range) or 0
     self.thumb:SetHeight(thumbHeight)
@@ -833,17 +857,19 @@ function AreaMethods:ScrollBy(delta)
 end
 
 function AreaMethods:PageUp()
-    self:ScrollBy(-max(self.viewHeight - UI:Metrics().row, UI:Metrics().row))
+    local row = AreaMetrics(self).row
+    self:ScrollBy(-max(self.viewHeight - row, row))
 end
 
 function AreaMethods:PageDown()
-    self:ScrollBy(max(self.viewHeight - UI:Metrics().row, UI:Metrics().row))
+    local row = AreaMetrics(self).row
+    self:ScrollBy(max(self.viewHeight - row, row))
 end
 
 -- top/bottom are distances from the top of area.child (positive, downwards).
 function AreaMethods:EnsureVisible(top, bottom)
     if type(top) ~= "number" or type(bottom) ~= "number" then return end
-    local margin = UI:Metrics().gap
+    local margin = AreaMetrics(self).gap
     if bottom - top > self.viewHeight - margin * 2 then bottom = top + self.viewHeight - margin * 2 end
     if top - margin < self.offset then
         self:ScrollTo(top - margin)
@@ -872,9 +898,12 @@ end
 
 -- noPaging: for a list known to fit. The scroll bar is hidden and the list
 -- takes the whole width. It is hidden too while the player does not use the
--- touch screen (PE:UsesTouch), which is read on every call.
-function AreaMethods:Layout(width, height, noPaging)
-    local m = UI:Metrics()
+-- touch screen (PE:UsesTouch), which is read on every call. metrics: the
+-- sizes for the bar (button, gap, row) of a window with its own scale (the
+-- chat window); nil uses the shared ones.
+function AreaMethods:Layout(width, height, noPaging, metrics)
+    self.peMetrics = type(metrics) == "table" and metrics or nil
+    local m = AreaMetrics(self)
     local column = m.button * 0.75
     local bar = not noPaging and PE:UsesTouch()
     width, height = max(width or 0, column + m.gap + 10), max(height or 0, 10)
@@ -946,7 +975,7 @@ function UI:CreateScrollArea(parent)
     -- No wheel on the handheld; this is for testing on a desktop.
     area.scrollFrame:EnableMouseWheel(true)
     area.scrollFrame:SetScript("OnMouseWheel", function(_, delta)
-        area:ScrollBy(-(delta or 0) * UI:Metrics().row)
+        area:ScrollBy(-(delta or 0) * AreaMetrics(area).row)
     end)
     return area
 end
@@ -1072,8 +1101,16 @@ local function NavMove(panel, step, byRow)
     -- Touch off: the scroll bar's tabs are hidden, so a list with no stops
     -- below the top (plain text) could not be scrolled. When the next stop is
     -- outside the list (or the move wraps), the d-pad pages the list instead.
+    -- A column with no stop inside the list (the settings tabs) never pages:
+    -- Up and Down there move between its own stops.
     local area = panel.peNavArea
-    if byRow and current and area and area.GetRange and not PE:UsesTouch() then
+    local pages = list == all or list[current or 0] and list[current].peScrollTop
+    if not pages and current then
+        for i = 1, n do
+            if list[i].peScrollTop then pages = true break end
+        end
+    end
+    if byRow and current and pages and area and area.GetRange and not PE:UsesTouch() then
         local target = list[index]
         local outside = not (target and target.peScrollTop)
         if outside then

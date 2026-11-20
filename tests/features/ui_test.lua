@@ -391,6 +391,66 @@ test("switch: On is green with the knob on the right, Off grey with it on the le
     c:assertClean("switch")
 end)
 
+-- Review fix: "Problem" was cut short beside the knob. Failed: no knob, the
+-- word centred across the whole switch.
+test("switch: failed has no knob and its label fits the switch at every size", function()
+    for _, size in ipairs({ "small", "medium", "large" }) do
+        local c, PE = T.new({})
+        PE:SetUISetting("size", size)
+        local M = PE.UI:Metrics()
+        local sw = PE.UI:CreateSwitch(rawget(c.env, "UIParent"))
+        sw:SetPoint("CENTER", rawget(c.env, "UIParent"), "CENTER", 0, 0)
+        sw:SetSwitch("failed")
+        check(not sw.peKnob:IsShown(), size .. ": the knob shows on a failed switch")
+        local label = sw.peText
+        check(label:GetWidth() >= label:GetUnboundedStringWidth(), size .. ": Problem is " .. label:GetUnboundedStringWidth()
+            .. " wide in a label of " .. label:GetWidth())
+        local sl, sr = c._rect(sw)
+        local ll, lr = c._rect(label)
+        check(near((ll + lr) / 2, (sl + sr) / 2), size .. ": the label is not centred")
+        check(ll >= sl - 0.01 and lr <= sr + 0.01, size .. ": the label runs outside the switch")
+        sw:SetSwitch("off")
+        check(sw.peKnob:IsShown(), size .. ": the knob did not come back")
+        c:assertClean("failed switch")
+    end
+end)
+
+-- Review fix: at Large a label could be cut short in its part ("Medium" in four
+-- parts, "Extra large"); such a label uses the small font.
+test("segmented: at Large every label fits its part, with the small font when the normal one does not fit", function()
+    local c, PE = T.new({})
+    PE:SetUISetting("size", "large")
+    local UI, M = PE.UI, PE.UI:Metrics()
+    local seg = UI:CreateSegmented(rawget(c.env, "UIParent"))
+    seg:SetPoint("CENTER", rawget(c.env, "UIParent"), "CENTER", 0, 0)
+    local width = UI:ControlWidth(M.button * 12)
+    local function items(labels)
+        local out = {}
+        for i, l in ipairs(labels) do out[i] = { label = l, selected = i == 1 } end
+        return out
+    end
+    local sawSmall = false
+    for _, labels in ipairs({ { "Tiny", "Small", "Medium", "Large" }, { "Normal", "Large", "Extra large" }, { "On", "Off" } }) do
+        local parts = seg:Set(width, items(labels))
+        for _, part in ipairs(parts) do
+            local label = part.peText
+            local room = part:GetWidth() - M.gap * 0.8
+            local need = label:GetUnboundedStringWidth()
+            if part.peSmallLabel then
+                sawSmall = true
+                eq(c._state(label).fontObject, rawget(c.env, M.smallFont), label:GetText() .. ": not the small font")
+            else
+                check(need <= room + 0.01, label:GetText() .. " is " .. need .. " wide in a part of " .. room)
+            end
+        end
+    end
+    check(sawSmall, "no label needed the small font at Large in a narrow control")
+    -- The short ones keep the normal font.
+    local parts = seg:Set(width, items({ "On", "Off" }))
+    for _, part in ipairs(parts) do check(not part.peSmallLabel, "a short label got the small font") end
+    c:assertClean("segmented at large")
+end)
+
 test("switch: a blocked feature's switch is disabled and a tap leaves it off", function()
     local c, PE = T.new({})
     openSettings(c, PE, "questIcons")
@@ -1113,6 +1173,8 @@ test("nav: touch off, the Errors page can be read to the bottom with the d-pad D
     local panel = settingsPanel(c)
     local area = panel.peNavArea
     check(area and area:GetRange() > 100, "the Errors page does not scroll")
+    dpadKey(c, "DOWN")    -- the first press lands on the chosen tab
+    dpadKey(c, "RIGHT")   -- into the page
     for _ = 1, 80 do
         dpadKey(c, "DOWN")
         if area.offset >= area:GetRange() - 0.5 then break end
@@ -1123,6 +1185,60 @@ test("nav: touch off, the Errors page can be read to the bottom with the d-pad D
         if area.offset <= 0.5 then break end
     end
     check(area.offset <= 0.5, "the d-pad Up never got back to the top")
+end)
+
+-- Review fix: the tabs are no part of the scrolling page, so Up and Down on a tab move
+-- between the tabs and never page the list (UI.lua NavMove).
+test("nav: touch off, Down on a tab moves to the next tab and does not scroll a long page", function()
+    local c, PE = T.new({})
+    PE:SetUISetting("touch", false)
+    for i = 1, 40 do PE:LogError("probe", "problem number " .. i .. " with a fairly long message to fill the line", "stack " .. i) end
+    openSettings(c, PE)
+    PE:OpenSettings("errors")
+    c:advance(0.2)
+    local panel = settingsPanel(c)
+    local area = panel.peNavArea
+    check(area and area:GetRange() > 100, "the Errors page does not scroll")
+    dpadKey(c, "DOWN")
+    local first = panel.peNavFocus
+    check(first and first.peTabId == "errors", "the first press did not land on the chosen tab")
+    dpadKey(c, "UP")
+    check(panel.peNavFocus and panel.peNavFocus.peTabId and panel.peNavFocus ~= first, "Up on a tab did not move to another tab")
+    eq(area.offset, 0, "Up on a tab paged the list")
+    local before = panel.peNavFocus
+    dpadKey(c, "DOWN")
+    check(panel.peNavFocus == first, "Down on a tab did not move to the next tab")
+    check(before ~= first, "no move")
+    eq(area.offset, 0, "Down on a tab paged the list")
+end)
+
+-- Review fix: the Errors tab's badge was one fixed circle, so a longer count
+-- spilled out of it; it grows into a pill as wide as the count needs.
+test("tabs: the Errors badge is round for one digit and grows into a pill for a longer count", function()
+    local c, PE = T.new({})
+    PE:LogError("probe", "one problem", "stack")
+    openSettings(c, PE, "general")
+    local M = PE.UI:Metrics()
+    local tab = tabButton(c, "errors")
+    local d = M.smallFontSize * 1.3
+    local l, r, t, b = c._rect(tab.peDotAnchor)
+    check(near(r - l, d) and near(t - b, d), "one error: the badge is not a round dot " .. (r - l))
+    check(not tab.peBadgeMid:IsShown() and not tab.peBadgeEnd.texture:IsShown(), "one error: pill parts shown")
+    for i = 2, 30 do PE:LogError("probe", "problem number " .. i, "stack " .. i) end
+    PE:RefreshSettings()
+    c:advance(0.2)
+    local count = tab.peCount
+    check(#count:GetText() >= 2, "the count is " .. tostring(count:GetText()))
+    l, r, t, b = c._rect(tab.peDotAnchor)
+    local need = count:GetUnboundedStringWidth() + M.smallFontSize * 0.6
+    check(near(r - l, math.max(d, need)), "the badge is " .. (r - l) .. " wide, not " .. math.max(d, need))
+    check(r - l > d, "the badge did not grow")
+    local _, mr = c._rect(tab.peBadgeMid)
+    local ml = c._rect(tab.peBadgeMid)
+    check(tab.peBadgeMid:IsShown() and tab.peBadgeEnd.texture:IsShown(), "the pill parts are hidden")
+    check(near(ml, l + d * 0.5) and near(mr, r - d * 0.5), "the pill's bar does not join its round ends")
+    local _, tr = c._rect(tab)
+    check(r <= tr - M.pad + 0.01, "the badge runs past the tab's edge")
 end)
 
 test("nav: touch on, the d-pad Down does not page the Errors page", function()

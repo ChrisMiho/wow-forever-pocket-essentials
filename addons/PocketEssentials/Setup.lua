@@ -239,7 +239,8 @@ end
 
 -- A round picture: an outer disc, an inner disc and a word in the middle.
 -- Used for the A / B glyphs and for the PE button.
-local function Round(x, y, d, outer, inner, innerD, word, wordColor)
+-- wordSize: the word's own size (the A / B letters); nil keeps the font's.
+local function Round(x, y, d, outer, inner, innerD, word, wordColor, wordSize)
     local f = list:Acquire("round")
     f:ClearAllPoints()
     f:SetPoint("TOPLEFT", list.child, "TOPLEFT", x, -y)
@@ -248,6 +249,14 @@ local function Round(x, y, d, outer, inner, innerD, word, wordColor)
     f.outer:Layout(f, d)
     f.inner:SetColor(inner[1], inner[2], inner[3], 1)
     f.inner:Layout(f, max(innerD, 1))
+    -- Pooled: the shared font first, in case an earlier use changed its size.
+    pcall(f.word.SetFontObject, f.word, M.font)
+    if wordSize then
+        local ok, face, _, flags = pcall(f.word.GetFont, f.word)
+        if ok and type(face) == "string" and face ~= "" then
+            pcall(f.word.SetFont, f.word, face, max(wordSize, 1), flags or "")
+        end
+    end
     f.word:SetWidth(d)
     f.word:SetText(word or "")
     local c = wordColor or COLOR.name
@@ -356,7 +365,7 @@ function DRAW.Welcome(y, width)
             { label = "Touch controls", selected = touch, onClick = handlers.touch },
             { label = "Controller", selected = not touch, onClick = handlers.controller },
         }, ix, iy, iw)
-    end)
+    end) + M.gap
     return list:Card(0, y, width, function(ix, iy, iw)
         local yy = iy
         yy = yy + list:Text("small", "Getting around these windows", ix, yy, iw, COLOR.gold) + M.gap * 0.6
@@ -373,7 +382,7 @@ function DRAW.Welcome(y, width)
             if item.glyph == "dpad" then
                 DpadGlyph(cx, yy, d)
             else
-                Round(cx, yy, d, COLOR.glyph, COLOR.glyphFill, d - 2 * M.border, item.glyph, { 1, 1, 1 })
+                Round(cx, yy, d, COLOR.glyph, COLOR.glyphFill, d - 2 * M.border, item.glyph, { 1, 1, 1 }, d * 0.55)
             end
             local tw = max(cw - d - M.gap, 10)
             local h, fs = list:Text("font", item.text, cx + d + M.gap, yy, tw, COLOR.name)
@@ -395,7 +404,7 @@ function DRAW.QuestDetails(y, width)
     if not mod then return y end
     y = list:Card(0, y, width, function(ix, iy, iw)
         return list:Options(mod, ix, iy, iw, { only = { "cluster", "spots", "hideHaze" }, setup = true })
-    end)
+    end) + M.gap
     return list:Card(0, y, width, function(ix, iy, iw)
         local yy = iy + list:Text("small", "What the icons mean", ix, iy, iw, COLOR.gold) + M.gap * 0.6
         local key = PE.QuestIconKey -- made when QuestIcons.lua loads, so read it here
@@ -558,7 +567,7 @@ function DRAW.Finish(y, width)
             yy = yy + list:Text("font", "|cff9e9ea3Off: |r" .. table.concat(off, ", "), ix, yy, iw, COLOR.name) + M.gap * 0.5
         end
         return yy + M.gap * 0.5
-    end)
+    end) + M.gap
     y = Tiles(0, y, width) + M.gap
 
     local reasons = PE.reloadReasons
@@ -615,7 +624,8 @@ local function DrawScreen(screen, width)
     end
     for _, card in ipairs(screen.cards or {}) do
         local mod = PE:GetModule(card.key)
-        if mod then y = FeatureCard(mod, card, y, width) end
+        -- Two gaps after each feature card, as between the cards in the settings.
+        if mod then y = FeatureCard(mod, card, y, width) + M.gap end
     end
     return max(y, list.lowest) + M.pad
 end
@@ -643,15 +653,24 @@ local function LayoutBottomRow(count, pos)
     nextButton:SetSize(width, M.button)
     nextButton:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)
 
+    -- The dots are centred in the room between Skip's right edge and Next's
+    -- left edge; when they do not fit there with a full gap, the gap shrinks.
     local d = M.smallFontSize * 0.6
-    local total = count * d + (count - 1) * M.gap
-    local x0 = (panel.contentWidth or 0) * 0.5 - total * 0.5
+    local roomLeft = 2 * width + M.gap
+    local roomRight = (panel.contentWidth or 0) - width
+    local room = roomRight - roomLeft - 2 * M.gap
+    local dotGap = M.gap
+    if count > 1 and count * d + (count - 1) * dotGap > room then
+        dotGap = max((room - count * d) / (count - 1), d * 0.25)
+    end
+    local total = count * d + (count - 1) * dotGap
+    local x0 = (roomLeft + roomRight) * 0.5 - total * 0.5
     for k = 1, #dots do
         local dot = dots[k]
         if k <= count then
             dot:ClearAllPoints()
             dot:SetSize(d, d)
-            dot:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", x0 + (k - 1) * (d + M.gap), (M.button - d) * 0.5)
+            dot:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", x0 + (k - 1) * (d + dotGap), (M.button - d) * 0.5)
             local c = k == pos and COLOR.gold or COLOR.dotOff
             dot.disc:SetColor(c[1], c[2], c[3], 1)
             dot.disc:Layout(dot, d)

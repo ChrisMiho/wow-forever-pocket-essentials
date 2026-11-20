@@ -66,12 +66,12 @@ How the pieces protect each other:
   two calls the settings window uses, so the two cannot disagree; it never
   writes the saved on/off table itself. Since 0.5.0 a feature's options are
   drawn under its switch by the list drawer of `Settings.lua`
-  (`PE:NewListDrawer({ child, navList })`: pools of reused widgets, `Text`,
-  `Line`, `Button`, `Flow`, `OptionsShown`, `Options`, `Status`,
-  `CoreChoices`). The settings window makes one drawer and the guide makes
-  another, so there is one implementation of option rows and both windows
-  save through the same closures. (`CoreChoices`, "Button size" and "Round
-  button position", is used by the settings only.) The only thing it saves is
+  (`PE:NewListDrawer({ child, navList })`: pools of reused widgets, `Card`,
+  `Row`, `ChoiceRow`, `ActionRow`, `FeatureCard`, `Options`, `Text`,
+  `Button`, `Switch`, `Segmented`, `Number`, `Divider`, `Status`). The
+  settings window makes one drawer and the guide makes another, so there is
+  one implementation of option rows and both windows save through the same
+  closures. The only thing it saves is
   `PocketEssentialsDB.setup`: `"finished"`, `"skipped"`, or nothing (never
   answered; any other value reads as nothing). It opens by itself from one
   1.5-second timer after the first `PLAYER_ENTERING_WORLD` of a login, and

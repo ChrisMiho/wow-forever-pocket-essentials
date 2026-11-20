@@ -693,13 +693,14 @@ local function DoRefresh()
     if type(screenHeight) ~= "number" or screenHeight < 100 then screenHeight = 768 end
     local maxHeight = screenHeight * 0.92
     local scroll = chrome + contentHeight > maxHeight
-    local barWidth = (scroll and PE:UsesTouch()) and (M.button * 0.75 + M.gap) or 0
+    -- The scroll bar follows the window's own scale, like its chips.
+    local barWidth = (scroll and PE:UsesTouch()) and (S.button * 0.75 + S.gap) or 0
     local viewHeight = scroll and max(maxHeight - chrome, S.button) or contentHeight
 
     LayoutChrome(2 * S.pad + contentWidth + barWidth, chrome + viewHeight)
     area:ClearAllPoints()
     area:SetPoint("TOPLEFT", panel.content, "TOPLEFT", 0, 0)
-    area:Layout(contentWidth + barWidth, viewHeight, not scroll)
+    area:Layout(contentWidth + barWidth, viewHeight, not scroll, S)
 
     local y = 0
     PlaceText(talkText, "Talk in", y, contentWidth, COLOR_HEAD)

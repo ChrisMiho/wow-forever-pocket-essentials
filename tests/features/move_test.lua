@@ -854,4 +854,53 @@ test("move: with the quest arrow picked, a Size row under the cross steps its si
     c:assertClean("size row")
 end)
 
+-- Review fix: a bigger arrow that would push the block off the screen is not
+-- taken; the old size is put back (Move.lua SizeStep).
+test("move: + on the Size row is not taken when the bigger arrow would stick out of the screen", function()
+    if not T.questieDB then return end
+    local c, PE = T.new({ quest = true, on = { "questArrow" } })
+    PE.Move:Open("questArrow")
+    c:advance(0.1)
+    local box = rawget(c.env, "PocketEssentialsMoveOutline")
+    local UI = PE.UI
+    -- Move the block down until its bottom is just above the screen's bottom.
+    local _, _, _, bottom = c._rect(box)
+    local px = math.floor((bottom - UI:Px(2)) / UI:Px(1))
+    PE.db.ui.moved.questArrow = { x = 0, y = -px }
+    c:click(button(c, "Quest arrow"))
+    c:advance(0.1)
+    PE.Move:Close()
+    PE.Move:Open("questArrow")
+    c:advance(0.1)
+    local _, _, _, b2 = c._rect(box)
+    check(b2 >= -0.01 and b2 < UI:Px(4), "the block is not at the screen bottom: " .. b2)
+    eq(PE.db.options.questArrow.scale, 100)
+    c:click(button(c, "+"))
+    c:advance(0.1)
+    eq(PE.db.options.questArrow.scale, 100, "a size that sticks out of the screen was taken")
+    local _, _, _, b3 = c._rect(box)
+    check(math.abs(b3 - b2) < 0.01, "the outline did not go back to the old size")
+    check(panelTexts(c)["100%"], "the value shown is not the old one")
+    -- A smaller size is still taken.
+    c:click(button(c, "-"))
+    c:advance(0.1)
+    eq(PE.db.options.questArrow.scale, 90)
+    c:assertClean("size off screen")
+end)
+
+-- Review fix: the Size row shows a saved value only when it is a whole number in
+-- range, as the settings do; otherwise the default 100 (Move.lua SizeRow).
+test("move: a saved arrow size that is not a whole number shows and steps from the default 100", function()
+    if not T.questieDB then return end
+    local c, PE = T.new({ quest = true, on = { "questArrow" } })
+    PE:GetModule("questArrow").opts.scale = 104.5
+    PE.Move:Open("questArrow")
+    c:advance(0.1)
+    check(panelTexts(c)["100%"], "the Size row does not show the default 100%")
+    c:click(button(c, "+"))
+    c:advance(0.1)
+    eq(PE.db.options.questArrow.scale, 110)
+    c:assertClean("size not whole")
+end)
+
 return { known = KNOWN_FAILURES }

@@ -316,6 +316,85 @@ test("setup: one dot per screen between Skip and Next, the current one gold", fu
     c:assertClean("dots")
 end)
 
+-- Review fix: at Large (and on a 16:10 screen) the dots ran into Skip; they sit
+-- between Skip's right edge and Next's left edge.
+test("setup: at Large the dots start right of Skip and end left of Next", function()
+    for _, screen in ipairs({ { 1280, 720 }, { 1280, 800 }, { 1024, 768 } }) do
+        local c, PE = T.new({ on = { "questIcons" }, screen = screen })
+        PE:SetUISetting("size", "large")
+        open(c, PE)
+        c:advance(0.2)
+        goTo(c, 2)
+        local list = dots(c)
+        check(#list >= N, "dots: " .. #list)
+        local _, skipRight = c._rect(button(c, "Skip"))
+        local nextLeft = c._rect(nextButton(c))
+        local firstLeft = c._rect(list[1])
+        local _, lastRight = c._rect(list[#list])
+        check(firstLeft > skipRight, screen[2] .. ": the first dot " .. firstLeft .. " is not right of Skip " .. skipRight)
+        check(lastRight < nextLeft, screen[2] .. ": the last dot " .. lastRight .. " is not left of Next " .. nextLeft)
+        c:assertClean("dots at large")
+    end
+end)
+
+-- Review fix (mockup pSetup): two gaps between the guide's cards, as in the
+-- settings: after Welcome's first card, after each feature card, after the
+-- details screen's first card and after the On / Off card.
+local function cardFills(c, PE, want)
+    want = want or PE.UI.COLORS.card
+    local out = {}
+    for _, r in ipairs(c._state(guide(c).peNavArea.child).regions) do
+        local st = c._state(r)
+        local col = st.color
+        if st.type == "Texture" and r:IsShown() and col and math.abs(col[1] - want[1]) < 1e-6
+            and math.abs(col[2] - want[2]) < 1e-6 and math.abs(col[3] - want[3]) < 1e-6 then
+            local _, _, top, bottom = c._rect(r)
+            out[#out + 1] = { top = top, bottom = bottom }
+        end
+    end
+    table.sort(out, function(a, b) return a.top > b.top end)
+    return out
+end
+
+test("setup: two gaps between the cards on Welcome, Bags, Vendors and All set", function()
+    local c, PE = T.new({})
+    open(c, PE)
+    local M = PE.UI:Metrics()
+    for _, n in ipairs({ AT.welcome, AT.bags, AT.vendors, AT.finish }) do
+        open(c, PE)
+        PE.Setup:Close("Close")
+        open(c, PE)
+        goTo(c, n)
+        c:advance(0.2)
+        local fills = cardFills(c, PE)
+        check(#fills >= (n == AT.finish and 1 or 2), screenId(PE) .. ": cards " .. #fills)
+        for i = 2, #fills do
+            local gap = fills[i - 1].bottom - fills[i].top
+            check(math.abs(gap - 2 * M.gap) < 0.01, screenId(PE) .. ": the gap above card " .. i .. " is " .. gap
+                .. ", not " .. 2 * M.gap)
+        end
+        if n == AT.finish then
+            local tiles = cardFills(c, PE, { 0.12, 0.12, 0.14 })
+            check(#tiles == 3, "tiles " .. #tiles)
+            local gap = fills[#fills].bottom - tiles[1].top
+            check(math.abs(gap - 2 * M.gap) < 0.01, "the gap above the tiles is " .. gap .. ", not " .. 2 * M.gap)
+        end
+    end
+    c:assertClean("card gaps")
+
+    -- The details screen (Quest icons on): its two cards.
+    local c2, PE2 = T.new({ quest = true, on = { "questIcons" } })
+    open(c2, PE2)
+    goTo(c2, 3)
+    c2:advance(0.2)
+    eq(screenId(PE2), "questDetails")
+    local fills = cardFills(c2, PE2)
+    check(#fills == 2, "details: cards " .. #fills)
+    local gap = fills[1].bottom - fills[2].top
+    check(math.abs(gap - 2 * M.gap) < 0.01, "details: the gap between the cards is " .. gap)
+    c2:assertClean("card gaps details")
+end)
+
 -- The spec's skip: "Quest icon details" only while Quest icons is on.
 test("setup: the Quest icon details screen shows only while Quest icons is on, as screen 3 of 9", function()
     if not T.questieDB then return end
@@ -621,6 +700,26 @@ test("setup: Welcome has the play-style row and the controls card with its three
         check(hasText(c, t), "Welcome has no \"" .. t .. "\"")
     end
     check(hasText(c, "A") and hasText(c, "B"), "no round A and B glyphs")
+    -- Review fix (mockup glyph): the letters are 0.55 of the glyph's width.
+    local M = PE.UI:Metrics()
+    local glyphs = 0
+    walk(c, guide(c), function(w)
+        if w.word and w.outer and w:IsShown() and (w.word:GetText() == "A" or w.word:GetText() == "B") then
+            glyphs = glyphs + 1
+            local _, size = w.word:GetFont()
+            check(math.abs(size - M.button * 0.75 * 0.55) < 0.01, w.word:GetText() .. ": letter size " .. tostring(size))
+        end
+    end)
+    eq(glyphs, 2, "round A and B glyphs")
+    -- The PE picture of the next screens keeps the font's own size.
+    goTo(c, AT.chat)
+    walk(c, guide(c), function(w)
+        if w.word and w.outer and w:IsShown() and w.word:GetText() == "PE" then
+            local _, size = w.word:GetFont()
+            check(math.abs(size - M.fontSize) < 0.01, "PE: size " .. tostring(size))
+        end
+    end)
+    for _ = AT.chat, 2, -1 do c:click(button(c, "Back")); c:advance(0.1) end
     c:click(button(c, "Controller"))
     c:advance(0.1)
     check(hasText(c, "Touch works too, any time."), "the controller line did not replace the touch line")

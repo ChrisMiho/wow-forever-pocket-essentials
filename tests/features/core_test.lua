@@ -84,7 +84,7 @@ test("core: new default options are added to old saved options without overwriti
     eq(opts.spots, 5); eq(opts.cluster, 2); eq(opts.mini, true); eq(opts.hideHaze, true)  -- defaults added
     eq(PE:GetModule("chat").opts.whispers[1].name, "Ann")
     eq(PE:GetModule("bagWindow").opts.size, "normal", "a feature with no saved options gets its defaults")
-    eq(PE.db.ui, { size = "medium", hubPos = "LEFT", folded = {}, moved = {} })
+    eq(PE.db.ui, { size = "medium", hubPos = "LEFT", moved = {} })
 end)
 
 ---------------------------------------------------------------------------
@@ -207,6 +207,20 @@ end)
 ---------------------------------------------------------------------------
 
 -- DECISIONS "General": "/pe reset puts the round button and button size back to default."
+-- Spec 2026-11-20-0.9.0-ui-redesign removes the folded sections: a fresh save has no
+-- ui.folded, and one left in an older save loads without trouble.
+test("core: no ui.folded in a fresh save; an old one is left alone and harmless", function()
+    local c, PE = T.new({})
+    eq(PE.db.ui.folded, nil, "a fresh save got ui.folded")
+    local c2, PE2 = T.new({ saved = { version = 1, enabled = {}, options = {},
+        ui = { size = "large", hubPos = "LEFT", folded = { bags = true } }, errors = {} } })
+    eq(PE2.db.ui.size, "large")
+    PE2:OpenSettings()
+    c2:advance(0.2)
+    c:assertClean("fresh save")
+    c2:assertClean("old folded")
+end)
+
 -- Core.lua SlashCommand lines 816-819.
 test("core: /pe reset restores the round button position and the button size", function()
     local c, PE = T.new({})
@@ -217,9 +231,9 @@ test("core: /pe reset restores the round button position and the button size", f
     PE:SetUISetting("hubPos", "RIGHT")
     check(hub:GetWidth() ~= widthMedium, "the large size did not change the round button")
     check(hub:GetPoint(1) ~= pointMedium, "the round button did not move")
-    eq(PE.db.ui, { size = "large", hubPos = "RIGHT", folded = {}, moved = {} })
+    eq(PE.db.ui, { size = "large", hubPos = "RIGHT", moved = {} })
     c.env.SlashCmdList.POCKETESSENTIALS("reset")
-    eq(PE.db.ui, { size = "medium", hubPos = "LEFT", folded = {}, moved = {} })
+    eq(PE.db.ui, { size = "medium", hubPos = "LEFT", moved = {} })
     eq(hub:GetWidth(), widthMedium)
     eq(hub:GetPoint(1), pointMedium)
     eq(T.chatLines(c), { "Button size and round button position were reset." })

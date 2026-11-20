@@ -594,7 +594,6 @@ local function InitDB()
     if type(db.ui) ~= "table" then db.ui = {} end
     if not SIZES[db.ui.size] then db.ui.size = "medium" end
     if type(db.ui.hubPos) ~= "string" then db.ui.hubPos = "LEFT" end
-    if type(db.ui.folded) ~= "table" then db.ui.folded = {} end
     if type(db.ui.moved) ~= "table" then db.ui.moved = {} end -- "Move on screen" offsets, by piece
     db.errors = MergeErrors(db.errors)
     PE.errors = db.errors
@@ -624,7 +623,7 @@ local function EnsureDB()
     -- Last resort: settings work for this session but will not be saved.
     PE.db = {
         version = 1, enabled = {}, options = {},
-        ui = { size = "medium", hubPos = "LEFT", folded = {}, moved = {} },
+        ui = { size = "medium", hubPos = "LEFT", moved = {} },
         errors = PE.errors,
     }
     for _, mod in ipairs(PE.moduleList) do pcall(AttachOptions, mod) end

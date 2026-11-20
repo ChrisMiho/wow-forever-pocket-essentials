@@ -6,7 +6,7 @@
 local ADDON_NAME, PE = ...
 
 local type, tostring, tonumber, ipairs, pairs, pcall = type, tostring, tonumber, ipairs, pairs, pcall
-local max, min, ceil, floor = math.max, math.min, math.ceil, math.floor
+local max, min, floor = math.max, math.min, math.floor
 
 local PANEL_NAME = "PocketEssentialsSettingsPanel"
 local TITLE_MAIN = "Pocket Essentials"
@@ -120,8 +120,10 @@ end
 --                                     plus onlyAlways). Returns the new y.
 --   list:Switch(x, y, state, onClick) list:Segmented(x, y, w, items)
 --   list:Number(x, y, w, box)         list:Divider(x, y, w)
--- The older calls Setup.lua still uses (Line, Flow, LabeledRow, Status,
--- OptionsShown, and Options(mod, y, width, onlyAlways)) keep working.
+--   list:Button(text, x, y, w, h, style, onClick)
+--   list:Status(mod, x, y, w, failedText, skipInfo)
+--                                     the status lines under a feature's name
+-- The setup guide (Setup.lua) uses these same calls, plus its own pools.
 ---------------------------------------------------------------------------
 
 local Drawer = {}
@@ -170,14 +172,6 @@ function Drawer:Text(kind, text, x, y, width, color)
     local height = SetText(fontString, kind, text, width, color)
     self:Reach(y + height)
     return height, fontString
-end
-
-function Drawer:Line(y, width)
-    local line = self:Acquire("line")
-    line:ClearAllPoints()
-    line:SetPoint("TOPLEFT", self.child, "TOPLEFT", 0, -y)
-    line:SetSize(max(width, 1), M.border)
-    return M.border
 end
 
 -- The thin line between a card's header and its rows.
@@ -249,17 +243,6 @@ function Drawer:Number(x, y, width, box)
     return minus, plus
 end
 
--- The old number control's width (the setup guide's rows): two square ends
--- and a well 2.2 button heights wide, their borders overlapping.
-local function NumberBoxWidth()
-    return M.button * 2 + M.button * 2.2 - M.border * 2
-end
-
-function Drawer:NumberBox(box, x, y)
-    self:Number(x, y, NumberBoxWidth(), box)
-    return NumberBoxWidth()
-end
-
 -- A card: the card fill from x to x + width, with pad inside on every side.
 -- body(ix, iy, iw) returns its y after the last row. Returns the y one gap
 -- below the card.
@@ -320,92 +303,6 @@ function Drawer:ActionRow(label, buttonText, onClick, x, y, innerWidth, style, h
     return self:Row(label, help, x, y, innerWidth, function(cx, cy, cw)
         self:Button(buttonText or "Open", cx, cy, cw, M.button, style or "normal", onClick)
     end)
-end
-
--- A run of buttons, each one or more slots wide, wrapping onto new lines
--- (used by the setup guide's question row). items: { { label =, selected =,
--- style =, onClick = }, ... }; an item { box = } is a number control.
--- Returns the new y.
-local function SlotsWidth(slots)
-    return slots * M.button * 3 + (slots - 1) * M.gap
-end
-
-local function SlotFit(needed, maxWidth)
-    local slots = max(ceil((needed - 0.01 + M.gap) / (M.button * 3 + M.gap)), 1)
-    local width = SlotsWidth(slots)
-    if maxWidth then width = min(width, maxWidth) end
-    return width
-end
-
-function Drawer:Flow(items, x0, y, maxWidth, minWidth)
-    local x, height = x0, M.button
-    for i = 1, #items do
-        local item = items[i]
-        local width
-        if item.box ~= nil then
-            width = NumberBoxWidth()
-            if x > x0 and x + width > x0 + maxWidth then
-                x = x0
-                y = y + height + M.gap
-            end
-            self:NumberBox(item.box, x, y)
-        else
-            local btn = self:Acquire("button")
-            ResetButton(btn)
-            btn:SetHeight(height)
-            local needed = minWidth or 0
-            if type(item.alts) == "table" then
-                for _, alt in ipairs(item.alts) do
-                    btn:SetLabel(alt)
-                    needed = max(needed, btn:FitWidth(0))
-                end
-            end
-            btn:SetLabel(item.label)
-            needed = max(needed, btn:FitWidth(0))
-            width = SlotFit(needed, maxWidth)
-            btn:SetWidth(width)
-            if x > x0 and x + width > x0 + maxWidth then
-                x = x0
-                y = y + height + M.gap
-            end
-            btn:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -y)
-            if item.style then btn:SetStyle(item.style) end
-            btn:SetSelected(item.selected)
-            btn:SetScript("OnClick", item.onClick)
-            AddStop(self, btn, y, y + height)
-        end
-        self:Reach(y + height)
-        x = x + width + M.gap
-    end
-    return y + height
-end
-
--- A heading above its run of buttons (the setup guide's question row).
--- labelWidth is accepted for older callers and ignored. Returns the new y.
-function Drawer:LabeledRow(text, items, x, y, innerWidth, labelWidth)
-    if text ~= "" then
-        y = y + self:Text("small", text, x, y, innerWidth, COLOR.option) + M.gap * 0.4
-    end
-    return self:Flow(items, x, y, innerWidth)
-end
-
--- Which option rows of a feature are drawn right now. Options are drawn
--- while the feature is on; a feature that is not on (off, or cannot be
--- switched on) still shows its rows marked `always`.
--- Returns: any row to draw, only the `always` rows.
-function Drawer:OptionsShown(mod)
-    local onlyAlways = PE:GetModuleState(mod.key) ~= "on"
-    local hasOptions = false
-    if type(mod.options) == "table" then
-        if not onlyAlways then
-            hasOptions = #mod.options > 0
-        else
-            for _, opt in ipairs(mod.options) do
-                if type(opt) == "table" and opt.always == true then hasOptions = true end
-            end
-        end
-    end
-    return hasOptions, onlyAlways
 end
 
 -- The saved value a choices row shows: its `get`, or mod.opts[key].
@@ -648,21 +545,9 @@ function Drawer:OptionList(mod, opts)
     return rows
 end
 
--- The option rows of a feature. New form: Options(mod, x, y, width, opts),
--- width being the inner width of the card. Old form (the setup guide until it
--- is redrawn with cards): Options(mod, y, width, onlyAlways).
--- Returns the new y.
-function Drawer:Options(mod, a, b, c, d)
-    local x, y, innerWidth, opts
-    if type(c) == "number" then
-        x, y, innerWidth, opts = a, b, c, d
-    else
-        -- Only the setup guide uses this form, so rows that open another
-        -- settings page are left out, as in its cards.
-        x, y = M.pad * 2, a
-        innerWidth = b - x - M.gap
-        opts = { onlyAlways = c and true or false, setup = true }
-    end
+-- The option rows of a feature, innerWidth being the inner width of the
+-- card. Returns the new y.
+function Drawer:Options(mod, x, y, innerWidth, opts)
     for _, opt in ipairs(self:OptionList(mod, opts)) do
         local ok, nextY = PE:Safe(mod.key, self.OptionRow, self, mod, opt, x, y, innerWidth)
         if ok and type(nextY) == "number" then
@@ -795,11 +680,6 @@ function PE:NewListDrawer(spec)
         local line = child:CreateTexture(nil, "ARTWORK")
         local c = UI.COLORS.divider
         line:SetColorTexture(c[1], c[2], c[3], 1)
-        return line
-    end)
-    drawer:AddPool("line", function()
-        local line = child:CreateTexture(nil, "ARTWORK")
-        line:SetColorTexture(0.30, 0.30, 0.34, 1)
         return line
     end)
     drawer:AddPool("icon", function() return child:CreateTexture(nil, "ARTWORK") end)
@@ -1140,23 +1020,46 @@ local function LayoutTabs(contentHeight, tabsWidth)
             btn.peDotOn = on
         end
         btn.peDot:SetShown(hasDot)
-        -- The Errors tab's red badge with the count.
+        -- The Errors tab's red badge with the count: a round dot, or a pill
+        -- (two round ends and a bar between them) when the count is wider.
         local count = (t.id == "errors") and #PE.errors or 0
         if count > 0 then
             local d = M.smallFontSize * 1.3
+            btn.peCount:SetText(tostring(count))
+            local ok, textWidth = pcall(btn.peCount.GetUnboundedStringWidth, btn.peCount)
+            if not ok or type(textWidth) ~= "number" or textWidth <= 0 then
+                textWidth = #tostring(count) * M.smallFontSize * 0.55
+            end
+            local w = max(d, textWidth + M.smallFontSize * 0.6)
             btn.peDotAnchor:ClearAllPoints()
-            btn.peDotAnchor:SetSize(d, d)
+            btn.peDotAnchor:SetSize(w, d)
             btn.peDotAnchor:SetPoint("RIGHT", btn, "RIGHT", -M.pad, 0)
             local c = colors.badge
+            btn.peBadgeLeft:ClearAllPoints()
+            btn.peBadgeLeft:SetSize(d, d)
+            btn.peBadgeLeft:SetPoint("LEFT", btn.peDotAnchor, "LEFT", 0, 0)
+            btn.peBadgeRight:ClearAllPoints()
+            btn.peBadgeRight:SetSize(d, d)
+            btn.peBadgeRight:SetPoint("RIGHT", btn.peDotAnchor, "RIGHT", 0, 0)
             btn.peBadgeDisc:SetColor(c[1], c[2], c[3], 1)
-            btn.peBadgeDisc:Layout(btn.peDotAnchor, d)
+            btn.peBadgeDisc:Layout(btn.peBadgeLeft, d)
             btn.peBadgeDisc:SetShown(true)
+            local pill = w > d + 0.01
+            btn.peBadgeEnd:SetColor(c[1], c[2], c[3], 1)
+            btn.peBadgeEnd:Layout(btn.peBadgeRight, d)
+            btn.peBadgeEnd:SetShown(pill)
+            btn.peBadgeMid:ClearAllPoints()
+            btn.peBadgeMid:SetPoint("TOPLEFT", btn.peDotAnchor, "TOPLEFT", d * 0.5, 0)
+            btn.peBadgeMid:SetPoint("BOTTOMRIGHT", btn.peDotAnchor, "BOTTOMRIGHT", -d * 0.5, 0)
+            btn.peBadgeMid:SetColorTexture(c[1], c[2], c[3], 1)
+            btn.peBadgeMid:SetShown(pill)
             btn.peCount:ClearAllPoints()
             btn.peCount:SetPoint("CENTER", btn.peDotAnchor, "CENTER", 0, 0)
-            btn.peCount:SetText(tostring(count))
             btn.peCount:Show()
         else
             btn.peBadgeDisc:SetShown(false)
+            btn.peBadgeEnd:SetShown(false)
+            btn.peBadgeMid:Hide()
             btn.peCount:Hide()
         end
         navList[#navList + 1] = btn
@@ -1340,6 +1243,12 @@ local function MakeTab(t)
     btn.peDot = UI:CreateDisc(btn, "ARTWORK", 3)
     btn.peBadgeDisc = UI:CreateDisc(btn, "ARTWORK", 3)
     btn.peBadgeDisc:SetShown(false)
+    btn.peBadgeEnd = UI:CreateDisc(btn, "ARTWORK", 3)
+    btn.peBadgeEnd:SetShown(false)
+    btn.peBadgeMid = btn:CreateTexture(nil, "ARTWORK", nil, 3)
+    btn.peBadgeMid:Hide()
+    btn.peBadgeLeft = CreateFrame("Frame", nil, btn)
+    btn.peBadgeRight = CreateFrame("Frame", nil, btn)
     btn.peCount = btn:CreateFontString(nil, "OVERLAY", M.smallFont)
     if not btn.peCount:GetFont() and GameFontHighlight then btn.peCount:SetFontObject(GameFontHighlight) end
     btn.peCount:SetTextColor(1, 1, 1, 1)

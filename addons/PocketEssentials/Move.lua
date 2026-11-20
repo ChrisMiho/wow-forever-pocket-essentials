@@ -32,7 +32,7 @@ local Move = {}
 PE.Move = Move
 
 local type, tostring, ipairs, pairs, pcall, xpcall = type, tostring, ipairs, pairs, pcall, xpcall
-local max, min, abs, format = math.max, math.min, math.abs, string.format
+local max, min, abs, floor, format = math.max, math.min, math.abs, math.floor, string.format
 
 local PANEL_NAME = "PocketEssentialsMovePanel"
 local OUTLINE_NAME = "PocketEssentialsMoveOutline"
@@ -365,7 +365,7 @@ local function SizeRow(piece)
         local n = type(opt) == "table" and opt.number
         if opt.key == optKey and type(n) == "table" and type(n.min) == "number" and type(n.max) == "number" then
             local v = mod.opts[optKey]
-            if type(v) ~= "number" or v < n.min or v > n.max then
+            if type(v) ~= "number" or v ~= floor(v) or v < n.min or v > n.max then
                 v = type(n.default) == "number" and n.default or n.min
             end
             return mod, opt, v
@@ -385,8 +385,19 @@ local function SizeStep(dir)
     local step = (type(n.step) == "number" and n.step > 0) and n.step or 1
     local new = min(max(v + dir * step, n.min), n.max)
     if new == v then return end
+    local before = box and PlaceOutline() and Overflow()
     mod.opts[opt.key] = new
     if type(opt.OnChange) == "function" then PE:Safe(mod.key, opt.OnChange, mod, new) end
+    -- A bigger size that pushes the piece further off the screen is not
+    -- taken: the old size is put back.
+    local after = before and PlaceOutline() and Overflow()
+    if after and after > TINY and after > before + TINY then
+        mod.opts[opt.key] = v
+        if type(opt.OnChange) == "function" then PE:Safe(mod.key, opt.OnChange, mod, v) end
+        PlaceOutline()
+        Debug(format("%s size %s not taken: off the screen", mod.key, tostring(new)))
+        return
+    end
     Debug(format("%s size %s", mod.key, tostring(new)))
     QueueNav()
     if PE.RefreshSettings then PE:RefreshSettings() end

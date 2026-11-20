@@ -1619,6 +1619,33 @@ test("chat window: content taller than the screen scrolls inside a window that f
     c:assertClean("a long chat picker")
 end)
 
+-- Review fix: the scroll bar follows the window's own scale, like its chips
+-- (Chat.lua DoRefresh, UI.lua area:Layout metrics).
+test("chat window: the scroll bar's width follows the window's size", function()
+    for _, scale in ipairs({ 100, 150 }) do
+        local c, PE = newChat(function(c)
+            c.world.group, c.world.guild = "raid", "Pocket Guild"
+            local list = {}
+            for i = 1, 10 do list[i] = { id = i, name = "Channel " .. i } end
+            c.world.channels = list
+        end)
+        PE:SetUISetting("touch", true)
+        for _, n in ipairs({ "Ann", "Bob", "Cat", "Dan", "Eve", "Fay", "Hal", "Ivy", "Kim", "Lou" }) do
+            c:whisperIn(n, "hi")
+        end
+        PE:GetModule("chat").opts.scale = scale
+        openPicker(c, PE)
+        local area = rawget(c.env, "PocketEssentialsChatPanel").peNavArea
+        check(area.upButton:IsShown(), scale .. ": the list does not scroll")
+        local M = PE.UI:Metrics()
+        local s = scale / 100
+        local l, r, t, b = c._rect(area.upButton)
+        near(r - l, M.button * 0.75 * s, "the bar's width at " .. scale .. "%")
+        near(t - b, M.button * s, "the bar's tab height at " .. scale .. "%")
+        c:assertClean("chat bar at " .. scale)
+    end
+end)
+
 test("chat window: the chips are in 3 columns", function()
     local c, PE = newChat(function(c)
         c.world.group, c.world.guild = "party", "Pocket Guild"
