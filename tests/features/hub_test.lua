@@ -59,8 +59,20 @@ test("hub: on the map the button and its badge are above the map's border", func
     PE.Hub:SetBadge("2")
     c:openWorldMap()
     local button = PE.Hub.button
-    check(button:GetFrameLevel() > c.worldMapBorder:GetFrameLevel(), "the button is under the map's border")
+    local border = c.worldMapBorder
+    for name, f in pairs({ border = border, ring = border.NineSlice, book = border.PortraitContainer, title = border.TitleContainer }) do
+        check(button:GetFrameLevel() > f:GetFrameLevel(), "the button is under the map's " .. name)
+    end
     check(PE.Hub.badge and PE.Hub.badge:GetFrameLevel() > button:GetFrameLevel(), "the badge is under the button")
+end)
+
+test("hub: closing the map puts the button back at its own drawing level", function()
+    local c, PE = T.new({})
+    local level = PE.Hub.button:GetFrameLevel()
+    c:openWorldMap()
+    check(PE.Hub.button:GetFrameLevel() > level, "the level was not raised on the map")
+    c:closeWorldMap()
+    eq(PE.Hub.button:GetFrameLevel(), level, "the level stayed raised after the map closed")
 end)
 
 test("hub: a tap on the button while it is on the map still works", function()

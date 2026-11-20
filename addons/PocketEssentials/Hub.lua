@@ -20,7 +20,7 @@ end
 local Hub = {}
 PE.Hub = Hub
 
-local type, tostring, xpcall = type, tostring, xpcall
+local type, tostring, xpcall, pcall, ipairs = type, tostring, xpcall, pcall, ipairs
 local max = math.max
 
 local HOLD_SECONDS = 0.6 -- press and hold this long to open the settings
@@ -74,6 +74,7 @@ local function SetPressed(pressed)
 end
 
 local onMap = false -- the button sits on the map's book icon (for the debug line)
+local baseLevel      -- the button's own drawing level, put back when it leaves the map
 
 local function UpdateBadge()
     if not button then return end
@@ -150,12 +151,21 @@ function Hub:Refresh()
     local portrait, border = MapPortrait()
     if portrait then
         button:SetPoint("CENTER", portrait, "CENTER", 0, 0)
-        -- The map's border is in the same layer (HIGH): draw above it.
-        if type(border.GetFrameLevel) == "function" then
-            button:SetFrameLevel(max(button:GetFrameLevel(), border:GetFrameLevel() + 10))
+        -- The map's border is in the same layer (HIGH), and its pieces sit well
+        -- above it: the book's container at +400, the ring art at +500, title and
+        -- close button at +510 (PortraitFrame.lua:110-115). Draw above all of them.
+        local top = baseLevel or button:GetFrameLevel()
+        for _, f in ipairs({ border, portrait.GetParent and portrait:GetParent(), border.NineSlice,
+                border.TitleContainer, border.CloseButton }) do
+            if type(f) == "table" and type(f.GetFrameLevel) == "function" then
+                local ok, level = pcall(f.GetFrameLevel, f)
+                if ok and type(level) == "number" and level >= top then top = level + 1 end
+            end
         end
+        button:SetFrameLevel(top)
     else
         button:SetPoint(point, UIParent, point, x, y)
+        if baseLevel then button:SetFrameLevel(baseLevel) end
     end
     if (portrait ~= nil) ~= onMap then
         onMap = portrait ~= nil
@@ -204,6 +214,7 @@ local function Create()
     button = CreateFrame("Button", "PocketEssentialsHubButton", UIParent)
     button:SetFrameStrata("HIGH") -- above the game world and normal windows, below our DIALOG panels
     button:SetClampedToScreen(true)
+    baseLevel = button:GetFrameLevel()
 
     ring = UI:CreateDisc(button, "BACKGROUND", 0, 24)
     fill = UI:CreateDisc(button, "BORDER", 0, 24)

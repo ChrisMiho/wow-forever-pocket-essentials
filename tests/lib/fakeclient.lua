@@ -1015,14 +1015,32 @@ function Client.new(opts)
     -- The map's border with its book icon (Blizzard_WorldMap.xml:85, a portrait frame,
     -- strata HIGH; PortraitFrame.lua:34 GetPortrait). Full screen hides the book
     -- (Blizzard_WorldMap.lua:62-65, SetPortraitShown(false)).
+    -- Its pieces sit well above it (SharedUIPanelTemplates.xml:381, :574;
+    -- PortraitFrame.lua:110-115): the ring art (NineSlice) at +500, the book's
+    -- container at +400, title and close button at +510.
     local border = Blizz("Frame", nil, worldMap)
     border:SetAllPoints(worldMap)
     border:SetFrameStrata("HIGH")
     border:SetFrameLevel(20)
-    local portrait = border:CreateTexture(nil, "OVERLAY")
+    local nineSlice = Blizz("Frame", nil, border)
+    nineSlice:SetAllPoints(border)
+    nineSlice:SetFrameLevel(520)
+    local container = Blizz("Frame", nil, border)
+    container:SetSize(1, 1)
+    container:SetPoint("TOPLEFT", border, "TOPLEFT", 0, 0)
+    container:SetFrameLevel(420)
+    local title = Blizz("Frame", nil, border)
+    title:SetFrameLevel(530)
+    local portrait = container:CreateTexture(nil, "OVERLAY")
     portrait:SetSize(60, 60)
     portrait:SetPoint("TOPLEFT", border, "TOPLEFT", -5, 7)
     BlizzMethod(border, "GetPortrait", function() return portrait end)
+    rawset(border, "NineSlice", nineSlice)
+    rawset(border, "PortraitContainer", container)
+    rawset(border, "TitleContainer", title)
+    local close = Blizz("Button", nil, border)
+    close:SetFrameLevel(530)
+    rawset(border, "CloseButton", close)
     rawset(worldMap, "BorderFrame", border)
     -- WorldMapMixin:Maximize / Minimize, in the game's order: the announcement
     -- comes before the book is hidden or shown again.
