@@ -289,7 +289,7 @@ end
 
 sellJunk = PE:RegisterModule({
     key = "sellJunk",
-    label = "Sell junk automatically",
+    label = "Auto sell junk",
     desc = "Sells grey items when you open a vendor.",
     order = 40,
 
@@ -364,8 +364,8 @@ end
 
 repair = PE:RegisterModule({
     key = "repair",
-    label = "Repair automatically",
-    desc = "Repairs your gear at vendors that can, using your own money.",
+    label = "Auto repair",
+    desc = "Repairs your gear at vendors, with your own gold.",
     order = 50,
 
     OnEnable = function(mod)

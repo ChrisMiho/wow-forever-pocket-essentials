@@ -1,4 +1,4 @@
--- Rules for "Sell junk automatically" and "Repair automatically" (Vendor.lua).
+-- Rules for "Auto sell junk" and "Auto repair" (Vendor.lua).
 -- Sources: Vendor.lua's header and comments; docs/DECISIONS.md, section
 -- "Decisions made without the maintainer", part "Vendor"; PRD.md goals 3 and 4.
 -- Each test names its source in a comment. Fresh client and addon per test.
@@ -678,6 +678,14 @@ test("debug log: a vendor visit with the log off writes no lines", function()
     c:closeMerchant()
     eq(#T.sold(c), 1)
     eq(rawget(c.env, "PocketEssentialsDB").debug.lines, {})
+end)
+
+-- Spec 2026-11-20-0.9.0-ui-redesign, "Feature names and lines".
+test("vendor: the names and lines of the two cards", function()
+    local _, PE = T.new({})
+    local sell, repair = PE:GetModule("sellJunk"), PE:GetModule("repair")
+    eq({ sell.label, sell.desc }, { "Auto sell junk", "Sells grey items when you open a vendor." })
+    eq({ repair.label, repair.desc }, { "Auto repair", "Repairs your gear at vendors, with your own gold." })
 end)
 
 return { known = KNOWN_FAILURES }

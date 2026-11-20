@@ -608,10 +608,9 @@ test("quest icons: Icons on is one row for map and minimap, with no Map icons or
     check(opt, "no Icons on row")
     local got = {}
     for _, ch in ipairs(opt.choices) do got[#got + 1] = ch.value .. "=" .. ch.label end
-    eq(got, { "both=Map and minimap", "map=Map only", "mini=Minimap only" })
+    eq(got, { "both=Both", "map=Map", "mini=Minimap" })
     for _, o in ipairs(mod.options) do
         check(o.key ~= "map" and o.key ~= "mini", "a row of its own for " .. tostring(o.key))
-        if o.key == "hideHaze" then eq(o.toggle, true, "Hide Blue Quest Haze is not a toggle") end
     end
     eq(opt.get(mod), "both", "the default")
 end)
@@ -654,18 +653,18 @@ local function optionOf(PE, key)
     for _, o in ipairs(PE:GetModule("questIcons").options) do if o.key == key then return o end end
 end
 
-test("quest icons: the rows are in the spec's order, Hide Blue Quest Haze just before Quest Icon Key", function()
+test("quest icons: the rows are in the spec's order, Blizzard blue quest haze just before Icon key", function()
     local c, PE = newIcons()
     local names = {}
     for _, o in ipairs(PE:GetModule("questIcons").options) do names[#names + 1] = o.key or o.label end
-    eq(names, { "show", "Icons on", "size", "cluster", "spots", "hideHaze", "Quest Icon Key" })
+    eq(names, { "show", "Icons on", "size", "cluster", "spots", "hideHaze", "Icon key" })
 end)
 
-test("quest icons: Icon size starts with Extra small, 18 px on the map and 11 on the minimap", function()
+test("quest icons: Icon size starts with Tiny (the old Extra small), 18 px on the map and 11 on the minimap", function()
     local c, PE = newIcons()
     local got = {}
     for _, ch in ipairs(optionOf(PE, "size").choices) do got[#got + 1] = ch.value .. "=" .. ch.label end
-    eq(got, { "xsmall=Extra small", "small=Small", "medium=Medium", "large=Large" })
+    eq(got, { "xsmall=Tiny", "small=Small", "medium=Medium", "large=Large" })
     setOpt(PE, "size", "xsmall")
     c:advance(0.5)
     local mini = iconsOn(c, c.minimap)
@@ -716,10 +715,28 @@ test("quest icons: a saved Merge or Spots value the control cannot show runs as 
     end
 end)
 
--- Spec 2026-11-19-0.8.1-clearer-labels, section 2.
-test("quest icons: the haze toggle is called Hide Blue Quest Haze", function()
+-- Spec 2026-11-20-0.9.0-ui-redesign, "Option rows per feature": the labels.
+test("quest icons: the spec's labels; the haze is Hide / Show with Hide as hideHaze = true; Icon key opens with Open", function()
     local c, PE = newIcons()
-    eq(optionOf(PE, "hideHaze").label, "Hide Blue Quest Haze")
+    local mod = PE:GetModule("questIcons")
+    eq(mod.label, "Quest icons")
+    eq(mod.desc, "Icons on the map and minimap where your quest objectives are.")
+    local function labels(key)
+        local got = {}
+        for _, ch in ipairs(optionOf(PE, key).choices) do got[#got + 1] = tostring(ch.value) .. "=" .. ch.label end
+        return got
+    end
+    eq(optionOf(PE, "show").label, "Show icons for")
+    eq(labels("show"), { "tracked=Tracked", "focus=Focused", "all=All" })
+    eq(optionOf(PE, "hideHaze").label, "Blizzard blue quest haze")
+    eq(labels("hideHaze"), { "true=Hide", "false=Show" })
+    local key
+    for _, o in ipairs(mod.options) do if o.label == "Icon key" then key = o end end
+    check(key and key.button == "Open" and key.page == "key" and type(key.action) == "function", "the Icon key row is wrong")
+    local descs = {}
+    for _, e in ipairs(PE.QuestIconKey) do descs[#descs + 1] = e.label .. ": " .. e.desc end
+    eq(descs, { "Kill: A creature to kill.", "Loot: A creature that drops a quest item.", "Use: An object to click, use or open.",
+        "Explore: A place to go to, or someone to talk to.", "Turn in: Where to hand the quest in." })
 end)
 
 return { known = KNOWN_FAILURES }

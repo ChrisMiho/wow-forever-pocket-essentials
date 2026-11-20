@@ -199,6 +199,29 @@ local STYLES = {
     -- sign; stepDim when that side has no further step.
     step     = { fill = { 0.15, 0.16, 0.19 }, border = { 0.62, 0.52, 0.22 }, text = { 1, 0.82, 0 } },
     stepDim  = { fill = { 0.11, 0.11, 0.12 }, border = { 0.62, 0.52, 0.22 }, text = { 0.33, 0.32, 0.29 } },
+    -- One part of a segmented choice (UI:CreateSegmented): no edge of its own
+    -- (the edge is the box around all the parts); segmentOn is the chosen part.
+    segment   = { fill = { 0.15, 0.16, 0.19 }, border = { 0.15, 0.16, 0.19 }, text = { 0.82, 0.82, 0.82 } },
+    segmentOn = { fill = { 0.56, 0.42, 0.03 }, border = { 0.56, 0.42, 0.03 }, text = { 1, 1, 1 } },
+    -- A tab of the settings window: card fill, and the chosen tab in the
+    -- selected fill (Settings.lua adds the gold bar on its left edge).
+    tabItem   = { fill = { 0.085, 0.085, 0.10 }, border = { 0.085, 0.085, 0.10 }, text = { 0.88, 0.88, 0.88 } },
+    tabOn     = { fill = { 0.56, 0.42, 0.03 }, border = { 0.56, 0.42, 0.03 }, text = { 1, 1, 1 } },
+}
+
+-- Shared colours of the settings look (spec 2026-11-20-0.9.0-ui-redesign, "Shared rules").
+UI.COLORS = {
+    card = { 0.085, 0.085, 0.10 },
+    divider = { 0.22, 0.22, 0.25 },
+    selected = { 0.56, 0.42, 0.03 },
+    gold = { 1, 0.82, 0 },
+    goldBrown = { 0.62, 0.52, 0.22 },
+    window = { 0.05, 0.05, 0.07 },
+    name = { 0.92, 0.92, 0.92 },
+    help = { 0.62, 0.62, 0.62 },
+    dotOn = { 0.35, 0.92, 0.45 },
+    dotOff = { 0.40, 0.40, 0.43 },
+    badge = { 0.85, 0.08, 0.08 },
 }
 local SELECTED = { fill = { 0.56, 0.42, 0.03 }, border = { 1, 0.82, 0 }, text = { 1, 1, 1 } }
 local FOCUS = { 0.25, 0.92, 1.00 }
@@ -271,8 +294,9 @@ function ButtonMethods:SetSelected(selected)
 end
 
 -- "normal", "on" (green), "off" (grey), "warn" (amber), "tab" (gold on dark, like a bag
--- window), "disabled" (dim; still tappable), or "step" / "stepDim" (the ends
--- of a number control).
+-- window), "disabled" (dim; still tappable), "step" / "stepDim" (the ends
+-- of a number control), "segment" / "segmentOn" (the parts of a segmented
+-- choice) or "tabItem" / "tabOn" (the settings window's tabs).
 function ButtonMethods:SetStyle(style)
     if not STYLES[style] then style = "normal" end
     if self.peStyle ~= style then
@@ -430,6 +454,238 @@ function UI:CreateDisc(parent, layer, sublevel, stripCount)
     end
 
     return disc
+end
+
+---------------------------------------------------------------------------
+-- Settings controls (spec 2026-11-20-0.9.0-ui-redesign, "Widgets"). Each is
+-- one button height tall and safe to set again on every redraw, so the list
+-- drawer (Settings.lua) keeps them in pools. Every pressable part is one of
+-- our buttons: a d-pad stop with the focus ring and the press flash.
+--
+--   UI:ControlWidth(innerWidth)   the width of the control on the right of a row
+--   UI:CreateSwitch(parent)       sw:SetSwitch(state) "on" / "off" / "blocked" / "failed"
+--   UI:CreateSegmented(parent)    seg:Set(width, items) -> the parts in use
+--   UI:CreateNumber(parent)       num:Set(width, box) -> the "-" and "+" ends
+---------------------------------------------------------------------------
+
+-- The control on the right of a settings row: 58% of the row, never wider
+-- than nine button heights.
+function UI:ControlWidth(innerWidth)
+    local m = self:Metrics()
+    return min((innerWidth or 0) * 0.58, m.button * 9)
+end
+
+-- The switch: two button heights wide, a square knob and the word On / Off.
+local SwitchMethods = {}
+
+local SWITCH_LOOK = {
+    on = { style = "on", label = "On" },
+    off = { style = "off", label = "Off" },
+    blocked = { style = "disabled", label = "Off" },
+    failed = { style = "warn", label = "Problem" },
+}
+
+-- state: "on", "off", "blocked" (cannot be switched on; a tap must do
+-- nothing, which the caller's OnClick checks) or "failed".
+function SwitchMethods:SetSwitch(state)
+    if not SWITCH_LOOK[state] then state = "off" end
+    self.peSwitchState = state
+    local look = SWITCH_LOOK[state]
+    self:SetStyle(look.style)
+    self:SetLabel(look.label)
+    self:LayoutSwitch()
+end
+
+function SwitchMethods:LayoutSwitch()
+    local m = UI:Metrics()
+    local b = m.border
+    local width, height = m.button * 2, m.button
+    self:SetSize(width, height)
+    local knob = max(height - 4 * b - m.gap * 0.4, 1)
+    local inset = 2 * b + m.gap * 0.2
+    local on = self.peSwitchState == "on"
+    self.peKnob:ClearAllPoints()
+    self.peKnob:SetSize(knob, knob)
+    self.peKnob:SetPoint("LEFT", self, "LEFT", on and (width - inset - knob) or inset, 0)
+    if on then
+        self.peKnob:SetColorTexture(0.9, 1, 0.92, 1)
+    else
+        self.peKnob:SetColorTexture(0.62, 0.62, 0.64, 1)
+    end
+    local label = self.peText
+    label:ClearAllPoints()
+    label:SetPoint("LEFT", self, "LEFT", on and m.gap * 0.4 or (knob + m.gap * 0.6), 0)
+    label:SetWidth(max(width - knob - m.gap, 1))
+end
+
+function UI:CreateSwitch(parent)
+    local m = self:Metrics()
+    local sw = self:CreateButton(parent, "", m.button * 2, m.button)
+    sw.peKnob = sw:CreateTexture(nil, "BORDER", nil, 1)
+    pcall(sw.peText.SetFontObject, sw.peText, m.smallFont)
+    sw.peText:SetJustifyH("CENTER")
+    for name, fn in pairs(SwitchMethods) do sw[name] = fn end
+    sw:SetSwitch("off")
+    return sw
+end
+
+-- The segmented choice: one box with an edge, cut into equal parts separated
+-- by one border. The chosen part has the selected fill, white text and a gold
+-- bar along its bottom. Left and Right on the d-pad move between the parts.
+local SegmentedMethods = {}
+
+-- items: { { label =, selected =, onClick = }, ... }. Returns the list of
+-- part buttons in use, in order.
+function SegmentedMethods:Set(width, items)
+    local m = UI:Metrics()
+    local b = m.border
+    local n = max(#items, 1)
+    local height = m.button
+    self:SetSize(width, height)
+    local partWidth = max((width - b * (n + 1)) / n, 1)
+    local barHeight = max(UI:Px(3), b * 1.5)
+    local used = {}
+    for i = 1, #items do
+        local item = items[i]
+        local part = self.peParts[i]
+        if not part then
+            part = UI:CreateButton(self, "")
+            part.peBar = part:CreateTexture(nil, "ARTWORK", nil, 2)
+            part.peBar:SetColorTexture(1, 0.82, 0, 1)
+            self.peParts[i] = part
+        end
+        part:ClearAllPoints()
+        part:SetSize(partWidth, height - 2 * b)
+        part:SetPoint("TOPLEFT", self, "TOPLEFT", b + (i - 1) * (partWidth + b), -b)
+        part.peText:ClearAllPoints()
+        part.peText:SetPoint("LEFT", part, "LEFT", m.gap * 0.4, 0)
+        part.peText:SetPoint("RIGHT", part, "RIGHT", -m.gap * 0.4, 0)
+        part:SetLabel(item.label)
+        part:SetStyle(item.selected and "segmentOn" or "segment")
+        part.peBar:ClearAllPoints()
+        part.peBar:SetPoint("BOTTOMLEFT", part, "BOTTOMLEFT", 0, 0)
+        part.peBar:SetPoint("BOTTOMRIGHT", part, "BOTTOMRIGHT", 0, 0)
+        part.peBar:SetHeight(barHeight)
+        part.peBar:SetShown(item.selected and true or false)
+        part.peChosen = item.selected and true or false
+        part:SetScript("OnClick", item.onClick)
+        part:Show()
+        used[i] = part
+    end
+    for i = #items + 1, #self.peParts do self.peParts[i]:Hide() end
+    return used
+end
+
+function UI:CreateSegmented(parent)
+    local seg = CreateFrame("Frame", nil, parent)
+    seg.peEdge = seg:CreateTexture(nil, "BACKGROUND")
+    seg.peEdge:SetAllPoints(seg)
+    local c = STYLES.normal.border
+    seg.peEdge:SetColorTexture(c[1], c[2], c[3], 1)
+    seg.peParts = {}
+    for name, fn in pairs(SegmentedMethods) do seg[name] = fn end
+    return seg
+end
+
+-- The number control: "-", a dark well with the value in gold and a small
+-- grey unit word under it (when both lines fit), "+", as one joined box. The
+-- well is not a d-pad stop.
+local NumberMethods = {}
+
+-- box: { text, unit, down = onClick or nil, up = onClick or nil, downDim,
+-- upDim, noStep = onClick for an end with no step }. An end with no step (or
+-- marked dim) is drawn dim. Returns the "-" and "+" buttons.
+function NumberMethods:Set(width, box)
+    local m = UI:Metrics()
+    local b, e = m.border, m.button
+    width = max(width, e * 2 + e * 0.5)
+    self:SetSize(width, e)
+    local minus, plus = self.peMinus, self.pePlus
+    minus:ClearAllPoints()
+    minus:SetSize(e, e)
+    minus:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
+    minus:SetStyle((box.down and not box.downDim) and "step" or "stepDim")
+    minus:SetScript("OnClick", box.down or box.noStep)
+    plus:ClearAllPoints()
+    plus:SetSize(e, e)
+    plus:SetPoint("TOPRIGHT", self, "TOPRIGHT", 0, 0)
+    plus:SetStyle((box.up and not box.upDim) and "step" or "stepDim")
+    plus:SetScript("OnClick", box.up or box.noStep)
+
+    local wellWidth = width - 2 * e + 2 * b
+    local well = self.peWell
+    well:ClearAllPoints()
+    well:SetSize(wellWidth, e)
+    well:SetPoint("TOPLEFT", self, "TOPLEFT", e - b, 0)
+    well.fill:ClearAllPoints()
+    well.fill:SetPoint("TOPLEFT", well, "TOPLEFT", b, -b)
+    well.fill:SetPoint("BOTTOMRIGHT", well, "BOTTOMRIGHT", -b, b)
+    local inner = max(wellWidth - 2 * b, 1)
+    local unit = box.unit ~= nil and tostring(box.unit) or ""
+    local showUnit = unit ~= "" and m.fontSize + m.smallFontSize <= e - 2 * b
+    local value = well.value
+    value:SetWidth(inner)
+    value:SetText(box.text == nil and "" or tostring(box.text))
+    value:SetTextColor(1, 0.82, 0, 1)
+    local valueHeight = UI:TextHeight(value, "font")
+    value:ClearAllPoints()
+    if showUnit then
+        well.unit:SetWidth(inner)
+        well.unit:SetText(unit)
+        well.unit:SetTextColor(0.62, 0.62, 0.62, 1)
+        local unitHeight = UI:TextHeight(well.unit, "small")
+        local top = max((e - valueHeight - unitHeight) * 0.5, b)
+        value:SetPoint("TOP", well, "TOP", 0, -top)
+        well.unit:ClearAllPoints()
+        well.unit:SetPoint("TOP", well, "TOP", 0, -(top + valueHeight))
+        well.unit:Show()
+    else
+        value:SetPoint("TOP", well, "TOP", 0, -max((e - valueHeight) * 0.5, 0))
+        well.unit:Hide()
+    end
+    -- The ends above the well, so their edges draw over its joints.
+    minus:SetFrameLevel(well:GetFrameLevel() + 1)
+    plus:SetFrameLevel(well:GetFrameLevel() + 1)
+    return minus, plus
+end
+
+function UI:CreateNumber(parent)
+    local num = CreateFrame("Frame", nil, parent)
+    local well = CreateFrame("Frame", nil, num)
+    well.border = well:CreateTexture(nil, "BACKGROUND")
+    well.border:SetAllPoints(well)
+    well.border:SetColorTexture(0.62, 0.52, 0.22, 1)
+    well.fill = well:CreateTexture(nil, "BORDER")
+    well.fill:SetColorTexture(0.03, 0.03, 0.04, 1)
+    well.value = self:CreateText(well, "font")
+    well.value:SetJustifyH("CENTER")
+    well.value:SetWordWrap(false)
+    well.unit = self:CreateText(well, "small")
+    well.unit:SetJustifyH("CENTER")
+    well.unit:SetWordWrap(false)
+    num.peWell = well
+    num.peMinus = self:CreateButton(num, "-")
+    num.pePlus = self:CreateButton(num, "+")
+    for name, fn in pairs(NumberMethods) do num[name] = fn end
+    return num
+end
+
+-- The height of a text that was just set; an estimate from its length while
+-- the game cannot measure it yet. kind: "font", "small" or "title".
+function UI:TextHeight(fontString, kind)
+    local m = self:Metrics()
+    local size = (kind == "small" and m.smallFontSize) or (kind == "title" and m.fontSize * 1.12) or m.fontSize
+    local ok, height = pcall(fontString.GetStringHeight, fontString)
+    if ok and type(height) == "number" and height >= size * 0.8 then return height end
+    local text = fontString:GetText() or ""
+    local okW, width = pcall(fontString.GetWidth, fontString)
+    width = (okW and type(width) == "number" and width > 0) and width or size * 20
+    local perLine = max(math.floor(width / (size * 0.5)), 1)
+    local lines = 0
+    for line in (text .. "\n"):gmatch("(.-)\n") do
+        lines = lines + max(math.ceil(#line / perLine), 1)
+    end
+    return max(lines, 1) * size * 1.2
 end
 
 ---------------------------------------------------------------------------
@@ -773,11 +1029,32 @@ local function NavFocus(panel, btn, index)
     end
 end
 
+function UI:NavSameRow(a, b)
+    return (a and b and SameRow(a, b)) or false
+end
+
 -- step = -1 / +1. byRow (up/down) skips the other buttons on the same line.
+-- A panel may split its buttons into columns:
+--   panel.navCross(focus, step, byRow) -> a button to jump to, or nil for the
+--     usual move (focus is nil before anything is highlighted);
+--   panel.navColumn(focus) -> the part of the list that holds focus; the
+--     usual move then stays inside it.
 local function NavMove(panel, step, byRow)
-    local list = NavList(panel)
+    local all = NavList(panel)
+    local list = all
+    if #all == 0 then return NavFocus(panel, nil) end
+    local focus = panel.peNavFocus
+    if not IndexOf(all, focus) then focus = nil end
+    if type(panel.navCross) == "function" then
+        local ok, target = xpcall(panel.navCross, Handler(), focus, step, byRow)
+        local at = ok and IndexOf(all, target)
+        if at then return NavFocus(panel, target, at) end
+    end
+    if focus and type(panel.navColumn) == "function" then
+        local ok, column = xpcall(panel.navColumn, Handler(), focus)
+        if ok and type(column) == "table" and IndexOf(column, focus) then list = column end
+    end
     local n = #list
-    if n == 0 then return NavFocus(panel, nil) end
     local current = IndexOf(list, panel.peNavFocus)
     local index = current
     if not current then
@@ -807,7 +1084,7 @@ local function NavMove(panel, step, byRow)
             end
         end
     end
-    NavFocus(panel, list[index], index)
+    NavFocus(panel, list[index], IndexOf(all, list[index]))
 end
 
 local function NavActivate(panel)
