@@ -1109,3 +1109,24 @@ respond, plus the Errors tab.
 9. **Menu background** (still open from 0.8.1): Errors tab → Debug log On,
    Menu background on, open a quest's menu in the quest log, close it, then
    Errors tab → Save the log, and send the saved `PocketEssentials.lua`.
+
+### 19. Version 0.9.1: setup guide tweaks and Loot sparkles
+
+Install the 0.9.1 zip (delete the old `PocketEssentials` folder first, keep
+`QuestieDB`) and fully restart the game.
+
+1. **Setup guide** (General → Setup guide → Open). On Welcome, the button
+   pictures show the bottom and right face buttons lit, no letters.
+2. With the d-pad: the first press lands on the screen's first control (the
+   "How do you play?" choice, or a switch), not Close. Down from the last
+   control goes to Next; Left goes to Skip, then Back. Press A on Next a few
+   times: each new screen starts on its first control.
+3. "Vendors and game fixes" has four cards, one sentence each. "Round button
+   and chat" says once what a tap does.
+4. **Loot sparkles.** Set the game's graphics to the lowest. Settings → Game
+   fixes → Loot sparkles On. Kill a mob and look at the corpse, items on the
+   ground, quest givers and objects: they sparkle. Change the graphics preset
+   and back: the sparkles stay. Does the frame rate feel the same?
+5. Turn Loot sparkles Off: its card says to fully restart the game. Restart:
+   the sparkles are gone.
+6. Errors tab: anything listed?

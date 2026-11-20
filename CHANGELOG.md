@@ -4,6 +4,37 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.9.1] - 2026-11-20
+
+Twenty-third test build. From the owner, after installing 0.9.0: "this latest
+build looks great, but i have some minor tweaks". Specs
+`docs/superpowers/specs/2026-11-20-0.9.0-ui-redesign.md` (0.9.1 changes) and
+`docs/superpowers/specs/2026-11-20-loot-sparkles.md`. Not yet tested on a
+device. Your saved choices carry over.
+
+### Added
+
+- **Loot sparkles** (new switch, off to start with): brings back the sparkle
+  on things you can loot or use, even on the lowest graphics. It turns the
+  game's own sparkle setting back on and keeps it on after graphics changes.
+  Switching it off puts the old setting back; the sparkles go after a full
+  game restart. Based on
+  [ForeverLootSparkles](https://github.com/svengabr/ForeverLootSparkles) by
+  Ashtar Senior (GPL-3.0-or-later).
+
+### Changed
+
+- **Game fixes** is the new name of the Menu background tab; it holds Menu
+  background and Loot sparkles. In the setup guide the screen is "Vendors and
+  game fixes".
+- **Setup guide, Welcome:** the controller pictures show which face button
+  (bottom, right) does what, so they fit any controller.
+- **Setup guide, d-pad:** the highlight starts on the screen's first control
+  (usually the switch), not on Close. Down from the last control goes to
+  Next; Left from Next goes to Skip, then Back.
+- **Setup guide, less text:** one sentence for Menu background, and the round
+  button and chat screen says once what a tap does.
+
 ## [0.9.0] - 2026-11-20
 
 Twenty-second test build. A new look for every window, built from the mockups

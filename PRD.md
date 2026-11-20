@@ -436,6 +436,17 @@ per objective". The owner has more Quest icons ideas to bring after testing.
 Spec `docs/superpowers/specs/2026-11-18-tidier-settings.md`; device steps
 `docs/TESTING.md` 14.
 
+**0.9.1 (2026-11-20, untested):** the owner after installing 0.9.0: "this
+latest build looks great". Built: setup guide face-button pictures, d-pad
+path (first control first, Down to Next), less repeated text; new **Loot
+sparkles** switch (the owner: "i would love to have a lightweight version of
+that added to the suite as sometimes the graphics being so low hides the
+sparkles"), our own one-setting version of ForeverLootSparkles (GPL-3.0, by
+Ashtar Senior; not bundled, too small to be worth a second addon), under a
+renamed **Game fixes** tab. Specs `docs/superpowers/specs/2026-11-20-0.9.0-ui-redesign.md`
+(0.9.1 changes) and `docs/superpowers/specs/2026-11-20-loot-sparkles.md`;
+device steps `docs/TESTING.md` section 19.
+
 **0.9.0 (2026-11-20, untested):** the UI redesign from mockups. The owner
 asked to plan the look on mockups before any more code ("mockups can then be
 our north star of what it should visually look like, the prd would drive the
