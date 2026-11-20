@@ -56,15 +56,16 @@ test("bags: the Sort button is shown while the bag is open and hidden when it cl
     check(not btn:IsVisible(), "button still visible after the bag closed")
 end)
 
--- Spec 2026-11-16-vertical-sort-tab: a tab flush against the bag's left edge (TOPRIGHT of the
--- tab on TOPLEFT of the bag, no gap). Not a child of the bag (header: children of UIParent).
-test("bags: the Sort tab sits against the bag's left edge and is a child of UIParent, not of the bag", function()
+-- Spec 2026-11-16-vertical-sort-tab: a tab against the bag's left edge (TOPRIGHT of the tab on
+-- TOPLEFT of the bag). Spec 0.9.0 "Bag Sort tab": it overlaps the bag's left edge by `border`,
+-- so it looks joined. Not a child of the bag (header: children of UIParent).
+test("bags: the Sort tab overlaps the bag's left edge by one border and is a child of UIParent, not of the bag", function()
     local c = newBags()
     c:openBag()
     local btn = sortButton(c)
     eq(btn:GetParent(), c.UIParent, "parent")
     local point, rel, relPoint, x = btn:GetPoint(1)
-    eq({ point, rel, relPoint, x }, { "TOPRIGHT", c.bagFrame, "TOPLEFT", 0 })
+    eq({ point, rel, relPoint, x }, { "TOPRIGHT", c.bagFrame, "TOPLEFT", c.PE.UI:Metrics().border })
 end)
 
 -- Spec 2026-11-16-vertical-sort-tab: tall and narrow, at least three button heights tall.
@@ -74,6 +75,171 @@ test("bags: the Sort tab is a tall, narrow tab", function()
     local btn = sortButton(c)
     check(btn:GetHeight() > btn:GetWidth() * 2,
         "tab not tall and narrow: " .. btn:GetWidth() .. " x " .. btn:GetHeight())
+end)
+
+---------------------------------------------------------------------------
+-- The Sort tab's look (spec 2026-11-20-0.9.0-ui-redesign, "Bag Sort tab")
+---------------------------------------------------------------------------
+
+local TAB_TEXTURE = "Interface\\AddOns\\PocketEssentials\\Icons\\tab_round"
+
+local function near(a, b) return type(a) == "number" and type(b) == "number" and math.abs(a - b) < 0.01 end
+
+-- The tab's own regions, grouped by draw layer, in the order they were made.
+local function tabRegions(c, btn)
+    local out = {}
+    for _, r in ipairs(c._state(btn).regions) do
+        local layer = c._state(r).layer or "?"
+        out[layer] = out[layer] or {}
+        table.insert(out[layer], r)
+    end
+    return out
+end
+
+-- Edge and fill: the rounded texture in three slices (top half, a middle band, bottom half),
+-- tinted gold-brown (.62, .52, .22) and (.10, .09, .08); the fill is one border inside the edge
+-- on the top, left and bottom, and flush on the right (against the bag).
+test("bags: the Sort tab is a rounded shape, a gold-brown edge round a dark fill, open against the bag", function()
+    local c = newBags()
+    c:openBag()
+    local btn = sortButton(c)
+    local m = c.PE.UI:Metrics()
+    local layers = tabRegions(c, btn)
+    local function slices(name, layer)
+        local out = {}
+        for _, t in ipairs(layers[layer] or {}) do
+            if c._state(t).texture == TAB_TEXTURE then out[#out + 1] = t
+            else check(not t:IsShown(), name .. ": a square texture is drawn") end
+        end
+        return out
+    end
+    local function checkShape(name, pieces, color, left, inset)
+        eq(#pieces, 3, name .. ": slices")
+        local coords = {}
+        for i, t in ipairs(pieces) do
+            eq(c._state(t).vertexColor, color, name .. " slice " .. i .. " colour")
+            check(t:IsShown(), name .. " slice " .. i .. " hidden")
+            coords[i] = c._state(t).texCoord
+        end
+        eq(coords, { { 0, 1, 0, 0.5 }, { 0, 1, 0.4, 0.6 }, { 0, 1, 0.5, 1 } }, name .. " slices")
+        local top, mid, bottom = pieces[1], pieces[2], pieces[3]
+        local width = btn:GetWidth()
+        -- each end cap keeps the texture's proportions: half as tall as it is wide
+        check(near(top:GetHeight(), (width - left) * 0.5), name .. ": top cap height " .. tostring(top:GetHeight()))
+        check(near(bottom:GetHeight(), (width - left) * 0.5), name .. ": bottom cap height")
+        check(near(top:GetLeft(), btn:GetLeft() + left) and near(top:GetRight(), btn:GetRight()), name .. ": top cap sides")
+        check(near(top:GetTop(), btn:GetTop() - inset) and near(bottom:GetBottom(), btn:GetBottom() + inset), name .. ": ends")
+        check(near(mid:GetTop(), top:GetBottom()) and near(mid:GetBottom(), bottom:GetTop()), name .. ": middle band")
+        check(near(mid:GetLeft(), btn:GetLeft() + left) and near(mid:GetRight(), btn:GetRight()), name .. ": middle sides")
+    end
+    checkShape("edge", slices("edge", "BACKGROUND"), { 0.62, 0.52, 0.22, 1 }, 0, 0)
+    checkShape("fill", slices("fill", "BORDER"), { 0.10, 0.09, 0.08, 1 }, m.border, m.border)
+    c:assertClean("tab look")
+end)
+
+-- Middle: the sort picture button*0.5 square, then "Sort" in the small font, gold, gap*0.6
+-- below it, the pair centred both ways. The stacked letters are gone.
+test("bags: the middle of the Sort tab is the sort picture with the word Sort under it, centred", function()
+    for _, size in ipairs({ "small", "medium", "large" }) do
+        local c = T.new({ on = { "bags" }, saved = { version = 1, enabled = {}, options = {}, ui = { size = size }, errors = {} },
+            setup = function(cc) cc.world.cvars.combinedBags = "0" end })
+        c:openBag()
+        local btn = sortButton(c)
+        local m = c.PE.UI:Metrics()
+        eq(m.size, size, "button size")
+        local icon, word
+        for _, r in ipairs(tabRegions(c, btn).OVERLAY or {}) do
+            local st = c._state(r)
+            if st.atlas == "bags-button-autosort-up" then icon = r end
+            if st.type == "FontString" and r:IsShown() then
+                check(not word, size .. ": more than one word shown")
+                word = r
+            end
+        end
+        check(icon and icon:IsShown(), size .. ": no sort picture")
+        check(word, size .. ": no word")
+        eq(word:GetText(), "Sort", size .. ": the word")
+        eq(c._state(word).textColor, { 1, 0.82, 0, 1 }, size .. ": gold")
+        local fontObject = c._state(word).fontObject
+        check(fontObject ~= nil and rawget(c.env, m.smallFont) == fontObject, size .. ": not the small font")
+        check(near(icon:GetWidth(), m.button * 0.5) and near(icon:GetHeight(), m.button * 0.5), size .. ": picture size")
+        local cx = (btn:GetLeft() + btn:GetRight()) * 0.5
+        check(near((icon:GetLeft() + icon:GetRight()) * 0.5, cx), size .. ": picture not centred across")
+        check(near((word:GetLeft() + word:GetRight()) * 0.5, cx), size .. ": word not centred across")
+        eq(c._state(word).justifyH, "CENTER", size .. ": word justify")
+        check(near(icon:GetBottom() - word:GetTop(), m.gap * 0.6), size .. ": gap between picture and word")
+        check(near(word:GetHeight(), m.smallFontSize * 1.15), size .. ": word height")
+        -- the pair is centred top to bottom
+        local above, below = btn:GetTop() - icon:GetTop(), word:GetBottom() - btn:GetBottom()
+        check(near(above, below), size .. ": not centred top to bottom: " .. above .. " above, " .. below .. " below")
+        -- no stacked letters anywhere on the tab
+        for _, r in ipairs(c._state(btn).regions) do
+            local text = c._state(r).type == "FontString" and r:GetText() or ""
+            check(not tostring(text):find("\n", 1, true), size .. ": stacked letters: " .. tostring(text))
+        end
+        c:assertClean("tab middle " .. size)
+    end
+end)
+
+-- The press flash: shown while pressed and fading after, in the tab's own shape (three slices
+-- of the rounded texture), never the shared button's square flash.
+test("bags: the Sort tab's press flash has the tab's shape", function()
+    local c = newBags()
+    c:openBag()
+    local btn = sortButton(c)
+    local flash = {}
+    for _, t in ipairs(tabRegions(c, btn).ARTWORK or {}) do
+        if c._state(t).texture == TAB_TEXTURE then flash[#flash + 1] = t end
+    end
+    eq(#flash, 3, "flash slices")
+    local function shown()
+        local n = 0
+        for _, r in ipairs(c._state(btn).regions) do
+            local st = c._state(r)
+            if st.type == "Texture" and r:IsShown() and (st.layer == "ARTWORK") then n = n + 1 end
+        end
+        return n
+    end
+    for _, t in ipairs(flash) do eq(c._state(t).vertexColor, { 1, 1, 1, 0.3 }) end
+    eq(shown(), 0, "flash shown before a press")
+    c:script(btn, "OnMouseDown", "LeftButton")
+    eq(shown(), 3, "while pressed: the shaped flash only")
+    c:script(btn, "OnMouseUp", "LeftButton")
+    eq(shown(), 3, "just after the press")
+    c:advance(1)
+    eq(shown(), 0, "flash still shown after it faded")
+    -- a stick click that sorts flashes the tab too
+    c:advance(1)
+    c:script(keyButton(c), "OnClick", "LeftButton", false)
+    eq(sorts(c), 1)
+    eq(shown(), 3, "no flash after a stick click")
+    c:advance(1)
+    eq(shown(), 0, "stick flash still shown")
+    c:assertClean("tab flash")
+end)
+
+-- The texture: an uncompressed 32-bit TGA with alpha like the other Icons, at most 64x128 and a
+-- few KB, in the addon folder the build copies whole (so it needs no TOC entry).
+test("bags: the tab texture is a small 32-bit TGA in the addon's Icons folder, which the build ships", function()
+    local function slurp(path)
+        local f = io.open(T.root .. "/" .. path, "rb")
+        check(f, path .. " is missing")
+        local data = f:read("*a")
+        f:close()
+        return data
+    end
+    local data = slurp("addons/PocketEssentials/Icons/tab_round.tga")
+    local b = function(i) return data:byte(i) end
+    eq(b(3), 2, "image type (uncompressed true colour)")
+    local w, h = b(13) + b(14) * 256, b(15) + b(16) * 256
+    check(w >= 1 and w <= 64 and h >= 1 and h <= 128, "size " .. w .. "x" .. h)
+    eq(b(17), 32, "bits per pixel")
+    eq(b(18) % 16, 8, "alpha bits")
+    eq(#data, 18 + w * h * 4, "file length")
+    check(#data <= 8 * 1024, "more than a few KB: " .. #data)
+    check(slurp("scripts/build.sh"):find('cp -R addons/PocketEssentials "$stage/"', 1, true),
+        "build.sh no longer copies the whole addon folder")
+    check(slurp("scripts/make_art.py"):find("tab_round.tga", 1, true), "scripts/make_art.py does not make tab_round.tga")
 end)
 
 -- Sets one saved value and runs the OnChange of the row that holds it, in
@@ -371,13 +537,16 @@ local function textsOf(c)
     return out
 end
 
-test("bags: the feature is called Bag sorter and no text of it says One big bag", function()
+-- Spec 0.9.0, "Feature names and lines".
+test("bags: the features are called Bag sorting and Bigger bag and no text of them says One big bag", function()
     for _, gamepad in ipairs({ true, false }) do
         local c = newBags({ gamepadUI = gamepad })
         local mod = c.PE:GetModule("bags")
-        eq(mod.label, "Bag sorter")
-        eq(mod.desc, "Sort your bags with a big button or a stick click.")
+        eq(mod.label, "Bag sorting")
+        eq(mod.desc, "Sort your bags with one press.")
         eq(mod.key, "bags")
+        local win = c.PE:GetModule("bagWindow")
+        eq({ win.label, win.desc }, { "Bigger bag", "A bigger and better organized bag window." })
         for _, text in ipairs(textsOf(c)) do
             check(not text:lower():find("big bag", 1, true), "old name in: " .. text)
         end
@@ -695,26 +864,35 @@ test("d-pad to Sort: a client without the navigation helpers gets nothing, no er
     eq(setterCalls(c), 0)
     eq(leftJumps(grid, sortButton(c)), {})
     check(hasLine(c, "d-pad: not set up: no navigation helpers on this client"), "no log line")
-    local found = false
-    for _, text in ipairs(textsOf(c)) do
-        if text == "This client has no way to reach Sort with the d-pad." then found = true end
-    end
-    check(found, "the settings text does not say the d-pad route is not possible")
+    -- spec 0.9.0, "Bag sorting": no informational lines in its card
+    for _, text in ipairs(textsOf(c)) do check(not text:find("d%-pad"), "d-pad text in the settings: " .. text) end
     c:click(sortButton(c))
     eq(sorts(c), 1)
     eq(bindings(c), { PADLSTICK = "PocketEssentialsBagSortKey" })
     c:assertClean("no helpers")
 end)
 
-test("d-pad to Sort: with it on and usable the settings text says how to use it", function()
-    local c = newPad()
-    local found = false
-    for _, text in ipairs(textsOf(c)) do
-        if text == "D-pad: press Left from the first column to reach Sort, then A." then found = true end
+-- Spec 0.9.0, "Bag sorting": "The blue informational status lines are not shown in its card.
+-- Blocked and failed lines still are."
+test("bags: Bag sorting's card has no informational lines, only its problems", function()
+    for i, o in ipairs({ {}, { dpad = false }, { setup = function(cc) cc:removeSmartNav() end } }) do
+        local c = newPad(o)
+        local bags = c.PE:GetModule("bags")
+        eq(bags.status(bags), nil, "case " .. i .. ": a line with nothing wrong")
     end
-    check(found, "no d-pad line in the settings text")
-    local off = newPad({ dpad = false })
-    for _, text in ipairs(textsOf(off)) do check(not text:find("D%-pad"), "d-pad text while off: " .. text) end
+    -- mouse style, already the combined bag, with either stick and the tab shown or hidden
+    for _, key in ipairs({ "l3", "r3" }) do
+        for _, show in ipairs({ true, false }) do
+            local c = newBags({ gamepadUI = false, cvar = "1" })
+            local bags = c.PE:GetModule("bags")
+            bags.opts.sortKey, bags.opts.showTab = key, show
+            eq(bags.status(bags), nil, "mouse style: a line with nothing wrong")
+        end
+    end
+    -- the problems stay
+    local c = newBags({ cvar = "0" })
+    local bags = c.PE:GetModule("bags")
+    eq(bags.status(bags), "Reload to switch to the combined bag.")
 end)
 
 -- 9. FirstColumn: "bag has no item list".
@@ -1052,14 +1230,13 @@ end)
 ---------------------------------------------------------------------------
 
 -- Gamepad UI on, the bag built as the game builds it (60 slots unless o.sizes says otherwise),
--- Bag sorter and Bag window on, "Bag icons" on "One row at the top" (o.row = false: left as
--- shipped). The d-pad route is on with the Sort button (o.dpad = false: Sort button Off).
+-- Bag sorting and Bigger bag on: the bag pictures go to the top row (spec 0.9.0: always while
+-- Bigger bag is on). o.row = false: Bigger bag off, the game's own layout. The d-pad route is
+-- on with the Sort button (o.dpad = false: Sort button Off).
 local function newIcons(o)
     o = o or {}
-    local c = newBags({ window = true, gamepadUI = o.gamepadUI ~= false, setup = o.setup, cvar = o.cvar })
+    local c = newBags({ window = o.row ~= false, gamepadUI = o.gamepadUI ~= false, setup = o.setup, cvar = o.cvar })
     c:buildBag(o.sizes)
-    local opts = c.PE:GetModule("bagWindow").opts
-    if o.row ~= false then opts.iconRow = true end
     if o.dpad == false then c.PE:GetModule("bags").opts.showTab = false end
     if o.debug then c.PE:SetDebug(true) end
     return c
@@ -1089,7 +1266,7 @@ local function places(c)
     return out
 end
 
--- What Blizzard's own layout gives for the same bags, from a second client with the choice off.
+-- What Blizzard's own layout gives for the same bags, from a second client with Bigger bag off.
 local function gameLayout(o)
     local g = newIcons({ row = false, sizes = o and o.sizes, gamepadUI = o and o.gamepadUI })
     if o and o.collapsed then for id, v in pairs(o.collapsed) do g.world.collapsed[id] = v end end
@@ -1132,25 +1309,34 @@ local function checkRowLayout(c, wantIcons, wantSlots)
     return perRow, lastRow, slots, icons
 end
 
--- 1. Spec part 4: label "Bag icons", choices "In the grid" (default) / "One row at the top".
-test("bags: Bag icons is a choice with two values, In the grid first, and is off by default", function()
-    local c = newBags({ window = true })
-    local mod = c.PE:GetModule("bagWindow")
-    local found
-    for _, opt in ipairs(mod.options) do if opt.key == "iconRow" then found = opt end end
-    check(found, "no iconRow option")
-    eq(found.label, "Bag icons")
-    eq({ found.choices[1].value, found.choices[1].label }, { false, "In the grid" })
-    eq({ found.choices[2].value, found.choices[2].label }, { true, "One row at the top" })
-    eq(#found.choices, 2)
-    eq(mod.opts.iconRow, false)
-    mod.opts.iconRow = "yes"
-    mod:OnLoad()
-    eq(mod.opts.iconRow, false, "a broken saved value")
+-- 1. Spec 0.9.0, "Bigger bag": "The Bag icons choice goes. While Bigger bag is on, the bag
+-- pictures always go in the one row at the top ... The iconRow key is no longer read." Review
+-- focus 2: a stray iconRow = false must not undo the top-row icons.
+test("bags: Bigger bag has no Bag icons choice and puts the icons in the top row whatever iconRow holds", function()
+    for _, saved in ipairs({ false, true, "yes", 0 }) do
+        local c = newBags({ gamepadUI = true, setup = function(cc) end })
+        c:buildBag()
+        local mod = c.PE:GetModule("bagWindow")
+        for _, opt in ipairs(mod.options) do check(opt.key ~= "iconRow" and opt.label ~= "Bag icons", "a Bag icons row") end
+        mod.opts.iconRow = saved
+        c.PE:SetModuleEnabled("bagWindow", true)
+        c:openBag()
+        checkRowLayout(c, 7, 60)
+        eq(mod.opts.iconRow, saved, "the saved value was rewritten")
+        c:assertClean("iconRow " .. tostring(saved))
+    end
+    -- a save with iconRow = false loaded with Bigger bag on
+    local c, PE = T.new({ gamepadUI = true, saved = { version = 1, enabled = { bags = true, bagWindow = true },
+        options = { bagWindow = { size = "normal", iconRow = false } }, errors = {} },
+        setup = function(cc) cc.world.cvars.combinedBags = "1" end })
+    c:buildBag()
+    c:openBag()
+    checkRowLayout(c, 7, 60)
+    eq(PE.db.options.bagWindow.iconRow, false)
 end)
 
--- 2. Spec: default "the game's way".
-test("bags: with In the grid nothing in the bag is moved", function()
+-- 2. The game's way while Bigger bag is off.
+test("bags: with Bigger bag off nothing in the bag is moved", function()
     local c = newIcons({ row = false })
     c:openBag()
     c:relayoutBag()
@@ -1288,7 +1474,7 @@ test("bags: switching back to In the grid puts every button back exactly", funct
     local c = newIcons()
     c:openBag()
     check(table.concat(places(c), "|") ~= table.concat(places(g), "|"), "the row layout is the game's layout")
-    chooseOption(c, "iconRow", false)
+    c.PE:SetModuleEnabled("bagWindow", false)
     eq(places(c), places(g))
     local after = moves(c)
     layoutPass(c)
@@ -1296,7 +1482,7 @@ test("bags: switching back to In the grid puts every button back exactly", funct
     eq(moves(c), after, "still moving buttons with the choice back on In the grid")
     eq(places(c), places(g))
     -- and on again with the bag open
-    chooseOption(c, "iconRow", true)
+    c.PE:SetModuleEnabled("bagWindow", true)
     checkRowLayout(c, 7, 60)
     c:assertClean("back to the grid")
 end)
@@ -1307,7 +1493,7 @@ test("bags: switching back after a bag was collapsed gives the game's layout for
     local c = newIcons()
     c:openBag()
     c:collapseBag(2, true)
-    chooseOption(c, "iconRow", false)
+    c.PE:SetModuleEnabled("bagWindow", false)
     eq(places(c), places(g))
 end)
 
@@ -1344,8 +1530,6 @@ test("bags: with the Gamepad UI off the choice does nothing and says why in the 
     layoutPass(c)
     eq(moves(c), 0)
     eq(count(c, "bag icons: left alone, no bag icons in the grid (not the controller style)"), 1)
-    local texts = table.concat(textsOf(c), "\n")
-    check(texts:find("Bag icons: only in the controller style.", 1, true), "no row note: " .. texts)
     c:assertClean("mouse style")
 end)
 
@@ -1402,8 +1586,8 @@ test("bags: nothing is written onto Blizzard's buttons or tables", function()
     c:collapseBag(3, true)
     c:closeBag()
     c:openBag()
-    chooseOption(c, "iconRow", false)
-    chooseOption(c, "iconRow", true)
+    c.PE:SetModuleEnabled("bagWindow", false)
+    c.PE:SetModuleEnabled("bagWindow", true)
     c.PE:SetModuleEnabled("bags", false)
     for i, b in ipairs(c.bagButtons) do eq(next(b), nil, "a field on bag button " .. i) end
     eq(keys(c.bagFrame), bagKeys)
@@ -1438,7 +1622,7 @@ test("bags: the bag opened in a fight is re-flowed at once; with protected butto
     eq(p.blocked, {})
     -- switched off in a fight: put back when the fight ends
     p:enterCombat()
-    chooseOption(p, "iconRow", false)
+    p.PE:SetModuleEnabled("bagWindow", false)
     checkRowLayout(p, 7, 60)
     p:leaveCombat()
     eq(places(p), places(g))
@@ -1446,10 +1630,10 @@ test("bags: the bag opened in a fight is re-flowed at once; with protected butto
 end)
 
 -- 16. Rules: "Bag size and the Sort tab are unaffected (the window's size does not change)."
-test("bags: Bag size and the Sort tab are the same with either choice", function()
+-- Since 0.9.0 the row comes with Bigger bag: at Normal size the bag and the tab are as without it.
+test("bags: the icon row leaves the bag's size and the Sort tab as they are", function()
     local function snapshot(row)
         local c = newIcons({ row = row })
-        c.PE:GetModule("bagWindow").opts.size = "large"
         c:openBag()
         local bag, tab = c.bagFrame, sortButton(c)
         local point, _, relPoint, x, y = bag:GetPoint(1)
@@ -1460,7 +1644,6 @@ test("bags: Bag size and the Sort tab are the same with either choice", function
             tp, trp, tx, ty, tab:GetWidth(), tab:GetHeight() }
     end
     local grid, row = snapshot(false), snapshot(true)
-    check(grid[1] > 1, "the bag was not made larger: " .. tostring(grid[1]))
     eq(row, grid)
 end)
 
@@ -1500,9 +1683,9 @@ test("bags: with Bag icons and D-pad to Sort both on, the Left jump is on the fi
     c:collapseBag(1, false)
     checkJumps("expanded", 6)
     -- back to the game's layout: its first column holds five slots and a bag button
-    chooseOption(c, "iconRow", false)
+    c.PE:SetModuleEnabled("bagWindow", false)
     checkJumps("grid", 5)
-    chooseOption(c, "iconRow", true)
+    c.PE:SetModuleEnabled("bagWindow", true)
     checkJumps("row again", 6)
     eq(c.blocked, {})
     c:assertClean("both choices")
@@ -1625,7 +1808,7 @@ test("bags: slots that finish the icon row get no Left jump when bag buttons are
 end)
 
 -- "Nothing ticks. No new event."
-test("bags: Bag icons registers nothing and leaves nothing ticking", function()
+test("bags: the icon row registers nothing and leaves nothing ticking", function()
     local off = newIcons({ row = false })
     off:openBag()
     off:advance(1)
@@ -1639,14 +1822,15 @@ test("bags: Bag icons registers nothing and leaves nothing ticking", function()
     end
 end)
 
--- Spec part 4: row notes.
-test("bags: with One row at the top the settings text says so", function()
-    local c = newIcons()
-    c:openBag()
-    local texts = table.concat(textsOf(c), "\n")
-    check(texts:find("Bag icons are in one row at the top of the bag.", 1, true), "no row note: " .. texts)
-    local off = newIcons({ row = false })
-    for _, text in ipairs(textsOf(off)) do check(not text:find("Bag icons a"), "row note while off: " .. text) end
+-- Spec 0.9.0: the Bag icons choice is gone, and so are its notes in the settings text.
+test("bags: the settings text has no notes about the bag icons", function()
+    for _, gamepad in ipairs({ true, false }) do
+        local c = newIcons({ gamepadUI = gamepad, cvar = "1" })
+        c:openBag()
+        for _, text in ipairs(textsOf(c)) do check(not text:find("Bag icons"), "row note: " .. text) end
+        local win = c.PE:GetModule("bagWindow")
+        eq(win.status(win), nil, "a line with nothing wrong")
+    end
 end)
 
 -- 17. Spec part 4, "Debug-log lines".
@@ -1654,8 +1838,8 @@ test("debug log: the bag icons lines", function()
     local c = newIcons({ debug = true, row = false })
     c:openBag()
     eq(count(c, "bag icons: 7 icons in the top row, 60 slots below"), 0)
-    chooseOption(c, "iconRow", true)
-    eq(count(c, "bag icons choice: row"), 1)
+    c.PE:SetModuleEnabled("bagWindow", true)
+    eq(count(c, "bag icons: 7 icons in the top row, 60 slots below"), 1)
     layoutPass(c)
     c:relayoutBag()
     c:closeBag()
@@ -1663,18 +1847,17 @@ test("debug log: the bag icons lines", function()
     eq(count(c, "bag icons: 7 icons in the top row, 60 slots below"), 1)
     c:collapseBag(1, true)
     eq(count(c, "bag icons: 7 icons in the top row, 48 slots below"), 1)
-    chooseOption(c, "iconRow", false)
-    eq(count(c, "bag icons choice: grid"), 1)
+    c.PE:SetModuleEnabled("bagWindow", false)
     eq(count(c, "bag icons: the game's own places put back"), 1)
-    chooseOption(c, "iconRow", true)
+    c.PE:SetModuleEnabled("bagWindow", true)
     c:closeBag()
-    chooseOption(c, "iconRow", false)
+    c.PE:SetModuleEnabled("bagWindow", false)
     eq(count(c, "bag icons: nothing of ours to put back"), 1)
-    -- switching the feature off with the choice never used says nothing about bag icons
+    -- Bag sorting alone, switched off, says nothing about bag icons
     local d = newIcons({ debug = true, row = false })
     d:openBag()
-    d.PE:SetModuleEnabled("bagWindow", false)
-    for _, line in ipairs(debugLines(d, "bags")) do check(not line:find("bag icons"), "line with the choice off: " .. line) end
+    d.PE:SetModuleEnabled("bags", false)
+    for _, line in ipairs(debugLines(d, "bags")) do check(not line:find("bag icons"), "line without Bigger bag: " .. line) end
 end)
 
 ---------------------------------------------------------------------------
@@ -1706,13 +1889,14 @@ local function choose(c, modKey, key, value)
 end
 
 -- Spec: "Bag window is switched on exactly when Bag sorter was on; size and iconRow are copied."
-test("split: the first 0.8.0 load switches Bag window on when Bag sorter was on and copies size and icons", function()
+-- Since 0.9.0 iconRow is no longer read, so it is not copied either (spec 0.9.0, "Bigger bag").
+test("split: the first 0.8.0 load switches Bag window on when Bag sorter was on and copies the size", function()
     local _, PE = newSplit({ saved = { version = 1, enabled = { bags = true },
         options = { bags = { size = "large", iconRow = true, dpad = true, sortKey = "r3", showTab = true } } } })
     check(PE:IsModuleEnabled("bagWindow"), "Bag window is not on")
     eq(PE.db.enabled.bagWindow, true)
     local w = PE.db.options.bagWindow
-    eq({ w.size, w.iconRow }, { "large", true })
+    eq({ w.size, w.iconRow }, { "large", nil })
     -- Spec: "Bag sorter's old size, iconRow and dpad keys are left in the file and no longer read."
     local b = PE.db.options.bags
     eq({ b.size, b.iconRow, b.dpad, b.sortKey, b.showTab }, { "large", true, true, "r3", true })
@@ -1722,12 +1906,12 @@ end)
 test("split: after the first 0.8.0 load a reload keeps Bag window as the player left it", function()
     local c, PE = newSplit({ saved = { version = 1, enabled = { bags = true },
         options = { bags = { size = "xlarge", iconRow = true } } } })
-    eq({ PE.db.enabled.bagWindow, PE.db.options.bagWindow.size, PE.db.options.bagWindow.iconRow }, { true, "xlarge", true })
+    eq({ PE.db.enabled.bagWindow, PE.db.options.bagWindow.size }, { true, "xlarge" })
     PE:SetModuleEnabled("bagWindow", false)
     PE.db.options.bagWindow.size = "large"
     local _, PE2 = newSplit({ saved = rawget(c.env, "PocketEssentialsDB") })
     check(not PE2:IsModuleEnabled("bagWindow"), "Bag window came back on after the reload")
-    eq({ PE2.db.options.bagWindow.size, PE2.db.options.bagWindow.iconRow }, { "large", true })
+    eq(PE2.db.options.bagWindow.size, "large")
     check(PE2:IsModuleEnabled("bags"), "Bag sorter did not stay on")
 end)
 
@@ -1736,14 +1920,14 @@ test("split: the first 0.8.0 load leaves Bag window off when Bag sorter was off,
         options = { bags = { size = "xlarge", iconRow = false } } } })
     check(not PE:IsModuleEnabled("bagWindow"), "Bag window is on")
     eq(PE.db.enabled.bagWindow, false)
-    eq({ PE.db.options.bagWindow.size, PE.db.options.bagWindow.iconRow }, { "xlarge", false })
+    eq(PE.db.options.bagWindow.size, "xlarge")
 end)
 
-test("split: a fresh install has both off, Bag window at Normal with the icons in the grid", function()
+test("split: a fresh install has both off, Bag window at Normal and no iconRow saved", function()
     local _, PE = newSplit()
     check(not PE:IsModuleEnabled("bagWindow") and not PE:IsModuleEnabled("bags"), "a bag feature is on")
     check(PE.db.enabled.bagWindow ~= true and PE.db.enabled.bags ~= true, "saved on")
-    eq({ PE.db.options.bagWindow.size, PE.db.options.bagWindow.iconRow }, { "normal", false })
+    eq({ PE.db.options.bagWindow.size, PE.db.options.bagWindow.iconRow }, { "normal", nil })
     eq({ PE.db.options.bags.showTab, PE.db.options.bags.sortKey }, { true, "l3" })
 end)
 
@@ -1751,13 +1935,13 @@ test("split: once Bag window has been saved it is not copied again", function()
     local _, PE = newSplit({ saved = { version = 1, enabled = { bags = true, bagWindow = false },
         options = { bags = { size = "large", iconRow = true }, bagWindow = { size = "normal", iconRow = false } } } })
     check(not PE:IsModuleEnabled("bagWindow"), "Bag window was switched on again")
-    eq({ PE.db.options.bagWindow.size, PE.db.options.bagWindow.iconRow }, { "normal", false })
+    eq({ PE.db.options.bagWindow.size, PE.db.options.bagWindow.iconRow }, { "normal", false }, "left as saved")
 end)
 
-test("split: a broken copied value reads as Normal and In the grid", function()
+test("split: a broken copied size reads as Normal", function()
     local _, PE = newSplit({ saved = { version = 1, enabled = { bags = true },
         options = { bags = { size = "huge", iconRow = "yes" } } } })
-    eq({ PE.db.options.bagWindow.size, PE.db.options.bagWindow.iconRow }, { "normal", false })
+    eq({ PE.db.options.bagWindow.size, PE.db.options.bagWindow.iconRow }, { "normal", nil })
 end)
 
 -- Spec: "A saved sortKey = "none" becomes l3 at load." The old repair (button back on) is gone.
@@ -1769,34 +1953,36 @@ test("split: a saved Button only becomes the left stick, and a hidden Sort butto
     eq(PE2.db.options.bags.sortKey, "l3")
 end)
 
-test("split: Bag window is its own feature with Bag size and Bag icons", function()
+-- Spec 0.9.0, "Option rows per feature": Bigger bag has only "Bag size".
+test("split: Bigger bag is its own feature with only Bag size", function()
     local c = newSplit()
     local win = c.PE:GetModule("bagWindow")
     check(win, "no bagWindow feature")
-    eq({ win.label, win.desc, win.order }, { "Bag window", "Makes the bag window bigger and tidier.", 31 })
-    eq(#win.options, 2)
-    local size, icons = win.options[1], win.options[2]
+    eq({ win.label, win.desc, win.order }, { "Bigger bag", "A bigger and better organized bag window.", 31 })
+    eq(#win.options, 1)
+    local size = win.options[1]
     eq(size.key, "size")
     eq(size.label, "Bag size")
     local got = {}
     for _, ch in ipairs(size.choices) do got[#got + 1] = ch.value .. "=" .. ch.label end
     eq(got, { "normal=Normal", "large=Large", "xlarge=Extra large" })
-    eq({ icons.key, icons.label, icons.toggle }, { "iconRow", "Bag icons", true })
-    eq({ icons.choices[1].value, icons.choices[1].label, icons.choices[2].value, icons.choices[2].label },
-        { false, "In the grid", true, "One row at the top" })
 end)
 
-test("split: Bag sorter has the two toggles Sort button and Sort stick, and no How to sort or D-pad to Sort", function()
+-- Spec 0.9.0, "Bag sorting": "Sort button on the bag: Show / Hide (showTab)"; "Click a stick in to
+-- sort: Left stick / Right stick (sortKey l3 / r3)". The keys stay.
+test("split: Bag sorting has Sort button on the bag and Click a stick in to sort, and no How to sort or D-pad to Sort", function()
     local c = newSplit()
     local mod = c.PE:GetModule("bags")
-    eq(mod.label, "Bag sorter")
+    eq(mod.label, "Bag sorting")
     eq(#mod.options, 2)
     local tab, stick = mod.options[1], mod.options[2]
-    eq({ tab.key, tab.label, tab.toggle }, { "showTab", "Sort button", true })
-    eq({ tab.choices[1].value, tab.choices[1].label, tab.choices[2].value, tab.choices[2].label }, { false, "Off", true, "On" })
-    eq({ stick.key, stick.label, stick.toggle }, { "sortKey", "Sort stick", true })
+    eq({ tab.key, tab.label }, { "showTab", "Sort button on the bag" })
+    eq({ tab.choices[1].value, tab.choices[1].label, tab.choices[2].value, tab.choices[2].label }, { true, "Show", false, "Hide" })
+    eq(#tab.choices, 2)
+    eq({ stick.key, stick.label }, { "sortKey", "Click a stick in to sort" })
     eq({ stick.choices[1].value, stick.choices[1].label, stick.choices[2].value, stick.choices[2].label },
-        { "l3", "Left", "r3", "Right" })
+        { "l3", "Left stick", "r3", "Right stick" })
+    eq(#stick.choices, 2)
     for _, key in ipairs({ "bags", "bagWindow" }) do
         for _, o in ipairs(c.PE:GetModule(key).options) do
             check(o.label ~= "How to sort" and o.label ~= "D-pad to Sort" and o.key ~= "dpad", key .. " still has " .. tostring(o.label))
@@ -1809,7 +1995,7 @@ test("split: Bag window alone sizes the bag and moves the icons, with no Sort ta
     local c, PE = newSplit({ on = { "bagWindow" }, gamepadUI = true })
     c:buildBag()
     local win = PE:GetModule("bagWindow")
-    win.opts.size, win.opts.iconRow = "large", true
+    win.opts.size = "large"
     c:openBag()
     c:advance(0.5)
     eq(c.bagFrame:GetScale(), 1.25)
@@ -1826,7 +2012,7 @@ test("split: Bag sorter alone has the tab and the stick at the game's size, icon
     local c, PE = newSplit({ on = { "bags" }, gamepadUI = true })
     c:buildBag()
     local win = PE:GetModule("bagWindow")
-    win.opts.size, win.opts.iconRow = "xlarge", true -- saved, but the feature is off
+    win.opts.size = "xlarge" -- saved, but the feature is off
     c:openBag()
     c:advance(0.5)
     eq(c.bagFrame:GetScale(), 1)
@@ -1873,10 +2059,11 @@ test("split: Bag window off with Bag sorter on puts the scale and the icons back
     local c, PE = newSplit({ on = { "bags", "bagWindow" }, gamepadUI = true })
     c:buildBag()
     local win = PE:GetModule("bagWindow")
-    win.opts.size, win.opts.iconRow = "large", true
+    win.opts.size = "large"
     c:openBag()
     c:advance(0.5)
     eq(c.bagFrame:GetScale(), 1.25)
+    checkRowLayout(c, 7, 60)
     PE:SetModuleEnabled("bagWindow", false)
     c:advance(0.5)
     eq(c.bagFrame:GetScale(), 1)
