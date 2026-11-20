@@ -4,6 +4,30 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.1] - 2026-11-19
+
+Twenty-first test build. From the owner, after installing 0.8.0: "im really
+happy so far", with four points about the settings. Spec
+`docs/superpowers/specs/2026-11-19-0.8.1-clearer-labels.md`. Not yet tested
+on a device. Your saved choices carry over as they are.
+
+### Changed
+
+- **Hide Blue Quest Haze** (was "Hide blue haze") and **Quest Icon Key**
+  (was "Icon key") sit side by side on one line in the Quest icons options,
+  in the settings and in the setup guide. The key page is now called
+  "Pocket Essentials - Quest Icon Key".
+- **Chat from round button** is the new name of "Big chat buttons". The
+  line under it says what it does: "Tap the round button to choose who to
+  talk to: Say, Party, Guild or someone who whispered you." Chat text size
+  stays under it.
+
+### Not changed yet
+
+- **Menu background** did not put a panel behind the quest log's quest menu
+  on the device. This build does not change it: a debug log from the device
+  (steps in `docs/TESTING.md` section 17) will show where it goes wrong.
+
 ## [0.8.0] - 2026-11-18
 
 Twentieth test build. From the owner, after trying 0.7.0: "do the next 3, and

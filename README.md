@@ -24,13 +24,13 @@ choices right under its switch.
 
 | Feature | What it does |
 |---------|--------------|
-| Quest icons | Objective icons on the map and minimap for your tracked quests (or only the focused one, or all), no blue haze; a limit on icons per objective, and an icon key page in the settings |
+| Quest icons | Objective icons on the map and minimap for your tracked quests (or only the focused one, or all), no blue haze; a limit on icons per objective, and a Quest Icon Key page in the settings |
 | Quest arrow | An arrow to your focused quest's nearest objective in your zone, with distance. Focus a quest from the quest log. For a quest in another zone it names the zone |
 | Bag window | Makes Blizzard's combined bag bigger ("Bag size": three sizes) and, with "Bag icons: One row at the top", puts the pictures of your equipped bags side by side above your items, not in among them |
 | Bag sorter | A big Sort button on the bag ("Sort button": On or Off). "Sort stick" (Left or Right) makes a click on that stick sort while the bag is open. Press Left from the bag's first column to reach the Sort button, then A sorts |
 | Sell junk automatically | Sells every grey item at vendors. Only the last 12 sold can be bought back |
 | Repair automatically | Repairs from your own money |
-| Big chat buttons | The round button opens a picker: one big button per channel and per recent whisperer. A badge shows unanswered whispers. "Chat text size" (a - size + control) is in the settings and works with the feature on or off |
+| Chat from round button | The round button opens a picker: one big button per channel and per recent whisperer. A badge shows unanswered whispers. "Chat text size" (a - size + control) is in the settings and works with the feature on or off |
 | Menu background | A plain dark panel behind the game's pop-up menus, such as the menu on a quest in the quest log, so the text is easy to read |
 | Setup guide | Not a switch: nine short screens that explain the features above, each with its switch and, under it, the same choices as in the settings. Opens by itself once; open it again from the settings ("Setup guide") |
 
@@ -71,8 +71,8 @@ load."). Everything else keeps working.
 
 ## Using it
 
-- **Tap the round "PE" button** to open the settings. If Big chat buttons is
-  on, it opens the chat picker instead.
+- **Tap the round "PE" button** to open the settings. If Chat from round button
+  is on, it opens the chat picker instead.
 - **Hold the round button for half a second** to always open the settings.
 - **Type `/pe`**, or use the addon-list button on the minimap, as other ways
   to open them.

@@ -70,7 +70,7 @@ Real screenshots make the page much stronger. Take these in game and upload them
 - **Bag sorter:** the combined bag with the big Sort button visible. Title: "One bag, one Sort button".
 - **Chat picker:** the big channel and whisper buttons. Title: "Chat with big buttons".
 - **Settings window:** the feature list with the switches. Title: "Every feature has its own switch".
-- **Icon key page.** Title: "Icon key".
+- **Quest Icon Key page.** Title: "Quest Icon Key".
 
 ## After approval
 

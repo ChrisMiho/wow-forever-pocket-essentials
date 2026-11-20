@@ -1030,3 +1030,25 @@ the debug log on (settings, Errors page).
     scroll all the way to the bottom, and Up should bring it back.
 14. Reload. Everything you changed should still be as you left it. Send the
     saved `PocketEssentials.lua` file.
+
+### 17. Version 0.8.1: clearer labels, and a log for Menu background
+
+Install the 0.8.1 zip (only the `PocketEssentials` folder) and log in.
+
+1. Open the settings with **Quest icons** on. **Hide Blue Quest Haze: On**
+   and **Quest Icon Key** are on one line, side by side. Tap the toggle: it
+   flips to Off and back. Tap **Quest Icon Key**: the key page opens and its
+   title says "Quest Icon Key". **Back** returns.
+2. With the d-pad, move to the toggle, then press Right (or Down): the
+   highlight goes to **Quest Icon Key** next.
+3. Open the **Setup guide** and go to the Quest icons screen: the same two
+   buttons are side by side there too.
+4. Find the chat switch: it reads **Chat from round button**, with the line
+   "Tap the round button to choose who to talk to: Say, Party, Guild or
+   someone who whispered you." under it. Say whether the name reads clearly
+   now. With the switch off, **Chat text size** is still there.
+5. Menu background: settings, **Errors** page, turn **Debug log** on. Turn
+   **Menu background** on. Open the quest log, tap a quest so its menu
+   (Track, Focus, Share, Abandon) opens, look at it, then close it. Back on
+   the **Errors** page, tap **Save log now**. Send the saved
+   `PocketEssentials.lua` file (in `WTF/Account/<your account>/SavedVariables/`).

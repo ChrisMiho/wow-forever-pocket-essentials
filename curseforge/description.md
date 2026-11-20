@@ -21,7 +21,7 @@ Quest objectives on your map, an arrow to follow, one bag that sorts itself, ven
 - **Spots per objective** keeps busy quests readable (5 by default).
 - Hides Blizzard's **blue haze** areas, so you see exactly where to go.
 - An **arrow** to the nearest objective of the quest you focus in your quest log, with the distance. It tells you which zone to head to when the quest is elsewhere.
-- An **Icon key** page in the settings explains every icon.
+- A **Quest Icon Key** page in the settings explains every icon.
 
 ![Bag sorter](BAGS_URL)
 
@@ -35,7 +35,7 @@ Quest objectives on your map, an arrow to follow, one bag that sorts itself, ven
 - **Repairs your gear** from your own gold at vendors that can repair.
 - Each has its own switch.
 
-![Big chat buttons](CHAT_URL)
+![Chat from the round button](CHAT_URL)
 
 - Tap the round **PE** button for a picker with **one big button per channel** you can talk in (Say, Party, Guild, General, Trade and so on).
 - Your **last six whisperers** as big name buttons, newest first.
