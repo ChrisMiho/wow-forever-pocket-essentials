@@ -698,8 +698,8 @@ local function BuildFeatureTab(t, width)
         y = list:Card(0, y, width, function(ix, iy, iw)
             local yy = iy
             yy = yy + list:Text("font", "Fixes for the game's own interface", ix, yy, iw, COLOR.title) + M.gap * 0.2
-            yy = yy + list:Text("small", "Parts of the default Blizzard UI that are hard to use on a handheld. "
-                .. "Each fix only changes the game's window it names.", ix, yy, iw, COLOR.small)
+            yy = yy + list:Text("small", "Parts of the default Blizzard UI that are hard to use on a handheld, "
+                .. "or that low graphics hide.", ix, yy, iw, COLOR.small)
             return yy + M.gap
         end) + M.gap
     end

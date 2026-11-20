@@ -17,7 +17,8 @@ local ADDON_NAME, PE = ...
 --   * No write during a fight: it waits for PLAYER_REGEN_ENABLED.
 --   * No frames, no timers, no OnUpdate. Its events exist only while it is on.
 --   * Switching off only takes effect after a full restart of the game (a
---     reload is not enough), so the settings say so.
+--     reload is not enough), so its card says so. It asks for no reload: the
+--     reload bar's "Reload now" would not remove the sparkles.
 --
 -- The setting is engine-only (not in Blizzard's interface source): if this
 -- client does not have it, the write does nothing and nothing changes.
@@ -36,7 +37,6 @@ local WATCHED = {
 
 local TEXT_ON = "Quest items show the sparkle instead of the outline."
 local TEXT_RESTART = "Fully restart the game to remove the sparkles."
-local RELOAD_REASON = "Fully restart the game to remove the sparkles; a reload is not enough."
 
 local mod                     -- the module
 local on = false              -- true from switch-on to switch-off (set before OnEnable returns)
@@ -101,7 +101,6 @@ local function OnEnable(m)
         local current = ReadCVar()
         if current ~= nil then opts.previous = current end
     end
-    m:CancelReload()
     m:RegisterEvent("CVAR_UPDATE", OnCVarUpdate)
     Apply()
 end
@@ -117,11 +116,10 @@ local function Restore()
     if PE.debugOn then PE:Debug("sparkles", "put back to " .. PE.Plain(value)) end
 end
 
-local function OnDisable(m)
+local function OnDisable()
     on, waiting = false, false
     -- Its events go with the switch; a fight only delays putting the value back.
     PE:RunOutOfCombat("sparkles:restore", Restore)
-    if shownThisSession then m:RequestReload(RELOAD_REASON) end
 end
 
 mod = PE:RegisterModule({

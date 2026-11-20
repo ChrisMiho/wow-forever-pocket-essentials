@@ -214,20 +214,19 @@ end)
 -- Off
 ---------------------------------------------------------------------------
 
--- Spec Tests: "Turning it off puts previous back and shows the restart reason."
-test("loot sparkles: turning it off puts previous back and shows the restart reason", function()
+-- Spec Tests: "Turning it off puts previous back and shows the restart line." No reload
+-- reason: "Reload now" would not remove the sparkles (owner review, 0.9.1).
+test("loot sparkles: turning it off puts previous back and shows the restart line, with no reload reason", function()
     local c, PE = start({ on = { "sparkles" } })
     eq(c.world.cvars[CVAR], "1")
     PE:SetModuleEnabled("sparkles", false)
     eq(c.world.cvars[CVAR], "0")
     eq(PE.db.options.sparkles.previous, nil, "previous not cleared")
-    local reason = reasonOf(PE)
-    check(type(reason) == "string" and reason:find("Fully restart the game", 1, true), "no restart reason: " .. tostring(reason))
+    eq(reasonOf(PE), nil, "a reload reason was asked for; a reload does not remove the sparkles")
     local mod = PE:GetModule("sparkles")
     eq(mod:status(), RESTART_LINE)
-    -- On again: the restart reason goes, the blue line comes back.
+    -- On again: the blue line comes back.
     PE:SetModuleEnabled("sparkles", true)
-    eq(reasonOf(PE), nil, "the restart reason stayed with the feature on again")
     eq(mod:status(), ON_LINE)
     c:assertClean()
 end)

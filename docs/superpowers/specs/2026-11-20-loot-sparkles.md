@@ -16,14 +16,14 @@ That addon keeps one engine setting switched on: the CVar `outlineModeShowLootEf
   - All handlers go through `PE:Safe` / `PE:Wrap`. No timers and no OnUpdate. Events are registered only while the feature is on.
 - **Off:**
   - Put the saved `previous` value back (or "0"), then clear `previous`.
-  - Add a reload reason worded for a full restart, so the existing reload bar shows.
+  - No reload reason: the reload bar's "Reload now" would not remove the sparkles (changed at review, 2026-11-20).
   - The status line while it is off after having been on this session: "Fully restart the game to remove the sparkles."
 - **A blue status line while it is on:** "Quest items show the sparkle instead of the outline."
 - **API:** `C_CVar.GetCVar` and `C_CVar.SetCVar` inside pcall, as Bags.lua does today; and `CVAR_UPDATE`. Confirm `CVAR_UPDATE` and `C_CVar` on the forever branch (`scripts/audit-api.sh`). The CVar name is engine-only (not in Blizzard's UI source). Log it in `docs/ARCHITECTURE.md` as unverified; the worst case is that it does nothing.
 - **Credit** in the file header, CHANGELOG and README: "Based on ForeverLootSparkles by Ashtar Senior (GPL-3.0-or-later)".
 
 ## Where it shows
-- **Settings:** the "Menu background" tab is renamed **Game fixes**. It keeps its heading card ("Fixes for the game's own interface") and holds the Menu background card, then the Loot sparkles card. Its dot is green when either is on.
+- **Settings:** the "Menu background" tab is renamed **Game fixes**. It keeps its heading card ("Fixes for the game's own interface"; its line becomes "Parts of the default Blizzard UI that are hard to use on a handheld, or that low graphics hide.") and holds the Menu background card, then the Loot sparkles card. Its dot is green when either is on.
 - **Setup guide:** the "Vendors and menus" screen becomes **Vendors and game fixes**, with the cards Auto sell junk, Auto repair, Menu background and Loot sparkles. Each card has one line, with no "How:" line.
 
 ## Tests

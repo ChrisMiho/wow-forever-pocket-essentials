@@ -480,7 +480,7 @@ test("game fixes: the tab starts with the heading card", function()
     local c, PE = T.new({})
     openSettings(c, PE, "gameFixes")
     check(shownText(c, "Fixes for the game's own interface"), "no heading")
-    check(shownText(c, "Parts of the default Blizzard UI that are hard to use on a handheld. Each fix only changes the game's window it names."),
+    check(shownText(c, "Parts of the default Blizzard UI that are hard to use on a handheld, or that low graphics hide."),
         "no heading line")
     check(switchOf(c, "menuBg"), "no Menu background card")
 end)
