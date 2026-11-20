@@ -132,8 +132,8 @@ local function shownButtons(c, label)
     return out
 end
 
--- The visible fold buttons with this label, without the one of "Big chat
--- buttons": since 0.4.0 that block has a row drawn with the feature off
+-- The visible fold buttons with this label, without the one of "Chat from
+-- round button": since 0.4.0 that block has a row drawn with the feature off
 -- ("Chat text size", marked always), so it has a fold button in every one of
 -- these tests. Its own fold button is tested in chat_test.lua.
 local function foldButtons(c, label)
@@ -334,35 +334,35 @@ end)
 test("icon key: not in the bottom row; one in the Quest icons block when it is on; it opens the key page and Back returns", function()
     local c, PE = T.new({ quest = true, on = { "questIcons" } })
     openSettings(c, PE)
-    eq(#shownButtons(c, "Icon key"), 1)
+    eq(#shownButtons(c, "Quest Icon Key"), 1)
     eq(#shownButtons(c, "Reload UI"), 1)
-    c:click(shownButtons(c, "Icon key")[1])
+    c:click(shownButtons(c, "Quest Icon Key")[1])
     c:advance(0.5)
-    check(shownText(c, "Pocket Essentials - Icon key") or #shownButtons(c, "Back") == 1, "the key page did not open")
+    check(shownText(c, "Pocket Essentials - Quest Icon Key") or #shownButtons(c, "Back") == 1, "the key page did not open")
     eq(#shownButtons(c, "Back"), 1)
     c:click(shownButtons(c, "Back")[1])
     c:advance(0.5)
-    eq(#shownButtons(c, "Icon key"), 1, "Back did not return to the main list")
+    eq(#shownButtons(c, "Quest Icon Key"), 1, "Back did not return to the main list")
     c:assertClean("icon key")
 end)
 
 test("icon key: no button when Quest icons is off, and none in the bottom row", function()
     local c, PE = T.new({ quest = true })
     openSettings(c, PE)
-    eq(#shownButtons(c, "Icon key"), 0)
+    eq(#shownButtons(c, "Quest Icon Key"), 0)
     eq(#shownButtons(c, "Reload UI"), 1)
 end)
 
 test("icon key: folding Quest icons hides the Icon key button", function()
     local c, PE = T.new({ quest = true, on = { "questIcons" } })
     openSettings(c, PE)
-    eq(#shownButtons(c, "Icon key"), 1)
+    eq(#shownButtons(c, "Quest Icon Key"), 1)
     c:click(foldButtons(c, "Hide options")[1])
     c:advance(0.5)
-    eq(#shownButtons(c, "Icon key"), 0, "the Icon key button is drawn while folded")
+    eq(#shownButtons(c, "Quest Icon Key"), 0, "the Icon key button is drawn while folded")
     c:click(foldButtons(c, "Show options")[1])
     c:advance(0.5)
-    eq(#shownButtons(c, "Icon key"), 1)
+    eq(#shownButtons(c, "Quest Icon Key"), 1)
 end)
 
 -- The controller highlight stays on a feature's own ON / OFF switch after A switches it

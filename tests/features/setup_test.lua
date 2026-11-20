@@ -275,7 +275,7 @@ test("setup: every feature of this build has a switch on some screen, and the ne
         for key, at in pairs(SCREEN_OF) do
             if at == i then switch(c, key) end
         end
-        -- The stepper is a real control now, shown with Big chat buttons off (it is marked always).
+        -- The stepper is a real control now, shown with Chat from round button off (it is marked always).
         if i == AT.chat then button(c, "-"); button(c, "+") end
         if i < N then goTo(c, 2) end
     end
@@ -420,7 +420,7 @@ test("setup: the finish screen lists what is on and what is off", function()
     PE:SetModuleEnabled("sellJunk", true)
     PE:SetModuleEnabled("chat", true)
     c:advance(0.1)
-    check(hasText(c, "Switched on: Sell junk automatically, Big chat buttons."), "the Switched on line is wrong: "
+    check(hasText(c, "Switched on: Sell junk automatically, Chat from round button."), "the Switched on line is wrong: "
         .. tostring(textWith(c, "Switched on:")))
     eq(textWith(c, "Still off:"), "Still off: Quest icons, Quest arrow, Bag sorter, Bag window, Repair automatically, Menu background.")
     check(textWith(c, "\"Setup guide\" button at the bottom of the settings"), "no closing paragraph")
@@ -1421,7 +1421,7 @@ local function stepperNumber(c, top)
     return tonumber(found)
 end
 
-test("options: the chat text size stepper works in the guide with Big chat buttons off, and both windows show the same number", function()
+test("options: the chat text size stepper works in the guide with Chat from round button off, and both windows show the same number", function()
     local c, PE = newClient()
     check(not PE:IsModuleEnabled("chat"), "chat is on (the test's premise)")
     goToFeature(c, PE, "chat")
@@ -1444,7 +1444,7 @@ test("options: the chat text size stepper works in the guide with Big chat butto
     goToFeature(c, PE, "chat")
     eq(stepperNumber(c, guide(c)), smaller, "the guide shows another size")
     eq(c.chatSizes[1], smaller)
-    check(not PE:IsModuleSavedOn("chat"), "the stepper switched Big chat buttons on")
+    check(not PE:IsModuleSavedOn("chat"), "the stepper switched Chat from round button on")
     -- the highlight stays on the button after a press with A
     local panel = guide(c)
     press(c, "DOWN")
@@ -1473,15 +1473,15 @@ test("options: the layout screen has no controls of its own; it says where Butto
     eq(T.labelOf(panel.peNavFocus), "Back", "the first button the d-pad reaches on a screen without controls")
 end)
 
-test("options: Icon key in the guide opens the settings' Icon key page, as it does in the settings", function()
+test("options: Quest Icon Key in the guide opens the settings' Quest Icon Key page, as it does in the settings", function()
     if not T.questieDB then return end
     local c, PE = newClient({ on = { "questIcons" } })
     goToFeature(c, PE, "questIcons")
-    c:click(button(c, "Icon key"))
+    c:click(button(c, "Quest Icon Key"))
     c:advance(0.2)
-    check(not isOpen(c), "the guide stayed open under the Icon key page")
+    check(not isOpen(c), "the guide stayed open under the Quest Icon Key page")
     check(settingsPanel(c):IsShown(), "the settings did not open")
-    eq(settingsPanel(c).peTitle:GetText(), "Pocket Essentials - Icon key")
+    eq(settingsPanel(c).peTitle:GetText(), "Pocket Essentials - Quest Icon Key")
     c:assertClean("icon key from the guide")
 end)
 
@@ -1677,7 +1677,7 @@ test("options: every screen draws without error at every size, with every featur
 end)
 
 test("options: with options on screen the guide still has no per-frame code and listens for nothing once closed", function()
-    -- Bag sorter, Bag window and Big chat buttons: features with options that start no timers of their own.
+    -- Bag sorter, Bag window and Chat from round button: features with options that start no timers of their own.
     local c, PE = newClient({ on = { "bags", "bagWindow", "chat" } })
     c:advance(0.5)
     c.stats.addonOnUpdate = 0
@@ -1811,6 +1811,31 @@ test("touch: with touch off the d-pad Down pages a tall finish screen to its bot
     end
     check(area.offset >= area:GetRange() - 0.5, "the d-pad never reached the bottom: " .. area.offset .. " of " .. area:GetRange())
     c:assertClean("finish d-pad")
+end)
+
+-- Spec 2026-11-19-0.8.1-clearer-labels, sections 1 to 3.
+test("setup: no guide screen says Big chat buttons or Icon key", function()
+    local c, PE = T.new({ quest = true, on = { "questIcons", "chat" } })
+    open(c, PE)
+    for i = 1, N do
+        for _, t in ipairs(texts(c)) do
+            check(not t:find("Big chat buttons", 1, true) and not t:find("Icon key", 1, true), "screen " .. i .. ": " .. t)
+        end
+        for _, b in ipairs(shownButtons(c, guide(c))) do
+            local l = tostring(T.labelOf(b))
+            check(not l:find("Big chat", 1, true) and l ~= "Icon key", "screen " .. i .. " button: " .. l)
+        end
+        if i < N then goTo(c, 2) end
+    end
+end)
+
+test("setup: on the Quest icons screen Hide Blue Quest Haze and Quest Icon Key share a line", function()
+    local c, PE = T.new({ quest = true, on = { "questIcons" } })
+    open(c, PE)
+    goTo(c, AT.questIcons)
+    local haze, key = button(c, "Hide Blue Quest Haze: On"), button(c, "Quest Icon Key")
+    eq(key:GetTop(), haze:GetTop(), "not on one line")
+    check(key:GetLeft() > haze:GetLeft(), "the key is not to the right of the toggle")
 end)
 
 return { known = KNOWN_FAILURES }

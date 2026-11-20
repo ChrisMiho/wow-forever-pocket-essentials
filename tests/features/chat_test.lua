@@ -1,4 +1,4 @@
--- Rules for "Big chat buttons" (Chat.lua).
+-- Rules for "Chat from round button" (Chat.lua).
 -- Sources: Chat.lua's header and comments; docs/DECISIONS.md, part "Chat" of
 -- "Decisions made without the maintainer"; PRD.md goals 3 and 4.
 -- Each test names its source in a comment. Fresh client and addon per test.
@@ -1165,7 +1165,7 @@ test("chat size: without the game's list the known sizes are used, and the log s
     end
 end)
 
--- Spec 1 "What the player sees": the row is shown whether "Big chat buttons" is on or off
+-- Spec 1 "What the player sees": the row is shown whether "Chat from round button" is on or off
 -- (this reverses the 0.1.0 rule that hid it while the feature was off).
 test("chat size: the row is drawn and works while the chat feature is off", function()
     local c, PE = T.new({})
@@ -1397,7 +1397,7 @@ test("chat: move: a saved offset is added when the prompt is laid out", function
     check(dx ~= 0 and math.abs(x - dx) < 0.01 and math.abs(y - (PE.UI:Px(110) + dy)) < 0.01, "at " .. x .. "," .. y)
 end)
 
-test("chat: move: listed while Big chat buttons is on, not when it is off", function()
+test("chat: move: listed while Chat from round button is on, not when it is off", function()
     local c = T.new({ on = { "chat" }, gamepadUI = true })
     openMove(c, c.PE)
     check(moveButton(c, "Chat prompt"), "not listed while on")
@@ -1452,6 +1452,14 @@ test("chat: move: moving with no prompt showing never shows or hides it", functi
     c:advance(0.5)
     check(not promptShown(c), "shown after the panel closed")
     eq(#c:problems(), 0, table.concat(c:problems(), " / "))
+end)
+
+-- Spec 2026-11-19-0.8.1-clearer-labels, section 3.
+test("chat: the switch is called Chat from round button, with the new line under it", function()
+    local c, PE = T.new({})
+    local mod = PE:GetModule("chat")
+    eq(mod.label, "Chat from round button")
+    eq(mod.desc, "Tap the round button to choose who to talk to: Say, Party, Guild or someone who whispered you.")
 end)
 
 return { known = KNOWN_FAILURES }

@@ -611,7 +611,7 @@ test("quest icons: Icons on is one row for map and minimap, with no Map icons or
     eq(got, { "both=Map and minimap", "map=Map only", "mini=Minimap only" })
     for _, o in ipairs(mod.options) do
         check(o.key ~= "map" and o.key ~= "mini", "a row of its own for " .. tostring(o.key))
-        if o.key == "hideHaze" then eq(o.toggle, true, "Hide blue haze is not a toggle") end
+        if o.key == "hideHaze" then eq(o.toggle, true, "Hide Blue Quest Haze is not a toggle") end
     end
     eq(opt.get(mod), "both", "the default")
 end)
@@ -654,11 +654,11 @@ local function optionOf(PE, key)
     for _, o in ipairs(PE:GetModule("questIcons").options) do if o.key == key then return o end end
 end
 
-test("quest icons: the rows are in the spec's order, Hide blue haze just before Icon key", function()
+test("quest icons: the rows are in the spec's order, Hide Blue Quest Haze just before Quest Icon Key", function()
     local c, PE = newIcons()
     local names = {}
     for _, o in ipairs(PE:GetModule("questIcons").options) do names[#names + 1] = o.key or o.label end
-    eq(names, { "show", "Icons on", "size", "cluster", "spots", "hideHaze", "Icon key" })
+    eq(names, { "show", "Icons on", "size", "cluster", "spots", "hideHaze", "Quest Icon Key" })
 end)
 
 test("quest icons: Icon size starts with Extra small, 18 px on the map and 11 on the minimap", function()
@@ -714,6 +714,12 @@ test("quest icons: a saved Merge or Spots value the control cannot show runs as 
         eq(PE:GetModule("questIcons").opts[case[1]], case[2], "the saved value was rewritten")
         c:assertClean(case[1] .. " " .. case[2])
     end
+end)
+
+-- Spec 2026-11-19-0.8.1-clearer-labels, section 2.
+test("quest icons: the haze toggle is called Hide Blue Quest Haze", function()
+    local c, PE = newIcons()
+    eq(optionOf(PE, "hideHaze").label, "Hide Blue Quest Haze")
 end)
 
 return { known = KNOWN_FAILURES }

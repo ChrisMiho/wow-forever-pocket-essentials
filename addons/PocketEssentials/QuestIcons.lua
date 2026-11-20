@@ -1165,9 +1165,9 @@ mod = PE:RegisterModule({
         { key = "spots", label = "Spots per objective",
           number = { min = 1, max = MAX_SPOTS, default = DEFAULT_SPOTS, unit = "spots", all = 0, allLabel = "All" },
           OnChange = OptionChanged("spots") },
-        { key = "hideHaze", label = "Hide blue haze", choices = ON_OFF, toggle = true, OnChange = OptionChanged("hideHaze") },
-        -- Opens the Icon key page of the settings (Back returns to the main list).
-        { label = "Icon key", action = function() PE:OpenSettings("key") end },
+        { key = "hideHaze", label = "Hide Blue Quest Haze", choices = ON_OFF, toggle = true, OnChange = OptionChanged("hideHaze") },
+        -- Opens the Quest Icon Key page of the settings (Back returns to the main list).
+        { label = "Quest Icon Key", action = function() PE:OpenSettings("key") end },
     },
     status = Status,
     OnEnable = OnEnable,
@@ -1196,7 +1196,7 @@ end
 local TOGGLES = {
     map = { key = "map", name = "Map icons" },
     mini = { key = "mini", name = "Minimap icons" },
-    haze = { key = "hideHaze", name = "Hide blue haze" },
+    haze = { key = "hideHaze", name = "Hide Blue Quest Haze" },
 }
 local CLUSTER_WORDS = { off = 0, normal = 2, more = 5 }
 local SPOTS_WORDS = { all = 0 }

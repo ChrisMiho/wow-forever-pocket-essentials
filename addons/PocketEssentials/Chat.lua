@@ -1,4 +1,4 @@
--- Pocket Essentials: big chat buttons (module "chat").
+-- Pocket Essentials: chat from round button (module "chat").
 -- While this is on, a tap on the round button opens a window of large
 -- buttons: one for every place the character can talk right now, and one for
 -- each person who whispered recently. A tap on a button closes the window and
@@ -784,7 +784,7 @@ end
 -- The steps are the game's own list, read when the row is drawn or tapped,
 -- then two larger sizes. Nothing is saved here: the game keeps the size, and
 -- nothing is changed until one of the two buttons is tapped. The row is
--- drawn whether "Big chat buttons" is on or off.
+-- drawn whether "Chat from round button" is on or off.
 ---------------------------------------------------------------------------
 
 -- Our copy of the game's list (CHAT_FONT_HEIGHTS, FloatingChatFrame.lua:33),
@@ -967,8 +967,8 @@ end
 
 mod = PE:RegisterModule({
     key = "chat",
-    label = "Big chat buttons",
-    desc = "Tap the round button to pick who to talk to.",
+    label = "Chat from round button",
+    desc = "Tap the round button to choose who to talk to: Say, Party, Guild or someone who whispered you.",
     order = 60,
     defaults = { whispers = {} },
 

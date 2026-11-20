@@ -9,7 +9,7 @@ local max, min, ceil, floor = math.max, math.min, math.ceil, math.floor
 local PANEL_NAME = "PocketEssentialsSettingsPanel"
 local TITLE_MAIN = "Pocket Essentials"
 local TITLE_ERRORS = "Pocket Essentials - Errors"
-local TITLE_KEY = "Pocket Essentials - Icon key"
+local TITLE_KEY = "Pocket Essentials - Quest Icon Key"
 
 local COLOR = {
     font = { 1, 1, 1 },
@@ -999,7 +999,7 @@ local function BuildErrors(width)
 end
 
 ---------------------------------------------------------------------------
--- Icon key page
+-- Quest Icon Key page
 ---------------------------------------------------------------------------
 
 local function BuildKey(width)
