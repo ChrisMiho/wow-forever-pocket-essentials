@@ -338,7 +338,7 @@ local function passTrials(db)
     local out = {}
     for _, t in ipairs(db.trials) do
         -- The Errors and Graphics areas only run from the panel.
-        if t.area ~= "Vendor" and t.id ~= "val.whisper" and t.area ~= "Errors" and t.area ~= "Graphics" then
+        if not t.id:find("^vendor%.") and t.id ~= "val.whisper" and t.area ~= "Errors" and t.area ~= "Graphics" then
             out[#out + 1] = t
         end
     end
@@ -1164,7 +1164,7 @@ test("the panel: Settings-sized, area tabs with counts, no scroll bar (big areas
     local labels = tabLabels(P)
     eq(labels[1], "Errors"); eq(labels[2], "Graphics")
     local joined = table.concat(labels, "|")
-    for _, area in ipairs({ "Our own windows", "Chat box", "Bags", "Vendor", "Controller", "Layout", "Settings" }) do
+    for _, area in ipairs({ "Our own windows", "Chat box", "Bags and vendor", "Controller and layout" }) do
         check(joined:find(area, 1, true), "no tab for " .. area .. ": " .. joined)
     end
     -- More trials than fit: two tabs, never a scroll bar.
@@ -1218,6 +1218,40 @@ test("the panel: Settings-sized, area tabs with counts, no scroll bar (big areas
     -- Close and /probe.
     c:click(button(c, "PocketProbeCloseButton"))
     check(not panel:IsShown(), "Close closes")
+    noErrors(c)
+end)
+
+test("at 1280x720 and Medium: at most 10 tabs, each at least 0.85 of a button tall, no page scrolls", function()
+    local c, P, db = new({ auto = false })
+    openPanel(c)
+    local m = P.panelSizes
+    local shown = {}
+    for _, t in ipairs(P.panelTabs) do
+        if t:IsShown() then
+            shown[#shown + 1] = t
+            check(t:GetHeight() >= 0.85 * m.button - 0.01,
+                t.ppName:GetText() .. " is " .. t:GetHeight() .. " tall, button " .. m.button)
+            eq((t.ppCount:GetPoint(1)), "TOPLEFT", t.ppName:GetText() .. ": the count sits under the name, not on one line")
+        end
+    end
+    check(#shown <= 10, #shown .. " tabs")
+    eq(table.concat(tabLabels(P), "|"), "Errors|Graphics|Our own windows|Blizzard windows 1|Blizzard windows 2|Chat box|"
+        .. "Bags and vendor|Controller and layout|Values 1|Values 2")
+    for _, page in ipairs(P.BuildPages(m.rowsFit)) do
+        check(#page.entries <= m.rowsFit, page.label .. " has more rows than fit")
+    end
+    -- Every row of every page lies inside the list area (above the Details line).
+    local _, _, panelTop = c._rect(button(c, "PocketProbePanel"))
+    for _, t in ipairs(shown) do
+        c:click(t)
+        for _, r in ipairs(P.panelRows) do
+            if r:IsShown() then
+                local _, _, top, bottom = c._rect(r)
+                check(top <= panelTop + 0.01, "a row above the panel")
+                check(panelTop - bottom <= m.cy + m.listH + 0.01, t.ppName:GetText() .. ": a row reaches below the list")
+            end
+        end
+    end
     noErrors(c)
 end)
 

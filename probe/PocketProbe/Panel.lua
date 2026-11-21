@@ -71,8 +71,9 @@ local LABEL, LABEL_DIM, COUNT = { 0.92, 0.92, 0.92 }, { 0.5, 0.5, 0.5 }, { 0.7, 
 
 -- The areas in the order of the tabs. Any other area (the "Afterwards"
 -- entries the probe adds when the game refuses its own actions) comes last.
-local AREA_ORDER = { "Errors", "Graphics", "Our own windows", "Blizzard windows", "Chat box", "Bags", "Vendor",
-    "Controller", "Layout", "Settings", "Values" }
+-- Small areas share a tab (ten tabs at most at 16:9, each tall enough to tap).
+local AREA_ORDER = { "Errors", "Graphics", "Our own windows", "Blizzard windows", "Chat box", "Bags and vendor",
+    "Controller and layout", "Values" }
 
 local function AreaName(area)
     if type(area) ~= "string" then return "Other" end
@@ -519,7 +520,7 @@ local function ShowTabs()
     local n = #pages
     local gapTotal = (n - 1) * border
     local th = n > 0 and min(m.button, (m.tabsH - gapTotal) / n) or m.button
-    local compact = th < m.button * 0.9
+    local compact = th < m.button * 0.85
     for i, t in ipairs(tabs) do
         local page = pages[i]
         if page then

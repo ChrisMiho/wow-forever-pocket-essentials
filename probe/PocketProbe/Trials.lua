@@ -410,7 +410,7 @@ Add({
 ---------------------------------------------------------------------------
 
 Add({
-    id = "pad.bind", area = "Controller", label = "Take a controller button for ourselves and give it back",
+    id = "pad.bind", area = "Controller and layout", label = "Take a controller button for ourselves and give it back",
     kind = "action", clean = true,
     needs = { "SetOverrideBindingClick", "ClearOverrideBindings" },
     run = function(state)
@@ -428,7 +428,7 @@ Add({
 })
 
 Add({
-    id = "pad.mark", area = "Controller", label = "Mark one of our buttons for the controller's navigation",
+    id = "pad.mark", area = "Controller and layout", label = "Mark one of our buttons for the controller's navigation",
     kind = "action", clean = true,
     needs = { "SmartNavigation_MarkFrameIgnored", "SmartNavigation_ClearIgnoreStatus" },
     run = function(state)
@@ -448,7 +448,7 @@ Add({
 ---------------------------------------------------------------------------
 
 Add({
-    id = "bags.sort", area = "Bags", label = "Sort the bags", kind = "action",
+    id = "bags.sort", area = "Bags and vendor", label = "Sort the bags", kind = "action",
     needs = { "C_Container.SortBags" },
     run = function()
         Find("C_Container.SortBags")()
@@ -459,7 +459,7 @@ Add({
 local BAG_SETTING = "combinedBags"
 
 Add({
-    id = "cvar.write", area = "Settings", label = "Read the combined-bags setting and write it back unchanged", kind = "action",
+    id = "cvar.write", area = "Controller and layout", label = "Read the combined-bags setting and write it back unchanged", kind = "action",
     needs = { "C_CVar.GetCVar", "C_CVar.SetCVar" },
     run = function()
         local value = Find("C_CVar.GetCVar")(BAG_SETTING)
@@ -492,7 +492,7 @@ local function ActiveLayout()
 end
 
 Add({
-    id = "layout.read", area = "Layout", label = "Read the Edit Mode layouts", kind = "value",
+    id = "layout.read", area = "Controller and layout", label = "Read the Edit Mode layouts", kind = "value",
     needs = { "C_EditMode.GetLayouts" },
     read = function(c)
         local info = Find("C_EditMode.GetLayouts")()
@@ -503,7 +503,7 @@ Add({
 })
 
 Add({
-    id = "layout.set", area = "Layout", label = "Set the active layout to the one already active", kind = "action", clean = true,
+    id = "layout.set", area = "Controller and layout", label = "Set the active layout to the one already active", kind = "action", clean = true,
     risky = true,
     needs = { "C_EditMode.GetLayouts", "C_EditMode.SetActiveLayout" },
     run = function()
@@ -589,7 +589,7 @@ local function JunkLeft()
 end
 
 Add({
-    id = "vendor.sell1", area = "Vendor", label = "Sell the cheapest grey item (UseContainerItem)", kind = "action",
+    id = "vendor.sell1", area = "Bags and vendor", label = "Sell the cheapest grey item (UseContainerItem)", kind = "action",
     clean = true, vendor = true, wait = VENDOR_WAIT,
     needs = { "C_Container.UseContainerItem", "C_Container.GetContainerItemInfo", "C_Container.GetContainerNumSlots",
         "C_Item.GetItemInfo" },
@@ -613,7 +613,7 @@ Add({
 })
 
 Add({
-    id = "vendor.sellall", area = "Vendor", label = "The game's sell-all-junk call (SellAllJunkItems)", kind = "action",
+    id = "vendor.sellall", area = "Bags and vendor", label = "The game's sell-all-junk call (SellAllJunkItems)", kind = "action",
     vendor = true, wait = VENDOR_WAIT,
     needs = { "C_MerchantFrame.SellAllJunkItems", "C_MerchantFrame.GetNumJunkItems" },
     gate = VendorOn,
@@ -641,7 +641,7 @@ Add({
 })
 
 Add({
-    id = "vendor.repair", area = "Vendor", label = "Repair everything (RepairAllItems)", kind = "action",
+    id = "vendor.repair", area = "Bags and vendor", label = "Repair everything (RepairAllItems)", kind = "action",
     vendor = true, wait = VENDOR_WAIT,
     needs = { "CanMerchantRepair", "GetRepairAllCost", "RepairAllItems", "GetMoney" },
     gate = VendorOn,

@@ -154,13 +154,40 @@ do
     end
     eq(got, {
         "Chat box: Open the chat box; Give the edit box focus",
-        "Bags: Sort the bags",
+        "Bags and vendor: Sort the bags",
         "Values: value.money",
         "Other: broken.row; old.trial",
     }, "trials by area in the file's order, unknown ones under Other")
     eq(R.cell(fixture(), "chat.open", TOWN_AUTO), "allowed / blocked", "a cell with two answers")
     eq(R.cell(fixture(), "chat.focus", FIGHT_AUTO), nil, "a cell that was not run")
     eq(R.cell(fixture(), "broken.row", TOWN_AUTO), nil, "a damaged row has no cells")
+end
+
+do
+    -- Area names of probe 0.2.0 and of 0.3.0 land in the same group, in a file and in --diff.
+    local old = { trials = {
+        { id = "bags.sort", area = "Bags", label = "Sort the bags" },
+        { id = "vendor.sell1", area = "Vendor", label = "Sell" },
+        { id = "pad.bind", area = "Controller", label = "Bind" },
+        { id = "layout.set", area = "Layout", label = "Layout" },
+        { id = "cvar.write", area = "Settings", label = "Setting" },
+    }, results = { ["vendor.sell1"] = { [TOWN_AUTO] = "allowed" }, ["cvar.write"] = { [TOWN_AUTO] = "allowed" } } }
+    local new = { trials = {
+        { id = "bags.sort", area = "Bags and vendor", label = "Sort the bags" },
+        { id = "vendor.sell1", area = "Bags and vendor", label = "Sell" },
+        { id = "pad.bind", area = "Controller and layout", label = "Bind" },
+        { id = "layout.set", area = "Controller and layout", label = "Layout" },
+        { id = "cvar.write", area = "Controller and layout", label = "Setting" },
+    }, results = { ["vendor.sell1"] = { [TOWN_AUTO] = "blocked" }, ["cvar.write"] = { [TOWN_AUTO] = "allowed" } } }
+    local function groups(db)
+        local out = {}
+        for _, a in ipairs(R.areas(db)) do out[#out + 1] = a.area .. " " .. #a.trials end
+        return out
+    end
+    eq(groups(old), { "Bags and vendor 2", "Controller and layout 3" }, "0.2.0 area names grouped as in 0.3.0")
+    eq(groups(new), { "Bags and vendor 2", "Controller and layout 3" }, "0.3.0 area names")
+    local d = R.diff(old, new)
+    eq({ d[5], d[6], d[9] }, { "Bags and vendor", "  Sell (vendor.sell1)", "1 cell differs." }, "--diff across the rename")
 end
 
 ---------------------------------------------------------------------------
@@ -186,7 +213,7 @@ eq(R.format(fixture()), {
     "  Open the chat box        allowed / blocked  allowed  allowed  blocked  -   blocked  allowed",
     "  Give the edit box focus  no effect          allowed  -        -        -   -        -",
     "",
-    "Bags",
+    "Bags and vendor",
     "  Trial          S1       S2  S3  S4  S5  S6         S7",
     "  Sort the bags  allowed  -   -   -   -   forbidden  -",
     "",
@@ -324,7 +351,7 @@ do
         "  Open the chat box (chat.open)",
         "    Gamepad UI on, in a fight, game restrictions on: combat, open world, automatic: blocked -> allowed",
         "",
-        "Bags",
+        "Bags and vendor",
         "  Sort the bags (bags.sort)",
         "    Gamepad UI on, no fight, open world, automatic: allowed -> allowed / blocked",
         "",

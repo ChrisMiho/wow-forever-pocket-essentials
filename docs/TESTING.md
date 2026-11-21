@@ -198,7 +198,7 @@ looks the same.
 **The window:**
 
 - **Left: one tab per area.** Errors, Graphics, Our own windows, Blizzard
-  windows, Chat box, Bags, Vendor, Controller, Layout, Settings, Values (and
+  windows, Chat box, Bags and vendor, Controller and layout, Values (and
   "Afterwards" once the game has refused one of its own actions in the probe's
   name). Each tab says how many of its trials have run, for example
   "5 / 7 run". There is no scroll bar: an area with more trials than fit on
@@ -265,7 +265,7 @@ Leave Risky off for steps 1 to 5.
 4. Pick a fight with something weak and tap **Run all safe** during the
    fight (by touch).
 5. Open a vendor with grey items and damaged gear, open the window, switch
-   to **Vendor** and tap **Run** on each row.
+   to **Bags and vendor** and tap **Run** on each row.
 6. Tap **Clean run (reloads)**, then **Next (reload)** under the Probe button
    each time it appears, until it says done (13 trials). Each tap reloads the
    interface and runs one trial as the first thing after the reload, then

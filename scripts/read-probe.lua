@@ -195,6 +195,14 @@ end
 
 local OTHER = "Other"
 
+-- Area names of probe 0.1.0 and 0.2.0, and the area that holds those trials
+-- since 0.3.0, so files of either version group (and compare) the same way.
+local AREA_ALIASES = {
+    Bags = "Bags and vendor", Vendor = "Bags and vendor",
+    Controller = "Controller and layout", Layout = "Controller and layout", Settings = "Controller and layout",
+}
+M.AREA_ALIASES = AREA_ALIASES
+
 -- The trials grouped by area, in the file's display order:
 -- { { area = "Chat box", trials = { { id, label, kind }, ... } }, ... }.
 -- A trial that has results or details but is not in the list goes under "Other".
@@ -210,6 +218,7 @@ function M.areas(db)
         }
         seen[id] = trial
         area = type(area) == "string" and area ~= "" and clean(area) or OTHER
+        area = AREA_ALIASES[area] or area
         if not byArea[area] then
             byArea[area] = { area = area, trials = {} }
             areas[#areas + 1] = byArea[area]
