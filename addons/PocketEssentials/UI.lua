@@ -479,7 +479,8 @@ function UI:ControlWidth(innerWidth, need, label)
     innerWidth = innerWidth or 0
     local width = min(innerWidth * 0.58, m.button * 9)
     if type(need) == "number" and need > width then
-        local name = label and self:TextWidth(label, "font") or 0
+        -- The name keeps a little slack, so it is not cut by a rounding.
+        local name = label and (self:TextWidth(label, "font") + self:Px(2)) or 0
         width = max(width, min(need, innerWidth - min(name, innerWidth * 0.3) - m.gap))
     end
     return width
@@ -508,6 +509,19 @@ function UI:TextWidth(text, kind)
         if ok and type(width) == "number" and width > 0 then return width end
     end
     return #text * size * 0.55
+end
+
+-- The height of one line of text in the given kind, measured.
+function UI:LineHeight(kind)
+    local m = self:Metrics()
+    local size = (kind == "small" and m.smallFontSize) or (kind == "title" and m.fontSize * 1.12) or m.fontSize
+    self:TextWidth("Ag", kind) -- makes the measuring text and sets its font
+    if measure then
+        measure:SetText("Ag")
+        local ok, height = pcall(measure.GetStringHeight, measure)
+        if ok and type(height) == "number" and height >= size * 0.8 then return height end
+    end
+    return size * 1.2
 end
 
 -- The width a segmented choice needs so that no label is cut: every part as
@@ -588,8 +602,10 @@ end
 local SegmentedMethods = {}
 
 -- items: { { label =, selected =, onClick = }, ... }. Returns the list of
--- part buttons in use, in order.
-function SegmentedMethods:Set(width, items)
+-- part buttons in use, in order. fitLabels: for a full-width choice with no
+-- row name (the Errors tab's filter): parts may be unequal so that no label
+-- is cut. Without it the parts are always equal.
+function SegmentedMethods:Set(width, items, fitLabels)
     local m = UI:Metrics()
     local b = m.border
     local n = max(#items, 1)
@@ -597,13 +613,13 @@ function SegmentedMethods:Set(width, items)
     self:SetSize(width, height)
     local inside = max(width - b * (n + 1), n)
     local partWidth = max(inside / n, 1)
-    -- Equal parts. When a label does not fit its part even in the small font
-    -- and all the labels fit side by side, each part is as wide as its label
-    -- needs, plus an even share of what is left ("Pocket Essentials" beside
-    -- "All").
+    -- Equal parts. With fitLabels, when a label does not fit its part even in
+    -- the small font and all the labels fit side by side, each part is as wide
+    -- as its label needs, plus an even share of what is left ("Pocket
+    -- Essentials" beside "All").
     local widths = {}
     for i = 1, #items do widths[i] = partWidth end
-    do
+    if fitLabels then
         local needs, total, cut = {}, 0, false
         for i = 1, #items do
             local smallWidth = UI:TextWidth(items[i].label, "small") + m.gap * 0.8
@@ -1144,6 +1160,8 @@ local function NavMove(panel, step, byRow)
     if not IndexOf(all, focus) then focus = nil end
     if type(panel.navCross) == "function" then
         local ok, target = xpcall(panel.navCross, Handler(), focus, step, byRow)
+        -- navCross may have redrawn the window: read its list again.
+        all = NavList(panel)
         local at = ok and IndexOf(all, target)
         if at then return NavFocus(panel, target, at) end
     end

@@ -175,11 +175,8 @@ function Drawer:Text(kind, text, x, y, width, color, maxLines)
     fontString:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -y)
     -- Set on every use: the text is reused for other lines.
     pcall(fontString.SetMaxLines, fontString, maxLines or 0)
+    -- With a line limit the text's own height is the height of what shows.
     local height = SetText(fontString, kind, text, width, color)
-    if maxLines then
-        local size = (kind == "small" and M.smallFontSize) or (kind == "title" and M.fontSize * 1.12) or M.fontSize
-        height = min(height, maxLines * size * 1.2)
-    end
     self:Reach(y + height)
     return height, fontString
 end
@@ -228,11 +225,11 @@ end
 
 -- The segmented choice (UI:CreateSegmented). items: { { label, selected,
 -- onClick }, ... }. Returns the part buttons.
-function Drawer:Segmented(x, y, width, items)
+function Drawer:Segmented(x, y, width, items, fitLabels)
     local seg = self:Acquire("segmented")
     seg:ClearAllPoints()
     seg:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -y)
-    local parts = seg:Set(width, items)
+    local parts = seg:Set(width, items, fitLabels)
     for _, part in ipairs(parts) do AddStop(self, part, y, y + M.button) end
     self:Reach(y + M.button)
     return parts
@@ -926,6 +923,34 @@ local function FirstLines(text, lines)
     return table.concat(out, "\n")
 end
 
+-- The widths of the viewer's bottom row in a card iw wide: < Previous, the
+-- count, Next >, then Clear all at the right edge. The normal font if all
+-- fits, else the small one; if that still does not fit, the count is left
+-- out, and last the buttons are made narrower: Clear all never overlaps Next.
+-- Returns the three button widths, the count's width, small, showCount.
+local function ViewerRow(labels, count, iw)
+    local function Try(kind, withCount)
+        local countWidth = withCount and (UI:TextWidth(count, kind) + M.gap) or 0
+        local gaps = (withCount and 3 or 2) * M.gap
+        local base = min(M.button * 3.2, (iw - countWidth - gaps) / 3)
+        local widths, total = {}, countWidth + gaps
+        for k, label in ipairs(labels) do
+            widths[k] = max(base, UI:TextWidth(label, kind) + M.gap * 1.2)
+            total = total + widths[k]
+        end
+        return widths, countWidth, total
+    end
+    for _, try in ipairs({ { "font", true }, { "small", true }, { "small", false } }) do
+        local widths, countWidth, total = Try(try[1], try[2])
+        if total <= iw + 0.5 then return widths, countWidth, try[1] == "small", try[2] end
+    end
+    local widths, _, total = Try("small", false)
+    local room = max(iw - 2 * M.gap, 3)
+    local scale = room / max(total - 2 * M.gap, 1)
+    for k = 1, #widths do widths[k] = widths[k] * scale end
+    return widths, 0, true, false
+end
+
 -- The page must fit the window with no scroll bar (spec "The viewer"): the
 -- message shows at most 3 lines and the stack at most 6, fewer when the
 -- window is short. Longer text is cut at the edge; the saved file keeps it.
@@ -937,7 +962,7 @@ local function ViewerCard(y, width)
             list:Segmented(ix, yy, iw, Items(FILTERS, viewer.filter, function(v)
                 viewer.filter, viewer.index = v, 1
                 PE:RefreshSettings()
-            end))
+            end), true)
             yy = yy + M.button + M.gap
         else
             yy = yy + list:Text("small", TEXT_ONLY_OURS, ix, yy, iw, COLOR.dim) + M.gap
@@ -966,7 +991,7 @@ local function ViewerCard(y, width)
 
         -- What is left for the message and the stack, above the bottom row
         -- and the card's own edge.
-        local line = M.smallFontSize * 1.2
+        local line = UI:LineHeight("small")
         local room = area.viewHeight - yy - M.gap * 0.4 - M.gap - M.button - M.pad - M.gap - 1
         local msgLines = max(min(3, floor(room / line)), 1)
         local mHeight = list:Text("small", Escape(e.msg), ix, yy, iw, COLOR.font, msgLines)
@@ -982,30 +1007,19 @@ local function ViewerCard(y, width)
         -- the small font when the normal one does not fit the row.
         local labels = { "< Previous", "Next >", "Clear all" }
         local count = tostring(i) .. " of " .. tostring(#entries)
-        local small = false
-        local widths, countWidth
-        for pass = 1, 2 do
-            local kind = pass == 1 and "font" or "small"
-            countWidth = UI:TextWidth(count, kind) + M.gap
-            local base = min(M.button * 3.2, (iw - countWidth - 3 * M.gap) / 3)
-            local total = countWidth + 3 * M.gap
-            widths = {}
-            for k, label in ipairs(labels) do
-                widths[k] = max(base, UI:TextWidth(label, kind) + M.gap * 1.2)
-                total = total + widths[k]
-            end
-            small = pass == 2
-            if total <= iw + 0.5 then break end
-        end
+        local widths, countWidth, small, showCount = ViewerRow(labels, count, iw)
         local prev = list:Button(labels[1], ix, yy, widths[1], M.button, i > 1 and "normal" or "disabled",
             PE:Wrap("core", function() if ViewerStep(-1) then PE:RefreshSettings() end end), small)
         prev.peErrorStep = -1
         local cx = ix + widths[1] + M.gap
-        local ch, countText = list:Text(small and "small" or "font", count, cx, yy, countWidth, COLOR.name)
-        countText:SetJustifyH("CENTER")
-        countText:ClearAllPoints()
-        countText:SetPoint("TOPLEFT", list.child, "TOPLEFT", cx, -(yy + max((M.button - ch) * 0.5, 0)))
-        local nextButton = list:Button(labels[2], cx + countWidth + M.gap, yy, widths[2], M.button,
+        if showCount then
+            local ch, countText = list:Text(small and "small" or "font", count, cx, yy, countWidth, COLOR.name)
+            countText:SetJustifyH("CENTER")
+            countText:ClearAllPoints()
+            countText:SetPoint("TOPLEFT", list.child, "TOPLEFT", cx, -(yy + max((M.button - ch) * 0.5, 0)))
+            cx = cx + countWidth + M.gap
+        end
+        local nextButton = list:Button(labels[2], cx, yy, widths[2], M.button,
             i < #entries and "normal" or "disabled",
             PE:Wrap("core", function() if ViewerStep(1) then PE:RefreshSettings() end end), small)
         nextButton.peErrorStep = 1
@@ -1266,10 +1280,15 @@ local function NavCross(focus, step, byRow)
     if focus.peErrorStep and ViewerStep(step) then
         local role = focus.peErrorStep
         Draw()
+        -- The button of the same role after the redraw (pooled buttons may
+        -- have changed places). Never nil: a nil would let the usual move
+        -- run too, and one press would page and move at once.
+        local other
         for _, btn in ipairs(navList) do
             if btn.peErrorStep == role then return btn end
+            if btn.peErrorStep and not other then other = btn end
         end
-        return nil
+        return other or PageColumn()[1] or ChosenTabButton()
     end
     if step < 0 then
         local column = PageColumn()

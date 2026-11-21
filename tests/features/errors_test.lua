@@ -135,12 +135,50 @@ test("stand aside: BugSack, BugGrabber (folder or global) and Swatter each turn 
     standAsideCase(function(c) c.world.addons["!Swatter"] = true end, "Swatter")
 end)
 
-test("stand aside: an error handler replaced after this addon loaded counts as another error addon", function()
+local function replaceHandlerAfterUs(c)
+    local f = c.env.CreateFrame("Frame")
+    f:RegisterEvent("ADDON_LOADED")
+    f:SetScript("OnEvent", function()
+        local old = c.env.geterrorhandler()
+        c.env.seterrorhandler(function(...) return old(...) end)
+    end)
+end
+
+-- Review fix 2: a replaced handler blocks only when the fallback would be needed.
+test("stand aside: a handler replaced after this addon loaded counts as another error addon only without the error box", function()
     standAsideCase(function(c)
-        local f = c.env.CreateFrame("Frame")
-        f:RegisterEvent("ADDON_LOADED")
-        f:SetScript("OnEvent", function() c.env.seterrorhandler(function() end) end)
+        rawset(c.env, "ScriptErrorsFrame", nil)
+        replaceHandlerAfterUs(c)
     end, "another error addon")
+end)
+
+test("stand aside: with the error box there, a handler chained in by another addon does not block", function()
+    local c, PE = T.new({ setup = replaceHandlerAfterUs, saved = { enabled = { errors = true } } })
+    eq(PE:GetModuleState("errors"), "on")
+    c:otherError("ExampleAddon", "Interface/AddOns/ExampleAddon/Main.lua:40: through the chain")
+    eq(others(PE)[1].source, "ExampleAddon")
+end)
+
+-- Review fix 1: OnEnable / OnDisable never run when the feature is blocked or saved off at login.
+test("popup: a Hide left in effect is put back at login when another error addon appeared or the feature is saved off", function()
+    for _, case in ipairs({ "aside", "saved off" }) do
+        local c, PE = T.new({
+            saved = { enabled = { errors = case == "aside" }, options = { errors = { popup = "hide", oldScriptErrors = "1" } } },
+            setup = function(cl)
+                cl.world.cvars.scriptErrors = "0"
+                if case == "aside" then cl.world.addons.BugSack = true end
+            end,
+        })
+        eq(c.world.cvars.scriptErrors, "1", case .. ": the popup setting was not put back")
+        eq(PE:GetModule("errors").opts.oldScriptErrors, nil, case .. ": the old value is still kept")
+        eq(PE:GetModule("errors").opts.popup, "hide", case .. ": the choice itself was changed")
+    end
+    -- Saved on and free to start: OnEnable keeps it hidden.
+    local c = T.new({
+        saved = { enabled = { errors = true }, options = { errors = { popup = "hide", oldScriptErrors = "1" } } },
+        setup = function(cl) cl.world.cvars.scriptErrors = "0" end,
+    })
+    eq(c.world.cvars.scriptErrors, "0")
 end)
 
 ---------------------------------------------------------------------------
@@ -538,8 +576,8 @@ test("row rule: a choice control grows to fit its labels, up to the row less the
         local usual = math.min(inner * 0.58, M.button * 9)
         eq(UI:ControlWidth(inner), usual, size .. ": no need")
         eq(UI:ControlWidth(inner, usual - 1, "Name"), usual, size .. ": a need below the usual width")
-        local name = UI:TextWidth("Name", "font")
-        check(near(UI:ControlWidth(inner, inner, "Name"), inner - name - M.gap), size .. ": a short name keeps its width")
+        local name = UI:TextWidth("Name", "font") + UI:Px(2)
+        check(near(UI:ControlWidth(inner, inner, "Name"), inner - name - M.gap), size .. ": a short name keeps its width and a little slack")
         local long = "A very long row name that would take most of the row"
         check(near(UI:ControlWidth(inner, inner, long), inner - inner * 0.3 - M.gap), size .. ": a long name keeps at most 30%")
         check(near(UI:ControlWidth(inner, usual + 20, long), usual + 20), size .. ": grows only as far as needed")
@@ -567,6 +605,155 @@ test("row rule: no choice label is cut on the General tab and in a feature's row
         end
         c:assertClean("row rule labels at " .. size)
     end
+end)
+
+---------------------------------------------------------------------------
+-- Review fixes
+---------------------------------------------------------------------------
+
+-- Review fix 3: one press pages and leaves the highlight where it was, on either button.
+test("viewer: d-pad paging keeps the highlight on the same button, Previous or Next", function()
+    local c, PE = on()
+    threeErrors(c, PE)
+    openErrors(c, PE)
+    local panel, nav = settingsPanel(c), rawget(c.env, NAV_NAME)
+    local function key(k)
+        c:script(nav, "OnClick", k, true)
+        c:script(nav, "OnClick", k, false)
+    end
+    local prev = shownButtons(c, "< Previous")[1]
+    local n = 0
+    repeat key("RIGHT"); n = n + 1 until panel.peNavFocus == prev or n > 40
+    eq(countText(c), "1 of 3")
+    key("RIGHT")
+    eq(countText(c), "2 of 3")
+    eq(T.labelOf(panel.peNavFocus), "< Previous", "Right on Previous moved the highlight")
+    check(panel.peNavFocus:IsVisible() and panel.peNavFocus.peErrorStep == -1, "the highlight is not on the shown Previous")
+    key("LEFT")
+    eq(countText(c), "1 of 3")
+    eq(T.labelOf(panel.peNavFocus), "< Previous", "Left on Previous moved the highlight")
+    PE:ClearErrors()
+    c:assertClean("paging focus")
+end)
+
+-- Review fix 4: a repeat of an error already listed redraws the open viewer.
+test("viewer: a repeat of a listed error shows its new count in the open viewer", function()
+    local c, PE = on()
+    c:otherError("ExampleAddon", "Interface/AddOns/ExampleAddon/Main.lua:40: again")
+    c:otherError("OtherAddon", "Interface/AddOns/OtherAddon/Main.lua:1: other")
+    openErrors(c, PE)
+    check(shownText(c, "x1 · ", true) and not shownText(c, "x2 · ", true), "x1 at first")
+    -- Not the last error raised, so this goes through the merge (not the storm path)
+    -- and comes to the top of the list, on the page shown.
+    c:otherError("ExampleAddon", "Interface/AddOns/ExampleAddon/Main.lua:40: again")
+    c:advance(0.2)
+    check(shownText(c, "ExampleAddon/Main.lua:40: again"), "the merged error is not on the first page")
+    check(shownText(c, "x2 · ", true), "the viewer did not show the new count")
+end)
+
+-- Review fix 5: a storm costs one comparison per repeat; a back-filled error of ours is logged once.
+test("storm: an identical repeat only counts up, with no parsing", function()
+    local c, PE = on()
+    local catcher = PE.ErrorCatcher
+    c:otherError("ExampleAddon", "Interface/AddOns/ExampleAddon/Main.lua:40: storm")
+    local parsed = catcher._Parsed()
+    for _ = 1, 50 do c:otherError("ExampleAddon", "Interface/AddOns/ExampleAddon/Main.lua:40: storm") end
+    eq(catcher._Parsed(), parsed, "a repeat was parsed")
+    eq(others(PE)[1].count, 51)
+    eq(#others(PE), 1)
+    -- After Clear all the next one is a new entry.
+    catcher:ClearAll()
+    c:otherError("ExampleAddon", "Interface/AddOns/ExampleAddon/Main.lua:40: storm")
+    eq({ #others(PE), others(PE)[1].count }, { 1, 1 })
+end)
+
+test("back-fill: an error of ours seen 3 times before login is logged once with a count of 3", function()
+    local c, PE = T.new({
+        saved = { enabled = { errors = true }, debug = { on = true, lines = {}, next = 1 } },
+        setup = function(cl)
+            for _ = 1, 3 do
+                cl:luaError("Interface/AddOns/PocketEssentials/Bags.lua:10: early of ours",
+                    "Interface/AddOns/PocketEssentials/Bags.lua:10: in function <...>\n")
+            end
+        end,
+    })
+    eq(c.errorBox.errorData[1].count, 3, "the stand-in's box did not merge them (the test's premise)")
+    eq(#PE.errors, 1)
+    eq(PE.errors[1].count, 3)
+    local logged = 0
+    for _, line in ipairs(PE.db.debug.lines) do
+        if line:find("core: ERROR", 1, true) then logged = logged + 1 end
+    end
+    eq(logged, 1, "logged more than once")
+end)
+
+-- Review fix 6: the unequal parts are only for the filter row.
+test("row rule: the Button size row at Large keeps equal parts", function()
+    local c, PE = T.new({})
+    PE:SetUISetting("size", "large")
+    PE:OpenSettings("general")
+    c:advance(0.2)
+    local w = {}
+    for _, label in ipairs({ "Small", "Medium", "Large" }) do w[#w + 1] = shownButtons(c, label)[1]:GetWidth() end
+    check(near(w[1], w[2]) and near(w[2], w[3]), "the parts are not equal: " .. table.concat(w, ", "))
+    c:assertClean("equal parts")
+end)
+
+-- Review fix 7: on a narrow window Clear all never overlaps Next; the count goes first.
+test("viewer: on a narrow window the bottom row never overlaps, at every size", function()
+    for _, size in ipairs({ "small", "medium", "large" }) do
+        for _, screen in ipairs({ { 1280, 720 }, { 900, 720 }, { 640, 720 } }) do
+            local c, PE = on({ screen = screen })
+            PE:SetUISetting("size", size)
+            for i = 1, 12 do c:otherError("A" .. i, "Interface/AddOns/A" .. i .. "/Main.lua:1: x") end
+            openErrors(c, PE)
+            local where = size .. " " .. screen[1]
+            local prev, nxt, clear = shownButtons(c, "< Previous")[1], shownButtons(c, "Next >")[1], shownButtons(c, "Clear all")[1]
+            local pl, pr = c._rect(prev)
+            local nl, nr = c._rect(nxt)
+            local cl, cr = c._rect(clear)
+            check(pr <= nl + 0.01, where .. ": Previous overlaps Next")
+            check(nr <= cl + 0.01, where .. ": Next overlaps Clear all")
+            local count = shownTexts(c, "1 of 12")[1]
+            if count then
+                local tl, tr = c._rect(count)
+                check(tl >= pr - 0.01 and tr <= nl + 0.01, where .. ": the count overlaps a button")
+            end
+            local _, areaRight = c._rect(settingsPanel(c).peNavArea)
+            check(cr <= areaRight + 0.01, where .. ": Clear all runs past the page")
+        end
+    end
+end)
+
+test("viewer: the message's height is the height of the lines that show", function()
+    local c, PE = on()
+    c:luaError("Interface/AddOns/Long/File.lua:1: " .. string.rep("a very long message ", 40))
+    openErrors(c, PE)
+    local msg = shownTexts(c, "a very long message", true)[1]
+    local M = PE.UI:Metrics()
+    check(msg:GetStringHeight() <= 3 * PE.UI:LineHeight("small") + 0.01, "more than three lines tall")
+    eq(c._state(msg).maxLines, 3)
+    check(M.smallFontSize > 0, "metrics")
+end)
+
+-- Review fix 8: no chat line while the game's popup setting is off, whoever turned it off.
+test("chat: no chat line while scriptErrors is 0, even with Show chosen", function()
+    local c, PE = on({ setup = function(cl) cl.world.cvars.scriptErrors = "0" end })
+    eq(PE:GetModule("errors").opts.popup, "show")
+    c:otherError("ExampleAddon", "Interface/AddOns/ExampleAddon/Main.lua:40: quiet")
+    eq(#others(PE), 1)
+    eq(#T.chatLines(c), 0)
+end)
+
+-- Review fix 9: an error that is not text (an error object) is listed through tostring.
+test("sources: an error value that is not text is listed through tostring; only a secret one is hidden", function()
+    local c, PE = on()
+    local object = setmetatable({}, { __tostring = function() return "an error object" end })
+    c:luaError(object)
+    eq(others(PE)[1].msg, "an error object")
+    c:luaError(42)
+    eq(others(PE)[1].msg, "42")
+    c:assertClean("non-string errors")
 end)
 
 return { known = KNOWN_FAILURES }

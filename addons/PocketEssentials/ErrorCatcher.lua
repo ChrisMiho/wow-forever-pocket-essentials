@@ -133,23 +133,56 @@ local function Store()
     return db.otherErrors
 end
 
+local function ReadSetting()
+    if not (C_CVar and C_CVar.GetCVar) then return nil end
+    local ok, v = pcall(C_CVar.GetCVar, ERRORS_SETTING)
+    return ok and Str(v) or nil
+end
+
+-- The error's text: a string as it is, any other value through tostring;
+-- nil only for a value the game hides from addons (or one tostring refuses).
+local function TextOf(message)
+    if message == nil then return nil end
+    if IsSecret(message) then return nil end
+    if type(message) == "string" then return message end
+    local ok, text = pcall(tostring, message)
+    if ok and type(text) == "string" and not IsSecret(text) then return text end
+    return nil
+end
+
+-- A storm (one error raised again and again): the last raw message and stack
+-- and the entry they went to. An identical repeat only counts up.
+local lastMessage, lastStack, lastEntry
+local parsed = 0
+
 -- One error (not a warning) the game passed on. message and stack may be
 -- secret or missing; count: how many times (a back-filled entry may be more).
 local function Record(message, stack, count)
-    local text, stackText = Str(message), Str(stack)
-    local source = SourceOf(text, stackText)
-    local msg = text and ShortPath(text):sub(1, MESSAGE_MAX) or HIDDEN_TEXT
     count = tonumber(count) or 1
-    if source == OURS then
-        -- One of ours that got past our own guards: into our own list.
-        for _ = 1, count do PE:LogError("core", msg, stackText) end
-        return
-    end
     local list = Store()
     if not list then return end
+    if lastEntry and list[1] == lastEntry and type(message) == "string" and message == lastMessage
+            and (stack == lastStack) and not IsSecret(message) and not IsSecret(stack) then
+        lastEntry.count = (tonumber(lastEntry.count) or 1) + count
+        lastEntry.last = time()
+        PE:RefreshSettings()
+        return
+    end
+    parsed = parsed + 1
+    local text, stackText = TextOf(message), Str(stack)
+    local source = SourceOf(type(message) == "string" and text or nil, stackText)
+    local msg = text and ShortPath(text):sub(1, MESSAGE_MAX) or HIDDEN_TEXT
+    if source == OURS then
+        -- One of ours that got past our own guards: into our own list, once,
+        -- with the count it came with.
+        local entry = PE:LogError("core", msg, stackText)
+        if entry and count > 1 then entry.count = (tonumber(entry.count) or 1) + count - 1 end
+        return
+    end
     local stored = TrimStack(stackText)
     local first = stored:match("^[^\n]*") or ""
     local now = time()
+    local entry
     for i = 1, #list do
         local e = list[i]
         if e.source == source and e.msg == msg and (e.stack:match("^[^\n]*") or "") == first then
@@ -159,16 +192,29 @@ local function Record(message, stack, count)
                 tremove(list, i)
                 tinsert(list, 1, e)
             end
-            return
+            entry = e
+            break
         end
     end
-    tinsert(list, 1, { source = source, msg = msg, stack = stored, count = count, last = now })
-    for i = #list, CAP + 1, -1 do list[i] = nil end
-    if PE.debugOn then PE:Debug(KEY, "caught an error from " .. source) end
-    if not announced and not (mod and mod.opts and mod.opts.popup == "hide") then
+    local isNew = entry == nil
+    if isNew then
+        entry = { source = source, msg = msg, stack = stored, count = count, last = now }
+        tinsert(list, 1, entry)
+        for i = #list, CAP + 1, -1 do list[i] = nil end
+        if PE.debugOn then PE:Debug(KEY, "caught an error from " .. source) end
+    end
+    if type(message) == "string" and not IsSecret(message) and (stack == nil or (type(stack) == "string" and not IsSecret(stack))) then
+        lastMessage, lastStack, lastEntry = message, stack, entry
+    else
+        lastMessage, lastStack, lastEntry = nil, nil, nil
+    end
+    -- One chat line per session, and none while the game's popup is hidden
+    -- (by our Hide or by the setting itself).
+    if isNew and not announced and not (mod and mod.opts and mod.opts.popup == "hide") and ReadSetting() ~= "0" then
         announced = true
         PE:Print("An error from " .. source .. " was caught. See Settings > Errors.")
     end
+    -- New or merged: the open viewer shows the new count.
     PE:RefreshSettings()
 end
 
@@ -206,12 +252,16 @@ local function BackFill()
     filledTo = n
 end
 
+-- The listener can go on the error box (else the fallback is used).
+local function HookAvailable()
+    local box = rawget(_G, "ScriptErrorsFrame")
+    return type(box) == "table" and type(box.DisplayMessageInternal) == "function" and type(hooksecurefunc) == "function"
+end
+
 local function Hook()
     if hooked then return true end
+    if not HookAvailable() then return false end
     local box = rawget(_G, "ScriptErrorsFrame")
-    if type(box) ~= "table" or type(box.DisplayMessageInternal) ~= "function" or type(hooksecurefunc) ~= "function" then
-        return false
-    end
     local ok = pcall(hooksecurefunc, box, "DisplayMessageInternal", function(...)
         PE:Safe(KEY, OnDisplay, ...)
     end)
@@ -276,8 +326,12 @@ local function FindOtherCatcher()
         end
         if rawget(_G, other.global) ~= nil then return other.name end
     end
-    local now = CurrentHandler()
-    if handlerAtLoad ~= nil and now ~= nil and now ~= handlerAtLoad then return "another error addon" end
+    -- A handler another addon put in front only matters for the fallback:
+    -- the listener on the error box still sees whatever it passes on.
+    if not HookAvailable() then
+        local now = CurrentHandler()
+        if handlerAtLoad ~= nil and now ~= nil and now ~= handlerAtLoad then return "another error addon" end
+    end
     return nil
 end
 
@@ -286,12 +340,6 @@ handlerAtLoad = CurrentHandler()
 ---------------------------------------------------------------------------
 -- The game's error popup (Show / Hide)
 ---------------------------------------------------------------------------
-
-local function ReadSetting()
-    if not (C_CVar and C_CVar.GetCVar) then return nil end
-    local ok, v = pcall(C_CVar.GetCVar, ERRORS_SETTING)
-    return ok and Str(v) or nil
-end
 
 local function WriteSetting(value)
     if not (C_CVar and C_CVar.SetCVar) then return end
@@ -366,9 +414,17 @@ mod = PE:RegisterModule({
     order = 90,
     defaults = { popup = "show" },
 
-    OnLoad = function()
+    OnLoad = function(m)
         standAside = FindOtherCatcher()
         if standAside and PE.debugOn then PE:Debug(KEY, "standing aside: " .. standAside .. " is loaded") end
+        -- Hide was in effect when the game last closed, and the feature will
+        -- not start now (another error addon, or saved off): OnEnable and
+        -- OnDisable never run, so the popup setting is put back here.
+        local opts = m.opts
+        if type(opts) == "table" and opts.oldScriptErrors ~= nil
+                and (standAside or not PE:IsModuleSavedOn(KEY)) then
+            QueuePopup()
+        end
     end,
 
     blocked = function()
@@ -457,3 +513,4 @@ end
 
 -- For tests.
 mod._SourceOf = SourceOf
+function mod._Parsed() return parsed end
