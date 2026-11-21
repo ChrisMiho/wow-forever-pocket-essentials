@@ -1,6 +1,6 @@
 # Error catcher and probe panel
 
-**Status:** approved by the owner on 2026-11-20 ("this is perfect, lets see what the probe pannel is gonna look like"). Part 1 (probe) is built first; Part 2 waits for its device run.
+**Status:** approved by the owner on 2026-11-20 ("this is perfect, lets see what the probe pannel is gonna look like"). Part 1 shipped as probe-v0.3.0. Part 2 is built before the probe run, on the owner's "i have to step away, keep working and release when done" (2026-11-20). It uses the hook with the chained handler as its fallback, is off by default, and gets confirmed in the same device session as the probe.
 
 **Owner (2026-11-20):** "we need another feature to make managing bugs easier ... since the blizzard ui clearly has bugs"; "is it possible to add a check to see if the other addon is enabled"; "can this bug grabber also help navigate the popups ... almost working like how bugsack works"; "can any of this be automated through the probe ... it doesnt just automatically fire when i login, maybe we build a tad nicer ui for me to drive our tests with".
 
