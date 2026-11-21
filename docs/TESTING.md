@@ -1211,3 +1211,27 @@ Install the 0.9.1 zip (delete the old `PocketEssentials` folder first, keep
 5. Turn Loot sparkles Off: its card says to fully restart the game. Restart:
    the sparkles are gone.
 6. Errors tab: anything listed?
+
+### 20. Version 0.10.0: Catch all errors, Debug log tab
+
+Install the 0.10.0 zip (delete the old `PocketEssentials` folder first, keep
+`QuestieDB`) and fully restart the game. Running the probe (Restriction probe
+section) in the same session tells us whether the game lets us see its
+errors; this build relies on that.
+
+1. Settings: **Errors** and **Debug log** are two tabs. Debug log holds the
+   switch and Save the log / Empty the log, as before.
+2. Errors tab: turn **Catch all errors** On. Set **Error popup** to Hide.
+3. Make the game show an error. The easiest: the map error from before
+   (open the map, open Options, press buttons), or run the probe's
+   **Hook sees a test error**. The game's popup should not appear; the error
+   shows in the Errors tab: who caused it (for example Blizzard), the
+   message, the stack.
+4. Use **< Previous** / **Next >** and the d-pad Left/Right; try each filter
+   (All, Pocket Essentials, Blizzard, Other addons); **Clear all**.
+5. Set Error popup to Show, cause an error: the game's popup shows again.
+   Turn Catch all errors Off: the filter row goes, and a grey line says only
+   Pocket Essentials' own errors are listed.
+6. Look at **General → Button size** at Large: all rows still look right, no
+   cut-off choices.
+7. Tell me anything listed, and whether it was easier to read than the popup.

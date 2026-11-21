@@ -4,6 +4,38 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] - 2026-11-20
+
+Twenty-fourth test build. From the owner, after a Blizzard error popped up on
+the handheld: "we need another feature to make managing bugs easier ...
+almost working like how bugsack works". Built while the owner was away ("keep
+working and release when done"). Spec
+`docs/superpowers/specs/2026-11-20-error-catcher-and-probe-panel.md` (Part 2).
+Not yet tested on a device. Your saved choices carry over.
+
+### Added
+
+- **Catch all errors** (new switch on the Errors tab, off to start with):
+  every Lua error, from the game and from other addons, goes into one list,
+  not only Pocket Essentials' own.
+  - **One error per page**, BugSack-style: who caused it, how often and when,
+    the message, then the stack. **< Previous** and **Next >** (or d-pad
+    Left/Right), "3 of 12", and **Clear all**. A filter row picks All, Pocket
+    Essentials, Blizzard or Other addons.
+  - **Error popup: Show / Hide.** Hide keeps the game's small error box from
+    popping up and taking the controller; hidden errors still show in this
+    list. Switching the feature off puts the popup back as it was.
+  - **Stands aside for BugSack** (or BugGrabber, Swatter): the switch is
+    dimmed and the card says why and how to choose this one instead (turn
+    BugSack off in the AddOns list). It never switches another addon off.
+  - Pocket Essentials still lists its own errors with the switch off.
+
+### Changed
+
+- **Debug log has its own tab**, under Errors.
+- **Choices that do not fit grow wider** into the empty space beside their
+  name, so no choice is cut off.
+
 ## [0.9.1] - 2026-11-20
 
 Twenty-third test build. From the owner, after installing 0.9.0: "this latest

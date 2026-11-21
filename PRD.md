@@ -436,6 +436,18 @@ per objective". The owner has more Quest icons ideas to bring after testing.
 Spec `docs/superpowers/specs/2026-11-18-tidier-settings.md`; device steps
 `docs/TESTING.md` 14.
 
+**0.10.0 (2026-11-20, untested):** "Catch all errors" (the owner: "we need
+another feature to make managing bugs easier ... almost working like how
+bugsack works"; stands aside for BugSack, with no override; "Error popup:
+Show / Hide" in the owner's wording), Debug log as its own tab, choices that
+grow to fit. Built while the owner was away ("keep working and release when
+done"), before the probe run that confirms the game lets us see its errors.
+Also shipped the same day: Pocket Probe 0.3.0 (`probe-v0.3.0`), the probe's
+own window with Errors and Graphics tests (why loot sparkles do not show:
+likely because the game reports outlines unsupported on the handheld). Spec
+`docs/superpowers/specs/2026-11-20-error-catcher-and-probe-panel.md`; device
+steps `docs/TESTING.md` section 20.
+
 **0.9.1 (2026-11-20, untested):** the owner after installing 0.9.0: "this
 latest build looks great". Built: setup guide face-button pictures, d-pad
 path (first control first, Down to Next), less repeated text; new **Loot
