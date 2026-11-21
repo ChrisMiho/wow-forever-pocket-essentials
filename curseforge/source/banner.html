@@ -1,0 +1,53 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Pocket Essentials: banner</title>
+<link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="device.css">
+<style>
+html, body, .stage { height: 640px; }
+.stage { background:
+	radial-gradient(640px 460px at 73% 50%, rgba(255, 209, 0, .17), transparent 70%),
+	radial-gradient(900px 600px at 0% 100%, rgba(120, 90, 255, .18), transparent 70%),
+	linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 45%, var(--bg-2) 100%); }
+.title { position: absolute; left: 64px; top: 0; bottom: 0; width: 520px; display: flex; flex-direction: column; justify-content: center; z-index: 2; }
+.brand { display: flex; align-items: center; gap: 18px; margin-bottom: 26px; }
+.brand .hub { position: static; width: 84px; height: 84px; font-size: 32px; border-width: 5px; box-shadow: 0 0 40px rgba(255, 209, 0, .35); }
+.brand span { font-size: 15px; letter-spacing: .28em; text-transform: uppercase; color: var(--gold); font-weight: 700; line-height: 1.6; }
+.brand span b { display: block; color: #fff; }
+h1 { font-size: 72px; line-height: .98; margin-bottom: 22px; }
+.title p { font-size: 23px; line-height: 1.4; color: var(--muted); font-weight: 500; margin-bottom: 26px; }
+.title p b { color: #fff; font-weight: 700; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chips span { font-size: 14px; font-weight: 700; letter-spacing: .04em; padding: 7px 13px; border-radius: 30px; border: 1.5px solid rgba(255, 209, 0, .5); color: var(--gold-soft); background: rgba(255, 209, 0, .06); }
+.device { --w: 640px; right: 36px; top: 173px; transform: rotate(-3deg); }
+.scr .arrow { left: 86px; top: 12px; }
+.scr .arrow .d { font-size: 19px; } .scr .arrow .t { font-size: 12px; }
+.scr .mini { position: absolute; right: 10px; top: 10px; width: 74px; height: 74px; border-radius: 50%; border: 2px solid #6b5a30; background: radial-gradient(circle at 40% 40%, #5c6b45, #2c3626); }
+.scr .q { width: 11px; height: 11px; border-width: 1px; box-shadow: none; }
+.scr .hub { width: 36px; height: 36px; font-size: 13px; border-width: 2.5px; left: 10px; top: 96px; }
+.scr .hub .badge { width: 15px; height: 15px; font-size: 9px; top: -6px; right: -6px; }
+.scr .sorted { position: absolute; left: 10px; bottom: 9px; font-size: 11px; color: #ffe27a; text-shadow: 0 1px 2px #000; }
+.scr .sorted b { color: var(--gold); font-weight: 400; }
+</style></head>
+<body>
+<div class="stage">
+	<div class="title">
+		<div class="brand"><div class="hub">PE</div><span><b>For handhelds</b>Thumbs welcome</span></div>
+		<h1>Pocket <em>Essentials</em></h1>
+		<p>The stuff you miss from your desktop addons, <b>rebuilt for thumbs</b>. One small addon. Turn on what you want.</p>
+		<div class="chips"><span>Quest icons</span><span>Quest arrow</span><span>Bigger bag</span><span>Bag sorting</span><span>Auto sell junk</span><span>Auto repair</span><span>Chat picker</span><span>Menu background</span><span>Loot sparkles</span></div>
+	</div>
+	<div class="device">
+		<div class="stick l"></div><div class="dpad"></div><div class="face"><i></i><i></i><i></i><i></i></div><div class="stick r"></div>
+		<div class="scr">
+			<div class="world"><div class="sun"></div></div><div class="dim" style="background:rgba(4,5,10,.25)"></div>
+			<div class="arrow">
+				<svg width="44" height="44" viewBox="0 0 128 128"><polygon points="64,13 99,105 64,85 29,105" fill="#ffd100" stroke="#0c0c0e" stroke-width="7" stroke-linejoin="round" transform="rotate(38 64 64)"/></svg>
+				<div class="d">120 yd</div><div class="t"><b>Quest:</b> Clearing the Ridge</div>
+			</div>
+			<div class="mini"><i class="q kill" style="left:16px;top:20px"></i><i class="q loot" style="left:46px;top:14px"></i><i class="q use" style="left:48px;top:46px"></i><i class="q explore" style="left:20px;top:48px"></i></div>
+			<div class="hub">PE<span class="badge">2</span></div>
+			<div class="sorted"><b>Pocket Essentials:</b> Sold 9 junk items for 2s 64c.</div>
+		</div>
+	</div>
+	<div class="note" style="bottom:22px">Illustration, not a screenshot</div>
+</div>
+</body></html>

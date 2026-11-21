@@ -2,62 +2,56 @@
 <html><head><meta charset="utf-8"><title>Pocket Essentials: Bags</title>
 <link rel="stylesheet" href="shared.css">
 <style>
-.scene { position: relative; width: 620px; height: 570px; }
-.bag { position: absolute; left: 40px; top: 0; width: 470px; padding: 0 0 18px; background: #14161c; border: 3px solid #5a5f6e; border-radius: 10px; box-shadow: 0 30px 70px rgba(0,0,0,.55); }
-.bag .hd { display: flex; align-items: center; gap: 10px; padding: 12px 16px; font: 700 19px "Helvetica Neue", Arial, sans-serif; color: #f2e6c4; border-bottom: 2px solid #2c303a; }
-.bag .hd .gold { margin-left: auto; font-size: 16px; color: #fff; }
-.coin { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin: 0 4px 0 2px; vertical-align: -1px; }
-.c-g { background: #f2c230; } .c-s { background: #c9ccd6; } .c-c { background: #c06a33; }
-.grid { display: grid; grid-template-columns: repeat(8, 46px); gap: 8px; padding: 16px 18px 6px; }
-.slot { width: 46px; height: 46px; border-radius: 6px; background: #0b0c10; border: 2px solid #2c303a; position: relative; }
-.slot.i::after { content: ""; position: absolute; inset: 5px; border-radius: 4px; background: var(--c); box-shadow: inset 0 -6px 10px rgba(0,0,0,.35), inset 0 3px 6px rgba(255,255,255,.25); }
-.q-gray { border-color: #6f6f6f; } .q-white { border-color: #e6e6e6; } .q-green { border-color: #2fd12f; } .q-blue { border-color: #2f8cff; } .q-purple { border-color: #b45cff; }
-.sort { position: absolute; left: 150px; top: 432px; width: 240px; height: 72px; font-size: 28px; }
-.l3 { position: absolute; left: 410px; top: 442px; display: flex; align-items: center; gap: 10px; font: 600 17px "Helvetica Neue", Arial, sans-serif; color: #e6ecff; }
-.stick { width: 50px; height: 50px; border-radius: 50%; border: 4px solid #a0d7ff; display: grid; place-items: center; font: 800 15px "Helvetica Neue", Arial, sans-serif; color: #fff; background: #10142e; }
-.sizes { position: absolute; left: 40px; top: 526px; display: flex; gap: 10px; align-items: center; font: 600 16px "Helvetica Neue", Arial, sans-serif; color: var(--pe-gold); }
-.sizes .btn { min-height: 38px; font-size: 15px; }
+.bag { position: absolute; left: 150px; top: 34px; width: 486px; background: #15140f; border: 2px solid #6b5a30; border-radius: 6px; padding: 12px 14px 14px; box-shadow: 0 24px 60px rgba(0, 0, 0, .6); }
+.bag h4 { font: 400 17px var(--game); color: #e9d9a6; text-align: center; margin-bottom: 10px; }
+.bags { display: flex; gap: 8px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #3a3222; }
+.bags i { width: 50px; height: 50px; border-radius: 8px; border: 2px solid #8a7440; background: linear-gradient(160deg, #6b4a2a, #3a2716); position: relative; }
+.bags i::after { content: ""; position: absolute; left: 12px; right: 12px; top: 8px; height: 10px; border: 3px solid #c9a55a; border-bottom: 0; border-radius: 10px 10px 0 0; }
+.grid { display: grid; grid-template-columns: repeat(8, 50px); gap: 7px; }
+.grid i { height: 50px; border-radius: 6px; background: #0a0a0c; border: 2px solid #2e2c27; position: relative; }
+.grid i[class]::after { content: ""; position: absolute; inset: 9px; border-radius: 5px; }
+.grid i.a { border-color: #3b7fd6; } .grid i.a::after { background: linear-gradient(135deg, #8cc0ff, #2c5fae); border-radius: 50% 50% 6px 6px; }
+.grid i.b { border-color: #3fae4d; } .grid i.b::after { background: linear-gradient(135deg, #a5f0a0, #2f8a3c); transform: rotate(45deg); inset: 12px; }
+.grid i.c { border-color: #77736a; } .grid i.c::after { background: linear-gradient(135deg, #f2e2b0, #a8873e); border-radius: 50%; }
+.grid i.d { border-color: #77736a; } .grid i.d::after { background: linear-gradient(135deg, #ff9d8a, #b3402f); border-radius: 4px 14px 4px 14px; }
+.grid i.e { border-color: #9a52d9; } .grid i.e::after { background: linear-gradient(135deg, #dcb4ff, #7a3fb8); clip-path: polygon(50% 0, 100% 40%, 80% 100%, 20% 100%, 0 40%); }
+.grid i.f { border-color: #77736a; } .grid i.f::after { background: linear-gradient(135deg, #e8e8e8, #8d8d94); inset: 6px 18px; border-radius: 3px; transform: rotate(35deg); }
+.sorttab { position: absolute; left: 84px; top: 150px; width: 68px; height: 190px; background: #0d0d12; border: 2px solid var(--gold); border-right: 0; border-radius: 18px 0 0 18px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; font: 20px var(--game); color: var(--gold); box-shadow: -10px 14px 30px rgba(0, 0, 0, .5), 0 0 26px rgba(255, 209, 0, .35); }
+.sorttab svg { display: block; }
+.stick { position: absolute; left: 22px; bottom: 26px; display: flex; align-items: center; gap: 12px; font: 18px var(--game); color: #fff; background: rgba(13, 13, 18, .9); border: 2px solid var(--pe-border); padding: 10px 16px 10px 12px; border-radius: 40px; }
+.stick i { width: 38px; height: 38px; border-radius: 50%; background: radial-gradient(circle at 50% 40%, #555a6b, #1c1e27); border: 3px solid #8a8fa5; display: grid; place-items: center; font: 700 12px var(--head); font-style: normal; color: #fff; }
+.stick b { color: var(--gold); font-weight: 400; }
 </style></head>
 <body>
 <div class="stage">
-	<div class="frame"></div>
 	<div class="copy">
-		<div class="kicker"><b>02</b><i></i>Bags</div>
-		<h1>One bag. <em>One button.</em></h1>
-		<p>All your bags open as one window, and a big Sort button tidies the lot. No hunting through five little bags.</p>
+		<div class="kicker">Bigger bag + Bag sorting</div>
+		<h1>Messy bags? <em>Sorted in one press.</em></h1>
+		<p>Press a stick in and your bag is in order. There's a big Sort tab on the side of the bag too.</p>
 		<ul>
-			<li>Blizzard's own combined bag, switched on for you</li>
-			<li>A <b>big Sort button</b>, sized for a thumb</li>
-			<li>Press <b>L3</b> to sort while the bag is open</li>
-			<li>Three bag sizes to suit your screen</li>
+			<li>Left stick or right, you pick</li>
+			<li>Three bag sizes</li>
+			<li>The d-pad reaches the Sort tab</li>
 		</ul>
 	</div>
-	<div class="shot">
-		<div class="scene">
-			<div class="bag">
-				<div class="hd">Bags <span class="gold">23<span class="coin c-g"></span>47<span class="coin c-s"></span>12<span class="coin c-c"></span></span></div>
-				<div class="grid" id="grid"></div>
-			</div>
-			<div class="btn sort">Sort</div>
-			<div class="l3"><div class="stick">L3</div>sorts too</div>
-			<div class="sizes">Bag size <span class="btn">Normal</span><span class="btn sel">Large</span><span class="btn">Extra large</span></div>
+	<div class="shot"><div class="screen">
+		<div class="world"><div class="sun"></div></div><div class="dim"></div>
+		<div class="sorttab">
+			<svg width="30" height="26" viewBox="0 0 30 26"><rect x="0" y="0" width="30" height="5" rx="2" fill="#ffd100"/><rect x="0" y="10" width="21" height="5" rx="2" fill="#ffd100"/><rect x="0" y="20" width="12" height="5" rx="2" fill="#ffd100"/></svg>Sort
 		</div>
-	</div>
-	<div class="foot">Pocket Essentials <b>&#9670;</b> All-in-one quality of life</div>
+		<div class="bag"><h4>Combined bag</h4>
+			<div class="bags"><i></i><i></i><i></i><i></i><i></i></div>
+			<div class="grid">
+				<i class="e"></i><i class="a"></i><i class="a"></i><i class="b"></i><i class="b"></i><i class="b"></i><i class="c"></i><i class="c"></i>
+				<i class="c"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="f"></i><i class="f"></i><i class="f"></i>
+				<i class="f"></i><i class="c"></i><i class="d"></i><i></i><i></i><i></i><i></i><i></i>
+				<i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+				<i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+			</div>
+		</div>
+		<div class="stick"><i>L3</i><span>Press the stick in: <b>sorted</b></span></div>
+	</div></div>
+	<div class="foot"><span class="fm">PE</span>Pocket Essentials</div>
 	<div class="note">Illustration, not a screenshot</div>
 </div>
-<script>
-// 8 x 6 slots: a few items in quality colours, the rest empty.
-const items = {0:["#c73f2f","q-white"],1:["#3d8bd9","q-blue"],2:["#d9a62f","q-white"],3:["#7a5bd1","q-purple"],
-	4:["#2f9e5a","q-green"],5:["#9e9e9e","q-gray"],8:["#d9622f","q-white"],9:["#2fa3a3","q-green"],10:["#8a6b4a","q-white"],
-	11:["#9e9e9e","q-gray"],12:["#c9c23f","q-white"],16:["#5a7ad9","q-blue"],17:["#b33fa3","q-green"],18:["#9e9e9e","q-gray"],
-	19:["#e0e0e0","q-white"],24:["#4fb34f","q-green"],25:["#d94f4f","q-white"],32:["#9e9e9e","q-gray"]};
-const g = document.getElementById("grid");
-for (let i = 0; i < 48; i++) {
-	const d = document.createElement("div");
-	d.className = "slot";
-	if (items[i]) { d.classList.add("i", items[i][1]); d.style.setProperty("--c", items[i][0]); }
-	g.appendChild(d);
-}
-</script>
 </body></html>

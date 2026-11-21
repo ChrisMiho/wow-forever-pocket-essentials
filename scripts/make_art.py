@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Generate the CurseForge avatar and banner (original art, Pillow only).
+"""Generate the CurseForge art (original art).
 
-Run from anywhere: python3 scripts/make_art.py  -> writes curseforge/*.png
-(the description images are made by curseforge/source/render.sh)
+Run from anywhere: python3 scripts/make_art.py
+It runs curseforge/source/render.sh, which saves the pages in
+curseforge/source/ as curseforge/avatar.png, banner.png and images/*.png.
+(--pillow writes the old Pillow-drawn avatar and banner instead.)
 
 With --icons it instead writes the addon's own textures (original art):
     addons/PocketEssentials/Icons/arrow.tga, circle.tga, tab_round.tga
@@ -228,14 +230,16 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--palette", default=DEFAULT, choices=list(PALETTES))
     ap.add_argument("--out", default=OUT)
-    ap.add_argument("--contact-sheet", metavar="PNG")
+    ap.add_argument("--pillow", action="store_true",
+                    help="write the old Pillow-drawn avatar and banner")
     ap.add_argument("--icons", action="store_true",
                     help="write the addon textures into addons/PocketEssentials/Icons")
     args = ap.parse_args()
     if args.icons:
         make_icons(ICONS)
-    elif args.contact_sheet:
-        contact_sheet(args.contact_sheet)
+    elif not args.pillow:
+        import subprocess
+        subprocess.run([os.path.join(OUT, "source", "render.sh")], check=True)
     else:
         os.makedirs(args.out, exist_ok=True)
         avatar(PALETTES[args.palette]).save(os.path.join(args.out, "avatar.png"), optimize=True)

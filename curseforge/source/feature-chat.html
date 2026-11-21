@@ -2,51 +2,44 @@
 <html><head><meta charset="utf-8"><title>Pocket Essentials: Chat</title>
 <link rel="stylesheet" href="shared.css">
 <style>
-.scene { position: relative; width: 640px; height: 560px; font-family: "Helvetica Neue", Arial, sans-serif; }
-.hub { position: absolute; left: 0; top: 230px; }
-.tap { position: absolute; left: 30px; top: 340px; font: 600 15px "Helvetica Neue", Arial, sans-serif; color: #c8dcff; }
-.pe-win { position: absolute; left: 130px; top: 0; width: 500px; }
-.hint { font-size: 15px; color: var(--pe-small); margin-bottom: 12px; }
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.grid .btn { min-height: 54px; font-size: 19px; }
-.sec { color: var(--pe-gold); font-size: 18px; font-weight: 700; margin: 16px 0 10px; }
+.win { left: 150px; top: 96px; width: 494px; }
+.cb { padding: 8px 10px 12px; }
+.cb h4 { font: 400 16px var(--game); color: var(--gold); margin: 4px 0 6px; }
+.chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.chips .btn { height: 48px; font-size: 20px; }
+.tapline { position: absolute; left: 86px; top: 288px; width: 70px; height: 0; border-top: 3px dashed var(--gold); }
+.prompt { position: absolute; left: 0; right: 0; bottom: 62px; text-align: center; font: 34px var(--game); color: var(--gold); text-shadow: 0 3px 6px #000; }
+.prompt small { display: block; font-size: 18px; color: #fff; margin-top: 2px; }
+.abtn { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; border: 3px solid #fff; color: #fff; font-size: 22px; vertical-align: 3px; margin: 0 6px; background: rgba(0, 0, 0, .5); }
 </style></head>
 <body>
 <div class="stage">
-	<div class="frame"></div>
 	<div class="copy">
-		<div class="kicker"><b>04</b><i></i>Chat</div>
-		<h1>Chat without <em>tiny targets</em></h1>
-		<p>Tap the round button and pick who to talk to from big buttons. The chat box opens already set to that channel or player.</p>
+		<div class="kicker">Chat picker</div>
+		<h1>Your thumb <em>is not a mouse</em></h1>
+		<p>Tap the PE button, pick Guild, start typing. No poking at a tiny chat tab.</p>
 		<ul>
-			<li>One big button for each channel you can talk in</li>
-			<li>Your <b>last six whisperers</b>, newest first</li>
-			<li>A badge on the round button for unanswered whispers</li>
+			<li>Every channel you can talk in gets a big button</li>
+			<li>Last six whispers, newest first</li>
+			<li>Red badge when someone is waiting on you</li>
 		</ul>
 	</div>
-	<div class="shot">
-		<div class="scene">
-			<div class="hub">PE<div class="badge">1</div></div>
-			<div class="tap">Tap</div>
-			<div class="pe-win">
-				<div class="pe-title">Chat<span class="sp"></span><span class="x">&#10005;</span></div>
-				<div class="pe-body">
-					<div class="hint">Three-finger tap for the keyboard</div>
-					<div class="grid">
-						<div class="btn">Say</div><div class="btn">Yell</div>
-						<div class="btn">Party</div><div class="btn">Guild</div>
-						<div class="btn">1. General</div><div class="btn">2. Trade</div>
-					</div>
-					<div class="sec">Whispers</div>
-					<div class="grid">
-						<div class="btn warn">Brightleaf<span class="new">NEW</span></div><div class="btn">Kordan</div>
-						<div class="btn">Mistwalker</div><div class="btn">Clear marks</div>
-					</div>
-				</div>
+	<div class="shot"><div class="screen">
+		<div class="world"><div class="sun"></div></div><div class="dim"></div>
+		<div class="hub" style="left:22px;top:256px">PE<span class="badge">2</span></div>
+		<div class="tapline"></div>
+		<div class="win">
+			<div class="wt">Chat<span class="sp"></span><span class="btn" style="margin-right:6px">Settings</span><span class="btn">Close</span></div>
+			<div class="cb">
+				<h4>Talk in</h4>
+				<div class="chips"><span class="btn">Say</span><span class="btn">Yell</span><span class="btn">Party</span><span class="btn sel">Guild</span><span class="btn">1. General</span><span class="btn">2. Trade</span></div>
+				<h4 style="margin-top:12px">Whispers</h4>
+				<div class="chips"><span class="btn warn">Mirabel</span><span class="btn">Tobin</span><span class="btn warn">Kessa</span></div>
 			</div>
 		</div>
-	</div>
-	<div class="foot">Pocket Essentials <b>&#9670;</b> All-in-one quality of life</div>
+		<div class="prompt">Press <span class="abtn">A</span> to type<small>Chat is set to Guild</small></div>
+	</div></div>
+	<div class="foot"><span class="fm">PE</span>Pocket Essentials</div>
 	<div class="note">Illustration, not a screenshot</div>
 </div>
 </body></html>

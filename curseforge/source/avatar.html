@@ -1,0 +1,19 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Pocket Essentials: avatar</title>
+<link rel="stylesheet" href="shared.css"><link rel="stylesheet" href="device.css">
+<style>
+html, body { width: 400px; height: 400px; }
+.av { position: relative; width: 400px; height: 400px; overflow: hidden;
+	background: radial-gradient(260px 260px at 50% 50%, rgba(255, 209, 0, .26), transparent 70%), linear-gradient(160deg, #0a0b16 0%, #14132a 55%, #241a3c 100%); }
+.device { --w: 372px; left: 14px; top: 114px; box-shadow: 0 20px 40px rgba(0, 0, 0, .6), inset 0 2px 0 rgba(255, 255, 255, .12); }
+.device .scr { background: #0b0c14; left: 23%; right: 23%; }
+.device .stick, .device .dpad, .device .face { display: none; }
+.device .stick.l, .device .stick.r { display: block; width: 12%; }
+.device .stick.l { left: 5%; top: 36%; } .device .stick.r { right: 5%; top: 36%; }
+.hub { left: 86px; top: 86px; width: 228px; height: 228px; border-width: 14px; font-size: 96px; letter-spacing: -2px;
+	background: radial-gradient(circle at 50% 35%, #20202c, #0b0b10 70%); box-shadow: 0 16px 36px rgba(0, 0, 0, .65), 0 0 60px rgba(255, 209, 0, .35); }
+</style></head>
+<body><div class="av">
+	<div class="device"><div class="stick l"></div><div class="stick r"></div><div class="scr"></div></div>
+	<div class="hub">PE</div>
+</div></body></html>

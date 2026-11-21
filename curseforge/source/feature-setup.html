@@ -1,0 +1,82 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Pocket Essentials: Setup and settings</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+/* two windows at 74%: the settings behind, the setup guide in front */
+.back, .front { position: absolute; width: 648px; height: 500px; transform: scale(.74); }
+.back { left: 12px; top: 12px; transform-origin: 0 0; }
+.front { right: 12px; bottom: 12px; transform-origin: 100% 100%; }
+.back .win, .front .win { inset: 0; }
+.back .win { filter: brightness(.8); }
+.back .seg, .back .num, .back .wide { width: 236px; }
+.back .seg span { font-size: 16px; }
+.back .row { min-height: 50px; }
+.back .row .n { font-size: 18px; }
+.front .win { display: flex; flex-direction: column; box-shadow: 0 30px 80px rgba(0, 0, 0, .85); }
+.sb { flex: 1; padding: 10px 12px; display: flex; flex-direction: column; gap: 10px; }
+.sb h3 { font: 400 23px var(--game); color: var(--gold); }
+.sb p { font: 18px/1.3 var(--game); color: #fff; }
+.front .seg { width: 300px; }
+.tips h4 { font: 400 14px var(--game); color: var(--gold); margin: 4px 0 8px; }
+.tips div { display: flex; gap: 18px; font: 17px var(--game); align-items: center; padding-bottom: 6px; }
+.tips span { display: flex; align-items: center; gap: 8px; }
+.face { width: 30px; height: 30px; position: relative; flex: none; }
+.face i { position: absolute; width: 10px; height: 10px; border-radius: 50%; border: 2px solid #8d8d94; }
+.face i:nth-child(1) { left: 10px; top: 0; } .face i:nth-child(2) { left: 0; top: 10px; } .face i:nth-child(3) { left: 20px; top: 10px; } .face i:nth-child(4) { left: 10px; top: 20px; }
+.face i.on { background: var(--gold); border-color: var(--gold); }
+.dpad { width: 28px; height: 28px; flex: none; background: linear-gradient(#b9b9bd, #b9b9bd) center/10px 100% no-repeat, linear-gradient(#b9b9bd, #b9b9bd) center/100% 10px no-repeat; }
+.nav { display: flex; align-items: center; gap: 8px; padding: 10px 12px 12px; }
+.nav .btn { width: 130px; }
+.dots { flex: 1; display: flex; justify-content: center; gap: 9px; }
+.dots i { width: 9px; height: 9px; border-radius: 50%; background: #55555c; }
+.dots i.on { background: var(--gold); }
+</style></head>
+<body>
+<div class="stage">
+	<div class="copy">
+		<div class="kicker">Setup guide + Settings</div>
+		<h1>Set it up once, <em>then go play</em></h1>
+		<p>Your first login walks you through it. Everything starts off, so you only switch on what you want.</p>
+		<ul>
+			<li>Touch, or d-pad with A and B</li>
+			<li>Off means off: nothing runs in the background</li>
+			<li>Change anything later in the settings</li>
+		</ul>
+	</div>
+	<div class="shot"><div class="screen">
+		<div class="world"></div><div class="dim"></div>
+		<div class="back"><div class="win">
+			<div class="wt">Pocket Essentials<span class="sp"></span><span class="btn">Close</span></div>
+			<div class="wb">
+				<div class="tabs">
+					<div class="tab sel">Quest icons<i class="d"></i></div><div class="tab">Quest arrow<i class="d"></i></div><div class="tab">Bags<i class="d"></i></div><div class="tab">Vendors<i class="d"></i></div><div class="tab">Chat<i class="d"></i></div><div class="tab">Game fixes</div><div class="tab">General</div><div class="tab">Errors</div><div class="tab">Debug log</div>
+				</div>
+				<div class="page"><div class="card">
+					<div class="row"><div class="n">Quest icons<small>Icons on the map and minimap where your quest objectives are.</small></div><div class="sw">On</div></div>
+					<div class="row"><div class="n">Show icons for</div><div class="seg"><span class="sel">Tracked</span><span>Focused</span><span>All</span></div></div>
+					<div class="row"><div class="n">Icons on</div><div class="seg"><span class="sel">Both</span><span>Map</span><span>Minimap</span></div></div>
+					<div class="row"><div class="n">Icon size</div><div class="seg"><span>Small</span><span class="sel">Medium</span><span>Large</span></div></div>
+					<div class="row"><div class="n">Spots per objective</div><div class="num"><i>&minus;</i><div>5<small>spots</small></div><i>+</i></div></div>
+					<div class="row"><div class="n">Blizzard blue quest haze</div><div class="seg"><span class="sel">Hide</span><span>Show</span></div></div>
+				</div></div>
+			</div>
+		</div></div>
+		<div class="front"><div class="win">
+			<div class="wt">Setup<span class="sp"></span><span class="btn">Close</span></div>
+			<div class="sb">
+				<h3>Welcome</h3>
+				<p>A few helpers for playing on a handheld. They all start off: switch on the ones you want. You can change everything later in the settings.</p>
+				<div class="card"><div class="row"><div class="n">How do you play?</div><div class="seg"><span class="sel">Touch controls</span><span>Controller</span></div></div></div>
+				<div class="card tips"><h4>Getting around these windows</h4>
+					<div><span><i class="dpad"></i>Move the blue highlight</span></div>
+					<div><span><span class="face"><i></i><i></i><i></i><i class="on"></i></span>Press the highlighted button</span><span><span class="face"><i></i><i></i><i class="on"></i><i></i></span>Close the window</span></div>
+				</div>
+				<div class="card"><div class="row"><div class="n">Quest icons<small>Icons on the map and minimap where your quest objectives are.</small></div><div class="sw off">Off</div></div></div>
+			</div>
+			<div class="nav"><span class="btn">Skip</span><div class="dots"><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><span class="btn go">Start</span></div>
+		</div></div>
+	</div></div>
+	<div class="foot"><span class="fm">PE</span>Pocket Essentials</div>
+	<div class="note">Illustration, not a screenshot</div>
+</div>
+</body></html>

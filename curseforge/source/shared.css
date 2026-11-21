@@ -1,97 +1,136 @@
-/* Shared look for the CurseForge description images (1280x720).
-   The frame uses the brand colours of the banner; the mock windows use the
-   addon's own colours from UI.lua and Settings.lua. Original art only. */
+/* Shared look for the CurseForge images (1.0.0 set).
+   The frame is the brand: near-black indigo with the round button's gold.
+   The mock windows use the addon's own colours, shapes and wording
+   (UI.lua, Settings.lua, docs/ui-review/mockup-0.8.1.html, "Proposed").
+   Original art only: no game art, no game logo, system fonts. */
 :root {
-	--bg-top: #0a143a;
-	--bg-bottom: #343282;
-	--ice: #a0d7ff;
-	--ice-soft: #c8dcff;
+	--bg-0: #06070d;
+	--bg-1: #0d0e1c;
+	--bg-2: #19142c;
+	--gold: #ffd100;
+	--gold-soft: #f2d67a;
+	--ice: #9fd4ff;
 	--text: #ffffff;
+	--muted: #b9bdd2;
 	/* the addon's colours */
 	--pe-fill: #0d0d12;
+	--pe-card: #17171c;
 	--pe-border: #9e8538;
-	--pe-gold: #ffd100;
 	--pe-small: #d6d6d6;
-	--pe-dim: #9e9e9e;
-	--pe-status: #a6d9ff;
+	--pe-dim: #8d8d94;
 	--btn-fill: #262930;
 	--btn-border: #858591;
 	--on-fill: #12661f;
 	--on-border: #59eb73;
-	--off-fill: #404045;
-	--off-border: #85858a;
 	--sel-fill: #8f6b08;
-	--sel-border: #ffd100;
+	--tab-fill: #12100a;
 	--warn-fill: #854708;
 	--warn-border: #ff9e26;
 	--q-kill: #ff7366;
 	--q-loot: #ffd94d;
 	--q-use: #80ccff;
 	--q-explore: #bf8cff;
+	--head: "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+	--game: "Trebuchet MS", "Helvetica Neue", Arial, sans-serif;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { width: 1280px; height: 720px; overflow: hidden; background: var(--bg-top); }
-body { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; color: var(--text); }
+html, body { width: 1280px; height: 720px; overflow: hidden; background: var(--bg-0); }
+body { font-family: var(--head); color: var(--text); -webkit-font-smoothing: antialiased; }
 
+/* --- the frame --------------------------------------------------------- */
 .stage {
 	position: relative; width: 1280px; height: 720px; overflow: hidden;
 	background:
-		radial-gradient(900px 500px at 78% 45%, rgba(160, 215, 255, .14), transparent 70%),
-		linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+		radial-gradient(720px 520px at 74% 48%, rgba(255, 209, 0, .13), transparent 70%),
+		radial-gradient(900px 600px at 0% 100%, rgba(120, 90, 255, .16), transparent 70%),
+		linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 45%, var(--bg-2) 100%);
 }
-/* faint handheld outline in the background, like the banner */
-.stage::before {
-	content: ""; position: absolute; right: -120px; top: 70px; width: 980px; height: 580px;
-	border: 3px solid rgba(170, 205, 255, .10); border-radius: 190px;
+.stage::after { /* fine grid, fades out to the left */
+	content: ""; position: absolute; inset: 0; pointer-events: none;
+	background-image: linear-gradient(rgba(255, 255, 255, .035) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, .035) 1px, transparent 1px);
+	background-size: 40px 40px;
+	-webkit-mask-image: radial-gradient(700px 480px at 76% 48%, #000, transparent 75%);
 }
-.frame { position: absolute; inset: 18px; border: 1px solid rgba(160, 215, 255, .14); border-radius: 26px; pointer-events: none; }
-
-.copy { position: absolute; left: 64px; top: 0; bottom: 0; width: 470px; display: flex; flex-direction: column; justify-content: center; }
-.kicker { display: flex; align-items: center; gap: 12px; font-size: 15px; letter-spacing: .28em; text-transform: uppercase; color: var(--ice); font-weight: 600; margin-bottom: 18px; }
-.kicker b { font-weight: 700; color: #fff; }
-.kicker i { display: inline-block; width: 34px; height: 2px; background: var(--ice); }
-h1 { font-size: 54px; line-height: 1.04; font-weight: 700; letter-spacing: -.01em; margin-bottom: 20px; }
-h1 em { font-style: normal; color: var(--ice); }
-.copy p { font-size: 21px; line-height: 1.5; color: var(--ice-soft); margin-bottom: 22px; }
+.copy { position: absolute; left: 64px; top: 0; bottom: 28px; width: 452px; display: flex; flex-direction: column; justify-content: center; z-index: 2; }
+.kicker { display: flex; align-items: center; gap: 12px; font-size: 14px; letter-spacing: .2em; text-transform: uppercase; color: var(--gold); font-weight: 700; margin-bottom: 18px; }
+.kicker b { color: #fff; }
+.kicker i { display: inline-block; width: 34px; height: 2px; background: var(--gold); }
+h1 { font-size: 54px; line-height: 1.04; font-weight: 800; letter-spacing: -.02em; margin-bottom: 20px; }
+h1 em { font-style: normal; color: var(--gold); }
+.copy p { font-size: 20px; line-height: 1.5; color: var(--muted); margin-bottom: 22px; font-weight: 500; }
 .copy ul { list-style: none; }
-.copy li { position: relative; padding-left: 30px; font-size: 19px; line-height: 1.5; margin-bottom: 8px; color: #eef3ff; }
-.copy li::before { content: ""; position: absolute; left: 4px; top: 10px; width: 10px; height: 10px; background: var(--ice); transform: rotate(45deg); border-radius: 2px; }
-.copy li b { color: var(--ice); font-weight: 600; }
+.copy li { position: relative; padding-left: 30px; font-size: 18px; line-height: 1.45; margin-bottom: 9px; color: #eef0fa; font-weight: 500; }
+.copy li::before { content: ""; position: absolute; left: 3px; top: 8px; width: 11px; height: 11px; border-radius: 50%; border: 3px solid var(--gold); }
+.copy li b { color: var(--gold-soft); font-weight: 700; }
 
-.shot { position: absolute; left: 570px; right: 56px; top: 64px; bottom: 76px; display: flex; align-items: center; justify-content: center; }
+.foot { position: absolute; left: 64px; bottom: 34px; display: flex; align-items: center; gap: 10px; font-size: 12px; letter-spacing: .28em; text-transform: uppercase; color: rgba(210, 214, 235, .6); font-weight: 700; z-index: 2; }
+.foot .fm { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--gold); background: #0b0b10; display: grid; place-items: center; font: 700 9px var(--game); color: var(--gold); letter-spacing: 0; }
+.note { position: absolute; right: 48px; bottom: 34px; font-size: 12px; color: rgba(210, 214, 235, .55); z-index: 2; }
 
-.foot { position: absolute; left: 48px; bottom: 36px; font-size: 13px; letter-spacing: .3em; text-transform: uppercase; color: rgba(200, 220, 255, .65); font-weight: 600; }
-.foot b { color: var(--ice); font-weight: 700; }
-.note { position: absolute; right: 48px; bottom: 34px; font-size: 13px; color: rgba(200, 220, 255, .65); }
-
-/* --- the addon's window ------------------------------------------------ */
-.pe-win {
-	background: var(--pe-fill); border: 2px solid var(--pe-border); border-radius: 4px;
-	box-shadow: 0 30px 70px rgba(0, 0, 0, .55), 0 0 0 1px rgba(0, 0, 0, .6);
-	font-family: "Helvetica Neue", Arial, sans-serif;
+/* --- the handheld screen the feature is shown on ------------------------- */
+.shot { position: absolute; left: 556px; right: 48px; top: 62px; bottom: 80px; z-index: 1; }
+.screen {
+	position: absolute; inset: 0; border-radius: 22px; overflow: hidden;
+	border: 3px solid #23253a; outline: 1px solid rgba(255, 209, 0, .22); outline-offset: 5px;
+	box-shadow: 0 40px 90px rgba(0, 0, 0, .65), 0 0 120px rgba(255, 209, 0, .08);
+	font-family: var(--game);
 }
-.pe-title { display: flex; align-items: center; padding: 12px 16px 10px; color: var(--pe-gold); font-size: 22px; font-weight: 700; border-bottom: 2px solid var(--pe-border); }
-.pe-title .sp { flex: 1; }
-.pe-title .x { width: 34px; height: 30px; display: grid; place-items: center; font-size: 18px; color: #fff; background: var(--btn-fill); border: 2px solid var(--btn-border); border-radius: 3px; }
-.pe-body { padding: 16px; }
+/* an invented dusk landscape standing in for the game world */
+.world { position: absolute; inset: 0; background: linear-gradient(180deg, #151b38 0%, #2c2a52 34%, #5b4257 56%, #2a2b2a 57%, #171b17 100%); }
+.world::before { content: ""; position: absolute; left: -12%; right: 38%; top: 36%; height: 44%; background: #1d2530; border-radius: 50% 50% 0 0 / 100% 100% 0 0; }
+.world::after { content: ""; position: absolute; left: 30%; right: -18%; top: 42%; height: 40%; background: #232a2f; border-radius: 50% 50% 0 0 / 100% 100% 0 0; box-shadow: -260px 60px 0 40px #161c1a; }
+.world .sun { position: absolute; left: 62%; top: 30%; width: 70px; height: 70px; border-radius: 50%; background: radial-gradient(circle, #ffd9a0, #e58a5a 60%, transparent 72%); opacity: .55; }
+.dim { position: absolute; inset: 0; background: rgba(4, 5, 10, .55); }
 
-.btn {
-	display: flex; align-items: center; justify-content: center; position: relative;
-	min-height: 46px; padding: 0 16px; font-size: 18px; font-weight: 700; color: #fff;
-	background: var(--btn-fill); border: 2px solid var(--btn-border); border-radius: 3px;
-}
-.btn.on { background: var(--on-fill); border-color: var(--on-border); }
-.btn.off { background: var(--off-fill); border-color: var(--off-border); color: #d1d1d1; }
-.btn.sel { background: var(--sel-fill); border: 4px solid var(--sel-border); }
-.btn.warn { background: var(--warn-fill); border-color: var(--warn-border); }
-.btn .new { position: absolute; top: -10px; right: -8px; background: #d91414; color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 9px; border: 2px solid #fff; }
+/* --- the addon's windows ---------------------------------------------------- */
+.win { position: absolute; background: var(--pe-fill); border: 2px solid var(--pe-border); box-shadow: 0 24px 60px rgba(0, 0, 0, .6); font-family: var(--game); color: #fff; }
+.wt { display: flex; align-items: center; height: 54px; padding: 0 4px 0 12px; border-bottom: 2px solid var(--pe-border); color: var(--gold); font-size: 23px; }
+.wt .sp { flex: 1; }
+.btn { display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 16px; font-size: 19px; color: #fff; background: var(--btn-fill); border: 2px solid var(--btn-border); white-space: nowrap; }
+.btn.go { background: var(--on-fill); border-color: var(--on-border); }
+.btn.sel { background: var(--sel-fill); border-color: var(--gold); }
+.btn.warn { background: var(--warn-fill); border-color: var(--warn-border); position: relative; }
+.btn.warn::after { content: ""; position: absolute; top: 5px; right: 6px; width: 10px; height: 10px; border-radius: 50%; background: #e01b1b; }
+.wb { display: flex; gap: 8px; padding: 8px; }
+.tabs { width: 206px; flex: none; display: flex; flex-direction: column; gap: 3px; }
+.tab { display: flex; align-items: center; height: 41px; padding: 0 10px; background: var(--tab-fill); font-size: 19px; color: #f2f2f2; }
+.tab.sel { background: var(--sel-fill); box-shadow: inset 3px 0 0 var(--gold); }
+.tab .d { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: #5cf07a; }
+.page { flex: 1; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.card { background: var(--pe-card); padding: 6px 10px; }
+.row { display: flex; align-items: center; gap: 12px; min-height: 52px; }
+.row + .row { border-top: 1px solid #25252c; }
+.row .n { flex: 1; font-size: 19px; line-height: 1.15; }
+.row .n small { display: block; font-size: 14px; color: var(--pe-small); margin-top: 2px; }
+.row .n small.how { color: #cfcfcf; } .row .n small.how b { color: var(--gold); font-weight: 400; }
+.sw { width: 82px; height: 40px; flex: none; background: var(--on-fill); border: 2px solid var(--on-border); display: flex; align-items: center; justify-content: space-between; padding: 3px 3px 3px 12px; font-size: 16px; }
+.sw::after { content: ""; width: 32px; height: 100%; background: #eafff0; }
+.sw.off { background: #404045; border-color: #85858a; color: #d1d1d1; flex-direction: row-reverse; padding: 3px 12px 3px 3px; }
+.sw.off::after { background: #b9b9bd; }
+.seg { display: flex; flex: none; width: 340px; height: 42px; border: 2px solid var(--btn-border); background: var(--btn-fill); }
+.seg span { flex: 1; display: grid; place-items: center; font-size: 18px; color: #e6e6e6; border-left: 2px solid var(--btn-border); }
+.seg span:first-child { border-left: 0; }
+.seg span.sel { background: var(--sel-fill); color: #fff; box-shadow: inset 0 -3px 0 var(--gold); }
+.num { display: flex; flex: none; width: 340px; height: 42px; border: 2px solid #9e8538; background: #08080b; }
+.num i { width: 40px; display: grid; place-items: center; font-style: normal; color: var(--gold); font-size: 22px; background: #262930; }
+.num div { flex: 1; text-align: center; color: var(--gold); font-size: 17px; line-height: 1.05; padding-top: 3px; }
+.num div small { display: block; color: var(--pe-dim); font-size: 13px; }
+.wide { width: 340px; flex: none; }
 
 /* the round PE button */
-.hub {
-	width: 92px; height: 92px; border-radius: 50%; position: relative;
-	background: radial-gradient(circle at 50% 40%, #1a1d33, #06081a);
-	border: 6px solid #a0d7ff; display: grid; place-items: center;
-	font: 700 36px "Helvetica Neue", Arial, sans-serif; color: #fff;
-	box-shadow: 0 12px 30px rgba(0, 0, 0, .5);
-}
-.hub .badge { position: absolute; top: -6px; right: -6px; width: 30px; height: 30px; border-radius: 50%; background: #d91414; border: 3px solid #fff; display: grid; place-items: center; font-size: 15px; }
+.hub { position: absolute; width: 64px; height: 64px; border-radius: 50%; background: #121219; border: 4px solid var(--gold); display: grid; place-items: center; font: 400 24px var(--game); color: var(--gold); box-shadow: 0 8px 22px rgba(0, 0, 0, .55); }
+.hub .badge { position: absolute; top: -9px; right: -9px; width: 26px; height: 26px; border-radius: 50%; background: #e01b1b; display: grid; place-items: center; font-size: 15px; color: #fff; }
+.hub.horde { border-color: #d9261a; color: #f0cfc9; background: #2e0808; }
+.hub.alliance { border-color: #599eff; color: #dbe9ff; background: #08143d; }
+
+/* quest objective icons: a tinted disc with a dark rim, as the addon draws them */
+.q { position: absolute; width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(0, 0, 0, .75); box-shadow: inset 0 0 0 4px rgba(255, 255, 255, .18), 0 2px 4px rgba(0, 0, 0, .5); }
+.q.kill { background: var(--q-kill); } .q.loot { background: var(--q-loot); } .q.use { background: var(--q-use); } .q.explore { background: var(--q-explore); }
+.q.turnin { background: none; border: 0; box-shadow: none; font: 700 24px var(--game); color: var(--gold); text-shadow: 0 2px 3px #000; line-height: 22px; text-align: center; }
+
+/* the quest arrow and its two lines */
+.arrow { position: absolute; text-align: center; font-family: var(--game); text-shadow: 0 2px 4px #000; white-space: nowrap; }
+.arrow svg { display: block; margin: 0 auto 2px; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, .6)); }
+.arrow .d { font-size: 26px; color: var(--gold); line-height: 1.1; }
+.arrow .t { font-size: 17px; color: #fff; }
+.arrow .t b { color: #d8b84a; font-weight: 400; }
