@@ -111,6 +111,9 @@ local tconcat, tremove = table.concat, table.remove
 
 P.name = ADDON_NAME or "PocketProbe"
 P.VERSION = "0.3.0"          -- used when the game cannot read the TOC's version line
+-- An action trial returns this when nothing refused it but it could not see
+-- whether it worked; it is stored as it is (never as "allowed").
+P.CANT_TELL = "can't tell"
 
 local LOG_MAX, LOG_DROP = 2000, 200   -- the activity log drops its oldest lines in blocks
 local DETAILS_MAX = 400
@@ -228,6 +231,23 @@ local function ProbeVersion()
     return P.VERSION
 end
 
+-- Writes back the settings a guided trial saved ({ [name] = value, or false
+-- for a setting this client lacks }). Returns the names that could not be
+-- written back, sorted (empty when all went back).
+function P.PutBackSettings(old)
+    local failed = {}
+    local set = P.Find("C_CVar.SetCVar")
+    for name, value in pairs(type(old) == "table" and old or {}) do
+        if type(value) == "string" then
+            local ok, done = false, nil
+            if type(set) == "function" then ok, done = pcall(set, name, value) end
+            if not (ok and not IsSecret(done) and done) then failed[#failed + 1] = tostring(name) end
+        end
+    end
+    table.sort(failed)
+    return failed
+end
+
 -- Called once, when the saved file has been loaded. Keeps everything earlier
 -- sessions stored and refreshes the parts that describe this build.
 function P.InitDB()
@@ -266,6 +286,15 @@ function P.InitDB()
     end
     db = saved
     P.db = saved
+    -- A guided trial this version no longer has: its settings go back now.
+    for id, g in pairs(saved.guided) do
+        if type(id) ~= "string" or not P.trialById[id] then
+            local failed = P.PutBackSettings(type(g) == "table" and g.old or nil)
+            saved.guided[id] = nil
+            earlyLog[#earlyLog + 1] = Stamp("%H:%M:%S") .. " " .. P.Plain(id, 40) .. ": no such trial any more; settings put back"
+                .. (#failed > 0 and (", except " .. tconcat(failed, ", ")) or "")
+        end
+    end
     for _, t in ipairs(old) do
         if type(t) == "table" and type(t.id) == "string" and t.id:find("^after%.") and not cleared then
             P.AddTrial(t.id, t.area, t.label)

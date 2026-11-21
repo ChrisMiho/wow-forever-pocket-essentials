@@ -31,6 +31,8 @@ local ADDON_NAME, P = ...
 --   graphicsParticleDensity, graphicsQuality    Blizzard_SettingsDefinitions_Shared/Graphics.lua:108-123
 --   SoftTargetLowPriorityIcons                  Blizzard_SettingsDefinitions_Frame/Accessibility.lua:181
 --   SoftTargetInteract                          Blizzard_Gamepad/Core.lua:26
+--   SoftTargetIconEnemy, SoftTargetIconInteract, SoftTargetIconGameObject
+--                                               Blizzard_Gamepad/Core.lua:17, 21, 28
 --
 -- Not in Blizzard's interface source (engine settings), and guarded: the
 -- settings "outlineModeShowLootEffectWhenDisabled" (the sparkle setting) and
@@ -183,6 +185,14 @@ local function BoxShown()
     return shown and true or false
 end
 
+-- Closes the game's error box if it is open (so a test starts from a closed
+-- box, and the box a test opened does not stay over the screen).
+local function CloseBox()
+    local box = ErrorBox()
+    if box and BoxShown() and type(box.Hide) == "function" then pcall(box.Hide, box) end
+end
+P.CloseErrorBox = CloseBox
+
 local function YesNo(v)
     if v == nil then return "unknown" end
     return v and "yes" or "no"
@@ -263,7 +273,8 @@ Add({
 })
 
 Add({
-    id = "err.hook", area = ERRORS, label = "Hook sees a test error", kind = "action", manual = true, wait = 1,
+    -- last: Run all safe runs the two trials that make the error box pop up at its end.
+    id = "err.hook", area = ERRORS, label = "Hook sees a test error", kind = "action", manual = true, last = true, wait = 1,
     run = function(state)
         if not P.EnsureErrorHook() then
             if not ErrorBox() then return "missing", "ScriptErrorsFrame" end
@@ -282,6 +293,8 @@ Add({
         end
         notes = notes .. "; box shown " .. YesNo(BoxShown())
             .. (state.before and " (it was already open)" or "")
+        -- The box this test opened is closed again once it has been looked at.
+        CloseBox()
         return w.reached and true or false, notes
     end,
 })
@@ -302,7 +315,7 @@ Add({
 local ERRORS_SETTING = "scriptErrors"
 
 Add({
-    id = "err.hide", area = ERRORS, label = "Hide the error box", kind = "action", manual = true, wait = 1,
+    id = "err.hide", area = ERRORS, label = "Hide the error box", kind = "action", manual = true, last = true, wait = 1,
     needs = { "C_CVar.GetCVarInfo", "C_CVar.GetCVar", "C_CVar.SetCVar" },
     run = function(state)
         local value, default, _, _, locked, secure, readOnly = Find("C_CVar.GetCVarInfo")(ERRORS_SETTING)
@@ -313,6 +326,12 @@ Add({
         notes[#notes + 1] = "value " .. value .. ", default " .. tostring(Str(default))
             .. ", isSecure " .. YesNo(not IsSecret(secure) and secure) .. ", isReadOnly " .. YesNo(not IsSecret(readOnly) and readOnly)
             .. ", locked " .. YesNo(not IsSecret(locked) and locked)
+        if value == "0" then
+            -- The box is already off: a test error not showing it proves nothing.
+            notes[#notes + 1] = "scriptErrors is already 0, so whether setting it hides the box could not be told"
+            return P.CANT_TELL, tconcat(notes, "; ")
+        end
+        CloseBox()
         local set = Find("C_CVar.SetCVar")
         local same = set(ERRORS_SETTING, value)
         same = not IsSecret(same) and same and true or false
@@ -332,13 +351,17 @@ Add({
     check = function(state)
         local notes = state.notes
         local shown = BoxShown()
+        CloseBox()
         notes[#notes + 1] = "set to 0, then a test error: box shown " .. YesNo(shown)
             .. "; the listener saw it " .. YesNo(state.w.reached)
         if state.before then
-            notes[#notes + 1] = "the box was already open, so this could not be told"
-            return nil, tconcat(notes, "; ")
+            notes[#notes + 1] = "the box was still open after closing it, so this could not be told"
+            return P.CANT_TELL, tconcat(notes, "; ")
         end
-        if shown == nil then return nil, tconcat(notes, "; ") end
+        if shown == nil then
+            notes[#notes + 1] = "whether the box is shown could not be read"
+            return P.CANT_TELL, tconcat(notes, "; ")
+        end
         return not shown, tconcat(notes, "; ")
     end,
     undo = function(state)
@@ -401,6 +424,7 @@ local SPARKLE = "outlineModeShowLootEffectWhenDisabled"
 local GRAPHICS_SETTINGS = {
     SPARKLE, "graphicsOutlineMode", "raidGraphicsOutlineMode", "OutlineEngineMode", "graphicsSpellDensity",
     "graphicsParticleDensity", "graphicsQuality", "SoftTargetLowPriorityIcons", "SoftTargetInteract",
+    "SoftTargetIconInteract", "SoftTargetIconGameObject", "SoftTargetIconEnemy",
 }
 P.SPARKLE = SPARKLE
 
@@ -508,20 +532,28 @@ Add({
 -- player's answer (across a full restart where restart = true), then puts
 -- the old values back.
 Add({
-    id = "gfx.outlines", area = GRAPHICS, label = "Outlines off, then restart", kind = "guided", manual = true,
+    id = "gfx.outlines", area = GRAPHICS, label = "Outlines off, then restart", short = "Outlines off", kind = "guided",
+    manual = true,
     needs = { "C_CVar.GetCVar", "C_CVar.SetCVar" },
     settings = { { "graphicsOutlineMode", "0" }, { "raidGraphicsOutlineMode", "0" }, { SPARKLE, "1" } },
     restart = true,
     start = "Start",
-    steps = "Fully restart the game (not a reload), kill something, then come back here.",
+    steps = "Close the game app completely and open it again (a reload, or logging out to character select, "
+        .. "is not enough), kill something, then come back here.",
     ask = "Did the loot sparkles show on the corpse? Answer with the two buttons.",
     answers = { "Sparkles seen", "No sparkles" },
 })
 
 Add({
-    id = "gfx.icons", area = GRAPHICS, label = "Interact icons on loot", kind = "guided", manual = true,
+    id = "gfx.icons", area = GRAPHICS, label = "Interact icons on loot", short = "Interact icons", kind = "guided",
+    manual = true,
     needs = { "C_CVar.GetCVar", "C_CVar.SetCVar" },
     settings = { { "SoftTargetLowPriorityIcons", "1" } },
+    -- With either of these at 0 no icon can show, whatever the answer: set to 1
+    -- for the trial (and put back with the rest).
+    ifZero = { "SoftTargetIconInteract", "SoftTargetIconGameObject" },
+    -- Noted with the answer.
+    watch = { "SoftTargetIconInteract", "SoftTargetIconGameObject", "SoftTargetIconEnemy" },
     start = "Start",
     ask = "Look at a lootable corpse, then answer with the two buttons.",
     answers = { "Icon seen", "No icon" },

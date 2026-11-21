@@ -1,3 +1,6 @@
+cvar	SoftTargetIconEnemy	Blizzard_Gamepad/Core.lua used
+cvar	SoftTargetIconGameObject	Blizzard_Gamepad/Core.lua used
+cvar	SoftTargetIconInteract	Blizzard_Gamepad/Core.lua used
 cvar	SoftTargetInteract	Blizzard_Gamepad/Core.lua used
 cvar	SoftTargetLowPriorityIcons	Blizzard_SettingsDefinitions_Frame/Accessibility.lua used
 cvar	combinedBags	Blizzard_SettingsDefinitions_Shared/Preset.lua used

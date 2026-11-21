@@ -109,7 +109,9 @@ local INDIRECT = {
     { "cvar", "SoftTargetLowPriorityIcons", "../../probe/PocketProbe/Errors.lua", '"SoftTargetLowPriorityIcons"' },
     { "cvar", "SoftTargetInteract", "../../probe/PocketProbe/Errors.lua", '"SoftTargetInteract"' },
     { "cvar", "OutlineEngineMode", "../../probe/PocketProbe/Errors.lua", '"OutlineEngineMode"' },
-}
+    { "cvar", "SoftTargetIconInteract", "../../probe/PocketProbe/Errors.lua", '"SoftTargetIconInteract"' },
+    { "cvar", "SoftTargetIconGameObject", "../../probe/PocketProbe/Errors.lua", '"SoftTargetIconGameObject"' },
+    { "cvar", "SoftTargetIconEnemy", "../../probe/PocketProbe/Errors.lua", '"SoftTargetIconEnemy"' },}
 -- Event names held as table keys rather than strings.
 -- Strings that look like events but are other constants.
 -- (SMART_NAV_INPUT_DIRECTION is the name of a Blizzard table, listed in INDIRECT above.)

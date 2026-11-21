@@ -160,6 +160,7 @@ local function install(c)
     world.cvars.scriptErrors = "1"
     local box = { errorData = {}, shown = false }
     function box:IsShown() return self.shown end
+    function box:Hide() if not self.stuck then self.shown = false end end
     function box:DisplayMessageInternal(message, messageType, stack, locals)
         self.errorData[#self.errorData + 1] = { message = message, messageType = messageType, stack = stack, locals = locals }
         if not self.shown and world.cvars.scriptErrors ~= "0" then self.shown = true end
@@ -1374,12 +1375,29 @@ test("Errors: hiding the box, and a chained handler (risky); both put things bac
     check(msg:find("box shown no", 1, true), msg)
     eq(c.world.cvars.scriptErrors, "1", "the old value is put back")
     eq(c.errorBox.shown, false)
-    -- With the box already open the answer cannot be told.
+    -- A box left open is closed first, so the test still tells.
     c.errorBox.shown = true
     c:click(showTrial(c, P, "err.hide").ppRun); c:advance(1.5)
-    eq(cell(db, "err.hide", KEY_PRESS), "allowed", "nothing refused it; the details say it could not tell")
-    check(db.last["err.hide"].message:find("already open", 1, true), "says the box was open")
-    c.errorBox.shown = false
+    eq(db.last["err.hide"].result, "allowed", "the open box was closed before the test")
+    eq(c.errorBox.shown, false)
+    -- A box that will not close: "can't tell", never Allowed.
+    c.errorBox.shown, c.errorBox.stuck = true, true
+    c:click(showTrial(c, P, "err.hide").ppRun); c:advance(1.5)
+    eq(db.last["err.hide"].result, "can't tell")
+    eq(cell(db, "err.hide", KEY_PRESS), "allowed / can't tell")
+    check(db.last["err.hide"].message:find("still open after closing it", 1, true), db.last["err.hide"].message)
+    eq(showTrial(c, P, "err.hide").ppChipText:GetText(), "Can't tell")
+    eq(c.world.cvars.scriptErrors, "1", "put back")
+    c.errorBox.shown, c.errorBox.stuck = false, nil
+    -- scriptErrors already 0: "can't tell", and nothing is written.
+    c.world.cvars.scriptErrors = "0"
+    local writes = #c:callsTo("C_CVar.SetCVar")
+    c:click(showTrial(c, P, "err.hide").ppRun)
+    eq(db.last["err.hide"].result, "can't tell")
+    check(db.last["err.hide"].message:find("already 0", 1, true), db.last["err.hide"].message)
+    eq(#c:callsTo("C_CVar.SetCVar"), writes, "nothing written")
+    eq(c.world.cvars.scriptErrors, "0")
+    c.world.cvars.scriptErrors = "1"
     -- The chained handler is risky: inert until Risky is on.
     row = showTrial(c, P, "err.chain")
     eq(row.ppRun.ppDisabled, true)
@@ -1451,21 +1469,28 @@ test("Graphics, guided: Outlines off waits for a full restart, asks, then puts t
     eq(g.old.graphicsOutlineMode, "2"); eq(g.old.outlineModeShowLootEffectWhenDisabled, "0")
     row = showTrial(c, P, "gfx.outlines")
     eq(row.ppChipText:GetText(), "Restart the game")
-    eq(row.ppRun.ppDisabled, true, "Start is dimmed while it waits")
+    eq(row.ppRun.ppLabel:GetText(), "Cancel", "Cancel in place of Start while it waits")
+    eq(row.ppRun.ppDisabled, false)
     check(not row.ppAnswer[1]:IsShown(), "no answers before the restart")
-    check(P.status:find("Fully restart the game", 1, true), "status: " .. tostring(P.status))
-    -- A reload is not a restart.
+    check(P.status:find("Close the game app completely and open it again", 1, true), "status: " .. tostring(P.status))
+    check(P.status:find("logging out to character select", 1, true), "says logging out is not enough")
+    check(P.status:find("Outlines off is waiting for a game restart, or Cancel", 1, true), "status: " .. tostring(P.status))
+    -- A reload is not a restart, and logging out keeps a trial that needs one.
+    c:fire("PLAYER_LOGOUT")
     c:fire("PLAYER_ENTERING_WORLD", false, true)
     eq(saved.guided["gfx.outlines"].stage, "restart")
+    eq(c.world.cvars.graphicsOutlineMode, "0", "kept across the logout")
     -- A full restart: a new session whose login is the first.
     local c2, P2 = new({ saved = saved, setup = function(cl)
         cl.world.cvars.graphicsOutlineMode, cl.world.cvars.raidGraphicsOutlineMode = "0", "0"
         cl.world.cvars.outlineModeShowLootEffectWhenDisabled = "1"
     end })
     eq(saved.guided["gfx.outlines"].stage, "ask")
+    check(P2.status:find("Outlines off is waiting: answer or Cancel", 1, true), "status: " .. tostring(P2.status))
     row = showTrial(c2, P2, "gfx.outlines")
     check(row.ppAnswer[1]:IsShown() and row.ppAnswer[2]:IsShown(), "the two answers show")
-    check(not row.ppRun:IsShown() and not row.ppChip:IsShown(), "in place of the chip and Run")
+    check(not row.ppChip:IsShown(), "in place of the chip")
+    eq(row.ppRun.ppLabel:GetText(), "Cancel")
     eq(row.ppAnswer[1].ppLabel:GetText(), "Sparkles seen"); eq(row.ppAnswer[2].ppLabel:GetText(), "No sparkles")
     c2:click(row.ppAnswer[2])
     eq(cell(saved, "gfx.outlines", KEY_PRESS), "no sparkles")
@@ -1473,27 +1498,165 @@ test("Graphics, guided: Outlines off waits for a full restart, asks, then puts t
     eq(c2.world.cvars.graphicsOutlineMode, "2"); eq(c2.world.cvars.raidGraphicsOutlineMode, "2")
     eq(c2.world.cvars.outlineModeShowLootEffectWhenDisabled, "0")
     check(saved.last["gfx.outlines"].message:find("old values put back", 1, true), saved.last["gfx.outlines"].message)
+    check(not P2.status:find("waiting", 1, true), "the status no longer says it waits")
     row = showTrial(c2, P2, "gfx.outlines")
     eq(row.ppChipText:GetText(), "no sparkles")
     noErrors(c); noErrors(c2)
 end)
 
-test("Graphics, guided: Interact icons asks at once, survives a reload, and puts it back", function()
+test("Graphics, guided: Interact icons asks at once, notes and sets the icon settings, puts them back", function()
+    local saved = { options = { auto = false } }
+    local c, P = new({ saved = saved, setup = function(cl)
+        cl.world.cvars.SoftTargetIconInteract, cl.world.cvars.SoftTargetIconGameObject = "0", "1"
+        cl.world.cvars.SoftTargetIconEnemy = "0"
+    end })
+    c:advance(5)
+    c:click(showTrial(c, P, "gfx.read").ppRun)
+    local msg = saved.last["gfx.read"].message
+    for _, part in ipairs({ "SoftTargetIconInteract 0", "SoftTargetIconGameObject 1", "SoftTargetIconEnemy 0" }) do
+        check(msg:find(part, 1, true), "gfx.read notes " .. part .. ": " .. msg)
+    end
+    c:click(showTrial(c, P, "gfx.icons").ppRun)
+    eq(c.world.cvars.SoftTargetLowPriorityIcons, "1")
+    eq(c.world.cvars.SoftTargetIconInteract, "1", "0 is set to 1 for the trial")
+    eq(c.world.cvars.SoftTargetIconGameObject, "1")
+    local g = saved.guided["gfx.icons"]
+    eq(g.stage, "ask")
+    eq(g.old.SoftTargetIconInteract, "0"); eq(g.old.SoftTargetIconGameObject, nil, "a 1 is left alone")
+    check(g.notes:find("SoftTargetIconInteract 0 -> 1", 1, true), g.notes)
+    check(g.notes:find("SoftTargetIconGameObject 1", 1, true) and g.notes:find("SoftTargetIconEnemy 0", 1, true), g.notes)
+    local row = showTrial(c, P, "gfx.icons")
+    eq(row.ppAnswer[1].ppLabel:GetText(), "Icon seen")
+    c:click(row.ppAnswer[1])
+    eq(cell(saved, "gfx.icons", KEY_PRESS), "icon seen")
+    check(saved.last["gfx.icons"].message:find("SoftTargetIconEnemy 0", 1, true), "the answer keeps the notes")
+    eq(c.world.cvars.SoftTargetLowPriorityIcons, "0", "put back")
+    eq(c.world.cvars.SoftTargetIconInteract, "0", "put back")
+    noErrors(c)
+end)
+
+test("Guided: Cancel, Stop and logging out put the old values back", function()
     local saved = { options = { auto = false } }
     local c, P = new({ saved = saved })
     c:advance(5)
+    -- Cancel while waiting for the restart.
+    c:click(showTrial(c, P, "gfx.outlines").ppRun)
+    c:click(showTrial(c, P, "gfx.outlines").ppRun)
+    eq(saved.guided["gfx.outlines"], nil)
+    eq(c.world.cvars.graphicsOutlineMode, "2"); eq(c.world.cvars.outlineModeShowLootEffectWhenDisabled, "0")
+    eq(countLog(saved, "gfx.outlines: cancelled"), 1)
+    eq(showTrial(c, P, "gfx.outlines").ppRun.ppLabel:GetText(), "Start")
+    -- Cancel while asking.
+    c:click(showTrial(c, P, "gfx.icons").ppRun)
+    c:click(showTrial(c, P, "gfx.icons").ppRun)
+    eq(saved.guided["gfx.icons"], nil); eq(c.world.cvars.SoftTargetLowPriorityIcons, "0")
+    check(not saved.results["gfx.icons"], "a cancelled trial has no answer")
+    -- Stop and /probe stop call off every waiting trial.
+    c:click(showTrial(c, P, "gfx.outlines").ppRun)
+    c:click(showTrial(c, P, "gfx.icons").ppRun)
+    c.env.SlashCmdList.POCKETPROBE("stop")
+    eq(next(saved.guided), nil)
+    eq(c.world.cvars.graphicsOutlineMode, "2"); eq(c.world.cvars.SoftTargetLowPriorityIcons, "0")
+    c:click(showTrial(c, P, "gfx.icons").ppRun)
+    P.Stop()
+    eq(next(saved.guided), nil)
+    -- Logging out (or reloading) puts back a trial that needs no restart.
     c:click(showTrial(c, P, "gfx.icons").ppRun)
     eq(c.world.cvars.SoftTargetLowPriorityIcons, "1")
-    eq(saved.guided["gfx.icons"].stage, "ask")
-    -- A reload: the question is still there.
-    local c2, P2 = new({ saved = saved, setup = function(cl) cl.world.cvars.SoftTargetLowPriorityIcons = "1" end })
-    local row = showTrial(c2, P2, "gfx.icons")
-    eq(row.ppAnswer[1].ppLabel:GetText(), "Icon seen")
-    c2:click(row.ppAnswer[1])
-    eq(cell(saved, "gfx.icons", KEY_PRESS), "icon seen")
-    eq(c2.world.cvars.SoftTargetLowPriorityIcons, "0", "put back")
-    noErrors(c); noErrors(c2)
+    c:fire("PLAYER_LOGOUT")
+    eq(saved.guided["gfx.icons"], nil)
+    eq(c.world.cvars.SoftTargetLowPriorityIcons, "0")
+    eq(countLog(saved, "gfx.icons: put back at logout"), 1)
+    noErrors(c)
 end)
+
+test("Guided: an answer whose put-back fails keeps what failed; Cancel retries", function()
+    local saved = { options = { auto = false } }
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    c:click(showTrial(c, P, "gfx.outlines").ppRun)
+    saved.guided["gfx.outlines"].stage = "ask"
+    -- The game refuses one of the writes back.
+    local set = c.env.C_CVar.SetCVar
+    rawset(c.env.C_CVar, "SetCVar", function(name, value)
+        if name == "raidGraphicsOutlineMode" then return false end
+        return set(name, value)
+    end)
+    c:click(showTrial(c, P, "gfx.outlines").ppAnswer[1])
+    eq(cell(saved, "gfx.outlines", KEY_PRESS), "sparkles seen", "the answer is kept")
+    local g = saved.guided["gfx.outlines"]
+    check(g, "the entry is kept while something is not put back")
+    eq(g.stage, "putback")
+    eq(g.old.raidGraphicsOutlineMode, "2"); eq(g.old.graphicsOutlineMode, nil, "only what failed is kept")
+    eq(c.world.cvars.graphicsOutlineMode, "2")
+    check(P.status:find("could not put back raidGraphicsOutlineMode: tap Cancel to retry", 1, true), P.status)
+    check(saved.last["gfx.outlines"].message:find("could not put back raidGraphicsOutlineMode", 1, true), "said in the answer")
+    local row = showTrial(c, P, "gfx.outlines")
+    eq(row.ppChipText:GetText(), "Not put back")
+    eq(row.ppRun.ppLabel:GetText(), "Cancel")
+    -- Still refused: kept. Then the game takes it.
+    c:click(row.ppRun)
+    check(saved.guided["gfx.outlines"], "still kept")
+    rawset(c.env.C_CVar, "SetCVar", set)
+    c:click(showTrial(c, P, "gfx.outlines").ppRun)
+    eq(saved.guided["gfx.outlines"], nil)
+    eq(c.world.cvars.raidGraphicsOutlineMode, "2")
+    noErrors(c)
+end)
+
+test("Guided: a trial a later version removed is put back and dropped at load", function()
+    local saved = { options = { auto = false }, guided = {
+        ["gfx.gone"] = { stage = "ask", old = { graphicsOutlineMode = "3", NoSuchSetting = false } },
+        ["gfx.icons"] = { stage = "ask", old = { SoftTargetLowPriorityIcons = "0" } },
+    } }
+    local c, P = new({ saved = saved, setup = function(cl) cl.world.cvars.graphicsOutlineMode = "0" end })
+    eq(saved.guided["gfx.gone"], nil)
+    eq(c.world.cvars.graphicsOutlineMode, "3", "its setting is put back")
+    check(saved.guided["gfx.icons"], "a trial that still exists is kept")
+    eq(countLog(saved, "gfx.gone: no such trial any more; settings put back"), 1)
+    noErrors(c)
+end)
+
+test("a reload while a trial waits for its check puts it back first", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    c:click(showTrial(c, P, "err.hide").ppRun)
+    eq(c.world.cvars.scriptErrors, "0")
+    c:click(button(c, "PocketProbeSaveButton"))
+    eq(c.reloads, 1)
+    eq(c.world.cvars.scriptErrors, "1", "Save put scriptErrors back before reloading")
+    eq(countLog(db, "err.hide: put back before the reload"), 1)
+    c:advance(1.5)
+    eq(c.world.cvars.scriptErrors, "1", "the check does not undo twice")
+    -- Clean run reloads too.
+    local c2, P2, db2 = new({ auto = false })
+    c2:advance(5)
+    c2:click(showTrial(c2, P2, "err.hide").ppRun)
+    c2:click(button(c2, "PocketProbeCleanButton"))
+    eq(c2.world.cvars.scriptErrors, "1")
+    -- And a logout.
+    local c3, P3 = new({ auto = false })
+    c3:advance(5)
+    c3:click(showTrial(c3, P3, "err.hide").ppRun)
+    c3:fire("PLAYER_LOGOUT")
+    eq(c3.world.cvars.scriptErrors, "1")
+    noErrors(c); noErrors(c2); noErrors(c3)
+end)
+
+test("Run all safe ends with the two error-box trials, and the box is closed after the hook test", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    local list = P.SafeList(false)
+    eq(list[#list - 1].id, "err.hook"); eq(list[#list].id, "err.hide")
+    openPanel(c)
+    c:click(button(c, "PocketProbeRunAllButton")); c:advance(40)
+    eq(cell(db, "err.hook", KEY_PRESS), "allowed")
+    check(db.last["err.hook"].message:find("box shown yes", 1, true), "the box showed for the hook test")
+    eq(cell(db, "err.hide", KEY_PRESS), "allowed", "the box was closed again, so Hide could tell")
+    eq(c.errorBox.shown, false)
+    noErrors(c)
+end)
+
 
 ---------------------------------------------------------------------------
 -- Run

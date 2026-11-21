@@ -444,6 +444,12 @@ do
     local refusals = R.format(db, { detailsOnly = true })
     eq(refusals[1], "Not allowed: 1 entry", "--details lists only the refusals")
     eq(refusals[3], "Hook sees a test error (err.hook)")
+    -- An action that could not see its outcome is printed as "can't tell", never as allowed.
+    local tell = { trials = { { id = "err.hide", area = "Errors", label = "Hide the error box", kind = "action" } },
+        results = { ["err.hide"] = { [PRESS] = "allowed / can't tell" } } }
+    local printed = R.format(tell)
+    eq(printed[#printed - 2], "  Hide the error box  allowed / can't tell", "a can't-tell cell")
+    eq(R.cell(tell, "err.hide", PRESS), "allowed / can't tell")
     eq(R.formatReadings(fixture(), {}, R.areas(fixture())), {}, "a 0.2.0 file has no readings section")
     eq(R.formatGuided(fixture()), {}, "nor a guided section")
 end

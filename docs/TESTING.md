@@ -209,6 +209,8 @@ looks the same.
   - amber **Blocked** (or Forbidden, Error): the game refused it;
   - grey **Not run**: not tried yet;
   - blue: what it read, for example "function" or "sparkle 0 · outline 2".
+  - grey-blue **Can't tell**: nothing refused it, but the probe could not
+    see whether it worked (for example the error box was already off).
   - **Run** tries that one trial at once, straight from your tap.
   - Trials marked "(risky)" are dimmed, and their Run does nothing, while
     **Risky** is Off.
@@ -235,22 +237,34 @@ or the top of the window, says "controls may misbehave until a reload", tap
 
 - **Errors** (for the coming error catcher in Pocket Essentials): whether the
   game's error handler and error box are there, whether the probe can listen
-  to the box (it raises one harmless test error of its own, so the game's
-  error box will pop up: close it), how many errors other addons and the game
-  had this session and from where, whether turning the box off works (it is
-  turned back on straight away), and a risky trial with a handler of our own.
-  It never saves another addon's error text, only where it came from.
+  to the box, how many errors other addons and the game had this session and
+  from where, whether turning the box off works (it is turned back on
+  straight away), and a risky trial with a handler of our own. Two of them
+  raise one harmless test error of the probe's own, so the game's error box
+  pops up for a moment; the probe closes it again. Run all safe does those
+  two last. It never saves another addon's error text, only where it came
+  from.
 - **Graphics** (why the loot sparkles do not show on the handheld): reads the
-  outline and sparkle settings, writes the sparkle one (and puts it back),
-  lists the setting names the game knows, and two **guided** trials. A guided
-  trial has **Start** instead of Run. It changes a setting, tells you what to
-  do (in the Details line and at the top of the window), and then shows two
-  answer buttons. Your answer is saved and the old setting is put back.
-  - **Outlines off, then restart:** after Start, fully close and restart the
-    game (a reload is not enough), kill something, open the window again, go
-    to Graphics and tap **Sparkles seen** or **No sparkles**.
+  outline, sparkle and interact-icon settings, writes the sparkle one (and
+  puts it back), lists the setting names the game knows, and two **guided**
+  trials. A guided trial has **Start** instead of Run. It changes a setting,
+  tells you what to do (in the Details line and at the top of the window),
+  and then shows two answer buttons. Your answer is saved and the old
+  settings are put back.
+  - While a guided trial waits, its row has **Cancel** in place of Start, and
+    the line at the top says so (for example "Outlines off is waiting: answer
+    or Cancel"). **Cancel**, **Stop** and `/probe stop` put the old settings
+    back without an answer. If the game refuses to put a setting back, the
+    row says "Not put back": tap **Cancel** to try again.
+  - **Outlines off, then restart:** after Start, close the game app
+    completely and open it again. A reload is not enough, and neither is
+    logging out to character select. Then kill something, open the window
+    again, go to Graphics and tap **Sparkles seen** or **No sparkles**.
   - **Interact icons on loot:** after Start, look at a lootable corpse, then
-    tap **Icon seen** or **No icon**.
+    tap **Icon seen** or **No icon**. If the interact or object icon setting
+    was off, the probe turns it on for this trial too. Logging out or
+    reloading before you answer puts the settings back (start again
+    afterwards).
 
 **Steps (one run of 0.3.0):**
 
@@ -261,7 +275,7 @@ Leave Risky off for steps 1 to 5.
 2. Tap **Run all safe** and wait for "pass done" at the top of the window.
 3. Open **Errors**, tap a few rows to read their Details. Open **Graphics**
    and do **Interact icons on loot**, then **Outlines off, then restart**
-   (this one needs a full restart of the game).
+   (this one needs the game app closed completely and opened again).
 4. Pick a fight with something weak and tap **Run all safe** during the
    fight (by touch).
 5. Open a vendor with grey items and damaged gear, open the window, switch
@@ -315,6 +329,7 @@ What a cell means:
 | `forbidden` | The game refused it with the "blocked from an action" pop-up. |
 | `error` | It failed with an error message. |
 | `missing` | This game version does not have the function. |
+| `can't tell` | It ran and nothing refused it, but the probe could not see whether it worked. Never counted as allowed. |
 | `readable`, `secret`, `nil` | For values the probe only reads: the addon can see it, the game hides it, or there was nothing to read. |
 | `allowed / blocked` | Two passes in the same situation got different answers. Both are kept, so the difference shows. |
 | `-` | Not tried in that situation. |

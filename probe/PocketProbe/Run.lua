@@ -27,8 +27,21 @@ local function After(seconds, fn)
 end
 
 local FlushQuiet             -- below: writes the count of repeats not yet logged
+local current               -- the trial being run: { signals, undoSignals, phase, undo }
+
+-- Puts back what a trial still waiting for its check has changed (a reload
+-- or a logout in that second would otherwise keep, say, scriptErrors at 0).
+local function UndoCurrent(why)
+    local cur = current
+    if not cur or not cur.undo or cur.undone then return end
+    cur.undone = true
+    local ok, err = pcall(cur.undo)
+    Log(tostring(cur.id) .. ": put back before " .. why .. (ok and "" or (" (failed: " .. P.Plain(err) .. ")")))
+end
+P.UndoCurrent = UndoCurrent
 
 local function Reload()
+    UndoCurrent("the reload")
     FlushQuiet()
     Log("reloading")
     local reload = Find("C_UI.Reload")
@@ -50,8 +63,6 @@ end
 --   * a Lua error from the call.
 -- Each is pinned on the trial running at that moment.
 ---------------------------------------------------------------------------
-
-local current               -- the trial being run: { signals, undoSignals, phase }
 
 ---------------------------------------------------------------------------
 -- Afterwards: signs that arrive when no trial is running. On the device the
@@ -285,6 +296,9 @@ local function Conclude(trial, key, inPress, cur, expected, message)
     elseif expected == "missing" then
         result = "missing"
         message = (message or "a method") .. " is not on this client"
+    elseif expected == P.CANT_TELL then
+        -- Nothing refused it, but the trial could not see whether it worked.
+        result = P.CANT_TELL
     elseif expected == false then
         result = "no effect"
     else
@@ -335,11 +349,13 @@ local function RunTrial(trial, pass, inPress, done)
     EnsureHook()
     local state = {}
     local cur = { signals = {}, undoSignals = {}, phase = "run", id = trial.id }
+    if trial.undo then cur.undo = function() trial.undo(state) end end
     current = cur
 
     local function Finish(expected, message)
         cur.phase = "undo"
-        if trial.undo then
+        if trial.undo and not cur.undone then
+            cur.undone = true
             local ok, err = pcall(trial.undo, state)
             if not ok then cur.undoSignals[#cur.undoSignals + 1] = { kind = "error", message = P.Plain(err) } end
         end
@@ -436,7 +452,32 @@ local function Busy()
 end
 P.Busy = Busy
 
+-- While a guided trial waits, the status line says so, whatever else it says.
+local function GuidedNote()
+    if not db or type(db.guided) ~= "table" then return nil end
+    local ids = {}
+    for id in pairs(db.guided) do ids[#ids + 1] = tostring(id) end
+    if #ids == 0 then return nil end
+    table.sort(ids)
+    local parts = {}
+    for _, id in ipairs(ids) do
+        local g, t = db.guided[id], P.trialById[id]
+        local name = (t and (t.short or t.label)) or id
+        local stage = type(g) == "table" and g.stage or nil
+        if stage == "restart" then
+            parts[#parts + 1] = name .. " is waiting for a game restart, or Cancel"
+        elseif stage == "putback" then
+            parts[#parts + 1] = name .. " could not put back: tap Cancel to retry"
+        else
+            parts[#parts + 1] = name .. " is waiting: answer or Cancel"
+        end
+    end
+    return tconcat(parts, "; ")
+end
+
 local function SetStatus(text)
+    local note = GuidedNote()
+    if note then text = text .. " — " .. note end
     P.status = text
     statusText:SetText(text)
     if Busy() then stopButton:Show() else stopButton:Hide() end
@@ -503,16 +544,20 @@ end
 
 -- "Run all safe": every trial that is not risky, guided or waiting for an
 -- event: actions, then (withVendor) the vendor trials, then values and
--- the "info" trials.
+-- the "info" trials, and last the trials marked last (the two that raise a
+-- test error and make the game's error box pop up).
 local function SafeList(withVendor)
-    local list = {}
+    local list, last = {}, {}
     for _, t in ipairs(P.trials) do
-        if t.kind == "action" and not t.vendor and not t.risky then list[#list + 1] = t end
+        if t.kind == "action" and not t.vendor and not t.risky then
+            if t.last then last[#last + 1] = t else list[#list + 1] = t end
+        end
     end
     if withVendor then VendorList(list) end
     for _, t in ipairs(P.trials) do
         if (t.kind == "value" or t.kind == "info") and not t.event and not t.risky then list[#list + 1] = t end
     end
+    for _, t in ipairs(last) do list[#list + 1] = t end
     return list
 end
 P.SafeList = SafeList
@@ -658,9 +703,12 @@ local function RunOne(trial)
     end)
 end
 
+local CancelAllGuided       -- below, with the guided trials
+
 local function Stop()
     pass = nil
     pendingFull, pendingVendor = false, false
+    CancelAllGuided("stopped")
     if db and db.clean.running then
         db.clean.running = false
         Log("clean trials stopped")
@@ -759,11 +807,17 @@ end
 -- like any result, and only then are the old values put back. The saved
 -- table keeps all of it, so a full restart (or a reload) loses nothing.
 --
---   db.guided[id] = { stage = "restart" | "ask", old = { [name] = value | false },
---                     started = "<date time>", notes = "<what was set>" }
+--   db.guided[id] = { stage = "restart" | "ask" | "putback",
+--                     old = { [name] = value | false }, started = "<date time>",
+--                     notes = "<what was set>" }
 -- stage "restart": waiting for a full restart (PLAYER_ENTERING_WORLD with
 -- isInitialLogin true); a reload is not enough. "ask": the two answer
--- buttons show. old[name] = false: the setting is not on this client.
+-- buttons show. "putback": answered, but some old values could not be
+-- written back; old then holds only those, and Cancel tries again.
+-- old[name] = false: the setting is not on this client.
+--
+-- Nothing is left changed for good: Cancel, Stop and /probe stop put the old
+-- values back, and so does logging out for a trial that needs no restart.
 ---------------------------------------------------------------------------
 
 local function SettingNow(name)
@@ -790,16 +844,21 @@ local function StartGuided(trial)
         P.Record(trial.id, (P.Situation("press")), "missing", { message = missing .. " is not on this client" })
         return SetStatus(trial.id .. ": " .. missing .. " is not on this client")
     end
+    -- What to set: the trial's own settings, plus each "ifZero" setting that is 0 now.
+    local settings = {}
+    for _, pair in ipairs(trial.settings or {}) do settings[#settings + 1] = pair end
+    for _, name in ipairs(trial.ifZero or {}) do
+        if SettingNow(name) == "0" then settings[#settings + 1] = { name, "1" } end
+    end
     local old, notes = {}, {}
-    for _, pair in ipairs(trial.settings or {}) do
-        local name = pair[1]
-        local value = SettingNow(name)
-        old[name] = value == nil and false or value
+    for _, pair in ipairs(settings) do
+        local value = SettingNow(pair[1])
+        old[pair[1]] = value == nil and false or value
     end
     -- Saved before anything is changed, so a crash still leaves the old values to put back.
     local g = { stage = trial.restart and "restart" or "ask", old = old, started = P.Stamp("%Y-%m-%d %H:%M:%S") }
     db.guided[trial.id] = g
-    for _, pair in ipairs(trial.settings or {}) do
+    for _, pair in ipairs(settings) do
         local name, value = pair[1], pair[2]
         if old[name] == false then
             notes[#notes + 1] = name .. " not on this client"
@@ -808,20 +867,57 @@ local function StartGuided(trial)
             notes[#notes + 1] = name .. " " .. tostring(old[name]) .. " -> " .. value .. (written and "" or " (refused)")
         end
     end
+    -- Settings only noted, so the answer can be read against them.
+    for _, name in ipairs(trial.watch or {}) do
+        if old[name] == nil then notes[#notes + 1] = name .. " " .. tostring(SettingNow(name) or "not on this client") end
+    end
     g.notes = tconcat(notes, ", ")
     Log(trial.id .. ": started; " .. g.notes)
     SetStatus(trial.id .. ": " .. (g.stage == "restart" and (trial.steps or "restart the game") or (trial.ask or "answer")))
 end
 
-local function PutBack(g)
-    local notes = {}
-    for name, value in pairs(type(g.old) == "table" and g.old or {}) do
-        if type(value) == "string" then
-            local written = WriteSetting(name, value)
-            if not written then notes[#notes + 1] = name .. " could not be put back" end
+-- Writes the old values back. Keeps the entry, holding only the settings that
+-- failed, when any did; returns their names.
+local function PutBack(id, g)
+    local failed = P.PutBackSettings(g.old)
+    if #failed == 0 then
+        db.guided[id] = nil
+    else
+        local keep = {}
+        for _, name in ipairs(failed) do keep[name] = g.old[name] end
+        g.old, g.stage = keep, "putback"
+        Log(tostring(id) .. ": could not put back " .. tconcat(failed, ", "))
+    end
+    return failed
+end
+
+local function CancelGuided(trial)
+    if type(trial) ~= "table" then return end
+    local g = db and db.guided[trial.id]
+    if type(g) ~= "table" then return end
+    local failed = PutBack(trial.id, g)
+    if #failed == 0 then
+        Log(trial.id .. ": cancelled; old values put back")
+        SetStatus(trial.id .. ": cancelled, old values put back")
+    else
+        SetStatus(trial.id .. ": could not put back " .. tconcat(failed, ", ") .. ": tap Cancel to retry")
+    end
+end
+
+-- Stop, /probe stop: every waiting guided trial is called off.
+CancelAllGuided = function(why)
+    if not db then return end
+    local ids = {}
+    for id in pairs(db.guided) do ids[#ids + 1] = id end
+    for _, id in ipairs(ids) do
+        local g = db.guided[id]
+        if type(g) == "table" then
+            local failed = PutBack(id, g)
+            Log(tostring(id) .. ": cancelled (" .. why .. ")" .. (#failed > 0 and "; some settings could not be put back" or ""))
+        else
+            db.guided[id] = nil
         end
     end
-    return notes
 end
 
 local function AnswerGuided(trial, index)
@@ -830,24 +926,46 @@ local function AnswerGuided(trial, index)
     if type(g) ~= "table" or g.stage ~= "ask" then return end
     local answer = trial.answers and trial.answers[index]
     if type(answer) ~= "string" then return end
-    local problems = PutBack(g)
-    db.guided[trial.id] = nil
+    local notes, started = g.notes, g.started
+    local failed = PutBack(trial.id, g)
     local key, facts = P.Situation("press")
     P.EnsureSituation(key, facts)
     P.Record(trial.id, key, answer:lower(), {
-        message = "set: " .. tostring(g.notes) .. "; started " .. tostring(g.started)
-            .. "; " .. (#problems > 0 and tconcat(problems, ", ") or "old values put back"),
+        message = "set: " .. tostring(notes) .. "; started " .. tostring(started) .. "; "
+            .. (#failed > 0 and ("could not put back " .. tconcat(failed, ", ")) or "old values put back"),
     })
-    SetStatus(trial.id .. ": answered, old values put back")
+    if #failed > 0 then
+        SetStatus(trial.id .. ": answered; could not put back " .. tconcat(failed, ", ") .. ": tap Cancel to retry")
+    else
+        SetStatus(trial.id .. ": answered, old values put back")
+    end
 end
 
 -- After a full restart, guided trials waiting for one ask their question.
 local function GuidedAfterLogin(isInitialLogin)
     if IsSecret(isInitialLogin) or isInitialLogin ~= true then return end
+    local asked = false
     for id, g in pairs(db.guided) do
         if type(g) == "table" and g.stage == "restart" then
             g.stage = "ask"
+            asked = true
             Log(tostring(id) .. ": the game was restarted; waiting for the answer")
+        end
+    end
+    if asked then SetStatus("the game was restarted: tap Probe and answer") end
+end
+
+-- Logging out (or a reload): a guided trial that needs no restart puts its
+-- settings back, so none stays changed if the player never answers.
+local function GuidedAtLogout()
+    if not db then return end
+    local ids = {}
+    for id in pairs(db.guided) do ids[#ids + 1] = id end
+    for _, id in ipairs(ids) do
+        local g, t = db.guided[id], P.trialById[id]
+        if type(g) == "table" and not (t and t.restart) then
+            PutBack(id, g)
+            Log(tostring(id) .. ": put back at logout")
         end
     end
 end
@@ -984,6 +1102,12 @@ function handlers.ADDON_ACTION_FORBIDDEN(addon, func) OnActionEvent("ADDON_ACTIO
 function handlers.LUA_WARNING() if P.CountWarning then P.CountWarning() end end
 handlers.CHAT_MSG_WHISPER = OnWhisper
 
+-- The game writes the saved file after this: nothing may stay changed.
+function handlers.PLAYER_LOGOUT()
+    UndoCurrent("logging out")
+    GuidedAtLogout()
+end
+
 local eventFrame = CreateFrame("Frame", nil, UIParent)
 for event in pairs(handlers) do
     -- A client without the event raises an error on registering it.
@@ -1003,3 +1127,4 @@ EnsureHook()
 -- For the panel and the offline tests.
 P.RunAllSafe, P.RunOne, P.Stop, P.BeginClean, P.Reload = RunAllSafe, RunOne, Stop, BeginClean, Reload
 P.ToggleOption, P.StartGuided, P.AnswerGuided = ToggleOption, StartGuided, AnswerGuided
+P.CancelGuided = CancelGuided

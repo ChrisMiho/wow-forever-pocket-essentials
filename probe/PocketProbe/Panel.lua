@@ -63,6 +63,8 @@ local CHIP = {
     blocked = { fill = { 0.52, 0.28, 0.03 }, border = { 1.00, 0.62, 0.15 } },
     notrun  = { fill = { 0.16, 0.16, 0.18 }, border = { 0.40, 0.40, 0.43 } },
     value   = { fill = { 0.10, 0.12, 0.18 }, border = { 0.45, 0.60, 0.85 } },
+    -- grey-blue: ran, nothing refused it, but it could not see the outcome
+    info    = { fill = { 0.13, 0.14, 0.17 }, border = { 0.47, 0.52, 0.62 } },
 }
 local GOLDBROWN, PANELFILL = { 0.62, 0.52, 0.22 }, { 0.05, 0.05, 0.07 }
 local CARD, CARD_SELECTED, TAB_SELECTED = { 0.085, 0.085, 0.10 }, { 0.13, 0.12, 0.09 }, { 0.56, 0.42, 0.03 }
@@ -268,7 +270,12 @@ for i = 1, POOL_ROWS do
     r.ppRun = NewButton(r, nil, function()
         local e = r.ppEntry
         if not e or not e.def then return end
-        if e.def.kind == "guided" then P.StartGuided(e.def) else P.RunOne(e.def) end
+        if e.def.kind == "guided" then
+            -- Start, or Cancel while the trial waits (it puts the old values back).
+            if P.db and P.db.guided[e.id] then P.CancelGuided(e.def) else P.StartGuided(e.def) end
+        else
+            P.RunOne(e.def)
+        end
     end)
     r.ppAnswer = {}
     for k = 1, 2 do
@@ -329,11 +336,13 @@ local function ChipFor(entry)
     local g = db and db.guided[entry.id]
     if type(g) == "table" then
         if g.stage == "restart" then return "Restart the game", CHIP.value end
+        if g.stage == "putback" then return "Not put back", CHIP.blocked end
         return "Waiting", CHIP.value
     end
     local last = db and db.last[entry.id]
     if type(last) ~= "table" or last.result == nil then return "Not run", CHIP.notrun end
     local result = tostring(last.result)
+    if result == P.CANT_TELL then return "Can't tell", CHIP.info end
     local word = CHIP_WORDS[result]
     if result == "allowed" then return word, CHIP.allowed end
     if word then return word, CHIP.blocked end
@@ -354,8 +363,14 @@ local function DetailsFor(entry)
     local g = db and db.guided[entry.id]
     if def and def.kind == "guided" then
         if type(g) == "table" then
+            if g.stage == "putback" then
+                local names = {}
+                for name in pairs(type(g.old) == "table" and g.old or {}) do names[#names + 1] = tostring(name) end
+                table.sort(names)
+                return "Could not put back " .. tconcat(names, ", ") .. ": tap Cancel to retry."
+            end
             local step = (g.stage == "restart") and (def.steps or "Fully restart the game.") or (def.ask or "Answer with the two buttons.")
-            return step .. " Set: " .. tostring(g.notes or "") .. "."
+            return step .. " Cancel puts the old values back. Set: " .. tostring(g.notes or "") .. "."
         end
     end
     local last = db and db.last[entry.id]
@@ -502,10 +517,11 @@ local function Layout()
         r.ppChip:SetSize(chipW, m.button)
         r.ppChipText:SetWidth(chipW - m.gap * 0.8)
         local both = runW + chipW + m.gap
-        local answerW = (both - m.gap) / 2
+        -- The two answers share the chip's place; Cancel stays in Run's place.
+        local answerW = (chipW - m.gap) / 2
         for k, b in ipairs(r.ppAnswer) do
             b:ClearAllPoints()
-            b:SetPoint("TOPRIGHT", r, "TOPRIGHT", -(m.pad + (2 - k) * (answerW + m.gap)), -inner)
+            b:SetPoint("TOPRIGHT", r, "TOPRIGHT", -(m.pad + runW + m.gap + (2 - k) * (answerW + m.gap)), -inner)
             b:SetSize(answerW, m.button)
         end
         m.answerW = answerW
@@ -586,12 +602,13 @@ local function ShowRows()
             local g = db and db.guided[e.id]
             if def and def.kind == "guided" and type(g) == "table" and g.stage == "ask" then
                 r.ppChip:Hide()
-                r.ppRun:Hide()
                 for k, b in ipairs(r.ppAnswer) do
                     SetButton(b, def.answers[k], "normal")
                     FitLabel(b, m.answerW - m.gap * 0.5)
                     b:Show()
                 end
+                SetButton(r.ppRun, "Cancel", "normal")
+                r.ppRun:Show()
             else
                 for _, b in ipairs(r.ppAnswer) do b:Hide() end
                 local word, colours = ChipFor(e)
@@ -600,7 +617,11 @@ local function ShowRows()
                 Color(r.ppChipText, { 1, 1, 1 })
                 r.ppChip:Show()
                 if def and def.kind == "guided" then
-                    SetButton(r.ppRun, def.start or "Start", "normal", type(g) == "table")
+                    if type(g) == "table" then
+                        SetButton(r.ppRun, "Cancel", "normal")
+                    else
+                        SetButton(r.ppRun, def.start or "Start", "normal")
+                    end
                 else
                     SetButton(r.ppRun, "Run", "normal", RunDisabled(def))
                 end
@@ -682,10 +703,9 @@ local function RowStops(i)
     if not r or not r:IsShown() then return {} end
     local stops = { r }
     if r.ppAnswer[1]:IsShown() then
-        stops[2], stops[3] = r.ppAnswer[1], r.ppAnswer[2]
-    elseif r.ppRun:IsShown() then
-        stops[2] = r.ppRun
+        stops[#stops + 1], stops[#stops + 2] = r.ppAnswer[1], r.ppAnswer[2]
     end
+    if r.ppRun:IsShown() then stops[#stops + 1] = r.ppRun end
     return stops
 end
 
