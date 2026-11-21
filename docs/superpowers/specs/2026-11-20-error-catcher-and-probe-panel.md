@@ -1,6 +1,6 @@
 # Error catcher and probe panel
 
-**Status:** draft. It waits for the owner's OK on the mockups (the "Probe panel" and "Error catcher" views in `docs/ui-review/mockup-0.8.1.html`, Proposed).
+**Status:** approved by the owner on 2026-11-20 ("this is perfect, lets see what the probe pannel is gonna look like"). Part 1 (probe) is built first; Part 2 waits for its device run.
 
 **Owner (2026-11-20):** "we need another feature to make managing bugs easier ... since the blizzard ui clearly has bugs"; "is it possible to add a check to see if the other addon is enabled"; "can this bug grabber also help navigate the popups ... almost working like how bugsack works"; "can any of this be automated through the probe ... it doesnt just automatically fire when i login, maybe we build a tad nicer ui for me to drive our tests with".
 
