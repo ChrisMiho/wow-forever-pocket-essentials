@@ -37,6 +37,7 @@ local TABS = {
     { id = "gameFixes", label = "Game fixes", features = { "menuBg", "sparkles" }, heading = true },
     { id = "general", label = "General" },
     { id = "errors", label = "Errors" },
+    { id = "debug", label = "Debug log" },
 }
 PE.SETTINGS_TABS = TABS
 
@@ -77,6 +78,8 @@ local function ResetButton(btn)
     btn:SetStyle("normal")
     btn:SetBadgeText(nil)
     btn:ClearAllPoints()
+    btn.peErrorStep = nil
+    if M then pcall(btn.peText.SetFontObject, btn.peText, M.font) end
 end
 
 ---------------------------------------------------------------------------
@@ -163,13 +166,20 @@ function Drawer:Reach(bottom)
 end
 
 -- kind: "font", "small" or "title". Returns the height of the text and the
--- text itself (the caller may move it).
-function Drawer:Text(kind, text, x, y, width, color)
+-- text itself (the caller may move it). maxLines: at most that many lines
+-- show (the rest is cut at the edge); nil for no limit.
+function Drawer:Text(kind, text, x, y, width, color, maxLines)
     local fontString = self:Acquire(kind)
     fontString:ClearAllPoints()
     fontString:SetJustifyH("LEFT") -- a reused one may have been a centred text between buttons
     fontString:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -y)
+    -- Set on every use: the text is reused for other lines.
+    pcall(fontString.SetMaxLines, fontString, maxLines or 0)
     local height = SetText(fontString, kind, text, width, color)
+    if maxLines then
+        local size = (kind == "small" and M.smallFontSize) or (kind == "title" and M.fontSize * 1.12) or M.fontSize
+        height = min(height, maxLines * size * 1.2)
+    end
     self:Reach(y + height)
     return height, fontString
 end
@@ -189,10 +199,11 @@ local function AddStop(self, btn, top, bottom)
     self.navList[#self.navList + 1] = btn
 end
 
--- One button at a fixed place and size.
-function Drawer:Button(text, x, y, width, height, style, onClick)
+-- One button at a fixed place and size. small: its label in the small font.
+function Drawer:Button(text, x, y, width, height, style, onClick, small)
     local btn = self:Acquire("button")
     ResetButton(btn)
+    if small then pcall(btn.peText.SetFontObject, btn.peText, M.smallFont) end
     btn:SetLabel(text)
     btn:SetSize(width, height)
     btn:SetPoint("TOPLEFT", self.child, "TOPLEFT", x, -y)
@@ -261,9 +272,11 @@ end
 
 -- A row: the name on the left (with an optional help line under it), the
 -- control on the right, both centred on the row. draw(cx, cy, cw, top,
--- bottom) places the control (may be nil). Returns the y one gap below.
-function Drawer:Row(label, help, x, y, innerWidth, draw)
-    local cw = UI:ControlWidth(innerWidth)
+-- bottom) places the control (may be nil). need: the width the control needs
+-- (UI:ControlWidth grows it up to what the name leaves free). Returns the y
+-- one gap below.
+function Drawer:Row(label, help, x, y, innerWidth, draw, need)
+    local cw = UI:ControlWidth(innerWidth, need, label)
     local lw = max(innerWidth - cw - M.gap, 10)
     local nameHeight, name = self:Text("font", label or "", x, y, lw, COLOR.name)
     local helpHeight, helpText = 0, nil
@@ -293,10 +306,15 @@ function Drawer:Row(label, help, x, y, innerWidth, draw)
     return y + height + M.gap
 end
 
+-- A choice row's control grows to fit its labels (spec 2026-11-20-error-
+-- catcher-and-probe-panel, "Shared rule"), so no choice is cut; the
+-- segmented choice's small font is kept for anything still too long.
 function Drawer:ChoiceRow(label, items, x, y, innerWidth, help)
+    local labels = {}
+    for i, item in ipairs(items) do labels[i] = item.label or "" end
     return self:Row(label, help, x, y, innerWidth, function(cx, cy, cw)
         self:Segmented(cx, cy, cw, items)
-    end)
+    end, UI:ChoiceWidth(labels))
 end
 
 function Drawer:ActionRow(label, buttonText, onClick, x, y, innerWidth, style, help)
@@ -640,7 +658,8 @@ function Drawer:FeatureCard(mod, x, y, width, opts)
             self:Divider(ix, y2 - M.gap * 0.5, iw)
             y2 = y2 + M.gap * 0.5
             y2 = self:Options(mod, ix, y2, iw, opts)
-        elseif hasOptions and state ~= "on" and not opts.setup then
+        elseif hasOptions and state ~= "on" and not opts.setup
+                and not (state == "blocked" and type(mod.blocked) == "function") then
             y2 = y2 + self:Text("small", TEXT_SWITCH_ON_FIRST, ix, y2, iw, COLOR.dim) + M.gap
         end
         return y2
@@ -845,46 +864,167 @@ local function DebugCard(y, width)
     end)
 end
 
-local function ErrorsCard(y, width)
+local function BuildDebug(width)
+    return DebugCard(0, width)
+end
+
+-- The viewer (the Errors tab's second card): one error per page, BugSack
+-- style. Its filter and page are kept for the session only.
+local viewer = { filter = "all", index = 1 }
+
+local FILTERS = {
+    { value = "all", label = "All" },
+    { value = "pe", label = "Pocket Essentials" },
+    { value = "blizz", label = "Blizzard" },
+    { value = "other", label = "Other addons" },
+}
+
+local TEXT_ONLY_OURS = "Only Pocket Essentials' own errors are listed while this is off."
+
+-- The entries the viewer lists now, and whether others' errors are listed
+-- (Catch all errors may be missing, if its file did not load).
+local function ViewerEntries()
+    local catcher = PE.ErrorCatcher
+    if catcher and catcher.Entries then
+        local ok, entries = PE:Safe("errors", catcher.Entries, catcher, viewer.filter)
+        if ok and type(entries) == "table" then return entries, catcher:Listing() end
+    end
+    local out = {}
+    for _, e in ipairs(PE.errors) do
+        if type(e) == "table" then
+            out[#out + 1] = { source = PE:ModuleLabel(e.module), msg = tostring(e.msg), stack = e.stack,
+                count = tonumber(e.count) or 1, last = tonumber(e.last) or 0 }
+        end
+    end
+    return out, false
+end
+
+-- Moves the viewer one error back (-1) or on (+1). Returns true when it moved.
+local function ViewerStep(step)
+    local entries = ViewerEntries()
+    local i = min(max(viewer.index, 1), max(#entries, 1)) + step
+    if i < 1 or i > #entries then return false end
+    viewer.index = i
+    return true
+end
+
+local function ClearAll()
+    local catcher = PE.ErrorCatcher
+    if catcher and catcher.ClearAll then catcher:ClearAll() else PE:ClearErrors() end
+    viewer.index = 1
+end
+
+-- The text of a stack cut to its first `lines` lines.
+local function FirstLines(text, lines)
+    local out = {}
+    for line in (tostring(text or "") .. "\n"):gmatch("(.-)\n") do
+        if line ~= "" then
+            out[#out + 1] = line
+            if #out >= lines then break end
+        end
+    end
+    return table.concat(out, "\n")
+end
+
+-- The page must fit the window with no scroll bar (spec "The viewer"): the
+-- message shows at most 3 lines and the stack at most 6, fewer when the
+-- window is short. Longer text is cut at the edge; the saved file keeps it.
+local function ViewerCard(y, width)
     return list:Card(0, y, width, function(ix, iy, iw)
-        local errors = PE.errors
-        local cw = UI:ControlWidth(iw)
+        local entries, listing = ViewerEntries()
         local yy = iy
-        local h, label = list:Text("font", "Errors", ix, yy, iw - cw - M.gap, COLOR.font)
-        label:ClearAllPoints()
-        label:SetPoint("TOPLEFT", list.child, "TOPLEFT", ix, -(yy + max((M.button - h) * 0.5, 0)))
-        list:Button("Clear errors", ix + iw - cw, yy, cw, M.button, #errors > 0 and "normal" or "disabled",
-            PE:Wrap("core", function() PE:ClearErrors() end))
-        yy = yy + M.button + M.gap
-        if #errors == 0 then
+        if listing then
+            list:Segmented(ix, yy, iw, Items(FILTERS, viewer.filter, function(v)
+                viewer.filter, viewer.index = v, 1
+                PE:RefreshSettings()
+            end))
+            yy = yy + M.button + M.gap
+        else
+            yy = yy + list:Text("small", TEXT_ONLY_OURS, ix, yy, iw, COLOR.dim) + M.gap
+        end
+        if #entries == 0 then
+            viewer.index = 1
             return yy + list:Text("small", "No errors recorded.", ix, yy, iw, COLOR.dim) + M.gap
         end
-        for i = 1, #errors do
-            local e = errors[i]
-            if type(e) == "table" then
-                local head = Escape(PE:ModuleLabel(e.module)) .. "   x" .. tostring(tonumber(e.count) or 1)
-                if type(e.last) == "number" and e.last > 0 then
-                    local ok, when = pcall(date, "%b %d %H:%M", e.last)
-                    if ok and type(when) == "string" then head = head .. "   last: " .. when end
-                end
-                yy = yy + list:Text("font", head, ix, yy, iw, COLOR.title) + M.gap * 0.3
-                yy = yy + list:Text("small", Escape(e.msg), ix, yy, iw, COLOR.font) + M.gap * 0.3
-                if type(e.stack) == "string" and e.stack ~= "" then
-                    yy = yy + list:Text("small", Escape(e.stack), ix, yy, iw, COLOR.dim)
-                end
-                yy = yy + M.gap
-            end
+        local i = min(max(viewer.index, 1), #entries)
+        viewer.index = i
+        local e = entries[i]
+
+        -- The source in gold, "x3 · 23:11" on the right.
+        local meta = "x" .. tostring(e.count)
+        if e.last > 0 then
+            local ok, when = pcall(date, "%H:%M", e.last)
+            if ok and type(when) == "string" then meta = meta .. " · " .. when end
         end
-        return yy
+        local metaWidth = UI:TextWidth(meta, "small") + M.gap
+        local sh = list:Text("font", Escape(e.source), ix, yy, max(iw - metaWidth, 10), COLOR.title, 1)
+        local mh, metaText = list:Text("small", meta, ix + iw - metaWidth, yy, metaWidth, COLOR.dim, 1)
+        metaText:SetJustifyH("RIGHT")
+        metaText:ClearAllPoints()
+        metaText:SetPoint("TOPLEFT", list.child, "TOPLEFT", ix + iw - metaWidth, -(yy + max((sh - mh) * 0.6, 0)))
+        yy = yy + sh + M.gap * 0.4
+
+        -- What is left for the message and the stack, above the bottom row
+        -- and the card's own edge.
+        local line = M.smallFontSize * 1.2
+        local room = area.viewHeight - yy - M.gap * 0.4 - M.gap - M.button - M.pad - M.gap - 1
+        local msgLines = max(min(3, floor(room / line)), 1)
+        local mHeight = list:Text("small", Escape(e.msg), ix, yy, iw, COLOR.font, msgLines)
+        yy = yy + mHeight + M.gap * 0.4
+        local stackLines = min(6, floor((room - mHeight) / line))
+        if stackLines > 0 and type(e.stack) == "string" and e.stack ~= "" then
+            yy = yy + list:Text("small", Escape(FirstLines(e.stack, stackLines)), ix, yy, iw, COLOR.dim, stackLines)
+        end
+        yy = yy + M.gap
+
+        -- The bottom row: < Previous, "3 of 12", Next >, Clear all. Plain
+        -- letters as the arrows: any game font draws them. The labels use
+        -- the small font when the normal one does not fit the row.
+        local labels = { "< Previous", "Next >", "Clear all" }
+        local count = tostring(i) .. " of " .. tostring(#entries)
+        local small = false
+        local widths, countWidth
+        for pass = 1, 2 do
+            local kind = pass == 1 and "font" or "small"
+            countWidth = UI:TextWidth(count, kind) + M.gap
+            local base = min(M.button * 3.2, (iw - countWidth - 3 * M.gap) / 3)
+            local total = countWidth + 3 * M.gap
+            widths = {}
+            for k, label in ipairs(labels) do
+                widths[k] = max(base, UI:TextWidth(label, kind) + M.gap * 1.2)
+                total = total + widths[k]
+            end
+            small = pass == 2
+            if total <= iw + 0.5 then break end
+        end
+        local prev = list:Button(labels[1], ix, yy, widths[1], M.button, i > 1 and "normal" or "disabled",
+            PE:Wrap("core", function() if ViewerStep(-1) then PE:RefreshSettings() end end), small)
+        prev.peErrorStep = -1
+        local cx = ix + widths[1] + M.gap
+        local ch, countText = list:Text(small and "small" or "font", count, cx, yy, countWidth, COLOR.name)
+        countText:SetJustifyH("CENTER")
+        countText:ClearAllPoints()
+        countText:SetPoint("TOPLEFT", list.child, "TOPLEFT", cx, -(yy + max((M.button - ch) * 0.5, 0)))
+        local nextButton = list:Button(labels[2], cx + countWidth + M.gap, yy, widths[2], M.button,
+            i < #entries and "normal" or "disabled",
+            PE:Wrap("core", function() if ViewerStep(1) then PE:RefreshSettings() end end), small)
+        nextButton.peErrorStep = 1
+        list:Button(labels[3], ix + iw - widths[3], yy, widths[3], M.button, "normal", PE:Wrap("core", ClearAll), small)
+        return yy + M.button + M.gap
     end)
 end
 
 local function BuildErrors(width)
     local y = 0
-    -- On its own, so a problem drawing it still leaves the error list below.
-    local ok, nextY = PE:Safe("core", DebugCard, y, width)
-    y = (ok and type(nextY) == "number") and (nextY + M.gap) or (max(y, list.lowest) + M.gap)
-    return ErrorsCard(y, width) + M.gap
+    -- Each card on its own, so a problem drawing one still leaves the other.
+    local catcher = PE.ErrorCatcher
+    if catcher and PE:GetModule("errors") then
+        local ok, nextY = PE:Safe("errors", list.FeatureCard, list, catcher, 0, y, width)
+        y = (ok and type(nextY) == "number") and nextY or (max(y, list.lowest) + M.gap)
+    end
+    local ok, nextY = PE:Safe("core", ViewerCard, y, width)
+    if ok and type(nextY) == "number" then return nextY end
+    return max(y, list.lowest) + M.gap
 end
 
 ---------------------------------------------------------------------------
@@ -1024,7 +1164,11 @@ local function LayoutTabs(contentHeight, tabsWidth)
         btn.peDot:SetShown(hasDot)
         -- The Errors tab's red badge with the count: a round dot, or a pill
         -- (two round ends and a bar between them) when the count is wider.
-        local count = (t.id == "errors") and #PE.errors or 0
+        local count = 0
+        if t.id == "errors" then
+            local catcher = PE.ErrorCatcher
+            count = (catcher and catcher.Count) and catcher:Count() or #PE.errors
+        end
         if count > 0 then
             local d = M.smallFontSize * 1.3
             btn.peCount:SetText(tostring(count))
@@ -1072,6 +1216,8 @@ end
 -- Controller: the tabs are one column, the page another
 ---------------------------------------------------------------------------
 
+local Draw -- the redraw, below
+
 local function IsTab(btn)
     return btn ~= nil and btn.peTabId ~= nil
 end
@@ -1115,6 +1261,16 @@ local function NavCross(focus, step, byRow)
         end
         return focus
     end
+    -- The viewer's Previous and Next: Left and Right move between errors
+    -- while there is one that way (else the usual move).
+    if focus.peErrorStep and ViewerStep(step) then
+        local role = focus.peErrorStep
+        Draw()
+        for _, btn in ipairs(navList) do
+            if btn.peErrorStep == role then return btn end
+        end
+        return nil
+    end
     if step < 0 then
         local column = PageColumn()
         for i, btn in ipairs(column) do
@@ -1135,6 +1291,7 @@ local function BuildPage(width)
     if tab == "questIcons" and page == "key" then return BuildKey(width) end
     if tab == "general" then return BuildGeneral(width) end
     if tab == "errors" then return BuildErrors(width) end
+    if tab == "debug" then return BuildDebug(width) end
     return BuildFeatureTab(TabById(tab) or TABS[1], width)
 end
 
@@ -1191,7 +1348,7 @@ local function DoRefresh()
 end
 
 -- Redraw now.
-local function Draw()
+Draw = function()
     if drawing or not built or not panel:IsShown() then return end
     drawing = true
     PE:Safe("core", DoRefresh)

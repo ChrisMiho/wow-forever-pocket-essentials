@@ -769,11 +769,12 @@ test("debug: fights are written only while on, and PLAYER_REGEN_DISABLED is not 
 end)
 
 ---------------------------------------------------------------------------
--- The debug log on Settings > Errors
+-- The debug log on Settings > Debug log (its own tab since spec
+-- 2026-11-20-error-catcher-and-probe-panel, Part 2; the card is unchanged)
 ---------------------------------------------------------------------------
 
-local function errorsPage(c, PE)
-    PE:OpenSettings("errors")
+local function debugPage(c, PE, tab)
+    PE:OpenSettings(tab or "debug")
     c:advance(0.1)
     return rawget(c.env, "PocketEssentialsSettingsPanel")
 end
@@ -804,17 +805,17 @@ end
 
 -- Spec "What it does": "A Debug log switch on Settings > Errors, off by default"; "Next to the
 -- switch: how many lines are held, a Save log now button ... and a Clear log button".
-test("debug: the Errors tab has the switch (off), the line count, Save and Empty", function()
+test("debug: the Debug log tab has the switch (off), the line count, Save and Empty", function()
     local c, PE = T.new({})
-    local panel = errorsPage(c, PE)
+    local panel = debugPage(c, PE)
     local buttons, texts = pageOf(c, panel)
-    check(buttons["Off"], "no Off switch on the Errors page")
+    check(buttons["Off"], "no Off switch on the Debug log page")
     check(buttons["Save"], "no Save button")
     check(buttons["Empty"], "no Empty button")
     check(hasText(texts, "Debug log"), "no Debug log title")
     check(hasText(texts, "0 of 10,000 lines"), "no line count")
     check(hasText(texts, "SavedVariables/PocketEssentials.lua"), "the page does not name the file to send")
-    check(hasText(texts, "No errors recorded."), "the error list is gone")
+    check(not hasText(texts, "No errors recorded."), "the error list is on the Debug log page")
     check(hasText(texts, "Save the log (reloads)") and hasText(texts, "Empty the log"), "the debug rows are missing")
     c:click(buttons["Off"])
     c:advance(0.1)
@@ -836,7 +837,7 @@ test("debug: Save reloads once; Empty empties the log and the count, and leaves 
     PE:SetDebug(true)
     PE:Debug("probe", "one")
     PE:LogError("bags", "a recorded problem")
-    local panel = errorsPage(c, PE)
+    local panel = debugPage(c, PE)
     local buttons, texts = pageOf(c, panel)
     check(hasText(texts, "3 of 10,000 lines"), "the count is not the number of lines held")
     local before = #c:callsTo("C_UI.Reload")
@@ -849,14 +850,15 @@ test("debug: Save reloads once; Empty empties the log and the count, and leaves 
     eq(#PE.errors, 1, "Clear log removed the errors")
     buttons, texts = pageOf(c, panel)
     check(hasText(texts, "0 of 10,000 lines"), "the count was not redrawn after Clear log")
-    check(hasText(texts, "a recorded problem"), "the error is no longer shown")
+    panel = debugPage(c, PE, "errors")
+    check(hasText(select(2, pageOf(c, panel)), "a recorded problem"), "the error is no longer shown")
 end)
 
 -- Settings.lua DebugCard: the count is read when the page is drawn, never per logged line.
 test("debug: a logged line does not redraw the settings window; the count is fresh when the page is opened again", function()
     local c, PE = T.new({})
     PE:SetDebug(true)
-    local panel = errorsPage(c, PE)
+    local panel = debugPage(c, PE)
     check(hasText(select(2, pageOf(c, panel)), "1 of 10,000 lines"), "unexpected count at first")
     local asked = 0
     local refresh = PE.RefreshSettings
@@ -866,7 +868,7 @@ test("debug: a logged line does not redraw the settings window; the count is fre
     eq(asked, 0, "PE:Debug asked for a redraw")
     check(hasText(select(2, pageOf(c, panel)), "1 of 10,000 lines"), "the page was redrawn for a logged line")
     PE:CloseSettings()
-    panel = errorsPage(c, PE)
+    panel = debugPage(c, PE)
     check(hasText(select(2, pageOf(c, panel)), "21 of 10,000 lines"), "the count is stale after reopening the page")
 end)
 

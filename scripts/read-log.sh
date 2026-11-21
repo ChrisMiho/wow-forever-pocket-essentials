@@ -1,6 +1,7 @@
 #!/bin/bash
 # Prints the debug log and the Errors page from a saved-settings file as plain
-# text, one block per play session. The file is the one the game writes at
+# text, one block per play session, then other addons' and the game's errors
+# (Catch all errors) grouped by source. The file is the one the game writes at
 # logout and at a reload:
 #     World of Warcraft/_forever_/WTF/Account/<account>/SavedVariables/PocketEssentials.lua
 #

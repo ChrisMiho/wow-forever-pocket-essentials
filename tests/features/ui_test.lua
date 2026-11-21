@@ -201,7 +201,7 @@ end
 
 local function near(a, b, eps) return math.abs(a - b) < (eps or 0.01) end
 
-test("tabs: eight tabs in the spec's order, each holding the spec's helpers", function()
+test("tabs: nine tabs in the spec's order, each holding the spec's helpers", function()
     local c, PE = T.new({})
     local got = {}
     for _, t in ipairs(PE.SETTINGS_TABS) do
@@ -209,7 +209,7 @@ test("tabs: eight tabs in the spec's order, each holding the spec's helpers", fu
     end
     eq(got, { "questIcons=Quest icons=questIcons", "questArrow=Quest arrow=questArrow", "bags=Bags=bagWindow,bags",
         "vendors=Vendors=sellJunk,repair", "chat=Chat=chat", "gameFixes=Game fixes=menuBg,sparkles", "general=General=",
-        "errors=Errors=" })
+        "errors=Errors=", "debug=Debug log=" })
     openSettings(c, PE)
     for _, t in ipairs(PE.SETTINGS_TABS) do
         local b = tabButton(c, t.id)
@@ -220,7 +220,7 @@ test("tabs: eight tabs in the spec's order, each holding the spec's helpers", fu
     c:assertClean("tabs")
 end)
 
-test("tabs: all eight fit the window at every button size, stacked one border apart, never taller than a button", function()
+test("tabs: all nine fit the window at every button size, stacked one border apart, never taller than a button", function()
     for _, size in ipairs({ "small", "medium", "large" }) do
         local c, PE = T.new({})
         PE:SetUISetting("size", size)
@@ -233,6 +233,9 @@ test("tabs: all eight fit the window at every button size, stacked one border ap
             local b = tabButton(c, t.id)
             local _, _, top, bottom = c._rect(b)
             check(top - bottom <= M.button + 0.01, size .. ": a tab is taller than a button")
+            -- Spec 2026-11-20-error-catcher-and-probe-panel, Part 2: min(button, (contentHeight - 8 border) / 9).
+            check(near(top - bottom, math.min(M.button, (contentTop - contentBottom - 8 * M.border) / 9)),
+                size .. ": tab height is not min(button, (content - 8 borders) / 9)")
             check(bottom >= contentBottom - 0.01, size .. ": tab " .. t.id .. " is below the window")
             check(near(b:GetWidth(), M.button * 5), size .. ": tabs are not five buttons wide")
             if prevBottom then check(near(prevBottom - top, M.border), size .. ": tabs are not one border apart") end
@@ -526,18 +529,22 @@ test("general: Button size and Round button colour are segmented choices that sa
     eq(PE.db.ui.hubColor, "horde")
 end)
 
-test("errors: the debug card and the errors card; Clear errors is dim with no errors", function()
+test("errors: the Errors tab holds the catcher and the viewer; the debug card is on its own tab", function()
     local c, PE = T.new({})
     openSettings(c, PE, "errors")
-    check(shownText(c, "Debug log") and shownText(c, "Errors"), "a card heading is missing")
-    check(shownText(c, "Save the log (reloads)") and shownText(c, "Empty the log"), "a debug row is missing")
-    check(shownButtons(c, "Save")[1] and shownButtons(c, "Empty")[1], "a debug button is missing")
+    check(shownText(c, "Catch all errors") and switchOf(c, "errors"), "no Catch all errors card")
+    check(not shownText(c, "Save the log (reloads)") and not shownText(c, "Empty the log"), "the debug card is on the Errors tab")
     check(shownText(c, "No errors recorded."), "no empty line")
-    eq(shownButtons(c, "Clear errors")[1].peStyle, "disabled")
     PE:LogError("probe", "boom")
     c:advance(0.2)
-    eq(shownButtons(c, "Clear errors")[1].peStyle, "normal")
     check(shownText(c, "boom"), "the error is not listed")
+    openSettings(c, PE, "debug")
+    check(shownText(c, "Debug log"), "no Debug log card")
+    check(shownText(c, "Save the log (reloads)") and shownText(c, "Empty the log"), "a debug row is missing")
+    check(shownButtons(c, "Save")[1] and shownButtons(c, "Empty")[1], "a debug button is missing")
+    check(not shownText(c, "Catch all errors"), "the catcher is on the Debug log tab")
+    PE:ClearErrors()
+    c:assertClean("errors and debug tabs")
 end)
 
 test("icon key: an Icon key row opens the key page; Back returns to the Quest icons tab", function()
@@ -625,6 +632,19 @@ test("nav: A on a switch keeps the highlight on that feature's switch, off to on
     eq(T.labelOf(panel.peNavFocus), "Off")
 end)
 
+-- A page too long for the window, with no stop below its top: the Quest Icon
+-- Key with forty entries (only Back can take the highlight). The Errors page
+-- served for this before it was made to fit (spec 2026-11-20-error-catcher-
+-- and-probe-panel, "No scroll bar").
+local function longKey(PE)
+    local key = {}
+    for i = 1, 40 do
+        key[i] = { tex = "Interface\\Icons\\INV_Misc_QuestionMark", label = "Entry " .. i,
+            desc = "A description long enough to fill most of the line, number " .. i }
+    end
+    PE.QuestIconKey = key
+end
+
 test("scroll bar: a page that fits has no bar, a page that does not fit has one (touch on)", function()
     local c, PE = T.new({})
     PE:SetUISetting("touch", true)
@@ -632,8 +652,8 @@ test("scroll bar: a page that fits has no bar, a page that does not fit has one 
     local panel = settingsPanel(c)
     local area = panel.peNavArea
     check(not area.upButton:IsShown(), "a bar on a page that fits")
-    for i = 1, 40 do PE:LogError("probe", "problem number " .. i .. " with a fairly long message to fill the line", "stack " .. i) end
-    openSettings(c, PE, "errors")
+    longKey(PE)
+    openSettings(c, PE, "key")
     check(area.upButton:IsShown() and area:GetRange() > 0, "no bar on a long page")
 end)
 
@@ -1163,16 +1183,16 @@ end)
 -- 0.8.0 fix: with touch off there are no scroll tabs, so the d-pad itself pages a list
 -- that has no stops below the top (UI.lua NavMove).
 
-test("nav: touch off, the Errors page can be read to the bottom with the d-pad Down", function()
+test("nav: touch off, a long page with no stops below its top can be read to the bottom with the d-pad Down", function()
     local c, PE = T.new({})
     PE:SetUISetting("touch", false)
-    for i = 1, 40 do PE:LogError("probe", "problem number " .. i .. " with a fairly long message to fill the line", "stack " .. i) end
+    longKey(PE)
     openSettings(c, PE)
-    PE:OpenSettings("errors")
+    PE:OpenSettings("key")
     c:advance(0.2)
     local panel = settingsPanel(c)
     local area = panel.peNavArea
-    check(area and area:GetRange() > 100, "the Errors page does not scroll")
+    check(area and area:GetRange() > 100, "the long page does not scroll")
     dpadKey(c, "DOWN")    -- the first press lands on the chosen tab
     dpadKey(c, "RIGHT")   -- into the page
     for _ = 1, 80 do
@@ -1192,16 +1212,16 @@ end)
 test("nav: touch off, Down on a tab moves to the next tab and does not scroll a long page", function()
     local c, PE = T.new({})
     PE:SetUISetting("touch", false)
-    for i = 1, 40 do PE:LogError("probe", "problem number " .. i .. " with a fairly long message to fill the line", "stack " .. i) end
+    longKey(PE)
     openSettings(c, PE)
-    PE:OpenSettings("errors")
+    PE:OpenSettings("key")
     c:advance(0.2)
     local panel = settingsPanel(c)
     local area = panel.peNavArea
-    check(area and area:GetRange() > 100, "the Errors page does not scroll")
+    check(area and area:GetRange() > 100, "the long page does not scroll")
     dpadKey(c, "DOWN")
     local first = panel.peNavFocus
-    check(first and first.peTabId == "errors", "the first press did not land on the chosen tab")
+    check(first and first.peTabId == "questIcons", "the first press did not land on the chosen tab")
     dpadKey(c, "UP")
     check(panel.peNavFocus and panel.peNavFocus.peTabId and panel.peNavFocus ~= first, "Up on a tab did not move to another tab")
     eq(area.offset, 0, "Up on a tab paged the list")
@@ -1241,15 +1261,15 @@ test("tabs: the Errors badge is round for one digit and grows into a pill for a 
     check(r <= tr - M.pad + 0.01, "the badge runs past the tab's edge")
 end)
 
-test("nav: touch on, the d-pad Down does not page the Errors page", function()
+test("nav: touch on, the d-pad Down does not page a long page", function()
     local c, PE = T.new({})
     PE:SetUISetting("touch", true)
-    for i = 1, 40 do PE:LogError("probe", "problem number " .. i .. " with a fairly long message to fill the line", "stack " .. i) end
+    longKey(PE)
     openSettings(c, PE)
-    PE:OpenSettings("errors")
+    PE:OpenSettings("key")
     c:advance(0.2)
     local area = settingsPanel(c).peNavArea
-    check(area and area:GetRange() > 100, "the Errors page does not scroll")
+    check(area and area:GetRange() > 100, "the long page does not scroll")
     for _ = 1, 6 do dpadKey(c, "DOWN") end
     eq(area.offset, 0, "the d-pad paged with touch on")
 end)

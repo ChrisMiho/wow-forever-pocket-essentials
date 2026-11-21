@@ -120,6 +120,53 @@ function M.formatErrors(db)
     return out
 end
 
+-- Catch all errors: the other addons' and the game's errors
+-- (PocketEssentialsDB.otherErrors, newest first), grouped by source. The
+-- source with the most errors comes first; within a source, newest first.
+function M.formatOthers(db)
+    local list = type(db) == "table" and db.otherErrors
+    local groups, order, shown = {}, {}, 0
+    if type(list) == "table" then
+        for _, e in ipairs(list) do
+            if type(e) == "table" then
+                shown = shown + 1
+                local source = tostring(e.source or "Unknown")
+                local g = groups[source]
+                if not g then
+                    g = { name = source, total = 0, entries = {} }
+                    groups[source] = g
+                    order[#order + 1] = g
+                end
+                g.total = g.total + (tonumber(e.count) or 1)
+                g.entries[#g.entries + 1] = e
+            end
+        end
+    end
+    table.sort(order, function(a, b)
+        if a.total ~= b.total then return a.total > b.total end
+        return a.name < b.name
+    end)
+    local warnings = type(db) == "table" and tonumber(db.luaWarnings) or 0
+    local out = { "== Other errors (Catch all errors): " .. shown .. " entr" .. (shown == 1 and "y" or "ies")
+        .. ", " .. warnings .. " Lua warning" .. (warnings == 1 and "" or "s") .. " ==" }
+    for _, g in ipairs(order) do
+        out[#out + 1] = ""
+        out[#out + 1] = g.name .. "   " .. g.total .. " time" .. (g.total == 1 and "" or "s")
+        for _, e in ipairs(g.entries) do
+            local head = "  x" .. tostring(tonumber(e.count) or 1)
+            if type(e.last) == "number" and e.last > 0 then head = head .. "   last: " .. os.date("%Y-%m-%d %H:%M", e.last) end
+            out[#out + 1] = head
+            out[#out + 1] = "    " .. tostring(e.msg)
+            if type(e.stack) == "string" and e.stack ~= "" then
+                for stackLine in (e.stack .. "\n"):gmatch("(.-)\r?\n") do
+                    if stackLine ~= "" then out[#out + 1] = "      " .. stackLine end
+                end
+            end
+        end
+    end
+    return out
+end
+
 -- Everything the command prints. opts: { grep = pattern or nil, errorsOnly = bool }.
 function M.format(db, opts)
     opts = opts or {}
@@ -133,6 +180,12 @@ function M.format(db, opts)
     if opts.errorsOnly or not opts.grep then
         if #out > 0 then out[#out + 1] = "" end
         for _, line in ipairs(M.formatErrors(db)) do out[#out + 1] = line end
+        -- Only when Catch all errors has written something.
+        local others = type(db) == "table" and db.otherErrors
+        if (type(others) == "table" and #others > 0) or (type(db) == "table" and (tonumber(db.luaWarnings) or 0) > 0) then
+            out[#out + 1] = ""
+            for _, line in ipairs(M.formatOthers(db)) do out[#out + 1] = line end
+        end
     end
     return out
 end

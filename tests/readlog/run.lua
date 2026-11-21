@@ -153,6 +153,42 @@ eq(R.format({}), { "Debug log: 0 lines, switch off", "", "== Errors page: 0 entr
 eq(R.format({ debug = "junk", errors = "junk" }), { "Debug log: 0 lines, switch off", "", "== Errors page: 0 entries ==" }, "damaged tables")
 
 ---------------------------------------------------------------------------
+-- Catch all errors: the others' list grouped by source (spec 2026-11-20-
+-- error-catcher-and-probe-panel, "Reading")
+---------------------------------------------------------------------------
+
+do
+    local others = {
+        errors = {},
+        luaWarnings = 2,
+        otherErrors = {
+            { source = "Blizzard", msg = "Blizzard_WorldMap/Map.lua:9: oops", stack = "Map.lua:9: in function 'A'\nMap.lua:3: in function 'B'", count = 1, last = 0 },
+            { source = "ExampleAddon", msg = "ExampleAddon/Main.lua:40: boom", stack = "", count = 3, last = 0 },
+            "junk",
+            { source = "Blizzard", msg = "Blizzard_Other/X.lua:1: again", count = 4, last = 0 },
+        },
+    }
+    eq(R.formatOthers(others), {
+        "== Other errors (Catch all errors): 3 entries, 2 Lua warnings ==",
+        "",
+        "Blizzard   5 times",
+        "  x1",
+        "    Blizzard_WorldMap/Map.lua:9: oops",
+        "      Map.lua:9: in function 'A'",
+        "      Map.lua:3: in function 'B'",
+        "  x4",
+        "    Blizzard_Other/X.lua:1: again",
+        "",
+        "ExampleAddon   3 times",
+        "  x3",
+        "    ExampleAddon/Main.lua:40: boom",
+    }, "the others' list grouped by source, the busiest first")
+    local all = R.format(others, { errorsOnly = true })
+    eq(all[3], "== Other errors (Catch all errors): 3 entries, 2 Lua warnings ==", "--errors prints the others' list after the Errors page")
+    eq(R.formatOthers({ otherErrors = "junk" }), { "== Other errors (Catch all errors): 0 entries, 0 Lua warnings ==" }, "a damaged others' list")
+end
+
+---------------------------------------------------------------------------
 -- Loading the file: text only, nothing reachable from inside it
 ---------------------------------------------------------------------------
 

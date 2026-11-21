@@ -469,10 +469,55 @@ end
 ---------------------------------------------------------------------------
 
 -- The control on the right of a settings row: 58% of the row, never wider
--- than nine button heights.
-function UI:ControlWidth(innerWidth)
+-- than nine button heights. need: the width the control's labels need (a
+-- choice row, UI:ChoiceWidth); a control that needs more grows past the usual
+-- width, up to the row width less the name's width (the name keeps at most
+-- 30% of the row, and wraps when longer) less a gap (spec 2026-11-20-error-
+-- catcher-and-probe-panel, "Shared rule"). label: the row's name.
+function UI:ControlWidth(innerWidth, need, label)
     local m = self:Metrics()
-    return min((innerWidth or 0) * 0.58, m.button * 9)
+    innerWidth = innerWidth or 0
+    local width = min(innerWidth * 0.58, m.button * 9)
+    if type(need) == "number" and need > width then
+        local name = label and self:TextWidth(label, "font") or 0
+        width = max(width, min(need, innerWidth - min(name, innerWidth * 0.3) - m.gap))
+    end
+    return width
+end
+
+-- How wide a text is on one line in the given kind ("font", "small" or
+-- "title"), measured with a hidden text of our own.
+local measure
+function UI:TextWidth(text, kind)
+    local m = self:Metrics()
+    local size = (kind == "small" and m.smallFontSize) or (kind == "title" and m.fontSize * 1.12) or m.fontSize
+    text = text == nil and "" or tostring(text)
+    if not measure and CreateFrame and UIParent then
+        local ok, frame = pcall(CreateFrame, "Frame", nil, UIParent)
+        if ok and frame then
+            frame:Hide()
+            measure = frame:CreateFontString(nil, "OVERLAY")
+            measure:SetWordWrap(false)
+        end
+    end
+    if measure then
+        local fontName = (kind == "small" and m.smallFont) or (kind == "title" and m.titleFont) or m.font
+        pcall(measure.SetFontObject, measure, fontName)
+        measure:SetText(text)
+        local ok, width = pcall(measure.GetUnboundedStringWidth, measure)
+        if ok and type(width) == "number" and width > 0 then return width end
+    end
+    return #text * size * 0.55
+end
+
+-- The width a segmented choice needs so that no label is cut: every part as
+-- wide as the widest label with its inner margin, plus the borders.
+function UI:ChoiceWidth(labels)
+    local m = self:Metrics()
+    local widest = 0
+    for _, label in ipairs(labels) do widest = max(widest, self:TextWidth(label, "font")) end
+    local n = max(#labels, 1)
+    return n * (widest + m.gap * 1.6 + m.border) + m.border
 end
 
 -- The switch: two button heights wide, a square knob and the word On / Off.
@@ -550,9 +595,30 @@ function SegmentedMethods:Set(width, items)
     local n = max(#items, 1)
     local height = m.button
     self:SetSize(width, height)
-    local partWidth = max((width - b * (n + 1)) / n, 1)
+    local inside = max(width - b * (n + 1), n)
+    local partWidth = max(inside / n, 1)
+    -- Equal parts. When a label does not fit its part even in the small font
+    -- and all the labels fit side by side, each part is as wide as its label
+    -- needs, plus an even share of what is left ("Pocket Essentials" beside
+    -- "All").
+    local widths = {}
+    for i = 1, #items do widths[i] = partWidth end
+    do
+        local needs, total, cut = {}, 0, false
+        for i = 1, #items do
+            local smallWidth = UI:TextWidth(items[i].label, "small") + m.gap * 0.8
+            needs[i] = smallWidth
+            total = total + smallWidth
+            if smallWidth > partWidth then cut = true end
+        end
+        if cut and total <= inside then
+            local share = (inside - total) / n
+            for i = 1, #items do widths[i] = needs[i] + share end
+        end
+    end
     local barHeight = max(UI:Px(3), b * 1.5)
     local used = {}
+    local x = b
     for i = 1, #items do
         local item = items[i]
         local part = self.peParts[i]
@@ -562,9 +628,11 @@ function SegmentedMethods:Set(width, items)
             part.peBar:SetColorTexture(1, 0.82, 0, 1)
             self.peParts[i] = part
         end
+        local w = widths[i]
         part:ClearAllPoints()
-        part:SetSize(partWidth, height - 2 * b)
-        part:SetPoint("TOPLEFT", self, "TOPLEFT", b + (i - 1) * (partWidth + b), -b)
+        part:SetSize(w, height - 2 * b)
+        part:SetPoint("TOPLEFT", self, "TOPLEFT", x, -b)
+        x = x + w + b
         part.peText:ClearAllPoints()
         part.peText:SetPoint("LEFT", part, "LEFT", m.gap * 0.4, 0)
         part.peText:SetPoint("RIGHT", part, "RIGHT", -m.gap * 0.4, 0)
@@ -577,7 +645,7 @@ function SegmentedMethods:Set(width, items)
         if not ok or type(textWidth) ~= "number" or textWidth <= 0 then
             textWidth = #(label:GetText() or "") * m.fontSize * 0.55
         end
-        part.peSmallLabel = textWidth > partWidth - m.gap * 0.8
+        part.peSmallLabel = textWidth > w - m.gap * 0.8
         if part.peSmallLabel then pcall(label.SetFontObject, label, m.smallFont) end
         part:SetStyle(item.selected and "segmentOn" or "segment")
         part.peBar:ClearAllPoints()

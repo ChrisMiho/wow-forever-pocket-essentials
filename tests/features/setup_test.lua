@@ -27,9 +27,11 @@ local N = #ALL_SCREENS
 local AT = { welcome = 1, questIcons = 2, questArrow = 3, bags = 4, vendors = 5, chat = 6, layout = 7, finish = 8 }
 -- The screen each feature's switch is on (Quest icons off).
 local SCREEN_OF = { questIcons = 2, questArrow = 3, bagWindow = 4, bags = 4, sellJunk = 5, repair = 5, menuBg = 5, sparkles = 5, chat = 6 }
+-- Features the guide has no screen for (their switch is only in the settings window).
+local NOT_IN_GUIDE = { errors = "Catch all errors: the guide has no error screen (spec 2026-11-20-error-catcher-and-probe-panel, Part 2)" }
 -- The settings tab of each feature.
 local TAB_OF = { questIcons = "questIcons", questArrow = "questArrow", bagWindow = "bags", bags = "bags",
-    sellJunk = "vendors", repair = "vendors", chat = "chat", menuBg = "gameFixes", sparkles = "gameFixes" }
+    sellJunk = "vendors", repair = "vendors", chat = "chat", menuBg = "gameFixes", sparkles = "gameFixes", errors = "errors" }
 -- Quest icons' rows in the guide: three on its own screen, three on the details screen.
 local QUEST_SCREEN_ROWS = { ["Show icons for"] = true, ["Icons on"] = true, ["Icon size"] = true }
 local QUEST_DETAIL_ROWS = { ["Merge icons closer than"] = true, ["Spots per objective"] = true, ["Blizzard blue quest haze"] = true }
@@ -445,7 +447,7 @@ test("setup: every feature of this build has a switch on some screen, and the ol
         if i < N then goTo(c, 2) end
     end
     for _, mod in ipairs(PE.moduleList) do
-        eq(seen[mod.key], 1, "switches for " .. mod.key)
+        if not NOT_IN_GUIDE[mod.key] then eq(seen[mod.key], 1, "switches for " .. mod.key) end
     end
     local joined = table.concat(all, "\n")
     for _, part in ipairs({ "Bag icons", "Sort stick", "Bag sorter", "Chat from round button", "Move the round button",
@@ -623,7 +625,7 @@ test("setup: the finish screen lists what is on and what is off, then the Tap, H
     PE:SetModuleEnabled("chat", true)
     c:advance(0.1)
     check(hasText(c, "|cff59eb73On: |rAuto sell junk, Chat picker"), "the On line is wrong: " .. tostring(textWith(c, "On: |r")))
-    eq(textWith(c, "Off: |r"), "|cff9e9ea3Off: |rQuest icons, Quest arrow, Bag sorting, Bigger bag, Auto repair, Menu background, Loot sparkles")
+    eq(textWith(c, "Off: |r"), "|cff9e9ea3Off: |rQuest icons, Quest arrow, Bag sorting, Bigger bag, Auto repair, Menu background, Loot sparkles, Catch all errors")
     for _, t in ipairs({ "Tap", "Hold", "Move things", "Opens the settings, or Chat picker when it is on.",
         "Always opens the settings.", "Settings, General tab." }) do
         check(hasText(c, t), "the tiles have no \"" .. t .. "\"")
@@ -1648,7 +1650,7 @@ end
 local function modsWithOptions(PE)
     local out = {}
     for _, mod in ipairs(PE.moduleList) do
-        if type(mod.options) == "table" and #mod.options > 0 then out[#out + 1] = mod end
+        if type(mod.options) == "table" and #mod.options > 0 and not NOT_IN_GUIDE[mod.key] then out[#out + 1] = mod end
     end
     return out
 end
@@ -1807,7 +1809,7 @@ end
 test("options: the test's own reading of the screen list matches the features", function()
     local c, PE = newClient()
     for _, mod in ipairs(PE.moduleList) do
-        check(SCREEN_OF[mod.key], "no screen known for " .. mod.key)
+        check(SCREEN_OF[mod.key] or NOT_IN_GUIDE[mod.key], "no screen known for " .. mod.key)
         check(TAB_OF[mod.key], "no settings tab known for " .. mod.key)
     end
     check(#modsWithOptions(PE) >= 4, "fewer than four features have options (the test's premise)")
@@ -2156,7 +2158,7 @@ test("options: paging is decided again after every switch and option press, at e
         PE:SetUISetting("size", size)
         c:advance(0.2)
         for _, mod in ipairs(PE.moduleList) do
-            if canBeOn(PE, mod.key) then
+            if canBeOn(PE, mod.key) and not NOT_IN_GUIDE[mod.key] then
                 local key = mod.key
                 goToFeature(c, PE, key)
                 local off = invariant(size .. ", " .. key .. " off")

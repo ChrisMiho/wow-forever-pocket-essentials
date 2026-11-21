@@ -79,7 +79,9 @@ local CORE_EVENTS = {
     DISPLAY_SIZE_CHANGED = "UI.lua: resizes everything",
 }
 
-local FEATURES = { "questIcons", "questArrow", "bags", "bagWindow", "sellJunk", "repair", "chat", "menuBg", "sparkles" }
+local FEATURES = { "questIcons", "questArrow", "bags", "bagWindow", "sellJunk", "repair", "chat", "menuBg", "sparkles", "errors" }
+-- Features the setup guide has no screen for (their switch is only in the settings window).
+local NOT_IN_GUIDE = { errors = "Catch all errors (spec 2026-11-20-error-catcher-and-probe-panel, Part 2)" }
 local QUEST_FEATURES = { questIcons = true, questArrow = true }
 
 ---------------------------------------------------------------------------
@@ -171,7 +173,7 @@ local function guideOf(c) return rawget(c.env, "PocketEssentialsSetupPanel") end
 local function guideShown(c) return guideOf(c) ~= nil and guideOf(c):IsShown() end
 
 -- The settings window's pages (0.9.0): one per tab, and the Quest Icon Key.
-local PAGES = { "questIcons", "questArrow", "bags", "vendors", "chat", "gameFixes", "general", "errors", "key" }
+local PAGES = { "questIcons", "questArrow", "bags", "vendors", "chat", "gameFixes", "general", "errors", "debug", "key" }
 
 local function openPage(c, PE, page)
     PE:OpenSettings(page)
@@ -388,7 +390,7 @@ local EVENT_ORDER = {
     "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_UPDATE_RESTING",
     "MERCHANT_SHOW", "MERCHANT_CLOSED", "CVAR_UPDATE",
     "CHAT_MSG_WHISPER", "CHAT_MSG_WHISPER_INFORM",
-    "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN",
+    "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "LUA_WARNING",
     "PLAYER_LOGOUT",
 }
 -- Fired once per session by the client; firing it again would not be plausible.
@@ -417,6 +419,8 @@ local function fireWorldEvent(c, event)
     -- Another addon's block: ours would be a real problem (and is logged as one).
     elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
         c:fire(event, "SomeOtherAddon", "CastSpellByName")
+    -- A Lua warning (Catch all errors counts it while on), as the game's error box gets it.
+    elseif event == "LUA_WARNING" then c:luaWarning("Couldn't open a texture")
     else c:fire(event) end
 end
 
@@ -634,7 +638,9 @@ local function everythingOn(c, PE, hasQDB)
                     .. (stillOff and "has" or "has no") .. " \"Off\" line with everything on")
             end
         end)
-        check(switches == #FEATURES, "the setup guide showed " .. switches .. " switches, expected " .. #FEATURES)
+        local inGuide = 0
+        for _, key in ipairs(FEATURES) do if not NOT_IN_GUIDE[key] then inGuide = inGuide + 1 end end
+        check(switches == inGuide, "the setup guide showed " .. switches .. " switches, expected " .. inGuide)
         c:click(findButton(c, guideOf(c), "Close"))
         c:advance(0.2)
         check(not guideShown(c), "Close did not close the setup guide")
@@ -755,14 +761,16 @@ scenarios[#scenarios + 1] = { name = "1 first install", run = function()
         if t:find("smoke seeded error", 1, true) then seen = true end
     end
     check(seen, "the Errors page does not show a logged error")
-    local clear = findButton(c, panelOf(c), "Clear errors")
-    check(clear, "no Clear errors button on the Errors page")
-    -- "Save" is a reload (the game writes the saved file then): one call per press.
+    -- "Save" (on the Debug log tab) is a reload (the game writes the saved file then): one call per press.
+    openPage(c, PE, "debug")
     local save = findButton(c, panelOf(c), "Save")
-    check(save, "no Save button on the Errors page")
+    check(save, "no Save button on the Debug log page")
     local reloadsBefore = #c:callsTo("C_UI.Reload")
     c:click(save)
     check(#c:callsTo("C_UI.Reload") - reloadsBefore == 1, "\"Save\" did not call C_UI.Reload once")
+    openPage(c, PE, "errors")
+    local clear = findButton(c, panelOf(c), "Clear all")
+    check(clear, "no Clear all button on the Errors page")
     c:click(clear)
     c:advance(0.2)
     check(#PE.errors == 0, "Clear left " .. #PE.errors .. " entries in the error log")

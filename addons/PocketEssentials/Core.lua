@@ -19,6 +19,8 @@ PE.reloadReasons = {} -- array of { label =, reason = }
 local CHAT_TAG = "|cffffd100Pocket Essentials|r: "
 local CORE_LABEL = "Pocket Essentials"
 local ERROR_CAP = 30
+local OTHER_ERROR_CAP = 50 -- Catch all errors: other addons' and the game's errors
+PE.OTHER_ERROR_CAP = OTHER_ERROR_CAP
 local SIZES = { small = true, medium = true, large = true }
 
 local type, tostring, tonumber, pairs, ipairs, select = type, tostring, tonumber, pairs, ipairs, select
@@ -581,6 +583,25 @@ local function MergeErrors(saved)
     return merged
 end
 
+-- The saved list of other errors, kept only as far as it is usable.
+local function CleanOtherErrors(saved)
+    local out = {}
+    if type(saved) ~= "table" then return out end
+    for i = 1, #saved do
+        local e = saved[i]
+        if type(e) == "table" and type(e.msg) == "string" and type(e.source) == "string" and #out < OTHER_ERROR_CAP then
+            out[#out + 1] = {
+                source = e.source,
+                msg = e.msg,
+                stack = type(e.stack) == "string" and e.stack or "",
+                count = tonumber(e.count) or 1,
+                last = tonumber(e.last) or 0,
+            }
+        end
+    end
+    return out
+end
+
 local function InitDB()
     if PE.db then return end
     local db = _G.PocketEssentialsDB
@@ -597,6 +618,10 @@ local function InitDB()
     if type(db.ui.moved) ~= "table" then db.ui.moved = {} end -- "Move on screen" offsets, by piece
     db.errors = MergeErrors(db.errors)
     PE.errors = db.errors
+    -- Catch all errors (ErrorCatcher.lua): other addons' and the game's errors,
+    -- newest first, and the count of the game's Lua warnings.
+    db.otherErrors = CleanOtherErrors(db.otherErrors)
+    if type(db.luaWarnings) ~= "number" or db.luaWarnings < 0 then db.luaWarnings = 0 end
     local dbg = db.debug
     if type(dbg) ~= "table" then
         dbg = {}
@@ -624,7 +649,7 @@ local function EnsureDB()
     PE.db = {
         version = 1, enabled = {}, options = {},
         ui = { size = "medium", hubPos = "LEFT", moved = {} },
-        errors = PE.errors,
+        errors = PE.errors, otherErrors = {}, luaWarnings = 0,
     }
     for _, mod in ipairs(PE.moduleList) do pcall(AttachOptions, mod) end
 end
@@ -663,6 +688,7 @@ local function EnableModule(mod)
     if st.enabled then return true end
     if st.busy then return false end
     if mod.requiresQuestieDB and not PE.hasQuestieDB then return false end
+    if PE:ModuleBlockedReason(mod) then return false end
     st.failed = nil
     -- Only with a feature on can a block be ours; nothing is hooked before.
     if PE.WatchBlockedMessage then PE.WatchBlockedMessage() end
@@ -866,14 +892,30 @@ function PE:IsModuleSavedOn(key)
     return (self.db ~= nil and self.db.enabled[key] == true) or false
 end
 
+-- Why a feature cannot be switched on right now, or nil. A module may give
+-- `blocked = function(mod) -> text or nil` (Catch all errors: another error
+-- addon is loaded); the text is shown under its name.
+function PE:ModuleBlockedReason(mod)
+    if type(mod) ~= "table" or type(mod.blocked) ~= "function" then return nil end
+    local st = S[mod]
+    local ok, reason = xpcall(mod.blocked, st and st.handler or coreHandler, mod)
+    if ok and type(reason) == "string" and reason ~= "" then return reason end
+    return nil
+end
+
 -- For the panel: "on", "off", "failed" (saved on, OnEnable hit an error) or
--- "blocked" (needs QuestieDB). Second value is a plain-language detail.
+-- "blocked" (needs QuestieDB, or the module's own `blocked` says why). Second
+-- value is a plain-language detail.
 function PE:GetModuleState(key)
     local mod = key ~= nil and self.modules[key]
     local st = mod and S[mod]
     if not st then return "off" end
     if mod.requiresQuestieDB and self.loggedIn and not self.hasQuestieDB then
         return "blocked", self.questieDBReason
+    end
+    if not st.enabled then
+        local reason = self:ModuleBlockedReason(mod)
+        if reason then return "blocked", reason end
     end
     if st.enabled then return "on" end
     if st.failed and self:IsModuleSavedOn(key) then return "failed" end
@@ -1237,7 +1279,7 @@ local function SlashCommand(msg)
         end
         PE:SetDebug(msg == "debug on")
         PE:Print(PE.debugOn
-            and "Debug log on. Play until the problem happens, then use Save log now on Settings > Errors (or /reload)."
+            and "Debug log on. Play until the problem happens, then use Save on Settings > Debug log (or /reload)."
             or "Debug log off. The lines so far are kept until you clear them.")
     elseif msg == "reset" then
         PE:SetUISetting("size", "medium")

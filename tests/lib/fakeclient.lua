@@ -1728,6 +1728,57 @@ function Client.new(opts)
             return unpack(res, 1, res.n)
         end)
     end, true)
+    -- The game's error path (Blizzard_ScriptErrors/Blizzard_ScriptErrors.lua:71-101,
+    -- Blizzard_ScriptErrorsFrame/Blizzard_ScriptErrorsFrame.lua:88-160): the handler set with
+    -- seterrorhandler gets the message; Blizzard's works out the stack and passes message, type,
+    -- stack and locals to the error box, which keeps an entry per new message (a repeat counts
+    -- up) and shows itself when the "scriptErrors" setting is on. Lua warnings come with type 1.
+    -- c:luaError(text, stack) raises an error the way the game passes one on; c:otherError(source,
+    -- text) one from another addon's folder. The stand-in's own script errors (Protect above) are
+    -- not sent here unless a test sets c.onError.
+    world.cvars.scriptErrors = "1"
+    local box = { errorData = {}, seen = {}, shown = false }
+    function box:IsShown() return self.shown end
+    function box:Show() self.shown = true end
+    function box:Hide() self.shown = false end
+    function box:DisplayMessageInternal(message, messageType, stack, locals)
+        stack = stack or ""
+        local key = (not world.secrets[message] and not world.secrets[stack]) and (tostring(message) .. "\n" .. tostring(stack)) or nil
+        local index = key and self.seen[key]
+        if index then
+            self.errorData[index].count = self.errorData[index].count + 1
+        else
+            self.errorData[#self.errorData + 1] = { count = 1, message = message, messageType = messageType,
+                time = "now", stack = stack, locals = locals or "<none>" }
+            if key then self.seen[key] = #self.errorData end
+        end
+        if not self.shown and world.cvars.scriptErrors ~= "0" then self.shown = true end
+    end
+    c.errorBox = box
+    rawset(env, "ScriptErrorsFrame", box)
+    local errorHandler
+    local function BlizzardHandler(message)
+        local stack = c.nextStack or "[string \"/run x()\"]:1: in main chunk\n"
+        c.nextStack = nil
+        box:DisplayMessageInternal(message, 0, stack, "locals of " .. tostring(message))
+    end
+    errorHandler = BlizzardHandler
+    Global("geterrorhandler", function() return errorHandler end)
+    Global("seterrorhandler", function(fn) errorHandler = fn end, true)
+    function c:luaError(text, stack)
+        c.nextStack = stack
+        errorHandler(text)
+    end
+    function c:otherError(source, text)
+        c.nextStack = "Interface/AddOns/" .. source .. "/Main.lua:12: in function <Interface/AddOns/" .. source
+            .. "/Main.lua:10>\nInterface/AddOns/" .. source .. "/Main.lua:5: in main chunk\n"
+        errorHandler(text)
+    end
+    function c:luaWarning(text)
+        box:DisplayMessageInternal(text, 1)
+        c:fire("LUA_WARNING", text)
+    end
+
     c.definedGlobals = definedGlobals
 
     -----------------------------------------------------------------------
