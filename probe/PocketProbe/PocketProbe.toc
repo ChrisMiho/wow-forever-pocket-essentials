@@ -2,10 +2,12 @@
 ## Title: Pocket Probe
 ## Author: ChrisMiho
 ## X-License: GPL-3.0
-## Notes: Test tool, not for play. Tries a list of addon actions in each situation (Gamepad UI, fights, dungeons, vendors) and saves what the game allowed. Run it with Pocket Essentials switched off.
-## Version: 0.2.0
+## Notes: Test tool, not for play. Tap Probe (or type /probe) to open its panel, run the trials you choose, and it saves what the game allowed. Run it with Pocket Essentials switched off.
+## Version: 0.3.0
 ## SavedVariables: PocketProbeDB
 
 Core.lua
 Trials.lua
+Errors.lua
 Run.lua
+Panel.lua

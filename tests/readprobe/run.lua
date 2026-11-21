@@ -343,6 +343,85 @@ do
 end
 
 ---------------------------------------------------------------------------
+-- Probe 0.3.0: the Errors and Graphics areas, readings, guided answers
+---------------------------------------------------------------------------
+
+do
+    local PRESS = TOWN_PRESS
+    local db = {
+        version = 1, game = "1.60.1 (70959)", probe = "0.3.0",
+        options = { vendor = true, risky = false, auto = false },
+        trials = {
+            { id = "err.handler", area = "Errors", label = "Error handler is there", kind = "info" },
+            { id = "err.hook", area = "Errors", label = "Hook sees a test error", kind = "action" },
+            { id = "err.chain", area = "Errors", label = "Own handler", kind = "action", risky = true },
+            { id = "gfx.read", area = "Graphics", label = "Read sparkle and outline settings", kind = "info" },
+            { id = "gfx.outlines", area = "Graphics", label = "Outlines off, then restart", kind = "guided" },
+            { id = "gfx.icons", area = "Graphics", label = "Interact icons on loot", kind = "guided" },
+        },
+        situations = {},
+        results = {
+            ["err.handler"] = { [PRESS] = "function" },
+            ["err.hook"] = { [PRESS] = "blocked" },
+            ["gfx.read"] = { [PRESS] = "sparkle 0 · outline 2" },
+            ["gfx.icons"] = { [PRESS] = "icon seen" },
+        },
+        details = {
+            { trial = "err.handler", situation = PRESS, result = "function", message = "geterrorhandler function; seterrorhandler function", at = "2026-11-20 20:00:00" },
+            { trial = "err.hook", situation = PRESS, result = "blocked", func = "hooksecurefunc()" },
+            { trial = "gfx.icons", situation = PRESS, result = "icon seen", message = "set: SoftTargetLowPriorityIcons 0 -> 1; old values put back" },
+        },
+        guided = {
+            ["gfx.outlines"] = { stage = "restart", started = "2026-11-20 20:05:00",
+                old = { graphicsOutlineMode = "2", raidGraphicsOutlineMode = "2", outlineModeShowLootEffectWhenDisabled = false } },
+            ["broken"] = "junk",
+        },
+        log = {},
+    }
+    local out = R.format(db)
+    eq(out[3], "1 situation, 6 trials, risky trials off, automatic passes off", "the header names the Auto switch")
+    local text = table.concat(out, "\n")
+    check(text:find("Errors\n  Trial                   S1\n  Error handler is there  function\n  Hook sees a test error  blocked\n  Own handler             -", 1, true),
+        "the Errors area table:\n" .. text)
+    check(text:find("Graphics\n", 1, true) and text:find("  Interact icons on loot             icon seen", 1, true), "the guided answer is a cell")
+    local function section(heading)
+        for i, line in ipairs(out) do
+            if line:find("^" .. heading) then
+                local lines = {}
+                for k = i, #out do
+                    if out[k] == "" and k > i and out[k + 1] and not out[k + 1]:find("^ ") and not out[k + 1]:find("%(") then break end
+                    lines[#lines + 1] = out[k]
+                end
+                return lines
+            end
+        end
+    end
+    eq(section("Guided trials not answered yet"), {
+        "Guided trials not answered yet:",
+        "  broken: stage unknown",
+        "  gfx.outlines: waiting for a full restart of the game, started 2026-11-20 20:05:00; to put back: graphicsOutlineMode 2, "
+            .. "outlineModeShowLootEffectWhenDisabled (not on this client), raidGraphicsOutlineMode 2",
+    }, "guided trials still waiting, with what they will put back")
+    local readings = R.formatReadings(db, select(2, R.situations(db)), R.areas(db))
+    eq(readings, {
+        "Readings and answers: 2 entries",
+        "",
+        "Error handler is there (err.handler)",
+        "  function in S1 (Gamepad UI on, no fight, open world, from a press), at 2026-11-20 20:00:00",
+        "    message: geterrorhandler function; seterrorhandler function",
+        "",
+        "Interact icons on loot (gfx.icons)",
+        "  icon seen in S1 (Gamepad UI on, no fight, open world, from a press)",
+        "    message: set: SoftTargetLowPriorityIcons 0 -> 1; old values put back",
+    }, "readings and guided answers are their own section")
+    local refusals = R.format(db, { detailsOnly = true })
+    eq(refusals[1], "Not allowed: 1 entry", "--details lists only the refusals")
+    eq(refusals[3], "Hook sees a test error (err.hook)")
+    eq(R.formatReadings(fixture(), {}, R.areas(fixture())), {}, "a 0.2.0 file has no readings section")
+    eq(R.formatGuided(fixture()), {}, "nor a guided section")
+end
+
+---------------------------------------------------------------------------
 -- Loading the file: text only, nothing reachable from inside it
 ---------------------------------------------------------------------------
 

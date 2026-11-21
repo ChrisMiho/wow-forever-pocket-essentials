@@ -153,6 +153,60 @@ local function install(c)
     rawset(c.editBox, "GetChatType", function() return c.chatBox.chatType end)
     env.ChatFrameUtil.DeactivateChat = function() c.closeChat() end
 
+    -- The game's error path (Blizzard_ScriptErrors.lua:71-101, Blizzard_ScriptErrorsFrame.lua:88-141):
+    -- the handler set with seterrorhandler gets the message; Blizzard's works out the stack and
+    -- passes message, type, stack and locals to the error box, which shows itself when the
+    -- "scriptErrors" setting is on. The stand-in's script errors (c.onError) take this path.
+    world.cvars.scriptErrors = "1"
+    local box = { errorData = {}, shown = false }
+    function box:IsShown() return self.shown end
+    function box:DisplayMessageInternal(message, messageType, stack, locals)
+        self.errorData[#self.errorData + 1] = { message = message, messageType = messageType, stack = stack, locals = locals }
+        if not self.shown and world.cvars.scriptErrors ~= "0" then self.shown = true end
+    end
+    c.errorBox = box
+    rawset(env, "ScriptErrorsFrame", box)
+    local function Blizzard(message)
+        local text = tostring(message)
+        local stack = c.nextStack
+        c.nextStack = nil
+        if not stack then
+            stack = text:find("PocketProbe", 1, true) and "Interface/AddOns/PocketProbe/Errors.lua:150: in function <...>\n"
+                or "[string \"/run x()\"]:1: in main chunk\n"
+        end
+        box:DisplayMessageInternal(message, 0, stack, "secret locals " .. text)
+    end
+    local handler = Blizzard
+    rawset(env, "geterrorhandler", function() return handler end)
+    rawset(env, "seterrorhandler", function(fn) handler = fn end)
+    c.onError = function(e) handler(e) end
+    -- Another addon's error, as the game would pass it on.
+    c.otherError = function(_, source, text)
+        c.nextStack = "Interface/AddOns/" .. source .. "/Main.lua:12: in function <Interface/AddOns/" .. source .. "/Main.lua:10>\n"
+        handler(text)
+    end
+
+    -- Settings: CVarDocumentation.lua:66, 82; VideoDocumentation.lua:78, 105; ConsoleDocumentation.lua:59.
+    for name, value in pairs({ graphicsOutlineMode = "2", raidGraphicsOutlineMode = "2", graphicsSpellDensity = "1",
+        graphicsParticleDensity = "3", SoftTargetLowPriorityIcons = "0", SoftTargetInteract = "1" }) do
+        world.cvars[name] = value
+    end
+    world.secureCVars = { scriptErrors = true }
+    rawset(env.C_CVar, "GetCVarDefault", function(name) return world.cvars[name] and "0" or nil end)
+    rawset(env.C_CVar, "GetCVarInfo", function(name)
+        local v = world.cvars[name]
+        if v == nil then return nil end
+        return v, "0", false, false, false, world.secureCVars[name] and true or false, false
+    end)
+    rawset(env, "C_VideoOptions", {
+        IsOutlineModeSupported = function() return world.outlineSupported ~= false end,
+        IsSpellVisualDensitySystemSupported = function() return false end,
+    })
+    rawset(env, "ConsoleGetAllCommands", function()
+        return { { command = "graphicsOutlineMode", help = "" }, { command = "outlineModeShowLootEffectWhenDisabled", help = "" },
+            { command = "lootUnderMouse", help = "" }, { command = "maxFPS", help = "" }, { command = "spellClutter", help = "" } }
+    end)
+
     -- A small world with names in it.
     world.bags[0][1] = { itemID = 101, quality = 0, price = 50, count = 1, name = "Broken Fang" }
     world.bags[0][2] = { itemID = 102, quality = 0, price = 5, count = 1, name = "Wolf Pelt" }
@@ -168,6 +222,33 @@ end
 
 local function riskyOn() return { options = { risky = true } } end
 
+-- The panel's buttons and the hidden d-pad button.
+local function openPanel(c)
+    c:click(rawget(c.env, "PocketProbeButton"))
+    assert(rawget(c.env, "PocketProbePanel"):IsShown(), "the panel did not open")
+end
+
+-- Opens the panel on the tab that holds this trial and returns its row.
+local function showTrial(c, P, id)
+    if not rawget(c.env, "PocketProbePanel"):IsShown() then openPanel(c) end
+    for _, t in ipairs(P.panelTabs) do
+        if t:IsShown() then
+            c:click(t)
+            for _, r in ipairs(P.panelRows) do
+                if r:IsShown() and r.ppEntry and r.ppEntry.id == id then return r end
+            end
+        end
+    end
+    error("no row on the panel for " .. id, 2)
+end
+
+-- A d-pad key, as the game sends it through the override binding: down, then up.
+local function pad(c, key)
+    local nav = rawget(c.env, "PocketProbeNavButton")
+    c:script(nav, "OnClick", key, true)
+    c:script(nav, "OnClick", key, false)
+end
+
 -- The place of a log line that starts (after the time) with this text.
 local function logAt(db, text)
     for i, line in ipairs(db.log) do
@@ -178,11 +259,20 @@ end
 -- A fresh client with the probe loaded. opts.saved: the saved table (a
 -- reload is a new client with the same table). opts.setup(c) runs after the
 -- names above are installed and before the probe loads.
+-- The automatic passes (probe 0.2.0) start off in 0.3.0; most tests below are
+-- about them, so their saved table has the Auto switch on unless it says
+-- otherwise or opts.auto is false.
 local function new(opts)
     opts = opts or {}
     local gamepad = opts.gamepadUI
     if gamepad == nil then gamepad = true end
-    local c = Client.new({ root = root, addonDir = ADDON_DIR, addonName = "PocketProbe", saved = opts.saved, gamepadUI = gamepad })
+    local saved = opts.saved
+    if opts.auto ~= false then
+        saved = saved or {}
+        saved.options = saved.options or {}
+        if saved.options.auto == nil then saved.options.auto = true end
+    end
+    local c = Client.new({ root = root, addonDir = ADDON_DIR, addonName = "PocketProbe", saved = saved, gamepadUI = gamepad })
     clients[#clients + 1] = c
     install(c)
     if opts.setup then opts.setup(c) end
@@ -191,9 +281,11 @@ local function new(opts)
 end
 
 local function noErrors(c, where)
-    if #c.errors > 0 then
-        local e = c.errors[1]
-        error((where or "client") .. ": Lua error in " .. e.where .. ": " .. e.msg, 2)
+    for _, e in ipairs(c.errors) do
+        -- The probe's own test errors (area Errors) are meant.
+        if not e.msg:find("PocketProbe test error", 1, true) then
+            error((where or "client") .. ": Lua error in " .. e.where .. ": " .. e.msg, 2)
+        end
     end
     for _, line in ipairs(c.env.PocketProbeDB.log) do
         if line:find("error in the probe", 1, true) then error((where or "client") .. ": " .. line, 2) end
@@ -245,7 +337,10 @@ end
 local function passTrials(db)
     local out = {}
     for _, t in ipairs(db.trials) do
-        if t.area ~= "Vendor" and t.id ~= "val.whisper" then out[#out + 1] = t end
+        -- The Errors and Graphics areas only run from the panel.
+        if t.area ~= "Vendor" and t.id ~= "val.whisper" and t.area ~= "Errors" and t.area ~= "Graphics" then
+            out[#out + 1] = t
+        end
     end
     return out
 end
@@ -261,21 +356,57 @@ test("saved table has the fixed shape", function()
     local c, P, db = new()
     eq(db.version, 1)
     eq(db.game, "1.16.0 (60000)")
-    eq(db.probe, "0.2.0")
+    eq(db.probe, "0.3.0")
     eq(db.options.vendor, true)
     eq(db.options.risky, false)
     eq(type(db.spoiled), "table")
     eq(db.trials[1].id, "chat.open", "the saved list keeps the display order")
     eq(db.clean.index, 0); eq(db.clean.running, false)
-    check(#db.trials >= 30, "trial list too short")
+    check(#db.trials >= 40, "trial list too short")
     local seen = {}
     for _, t in ipairs(db.trials) do
         check(type(t.id) == "string" and type(t.area) == "string" and type(t.label) == "string", "trial entry fields")
-        check(t.kind == "action" or t.kind == "value", "trial kind " .. tostring(t.kind))
+        check(t.kind == "action" or t.kind == "value" or t.kind == "info" or t.kind == "guided", "trial kind " .. tostring(t.kind))
         check(not seen[t.id], "trial id twice: " .. t.id)
         seen[t.id] = true
     end
-    for _, key in ipairs({ "situations", "results", "details", "log" }) do eq(type(db[key]), "table", key) end
+    for _, id in ipairs({ "err.handler", "err.box", "err.hook", "err.others", "err.hide", "err.chain", "err.blocked",
+        "gfx.read", "gfx.write", "gfx.names", "gfx.outlines", "gfx.icons" }) do
+        check(seen[id], "new trial missing: " .. id)
+    end
+    for _, key in ipairs({ "situations", "results", "details", "log", "last", "guided" }) do eq(type(db[key]), "table", key) end
+    noErrors(c)
+end)
+
+test("nothing runs by itself in 0.3.0: Auto starts off, the listeners still record", function()
+    local c, P, db = new({ auto = false, setup = function(cl) cl:openBag(); cl:closeBag() end })
+    eq(db.options.auto, false)
+    c:advance(60)
+    c:enterCombat(); c:advance(30); c:leaveCombat(); c:advance(30)
+    c:openMerchant(); c:advance(10); c:closeMerchant()
+    noErrors(c)
+    eq(next(db.results), nil, "no trial ran")
+    eq(countLog(db, "pass started"), 0)
+    check(not rawget(c.env, "PocketProbePanel"):IsShown(), "the panel does not open by itself")
+    -- The listeners: a whisper and a refusal in the probe's name are still recorded.
+    c:whisperIn(WHISPERER .. "-Camelot", "psst hello")
+    eq(cell(db, "val.whisper", KEY_AUTO), "readable")
+    c:fire("ADDON_ACTION_FORBIDDEN", "PocketProbe", "InteractUnit()")
+    eq(cell(db, "after.InteractUnit", KEY_AUTO), "forbidden")
+    -- Auto on: the passes of 0.2.0 run again.
+    openPanel(c)
+    c:click(button(c, "PocketProbeAutoButton"))
+    eq(db.options.auto, true)
+    eq(button(c, "PocketProbeAutoButton").ppLabel:GetText(), "Auto: On")
+    c:advance(30)
+    eq(db.situations[KEY_AUTO].passes, 1)
+    eq(cell(db, "own.show", KEY_AUTO), "allowed")
+    check(not db.results["err.hook"], "the Errors trials are never in an automatic pass")
+    check(not db.results["gfx.write"], "the Graphics trials are never in an automatic pass")
+    -- Auto off again stops the next automatic pass.
+    c:click(button(c, "PocketProbeAutoButton"))
+    c:enterCombat(); c:advance(30)
+    check(not db.situations[KEY_FIGHT], "no fight pass with Auto off")
     noErrors(c)
 end)
 
@@ -294,11 +425,13 @@ test("with the risky switch off (the default) a pass leaves the risky trials out
     eq(countLog(db, "risky trials off"), 1)
     eq(db.situations[KEY_AUTO].passes, 1)
     -- Switching them on makes the situation count as not covered yet.
+    openPanel(c)
     local switch = button(c, "PocketProbeRiskyButton")
-    eq(switch.label:GetText(), "Risky trials: off")
+    eq(switch.ppLabel:GetText(), "Risky: Off")
     c:click(switch)
     eq(db.options.risky, true)
-    eq(switch.label:GetText(), "Risky trials: on")
+    eq(switch.ppLabel:GetText(), "Risky: On")
+    c:click(button(c, "PocketProbeCloseButton"))
     c:enterCombat(); c:advance(0.5); c:leaveCombat(); c:advance(30)
     eq(cell(db, "chat.open", KEY_AUTO), "allowed")
     eq(db.situations[KEY_AUTO].passes, 2)
@@ -424,17 +557,18 @@ test("a fight starting mid-pass stops it; the pass runs again afterwards", funct
     check(cell(db, "val.money", KEY_AUTO), "the pass was run again")
 end)
 
-test("a press pass starts inside the tap and each tap starts with the next trial", function()
-    local c, P, db = new({ setup = function(cl)
+test("Run all safe starts inside the tap; Run on a row runs that trial inside the tap", function()
+    local c, P, db = new({ auto = false, setup = function(cl)
         -- Setting the chat type makes the game print its line (no event).
         rawset(cl.editBox, "SetChatType", function() cl.env.DisplayInterfaceActionBlockedMessage() end)
     end })
-    c:advance(25)
-    eq(cell(db, "chat.type", KEY_AUTO), "blocked")
-    c:click(button(c, "PocketProbeButton"))
-    -- Before any timer: the first trial already has its result.
+    c:advance(5)
+    openPanel(c)
+    c:click(button(c, "PocketProbeRunAllButton"))
+    -- Before any timer: the first safe trial already has its result.
+    local first = P.SafeList(false)[1]
+    eq(first.id, "chat.type")
     eq(cell(db, "chat.type", KEY_PRESS), "blocked")
-    eq(db.pressIndex, 1)
     local d = detail(db, "chat.type", KEY_PRESS)
     eq(d.inPress, true)
     eq(d.result, "blocked"); eq(d.func, nil)
@@ -442,53 +576,58 @@ test("a press pass starts inside the tap and each tap starts with the next trial
     check(not d.stack:match("^[^\n]*Run%.lua"), "our own listening lines are left off the top of the stack")
     check(d.at:match("^%d%d%d%d%-"), "at")
     check(not cell(db, "own.show", KEY_PRESS), "the rest waits for the timers")
-    c:advance(25)
+    c:advance(40)
     noErrors(c)
-    for _, t in ipairs(passTrials(db)) do
-        local risky = false
-        for _, id in ipairs(RISKY) do if id == t.id then risky = true end end
-        if not risky and (not t.id:find("^win%.") or t.id:find("attach$")) then
-            check(cell(db, t.id, KEY_PRESS), "no press result for " .. t.id)
+    for _, t in ipairs(P.SafeList(false)) do
+        if not t.id:find("^win%.") or t.id:find("create$") then
+            check(cell(db, t.id, KEY_PRESS), "no result for " .. t.id)
         end
     end
-    for _, id in ipairs(RISKY) do check(not db.results[id], id .. " ran from a press with the switch off") end
+    for _, id in ipairs(RISKY) do check(not db.results[id], id .. " ran in Run all safe") end
+    check(not db.results["err.chain"], "the risky Errors trial is not safe")
+    check(not db.results["gfx.outlines"], "guided trials are not in Run all safe")
     eq(db.situations[KEY_PRESS].trigger, "press")
-    eq(detail(db, "val.name.target", KEY_PRESS).inPress, false)
-    eq(detail(db, "val.name.target", KEY_AUTO).inPress, nil)
-    -- Press passes always run, and the next one starts with the next action trial.
-    c:click(button(c, "PocketProbeButton"))
-    eq(db.pressIndex, 2)
-    eq(countLog(db, "own.show: allowed (straight from the press)"), 1)
-    c:advance(25)
-    eq(db.situations[KEY_PRESS].passes, 2)
-    -- /probe is the same thing.
+    eq(detail(db, "err.handler", KEY_PRESS).inPress, false, "later trials of the pass ran on timers")
+    -- One row's Run: that trial alone, inside the tap.
+    local row = showTrial(c, P, "own.escape")
+    local before = countLog(db, "own.escape: allowed (straight from the press)")
+    c:click(row.ppRun)
+    eq(countLog(db, "own.escape: allowed (straight from the press)"), before + 1)
+    eq(row.ppChipText:GetText(), "Allowed")
+    check(P.status:find("own.escape done", 1, true), "status: " .. tostring(P.status))
+    -- /probe run is Run all safe; /probe opens and closes the panel.
     c.env.SlashCmdList.POCKETPROBE("")
-    eq(db.pressIndex, 3)
-    eq(countLog(db, "own.escape: allowed (straight from the press)"), 1)
+    check(not rawget(c.env, "PocketProbePanel"):IsShown(), "/probe closes the open panel")
+    c.env.SlashCmdList.POCKETPROBE("")
+    check(rawget(c.env, "PocketProbePanel"):IsShown(), "/probe opens it")
+    c.env.SlashCmdList.POCKETPROBE("run")
+    check(P.status:find("pass 1/", 1, true), "/probe run starts a pass: " .. tostring(P.status))
     c.env.SlashCmdList.POCKETPROBE("stop")
     check(P.status:find("stopped", 1, true), "status after /probe stop")
-    local before = countLog(db, ": ")
+    local logged = countLog(db, ": ")
     c:advance(25)
-    eq(countLog(db, ": "), before, "nothing runs after Stop")
+    eq(countLog(db, ": "), logged, "nothing runs after Stop")
     noErrors(c)
 end)
 
-test("with the switch on, a risky trial straight from a press is a pass of its own", function()
-    local c, P, db = new({ saved = riskyOn() })
-    c:advance(30)
-    c:click(button(c, "PocketProbeButton"))
-    eq(db.pressIndex, 1)
+test("a risky trial's Run is dimmed and does nothing until Risky is on", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    local row = showTrial(c, P, "chat.open")
+    eq(row.ppLabel:GetText(), "Open the chat box (risky)")
+    eq(row.ppRun.ppDisabled, true)
+    c:click(row.ppRun)
+    check(not db.results["chat.open"], "a dimmed Run ran")
+    eq(#c:callsTo("ChatFrameUtil.OpenChat"), 0)
+    c:click(button(c, "PocketProbeRiskyButton"))
+    row = showTrial(c, P, "chat.open")
+    eq(row.ppRun.ppDisabled, false)
+    c:click(row.ppRun)
     eq(cell(db, "chat.open", KEY_PRESS), "allowed")
     eq(countLog(db, "chat.open: allowed (straight from the press)"), 1)
-    c:advance(30)
-    check(not cell(db, "own.show", KEY_PRESS), "nothing else runs after a risky trial in that pass")
-    eq(db.situations[KEY_PRESS].passes, 0)
-    -- Later presses reach the trials that are not risky and run whole passes.
-    for _ = 1, 4 do c:click(button(c, "PocketProbeButton")); c:advance(30) end
-    eq(db.pressIndex, 5)
-    eq(countLog(db, "chat.type: allowed (straight from the press)"), 1)
-    check(cell(db, "val.money", KEY_PRESS), "a whole press pass ran")
-    eq(db.situations[KEY_PRESS].passes, 1)
+    c:advance(5)
+    check(not cell(db, "own.show", KEY_PRESS), "Run runs that one trial only")
+    check(not c.editBox:IsShown(), "the chat box is closed again")
     noErrors(c)
 end)
 
@@ -596,8 +735,10 @@ test("the clean series runs one trial per reload, watches, and ends", function()
     for i, t in ipairs(P.cleanList) do order[i] = t.id end
     eq(table.concat(order, " "), "chat.type chat.open chat.openframe chat.focus chat.close bag.toggle win.map.create "
         .. "win.bag.create win.chat.create pad.bind pad.mark layout.set vendor.sell1")
+    openPanel(c)
+    eq(button(c, "PocketProbeCleanButton").ppLabel:GetText(), "Clean run (reloads)")
     c:click(button(c, "PocketProbeCleanButton"))
-    eq(c.reloads, 1, "Clean trials reloads from the tap")
+    eq(c.reloads, 1, "Clean run reloads from the tap")
     eq(saved.clean.running, true); eq(saved.clean.index, 0)
     eq(saved.options.risky, false, "the series runs the risky trials whatever the switch says")
     local started = countLog(saved, "pass started")
@@ -730,10 +871,14 @@ test("results from another probe version are cleared at load", function()
         situations = { [KEY_AUTO] = { passes = 3 } }, spoiled = { [KEY_AUTO] = "chat.open" },
         log = { "00:00:00 old line" }, clean = { index = 5, running = true }, pressIndex = 9,
         trials = { { id = "after.InteractUnit", area = "x", label = "y", kind = "action" } },
+        last = { ["chat.open"] = { result = "allowed" } },
+        guided = { ["gfx.icons"] = { stage = "ask", old = { SoftTargetLowPriorityIcons = "0" } } },
     }
     local c, P, db = new({ saved = saved })
     eq(db, saved)
-    eq(db.probe, "0.2.0")
+    eq(db.probe, "0.3.0")
+    eq(next(db.last), nil, "the panel's newest results are cleared too")
+    eq(db.guided["gfx.icons"].stage, "ask", "a guided trial's old values are kept, to be put back")
     eq(next(db.results), nil); eq(#db.details, 0); eq(next(db.situations), nil); eq(next(db.spoiled), nil)
     eq(db.clean.running, false); eq(db.clean.index, 0); eq(db.pressIndex, 0)
     eq(db.options.vendor, false, "the switches are kept")
@@ -781,10 +926,12 @@ test("vendor trials run only with a vendor open and the switch on", function()
     c:advance(25)
     eq(#c:callsTo("C_Container.UseContainerItem"), 0)
     -- Switch off: a vendor changes nothing.
+    openPanel(c)
     local switch = button(c, "PocketProbeVendorButton")
     c:click(switch)
     eq(db.options.vendor, false)
-    eq(switch.label:GetText(), "Vendor trials: off")
+    eq(switch.ppLabel:GetText(), "Vendor: Off")
+    eq(showTrial(c, P, "vendor.sell1").ppRun.ppDisabled, true, "vendor Run is dimmed while Vendor is off")
     c:openMerchant(); c:advance(10); c:closeMerchant()
     eq(#c:callsTo("C_Container.UseContainerItem"), 0)
     eq(c.sellAllCalls, nil)
@@ -792,7 +939,11 @@ test("vendor trials run only with a vendor open and the switch on", function()
     check(not db.results["vendor.sell1"], "vendor trial ran with the switch off")
     -- Switch on.
     c:click(switch)
-    eq(switch.label:GetText(), "Vendor trials: on")
+    eq(switch.ppLabel:GetText(), "Vendor: On")
+    -- Run with no vendor open says so and tries nothing.
+    c:click(showTrial(c, P, "vendor.sell1").ppRun)
+    eq(P.status, "open a vendor first")
+    c:click(button(c, "PocketProbeCloseButton"))
     c:openMerchant()
     c:advance(0.5)
     local sold = c:callsTo("C_Container.UseContainerItem")
@@ -814,8 +965,9 @@ test("vendor trials run only with a vendor open and the switch on", function()
     c.world.bags[0][5] = { itemID = 105, quality = 0, price = 7, count = 1, name = "Wolf Pelt" }
     c:openMerchant(); c:advance(10)
     eq(#c:callsTo("C_Container.UseContainerItem"), 1)
-    -- A press with the vendor open does.
-    c:click(button(c, "PocketProbeButton")); c:advance(30)
+    -- Run all safe with the vendor open does.
+    openPanel(c)
+    c:click(button(c, "PocketProbeRunAllButton")); c:advance(40)
     eq(#c:callsTo("C_Container.UseContainerItem"), 2)
     eq(cell(db, "vendor.sell1", KEY_PRESS), "allowed")
     noErrors(c)
@@ -892,7 +1044,15 @@ test("nothing from the game world is saved", function()
     end })
     c:advance(25)
     c:whisperIn(WHISPERER .. "-Camelot", "psst hello")
-    c:click(button(c, "PocketProbeButton")); c:advance(25)
+    -- Another addon's error carries world text in its message and its locals.
+    c:otherError("SomeAddon", "Broken Fang: attempt to index a nil value")
+    openPanel(c)
+    c:click(button(c, "PocketProbeRunAllButton")); c:advance(40)
+    c:click(button(c, "PocketProbeRiskyButton"))
+    c:click(showTrial(c, P, "err.chain").ppRun); c:advance(3)
+    c:click(showTrial(c, P, "gfx.icons").ppRun)
+    c:click(showTrial(c, P, "gfx.icons").ppAnswer[1])
+    c:click(button(c, "PocketProbeCloseButton"))
     c:enterCombat(); c:advance(25)
     c:whisperIn(WHISPERER .. "-Camelot", "psst hello")
     c:leaveCombat(); c:advance(5)
@@ -921,10 +1081,11 @@ test("details stop at 400 and the log at 2000", function()
     for i = 1, 2000 do saved.log[i] = "00:00:00 old " .. i end
     local c, P, db = new({ saved = saved })
     c:advance(25)
-    c:click(button(c, "PocketProbeButton")); c:advance(25)
+    openPanel(c)
+    c:click(button(c, "PocketProbeRunAllButton")); c:advance(40)
     noErrors(c)
     eq(#db.details, 400)
-    eq(db.details[400].trial, "val.name.target", "newest last")
+    eq(db.details[400].trial, "gfx.names", "newest last")
     check(db.details[1].at ~= "old 1", "oldest dropped")
     check(#db.log <= 2000, "log has " .. #db.log .. " lines")
     check(#db.log >= 1700, "the log drops its oldest lines in blocks, not everything")
@@ -934,8 +1095,7 @@ end)
 test("the probe's frames are made at load and nothing ticks", function()
     local c, P, db = new()
     local atLoad = #c:frames()
-    for _, name in ipairs({ "PocketProbeButton", "PocketProbeCleanButton", "PocketProbeSaveButton",
-        "PocketProbeVendorButton", "PocketProbeRiskyButton", "PocketProbeStopButton", "PocketProbeNextButton" }) do
+    for _, name in ipairs({ "PocketProbeButton", "PocketProbeStopButton", "PocketProbeNextButton" }) do
         local b = button(c, name)
         local st = c._state(b)
         eq(st.strata, "HIGH", name .. " strata")
@@ -943,9 +1103,18 @@ test("the probe's frames are made at load and nothing ticks", function()
         check(b:GetHeight() >= 40, name .. " is big enough for a finger")
         check(not b:IsProtected(), name .. " is a plain frame")
     end
+    local panel = button(c, "PocketProbePanel")
+    eq(c._state(panel).strata, "DIALOG")
+    for _, name in ipairs({ "PocketProbeRunAllButton", "PocketProbeCleanButton", "PocketProbeRiskyButton",
+        "PocketProbeVendorButton", "PocketProbeAutoButton", "PocketProbeSaveButton", "PocketProbeCloseButton" }) do
+        eq(c._state(button(c, name)).parent, panel, name .. " is on the panel")
+        check(not button(c, name):IsProtected(), name .. " is a plain frame")
+    end
     check(not button(c, "PocketProbeNextButton"):IsShown(), "Next is hidden")
+    openPanel(c)
     c:advance(25)
     c:enterCombat(); c:advance(25)
+    c:leaveCombat(); c:click(button(c, "PocketProbeCloseButton")); openPanel(c); c:advance(2)
     -- Only the trial buttons were added: three under Blizzard windows and one
     -- under our own window per pass.
     eq(#c:frames() - atLoad, 5)
@@ -953,9 +1122,343 @@ test("the probe's frames are made at load and nothing ticks", function()
     for _, rec in ipairs(c:frames()) do check(not rec.scripts.OnUpdate, "a frame has an OnUpdate script") end
     local _, _, top = c._rect(button(c, "PocketProbeButton"))
     check(top > 700, "Probe sits at the top of the screen")
+    eq(button(c, "PocketProbeSaveButton").ppLabel:GetText(), "Save (reloads)")
     c:click(button(c, "PocketProbeSaveButton"))
     eq(c.reloads, 1, "Save reloads from the tap")
     noErrors(c)
+end)
+
+---------------------------------------------------------------------------
+-- The panel (0.3.0)
+---------------------------------------------------------------------------
+
+-- The labels of the tabs on show, in order.
+local function tabLabels(P)
+    local out = {}
+    for _, t in ipairs(P.panelTabs) do
+        if t:IsShown() then out[#out + 1] = t.ppName:GetText() end
+    end
+    return out
+end
+
+test("the panel: Settings-sized, area tabs with counts, no scroll bar (big areas split)", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    local panel = button(c, "PocketProbePanel")
+    check(not panel:IsShown(), "closed at login")
+    openPanel(c)
+    -- Settings.lua PanelSize: min(screenW*0.96, Px(1180)) x screenH*0.92 (UIParent is 768 units tall here).
+    local uiW, uiH = c.UIParent:GetWidth(), c.UIParent:GetHeight()
+    local px = 768 / 720
+    check(math.abs(panel:GetWidth() - math.min(uiW * 0.96, 1180 * px)) < 0.01, "width " .. panel:GetWidth())
+    check(math.abs(panel:GetHeight() - uiH * 0.92) < 0.01, "height " .. panel:GetHeight())
+    local titleText
+    for _, rec in ipairs(c:frames()) do
+        if rec.frame == panel then
+            for _, region in ipairs(rec.regions or {}) do
+                if region.GetText and region:GetText() == "Pocket Probe 0.3.0" then titleText = true end
+            end
+        end
+    end
+    check(titleText, "titled Pocket Probe 0.3.0")
+    local labels = tabLabels(P)
+    eq(labels[1], "Errors"); eq(labels[2], "Graphics")
+    local joined = table.concat(labels, "|")
+    for _, area in ipairs({ "Our own windows", "Chat box", "Bags", "Vendor", "Controller", "Layout", "Settings" }) do
+        check(joined:find(area, 1, true), "no tab for " .. area .. ": " .. joined)
+    end
+    -- More trials than fit: two tabs, never a scroll bar.
+    local m = P.panelSizes
+    check(m.rowsFit >= 4 and m.rowsFit <= 12, "rows that fit: " .. m.rowsFit)
+    check(joined:find("Values 1|Values 2", 1, true), "Values is split in two: " .. joined)
+    check(joined:find("Blizzard windows 1|Blizzard windows 2", 1, true), "Blizzard windows is split in two: " .. joined)
+    local shown, total = 0, 0
+    for _, page in ipairs(P.BuildPages(m.rowsFit)) do
+        check(#page.entries <= m.rowsFit, page.label .. " has more rows than fit")
+        total = total + #page.entries
+    end
+    eq(total, #db.trials, "every trial is on a tab")
+    for _, rec in ipairs(c:frames()) do
+        check(rec.type ~= "ScrollFrame" or not rec.addonFile or not rec.addonFile:find("Panel", 1, true), "the panel made a scroll frame")
+    end
+    -- Every row and the tabs fit inside the panel.
+    local _, _, panelTop, panelBottom = c._rect(panel)
+    for _, r in ipairs(P.panelRows) do
+        if r:IsShown() then
+            local _, _, top, bottom = c._rect(r)
+            check(top <= panelTop + 0.01 and bottom >= panelBottom - 0.01, "a row is outside the panel")
+        end
+    end
+    for _, t in ipairs(P.panelTabs) do
+        if t:IsShown() then
+            local _, _, _, bottom = c._rect(t)
+            local _, _, footTop = c._rect(button(c, "PocketProbeRunAllButton"))
+            check(bottom > footTop, "a tab reaches into the footer")
+        end
+    end
+    -- Counts: "N / M run", and a row's chip after Run.
+    eq(P.panelTabs[1].ppCount:GetText(), "0 / 7 run")
+    local row = showTrial(c, P, "err.handler")
+    eq(row.ppChipText:GetText(), "Not run")
+    c:click(row.ppRun)
+    eq(row.ppChipText:GetText(), "function")
+    eq(P.panelTabs[1].ppCount:GetText(), "1 / 7 run")
+    -- Tapping a row shows its details in one line under the list.
+    c:click(row)
+    local detailsText
+    for _, rec in ipairs(c:frames()) do
+        if rec.frame == panel then
+            for _, region in ipairs(rec.regions or {}) do
+                local t = region.GetText and region:GetText()
+                if type(t) == "string" and t:find("Details:", 1, true) then detailsText = t end
+            end
+        end
+    end
+    check(detailsText and detailsText:find("geterrorhandler function", 1, true), "details: " .. tostring(detailsText))
+    -- Close and /probe.
+    c:click(button(c, "PocketProbeCloseButton"))
+    check(not panel:IsShown(), "Close closes")
+    noErrors(c)
+end)
+
+test("the d-pad drives the panel; its keys are given back on close and in a fight", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    local panel = button(c, "PocketProbePanel")
+    local function bound()
+        return c._state(panel).bindings
+    end
+    check(not bound(), "no keys taken while closed")
+    openPanel(c)
+    local keys = bound()
+    check(keys, "keys taken while open")
+    for _, key in ipairs({ "PADDUP", "PADDDOWN", "PADDLEFT", "PADDRIGHT", "PAD1", "PAD2" }) do
+        eq(keys[key], "PocketProbeNavButton", key)
+    end
+    -- The first press puts the highlight on the tabs; Down moves to Graphics.
+    pad(c, "DOWN")
+    eq(P.Nav.zone, "tabs")
+    pad(c, "DOWN")
+    local graphics = P.panelRows[1].ppEntry
+    eq(graphics and graphics.id, "gfx.read", "Down selects the next tab")
+    -- Right: the first row, then its Run; A runs it.
+    pad(c, "RIGHT")
+    eq(P.Nav.zone, "rows")
+    pad(c, "RIGHT")
+    eq(P.Nav.Target(), P.panelRows[1].ppRun)
+    pad(c, "A")
+    eq(cell(db, "gfx.read", KEY_PRESS), "sparkle 0 · outline 2")
+    -- Down along the rows, past the last one to the footer; Left / Right along it.
+    for _ = 1, 10 do pad(c, "DOWN") end
+    eq(P.Nav.zone, "footer")
+    pad(c, "RIGHT"); pad(c, "RIGHT")
+    eq(P.Nav.Target(), button(c, "PocketProbeRiskyButton"))
+    pad(c, "A")
+    eq(db.options.risky, true, "A pressed Risky")
+    pad(c, "UP")
+    eq(P.Nav.zone, "rows")
+    pad(c, "LEFT"); pad(c, "LEFT")
+    eq(P.Nav.zone, "tabs")
+    -- A release with no press seen is not ours.
+    c:script(button(c, "PocketProbeNavButton"), "OnClick", "B", false)
+    check(panel:IsShown(), "a lone release closed the panel")
+    -- A fight: the keys go back; after it they are taken again.
+    c:enterCombat()
+    check(not bound(), "keys given back in a fight")
+    c:leaveCombat()
+    check(bound(), "keys taken again after the fight")
+    -- B closes and gives them back.
+    pad(c, "B")
+    check(not panel:IsShown(), "B closes")
+    check(not bound(), "keys given back on close")
+    noErrors(c)
+end)
+
+---------------------------------------------------------------------------
+-- Area Errors
+---------------------------------------------------------------------------
+
+test("Errors: handler, box, hook, others' errors by source, blocked actions of others", function()
+    local c, P, db = new({ auto = false, setup = function(cl) cl.world.addons = { BugSack = true } end })
+    c:advance(5)
+    -- Before any trial: other addons' errors and blocks are counted from load.
+    c:otherError("SomeAddon", "Kill Ten Rats: attempt to call a nil value")
+    c:otherError("SomeAddon", "Kill Ten Rats: attempt to call a nil value")
+    c:otherError("Blizzard_QuestLog", "Elwynn: bad argument")
+    c:fire("ADDON_ACTION_BLOCKED", "SomeAddon", "CastSpellByName()")
+    c:fire("ADDON_ACTION_FORBIDDEN", "OtherAddon", "UseAction()")
+    c:fire("LUA_WARNING", "a warning")
+    local function run(id)
+        local row = showTrial(c, P, id)
+        c:click(row.ppRun)
+        return row
+    end
+    run("err.handler")
+    eq(cell(db, "err.handler", KEY_PRESS), "function")
+    check(db.last["err.handler"].message:find("error addons loaded: BugSack", 1, true), "BugSack noticed")
+    run("err.box")
+    eq(cell(db, "err.box", KEY_PRESS), "readable")
+    check(db.last["err.box"].message:find("entries in the box 3", 1, true), db.last["err.box"].message)
+    run("err.hook")
+    check(not cell(db, "err.hook", KEY_PRESS), "the hook trial waits a second")
+    c:advance(1.5)
+    eq(cell(db, "err.hook", KEY_PRESS), "allowed")
+    local msg = db.last["err.hook"].message
+    check(msg:find("message readable; stack readable; box shown yes", 1, true), msg)
+    run("err.others")
+    eq(cell(db, "err.others", KEY_PRESS), "3 (SomeAddon 2, Blizzard 1)")
+    msg = db.last["err.others"].message
+    check(msg:find("warnings (LUA_WARNING) 1", 1, true), msg)
+    check(msg:find("the probe's own 1", 1, true), msg)
+    run("err.blocked")
+    eq(cell(db, "err.blocked", KEY_PRESS), "2 seen")
+    check(db.last["err.blocked"].message:find("OtherAddon 1, SomeAddon 1", 1, true), db.last["err.blocked"].message)
+    -- Run again: the cell keeps the newest count only.
+    c:otherError("SomeAddon", "again")
+    run("err.others")
+    eq(cell(db, "err.others", KEY_PRESS), "4 (SomeAddon 3, Blizzard 1)")
+    -- Others' error text and the locals are never kept.
+    local text = table.concat(dump(db), "\n")
+    for _, word in ipairs({ "Kill Ten Rats", "Elwynn", "secret locals", "attempt to call" }) do
+        check(not text:find(word, 1, true), "the saved table holds \"" .. word .. "\"")
+    end
+    noErrors(c)
+end)
+
+test("Errors: hiding the box, and a chained handler (risky); both put things back", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    local handlerBefore = c.env.geterrorhandler()
+    local row = showTrial(c, P, "err.hide")
+    c:click(row.ppRun)
+    eq(c.world.cvars.scriptErrors, "0", "set to 0 for the test")
+    c:advance(1.5)
+    eq(cell(db, "err.hide", KEY_PRESS), "allowed")
+    local msg = db.last["err.hide"].message
+    check(msg:find("value 1, default 0, isSecure yes, isReadOnly no, locked no", 1, true), msg)
+    check(msg:find("written back unchanged: ok", 1, true), msg)
+    check(msg:find("box shown no", 1, true), msg)
+    eq(c.world.cvars.scriptErrors, "1", "the old value is put back")
+    eq(c.errorBox.shown, false)
+    -- With the box already open the answer cannot be told.
+    c.errorBox.shown = true
+    c:click(showTrial(c, P, "err.hide").ppRun); c:advance(1.5)
+    eq(cell(db, "err.hide", KEY_PRESS), "allowed", "nothing refused it; the details say it could not tell")
+    check(db.last["err.hide"].message:find("already open", 1, true), "says the box was open")
+    c.errorBox.shown = false
+    -- The chained handler is risky: inert until Risky is on.
+    row = showTrial(c, P, "err.chain")
+    eq(row.ppRun.ppDisabled, true)
+    c:click(button(c, "PocketProbeRiskyButton"))
+    row = showTrial(c, P, "err.chain")
+    c:click(row.ppRun)
+    check(c.env.geterrorhandler() ~= handlerBefore, "our handler is on during the trial")
+    c:advance(1.5)
+    eq(cell(db, "err.chain", KEY_PRESS), "allowed")
+    check(db.last["err.chain"].message:find("our handler saw the test error yes; Blizzard's box still got it yes", 1, true),
+        db.last["err.chain"].message)
+    eq(c.env.geterrorhandler(), handlerBefore, "the old handler is put back")
+    noErrors(c)
+end)
+
+test("Errors: no error box on this client is 'missing', not a Lua error", function()
+    local c, P, db = new({ auto = false, setup = function(cl) rawset(cl.env, "ScriptErrorsFrame", nil) end })
+    c:advance(5)
+    for _, id in ipairs({ "err.box", "err.hook", "err.others" }) do
+        c:click(showTrial(c, P, id).ppRun)
+    end
+    eq(cell(db, "err.box", KEY_PRESS), "missing")
+    eq(cell(db, "err.hook", KEY_PRESS), "missing")
+    eq(cell(db, "err.others", KEY_PRESS), "no listener")
+    noErrors(c)
+end)
+
+---------------------------------------------------------------------------
+-- Area Graphics
+---------------------------------------------------------------------------
+
+test("Graphics: read, write (put back) and the setting names", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    c:click(showTrial(c, P, "gfx.read").ppRun)
+    eq(cell(db, "gfx.read", KEY_PRESS), "sparkle 0 · outline 2")
+    local msg = db.last["gfx.read"].message
+    check(msg:find("IsOutlineModeSupported true", 1, true), msg)
+    check(msg:find("IsSpellVisualDensitySystemSupported false", 1, true), msg)
+    check(msg:find("graphicsOutlineMode 2 (default 0)", 1, true), msg)
+    check(msg:find("OutlineEngineMode not on this client", 1, true), msg)
+    check(msg:find("SoftTargetInteract 1 (default 0)", 1, true), msg)
+    c:click(showTrial(c, P, "gfx.write").ppRun)
+    eq(cell(db, "gfx.write", KEY_PRESS), "allowed")
+    check(db.last["gfx.write"].message:find("set to 1, read back 1", 1, true), db.last["gfx.write"].message)
+    eq(c.world.cvars.outlineModeShowLootEffectWhenDisabled, "0", "the old value is put back")
+    c:click(showTrial(c, P, "gfx.names").ppRun)
+    eq(cell(db, "gfx.names", KEY_PRESS), "4 found")
+    eq(db.last["gfx.names"].message, "graphicsOutlineMode, lootUnderMouse, outlineModeShowLootEffectWhenDisabled, spellClutter")
+    -- A client without the sparkle setting.
+    local c2, P2, db2 = new({ auto = false, setup = function(cl) cl.world.cvars.outlineModeShowLootEffectWhenDisabled = nil end })
+    c2:click(showTrial(c2, P2, "gfx.write").ppRun)
+    eq(cell(db2, "gfx.write", KEY_PRESS), "missing")
+    noErrors(c); noErrors(c2)
+end)
+
+test("Graphics, guided: Outlines off waits for a full restart, asks, then puts the old values back", function()
+    local saved = { options = { auto = false } }
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    local row = showTrial(c, P, "gfx.outlines")
+    eq(row.ppRun.ppLabel:GetText(), "Start")
+    eq(row.ppChipText:GetText(), "Not run")
+    c:click(row.ppRun)
+    eq(c.world.cvars.graphicsOutlineMode, "0"); eq(c.world.cvars.raidGraphicsOutlineMode, "0")
+    eq(c.world.cvars.outlineModeShowLootEffectWhenDisabled, "1")
+    local g = saved.guided["gfx.outlines"]
+    eq(g.stage, "restart")
+    eq(g.old.graphicsOutlineMode, "2"); eq(g.old.outlineModeShowLootEffectWhenDisabled, "0")
+    row = showTrial(c, P, "gfx.outlines")
+    eq(row.ppChipText:GetText(), "Restart the game")
+    eq(row.ppRun.ppDisabled, true, "Start is dimmed while it waits")
+    check(not row.ppAnswer[1]:IsShown(), "no answers before the restart")
+    check(P.status:find("Fully restart the game", 1, true), "status: " .. tostring(P.status))
+    -- A reload is not a restart.
+    c:fire("PLAYER_ENTERING_WORLD", false, true)
+    eq(saved.guided["gfx.outlines"].stage, "restart")
+    -- A full restart: a new session whose login is the first.
+    local c2, P2 = new({ saved = saved, setup = function(cl)
+        cl.world.cvars.graphicsOutlineMode, cl.world.cvars.raidGraphicsOutlineMode = "0", "0"
+        cl.world.cvars.outlineModeShowLootEffectWhenDisabled = "1"
+    end })
+    eq(saved.guided["gfx.outlines"].stage, "ask")
+    row = showTrial(c2, P2, "gfx.outlines")
+    check(row.ppAnswer[1]:IsShown() and row.ppAnswer[2]:IsShown(), "the two answers show")
+    check(not row.ppRun:IsShown() and not row.ppChip:IsShown(), "in place of the chip and Run")
+    eq(row.ppAnswer[1].ppLabel:GetText(), "Sparkles seen"); eq(row.ppAnswer[2].ppLabel:GetText(), "No sparkles")
+    c2:click(row.ppAnswer[2])
+    eq(cell(saved, "gfx.outlines", KEY_PRESS), "no sparkles")
+    eq(saved.guided["gfx.outlines"], nil)
+    eq(c2.world.cvars.graphicsOutlineMode, "2"); eq(c2.world.cvars.raidGraphicsOutlineMode, "2")
+    eq(c2.world.cvars.outlineModeShowLootEffectWhenDisabled, "0")
+    check(saved.last["gfx.outlines"].message:find("old values put back", 1, true), saved.last["gfx.outlines"].message)
+    row = showTrial(c2, P2, "gfx.outlines")
+    eq(row.ppChipText:GetText(), "no sparkles")
+    noErrors(c); noErrors(c2)
+end)
+
+test("Graphics, guided: Interact icons asks at once, survives a reload, and puts it back", function()
+    local saved = { options = { auto = false } }
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    c:click(showTrial(c, P, "gfx.icons").ppRun)
+    eq(c.world.cvars.SoftTargetLowPriorityIcons, "1")
+    eq(saved.guided["gfx.icons"].stage, "ask")
+    -- A reload: the question is still there.
+    local c2, P2 = new({ saved = saved, setup = function(cl) cl.world.cvars.SoftTargetLowPriorityIcons = "1" end })
+    local row = showTrial(c2, P2, "gfx.icons")
+    eq(row.ppAnswer[1].ppLabel:GetText(), "Icon seen")
+    c2:click(row.ppAnswer[1])
+    eq(cell(saved, "gfx.icons", KEY_PRESS), "icon seen")
+    eq(c2.world.cvars.SoftTargetLowPriorityIcons, "0", "put back")
+    noErrors(c); noErrors(c2)
 end)
 
 ---------------------------------------------------------------------------

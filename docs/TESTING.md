@@ -170,8 +170,8 @@ either of those zips. It only reports what the game does. It never tries to
 get round a block.
 
 **What it costs.** Almost nothing. The only trials that spend anything are
-the vendor ones: it sells your grey junk and repairs your gear. A "Vendor
-trials: on / off" switch under the Probe button turns those off.
+the vendor ones: it sells your grey junk and repairs your gear. The
+**Vendor: On / Off** switch at the bottom of its window turns those off.
 
 ### Installing it
 
@@ -187,49 +187,108 @@ trials: on / off" switch under the Probe button turns those off.
 When you are done probing, delete the `PocketProbe` folder or untick it, and
 switch your features back on.
 
-### On the device
+### On the device (probe 0.3.0)
 
-A small "Probe" button sits at the top centre of the screen, with a line of
-text under it saying what it is doing. A pass is one run through all the
-trials; it takes a few seconds and ends with "pass done".
+**Nothing runs by itself any more.** Logging in does nothing but put a small
+**Probe** button at the top centre of the screen, with a line of text under it
+saying what the probe is doing. Tap **Probe** (or type `/probe`) to open the
+probe's window. It is the same size as Pocket Essentials' settings window and
+looks the same.
 
-The trials are in two groups (probe 0.2.0):
+**The window:**
 
-- **Safe trials** run by themselves and leave your controls alone.
-- **Risky trials** (opening the chat box and the bags, switching the layout)
-  can leave the controller's interact and cancel buttons refusing to work
-  until a reload. They only run when **Risky trials** is switched on, or one
-  at a time in the clean trials. If the second line under the button says
-  "controls may misbehave until a reload", tap **Save**.
+- **Left: one tab per area.** Errors, Graphics, Our own windows, Blizzard
+  windows, Chat box, Bags, Vendor, Controller, Layout, Settings, Values (and
+  "Afterwards" once the game has refused one of its own actions in the probe's
+  name). Each tab says how many of its trials have run, for example
+  "5 / 7 run". There is no scroll bar: an area with more trials than fit on
+  the screen is split into two tabs, such as "Values 1" and "Values 2".
+- **Right: one row per trial.** Its name, then a coloured box with the
+  result, then **Run**:
+  - green **Allowed**: it worked;
+  - amber **Blocked** (or Forbidden, Error): the game refused it;
+  - grey **Not run**: not tried yet;
+  - blue: what it read, for example "function" or "sparkle 0 · outline 2".
+  - **Run** tries that one trial at once, straight from your tap.
+  - Trials marked "(risky)" are dimmed, and their Run does nothing, while
+    **Risky** is Off.
+- **Details:** tap a row (not its Run) and the line under the list shows
+  what happened: the game function, its message and the first lines of the
+  game's stack.
+- **Bottom:** **Run all safe** (every trial that is not risky, one after the
+  other) · **Clean run (reloads)** · **Risky: On / Off** · **Vendor: On / Off**
+  · **Auto: On / Off** · **Save (reloads)**.
+- **Auto** brings back the automatic runs of probe 0.2.0 (at login, at the
+  start and end of each fight, at a vendor). It starts Off.
+- **Controller:** the d-pad moves (Up / Down along the tabs or the rows, Right
+  from a tab to its rows and on to Run, Down past the last row to the bottom
+  buttons), **A** presses, **B** closes. In a fight the d-pad is given back to
+  the game; touch still works.
 
-Leave "Risky trials" off for steps 1 to 4.
+**Risky trials** (opening the chat box and the bags, switching the layout,
+setting our own error handler) can leave the controller's interact and cancel
+buttons refusing to work until a reload. If the line under the Probe button,
+or the top of the window, says "controls may misbehave until a reload", tap
+**Save**.
 
-1. With Pocket Essentials off and PocketProbe loaded, log in in a town. Wait
-   for "pass done".
-2. Tap **Probe** once.
-3. Pick a fight with something weak. Wait for "pass done", tap **Probe** once
-   during the fight, finish the fight and wait for "pass done" again.
-4. Open a vendor with a few grey items in your bags and damaged gear.
-5. Tap **Clean trials**, then **Next (reload)** each time it appears, until it
-   says done (13 trials). Each tap reloads the interface and runs one trial as
-   the first thing after the reload, then watches for a few seconds for
-   after-effects.
-6. Optional, last: switch **Risky trials** on, tap **Probe** in town, then
-   again during a fight. Expect the controls to misbehave afterwards.
-7. Tap **Save** (this reloads, which is when the game writes the file) and
-   send this file:
+**The two new areas:**
+
+- **Errors** (for the coming error catcher in Pocket Essentials): whether the
+  game's error handler and error box are there, whether the probe can listen
+  to the box (it raises one harmless test error of its own, so the game's
+  error box will pop up: close it), how many errors other addons and the game
+  had this session and from where, whether turning the box off works (it is
+  turned back on straight away), and a risky trial with a handler of our own.
+  It never saves another addon's error text, only where it came from.
+- **Graphics** (why the loot sparkles do not show on the handheld): reads the
+  outline and sparkle settings, writes the sparkle one (and puts it back),
+  lists the setting names the game knows, and two **guided** trials. A guided
+  trial has **Start** instead of Run. It changes a setting, tells you what to
+  do (in the Details line and at the top of the window), and then shows two
+  answer buttons. Your answer is saved and the old setting is put back.
+  - **Outlines off, then restart:** after Start, fully close and restart the
+    game (a reload is not enough), kill something, open the window again, go
+    to Graphics and tap **Sparkles seen** or **No sparkles**.
+  - **Interact icons on loot:** after Start, look at a lootable corpse, then
+    tap **Icon seen** or **No icon**.
+
+**Steps (one run of 0.3.0):**
+
+Leave Risky off for steps 1 to 5.
+
+1. With Pocket Essentials off and PocketProbe loaded, log in in a town. Check
+   that nothing runs by itself. Tap **Probe**.
+2. Tap **Run all safe** and wait for "pass done" at the top of the window.
+3. Open **Errors**, tap a few rows to read their Details. Open **Graphics**
+   and do **Interact icons on loot**, then **Outlines off, then restart**
+   (this one needs a full restart of the game).
+4. Pick a fight with something weak and tap **Run all safe** during the
+   fight (by touch).
+5. Open a vendor with grey items and damaged gear, open the window, switch
+   to **Vendor** and tap **Run** on each row.
+6. Tap **Clean run (reloads)**, then **Next (reload)** under the Probe button
+   each time it appears, until it says done (13 trials). Each tap reloads the
+   interface and runs one trial as the first thing after the reload, then
+   watches for a few seconds for after-effects.
+7. Optional, last: switch **Risky** on and tap **Run** on the risky rows (in
+   town, then in a fight). Expect the controls to misbehave afterwards.
+8. Tap **Save (reloads)** (the game writes the file when it reloads) and send
+   this file:
    `World of Warcraft/_forever_/WTF/Account/<account>/SavedVariables/PocketProbe.lua`
 
 What you will see while it runs, all expected:
 
-- The chat box opening and closing by itself.
+- The chat box opening and closing by itself (risky trials only).
+- The game's red error box, after the Errors trials' test error.
 - "Interface action failed because of an AddOn" in chat, at most once a
   session.
 - A "blocked from an action" pop-up when a trial is forbidden. Tap **Ignore**
   on the touchscreen; the controller cannot reach it.
 
 For the values it reads, the file holds only the kind of answer ("readable",
-"secret"), never the value itself, so it holds no names.
+"secret"), never the value itself, so it holds no names. The exceptions are
+the Graphics settings (numbers like "2") and the names of the addons that had
+errors, which are not personal.
 
 ### Reading the file on a computer
 
@@ -260,10 +319,17 @@ What a cell means:
 | `allowed / blocked` | Two passes in the same situation got different answers. Both are kept, so the difference shows. |
 | `-` | Not tried in that situation. |
 
-Under the tables, "Not allowed" lists every refusal with the game function's
-name, the game's message, whether it ran straight from a tap, and the game's
-own stack lines. Like the debug log reader, this needs `luajit` and only reads
-the file, with no access to files or the system from inside it.
+For the Errors and Graphics trials a cell can also hold what was read (such
+as `function`, `3 (Blizzard 2, SomeAddon 1)` or `sparkle 0 · outline 2`), and
+a guided trial's cell holds the answer (`sparkles seen`, `no icon`).
+
+Under the tables come, when there are any: "Guided trials not answered yet"
+(with the settings each will put back once answered), "Readings and answers"
+(everything the Errors and Graphics trials read, and each guided answer), and
+"Not allowed", which lists every refusal with the game function's name, the
+game's message, whether it ran straight from a tap, and the game's own stack
+lines. Like the debug log reader, this needs `luajit` and only reads the file,
+with no access to files or the system from inside it.
 
 ## Device test plan
 

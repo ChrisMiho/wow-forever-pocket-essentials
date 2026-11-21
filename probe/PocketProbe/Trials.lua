@@ -2,7 +2,10 @@ local ADDON_NAME, P = ...
 
 -- The trials. Each one is a small table:
 --
---   id, area, label, kind   what the saved file lists ("action" or "value")
+--   id, area, label, kind   what the saved file lists ("action", "value",
+--                           "info" or "guided"; the last two are in Errors.lua)
+--   manual = true           only from the panel (its Run button, Run all safe),
+--                           never in the automatic passes
 --   clean = true            also run alone, first thing after a reload
 --   risky = true            may leave the game's controller code refusing its
 --                           own actions until a reload; runs last in a pass,
@@ -47,6 +50,7 @@ local function Add(t)
     P.trials[#P.trials + 1] = t
     P.trialById[t.id] = t
 end
+P.Add = Add
 
 local function Has(obj, method)
     return type(obj) == "table" and type(obj[method]) == "function"

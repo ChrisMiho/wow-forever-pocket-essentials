@@ -6,7 +6,12 @@ local ADDON_NAME, P = ...
 --
 --   Core.lua    saved table, the situation, reading values safely, recording
 --   Trials.lua  the list of trials (one small function each, plus an undo)
---   Run.lua     noticing blocks, the timed passes, the clean series, buttons
+--   Errors.lua  the Errors and Graphics trials, and the error box listener
+--   Run.lua     noticing blocks, passes, the clean series, guided trials
+--   Panel.lua   the window that drives it all (touch and d-pad)
+--
+-- Nothing runs by itself: the automatic passes of 0.2.0 only run with the
+-- "Auto" switch on (off by default). The listeners that only record stay.
 --
 -- Every game name used, and where Blizzard's source for build 1.60.1 (70938)
 -- proves it (paths under Interface/AddOns; "Doc/" is
@@ -105,10 +110,11 @@ local type, tostring, pairs, ipairs, pcall, select = type, tostring, pairs, ipai
 local tconcat, tremove = table.concat, table.remove
 
 P.name = ADDON_NAME or "PocketProbe"
-P.VERSION = "0.2.0"          -- used when the game cannot read the TOC's version line
+P.VERSION = "0.3.0"          -- used when the game cannot read the TOC's version line
 
 local LOG_MAX, LOG_DROP = 2000, 200   -- the activity log drops its oldest lines in blocks
 local DETAILS_MAX = 400
+local MESSAGE_MAX = 900                -- a detail's message, at most
 
 ---------------------------------------------------------------------------
 -- Looking names up, and values the game may hide
@@ -233,7 +239,8 @@ function P.InitDB()
     local version, cleared = ProbeVersion(), nil
     if saved.probe ~= nil and saved.probe ~= version then
         cleared = P.Plain(saved.probe, 40)
-        for _, key in ipairs({ "results", "details", "situations", "spoiled", "log" }) do saved[key] = {} end
+        -- "guided" is kept: it holds settings a guided trial still has to put back.
+        for _, key in ipairs({ "results", "details", "situations", "spoiled", "log", "last" }) do saved[key] = {} end
         saved.clean, saved.pressIndex = nil, nil
     end
     saved.version = 1
@@ -242,11 +249,12 @@ function P.InitDB()
     if type(saved.options) ~= "table" then saved.options = {} end
     if type(saved.options.vendor) ~= "boolean" then saved.options.vendor = true end
     if type(saved.options.risky) ~= "boolean" then saved.options.risky = false end
+    if type(saved.options.auto) ~= "boolean" then saved.options.auto = false end
     if type(saved.clean) ~= "table" then saved.clean = {} end
     if type(saved.clean.index) ~= "number" then saved.clean.index = 0 end
     saved.clean.running = saved.clean.running == true
     if type(saved.pressIndex) ~= "number" then saved.pressIndex = 0 end
-    for _, key in ipairs({ "situations", "results", "details", "log", "spoiled" }) do
+    for _, key in ipairs({ "situations", "results", "details", "log", "spoiled", "last", "guided" }) do
         if type(saved[key]) ~= "table" then saved[key] = {} end
     end
     -- The trial list is written fresh; the "afterwards" entries earlier
@@ -254,7 +262,7 @@ function P.InitDB()
     local old = type(saved.trials) == "table" and saved.trials or {}
     saved.trials = {}
     for i, t in ipairs(P.trials) do
-        saved.trials[i] = { id = t.id, area = t.area, label = t.label, kind = t.kind }
+        saved.trials[i] = { id = t.id, area = t.area, label = t.label, kind = t.kind, risky = t.risky or nil }
     end
     db = saved
     P.db = saved
@@ -400,16 +408,28 @@ end
 
 P.Merge = Merge
 
--- Stores one result. info (all optional): func, message, stack, inPress.
+-- Called after every result is stored (the panel redraws itself).
+P.OnRecord = nil
+
+-- Stores one result. info (all optional): func, message, stack, inPress,
+-- replace (for "info" and "guided" trials: the cell keeps only the newest
+-- answer, since a count or a setting read twice is not two answers).
 -- Returns the detail entry when one was made.
 function P.Record(trialId, key, result, info)
     info = info or {}
+    if info.message then info.message = P.Plain(info.message, MESSAGE_MAX) end
     local cell = db.results[trialId]
     if type(cell) ~= "table" then
         cell = {}
         db.results[trialId] = cell
     end
-    cell[key] = Merge(cell[key], result)
+    cell[key] = info.replace and result or Merge(cell[key], result)
+    -- The newest answer of each trial, whatever the situation: what the panel shows.
+    db.last[trialId] = {
+        result = result, func = info.func, message = info.message, stack = info.stack,
+        situation = key, at = Stamp("%H:%M:%S"),
+    }
+    if P.OnRecord then pcall(P.OnRecord, trialId) end
     Log(trialId .. ": " .. result
         .. (info.inPress == true and " (straight from the press)" or "")
         .. (info.func and (" [" .. info.func .. "]") or "")

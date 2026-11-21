@@ -241,6 +241,8 @@ function Client.new(opts)
         end
         local res = Pack(xpcall(fn, function(e)
             c.errors[#c.errors + 1] = { where = where, msg = tostring(e), stack = debug.traceback("", 2) }
+            -- A test may stand in for the game's error handler (the probe's tests do).
+            if c.onError then pcall(c.onError, e, where) end
             return e
         end, ...))
         if res[1] then return unpack(res, 2, res.n) end

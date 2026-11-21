@@ -1,10 +1,12 @@
 local ADDON_NAME, P = ...
 
--- Running the trials: noticing when the game blocks one, the timed passes,
--- the clean series (one trial per reload) and the few buttons on screen.
+-- Running the trials: noticing when the game blocks one, passes, the clean
+-- series (one trial per reload), guided trials, and the small Probe button.
 --
--- Nothing here runs every frame. A pass is a chain of short timers
--- (C_Timer.After), one trial about every 0.3 seconds, and then it stops.
+-- Nothing runs by itself: a pass starts from the panel (Run, Run all safe),
+-- the clean series from Clean run, and the automatic passes of 0.2.0 only
+-- with the Auto switch on. Nothing here runs every frame. A pass is a chain
+-- of short timers (C_Timer.After), one trial about every 0.3 seconds.
 
 local type, ipairs, pcall, xpcall = type, ipairs, pcall, xpcall
 local tconcat = table.concat
@@ -152,7 +154,11 @@ local function Signal(kind, func, message, rawStack)
 end
 
 local function OnActionEvent(event, addon, func)
-    if Str(addon) ~= P.name then return end
+    if Str(addon) ~= P.name then
+        -- Another addon's refusal: only counted (area Errors).
+        if P.CountOthersBlock then P.CountOthersBlock(addon) end
+        return
+    end
     func = Str(func)
     if func == "" then func = nil end
     Signal(event == "ADDON_ACTION_FORBIDDEN" and "forbidden" or "blocked", func and func:sub(1, 120), nil, nil)
@@ -253,7 +259,20 @@ local function Conclude(trial, key, inPress, cur, expected, message)
     local sig = forbidden or blocked or err
     local result
     local notes = {}
-    if trial.kind == "value" then
+    local replace = nil
+    if trial.kind == "info" then
+        -- An "info" trial's answer is the short text it returned.
+        replace = true
+        if sig then
+            result = (sig.kind == "error") and "error" or sig.kind
+            notes[#notes + 1] = (sig.kind == "error") and sig.message or Describe(sig)
+        elseif expected == "missing" then
+            result = "missing"
+            message = (message or "a function") .. " is not on this client"
+        else
+            result = (type(expected) == "string" and expected ~= "") and expected or "nil"
+        end
+    elseif trial.kind == "value" then
         if sig then
             result = "error"
             notes[#notes + 1] = (sig.kind == "error") and sig.message or Describe(sig)
@@ -283,8 +302,8 @@ local function Conclude(trial, key, inPress, cur, expected, message)
         Log(trial.id .. " " .. note)
     end
     P.Record(trial.id, key, result, {
-        func = sig and sig.func, stack = sig and sig.stack, inPress = inPress,
-        message = (#notes > 0) and P.Plain(tconcat(notes, " | "), 400) or nil,
+        func = sig and sig.func, stack = sig and sig.stack, inPress = inPress, replace = replace,
+        message = (#notes > 0) and P.Plain(tconcat(notes, " | "), 900) or nil,
     })
 end
 
@@ -309,13 +328,13 @@ local function RunTrial(trial, pass, inPress, done)
         end
         if not ready then
             if reason then Log(trial.id .. ": not tried, " .. reason) end
-            return done()
+            return done(reason or "nothing to try right now")
         end
     end
 
     EnsureHook()
     local state = {}
-    local cur = { signals = {}, undoSignals = {}, phase = "run" }
+    local cur = { signals = {}, undoSignals = {}, phase = "run", id = trial.id }
     current = cur
 
     local function Finish(expected, message)
@@ -352,7 +371,9 @@ local function RunTrial(trial, pass, inPress, done)
 end
 
 ---------------------------------------------------------------------------
--- The buttons (made now, at load, so nothing is created in a fight)
+-- The small Probe button and its status line (made now, at load, so nothing
+-- is created in a fight). Probe opens the panel (Panel.lua). Stop shows while
+-- something runs; Next shows while the clean series waits for its reload.
 ---------------------------------------------------------------------------
 
 local function MakeButton(name, text, width, height)
@@ -396,47 +417,44 @@ ShowWarning = function()
     statusFrame:SetHeight(38)
     warningText:SetText(WARNING)
     warningText:Show()
+    if P.OnStatus then pcall(P.OnStatus) end
 end
 
-local cleanButton = MakeButton("PocketProbeCleanButton", "Clean trials", 112, 40)
-cleanButton:SetPoint("TOPLEFT", statusFrame, "BOTTOMLEFT", 0, -2)
-local saveButton = MakeButton("PocketProbeSaveButton", "Save", 70, 40)
-saveButton:SetPoint("LEFT", cleanButton, "RIGHT", GAP, 0)
-local vendorButton = MakeButton("PocketProbeVendorButton", "Vendor trials: on", 160, 40)
-vendorButton:SetPoint("LEFT", saveButton, "RIGHT", GAP, 0)
-local stopButton = MakeButton("PocketProbeStopButton", "Stop", 70, 40)
-stopButton:SetPoint("LEFT", vendorButton, "RIGHT", GAP, 0)
-
-local riskyButton = MakeButton("PocketProbeRiskyButton", "Risky trials: off", 160, 40)
-riskyButton:SetPoint("TOPLEFT", cleanButton, "BOTTOMLEFT", 0, -GAP)
+local stopButton = MakeButton("PocketProbeStopButton", "Stop", 112, 40)
+stopButton:SetPoint("TOPLEFT", statusFrame, "BOTTOMLEFT", 0, -2)
+stopButton:Hide()
 
 local nextButton = MakeButton("PocketProbeNextButton", "Next (reload)", 280, 72)
-nextButton:SetPoint("TOPLEFT", riskyButton, "TOPRIGHT", GAP, 0)
+nextButton:SetPoint("TOPLEFT", stopButton, "TOPRIGHT", GAP, 0)
 nextButton:Hide()
+
+local pass                  -- the pass under way, or nil
+local cleanHold = false     -- the clean series has this session: no passes
+
+local function Busy()
+    return pass ~= nil or current ~= nil or cleanHold
+end
+P.Busy = Busy
 
 local function SetStatus(text)
     P.status = text
     statusText:SetText(text)
+    if Busy() then stopButton:Show() else stopButton:Hide() end
+    if P.OnStatus then pcall(P.OnStatus) end
 end
+P.SetStatus = SetStatus
 
 local function Covered()
     local n = P.SituationCount()
     return n .. (n == 1 and " situation covered" or " situations covered")
 end
 
-local function UpdateVendorLabel()
-    vendorButton.label:SetText("Vendor trials: " .. ((db and db.options.vendor) and "on" or "off"))
-    riskyButton.label:SetText("Risky trials: " .. ((db and db.options.risky) and "on" or "off"))
-end
-
 ---------------------------------------------------------------------------
 -- Passes
 ---------------------------------------------------------------------------
 
-local pass                  -- the pass under way, or nil
-local completed = {}        -- [situation key] = true: a whole pass ran this session
+local completed = {}        -- [situation key] = true: a whole automatic pass ran this session
 local pendingFull, pendingVendor = false, false
-local cleanHold = false     -- the clean series has this session: no passes
 local watchToken = 0        -- changes when a clean trial's watch for after-effects is called off
 
 local TryFull, TryVendor    -- below
@@ -449,6 +467,10 @@ local function RiskyOn()
     return db.options.risky == true
 end
 
+local function AutoOn()
+    return db.options.auto == true
+end
+
 local function VendorList(into)
     local list = into or {}
     for _, t in ipairs(P.trials) do
@@ -457,26 +479,43 @@ local function VendorList(into)
     return list
 end
 
--- The run order of an ordinary pass: the actions that are not risky, then
--- (withVendor) the vendor trials, then the values, and the risky actions
--- last so that whatever they leave behind cannot colour the rest. With the
--- "Risky trials" switch off they are left out altogether.
+-- The run order of an automatic pass (the passes of 0.2.0): the actions that
+-- are not risky, then (withVendor) the vendor trials, then the values, and the
+-- risky actions last so that whatever they leave behind cannot colour the
+-- rest. With the "Risky" switch off they are left out altogether. Trials
+-- marked manual (the Errors and Graphics areas) are never in these passes.
 local function StandardList(withVendor)
     local list, risky = {}, {}
     for _, t in ipairs(P.trials) do
-        if t.kind == "action" and not t.vendor then
+        if t.kind == "action" and not t.vendor and not t.manual then
             if t.risky then risky[#risky + 1] = t else list[#list + 1] = t end
         end
     end
     if withVendor then VendorList(list) end
     for _, t in ipairs(P.trials) do
-        if t.kind == "value" and not t.event then list[#list + 1] = t end
+        if t.kind == "value" and not t.event and not t.manual then list[#list + 1] = t end
     end
     if RiskyOn() then
         for _, t in ipairs(risky) do list[#list + 1] = t end
     end
     return list
 end
+
+-- "Run all safe": every trial that is not risky, guided or waiting for an
+-- event: actions, then (withVendor) the vendor trials, then values and
+-- the "info" trials.
+local function SafeList(withVendor)
+    local list = {}
+    for _, t in ipairs(P.trials) do
+        if t.kind == "action" and not t.vendor and not t.risky then list[#list + 1] = t end
+    end
+    if withVendor then VendorList(list) end
+    for _, t in ipairs(P.trials) do
+        if (t.kind == "value" or t.kind == "info") and not t.event and not t.risky then list[#list + 1] = t end
+    end
+    return list
+end
+P.SafeList = SafeList
 
 -- A situation counts as covered separately with and without the risky trials.
 local function DoneKey(key)
@@ -504,7 +543,7 @@ end
 local function NextStep(p)
     if pass ~= p then return end
     -- A fight starting or ending mid-pass: the trial just run is kept, the
-    -- pass stops and the new situation gets its own pass.
+    -- pass stops and (with Auto on) the new situation gets its own pass.
     if P.Situation(p.trigger) ~= p.key then
         pass = nil
         Log("pass stopped: the situation changed")
@@ -532,8 +571,8 @@ local function StartPass(trigger, list, full, firstInPress, note)
     pass = p
     FlushQuiet()
     Log("pass started: " .. key .. (note and (" (" .. note .. ")") or ""))
-    if full and not RiskyOn() then Log("risky trials off") end
-    if firstInPress then
+    if full and trigger == "auto" and not RiskyOn() then Log("risky trials off") end
+    if firstInPress and list[1] then
         p.pos = 1
         SetStatus("pass 1/" .. #list .. " " .. list[1].id)
         RunTrial(list[1], p, true, function()
@@ -544,9 +583,10 @@ local function StartPass(trigger, list, full, firstInPress, note)
     end
 end
 
--- An automatic pass, unless this situation already had one this session.
+-- An automatic pass (Auto on only), unless this situation already had one
+-- this session.
 TryFull = function()
-    if not db or cleanHold then return end
+    if not db or cleanHold or not AutoOn() then return end
     if pass then
         pendingFull = true
         return
@@ -555,9 +595,9 @@ TryFull = function()
     StartPass("auto", StandardList(false), true)
 end
 
--- The vendor trials by themselves, when a vendor window opens.
+-- The vendor trials by themselves, when a vendor window opens (Auto on only).
 TryVendor = function()
-    if not db or cleanHold then return end
+    if not db or cleanHold or not AutoOn() then return end
     if pass then
         pendingVendor = true
         return
@@ -566,49 +606,56 @@ TryVendor = function()
     StartPass("auto", VendorList(), false, false, "vendor trials only")
 end
 
--- A pass straight from a tap (or /probe). Its first trial runs inside this
--- call, because whether the game treats an action as coming from a real
--- press is one of the things being measured. Each press starts with the
--- next action trial in turn, so repeated taps cover them all.
-local function PressPass()
-    if not db then return end
-    if cleanHold then
-        SetStatus("clean trials are running: tap Next, or Stop")
-        return
+-- Says why nothing can start now, or returns nil.
+local function Refusal()
+    if not db then return "loading" end
+    if cleanHold then return "the clean run is going: tap Next, or Stop" end
+    if current then return "wait: " .. tostring(current.id) .. " is still running" end
+    return nil
+end
+
+local function TakeOver(why)
+    if not pass then return end
+    Log("pass stopped: " .. why)
+    if pass.full and pass.trigger == "auto" then pendingFull = true end
+    pass = nil
+end
+
+-- "Run all safe": a pass straight from the tap. Its first trial runs inside
+-- the tap, because whether the game treats an action as coming from a real
+-- press is one of the things being measured; the rest follow on timers.
+local function RunAllSafe()
+    local why = Refusal()
+    if why then return SetStatus(why) end
+    TakeOver("Run all safe takes over")
+    local list = SafeList(VendorOn())
+    StartPass("press", list, true, true, "run all safe")
+end
+
+-- One trial, straight from its Run button.
+local function RunOne(trial)
+    if type(trial) ~= "table" then return end
+    local why = Refusal()
+    if why then return SetStatus(why) end
+    if trial.kind == "guided" then return SetStatus("a guided trial: use Start, then its two answers") end
+    if trial.event then return SetStatus(trial.id .. " is recorded when its event arrives") end
+    if trial.risky and not RiskyOn() then return SetStatus("risky trials are off: switch Risky on first") end
+    if trial.vendor then
+        if not db.options.vendor then return SetStatus("vendor trials are off: switch Vendor on first") end
+        if not P.vendorOpen then return SetStatus("open a vendor first") end
     end
-    if pass then
-        Log("pass stopped: a press pass takes over")
-        if pass.full and pass.trigger == "auto" then pendingFull = true end
-        pass = nil
-    end
-    local actions = {}
-    for _, t in ipairs(P.trials) do
-        if t.kind == "action" and (RiskyOn() or not t.risky) then actions[#actions + 1] = t end
-    end
-    local first
-    local n = #actions
-    local start = (type(db.pressIndex) == "number") and db.pressIndex or 0
-    for step = 1, n do
-        local index = (start + step - 1) % n + 1
-        if CanRunNow(actions[index]) then
-            first = actions[index]
-            db.pressIndex = index
-            break
+    TakeOver("a single trial takes over")
+    local key, facts = P.Situation("press")
+    P.EnsureSituation(key, facts)
+    FlushQuiet()
+    SetStatus("running " .. trial.id)
+    RunTrial(trial, { trigger = "press", key = key }, true, function(reason)
+        if reason then
+            SetStatus(trial.id .. ": not tried, " .. reason)
+        else
+            SetStatus(trial.id .. " done")
         end
-    end
-    -- A risky trial straight from the press is a pass of its own: nothing
-    -- else is run after it in the same pass.
-    if first and first.risky then
-        Log("this press tries one risky trial only: " .. first.id)
-        StartPass("press", { first }, false, true, "one risky trial only")
-        return
-    end
-    local list = {}
-    if first then list[1] = first end
-    for _, t in ipairs(StandardList(VendorOn())) do
-        if t ~= first then list[#list + 1] = t end
-    end
-    StartPass("press", list, true, first ~= nil)
+    end)
 end
 
 local function Stop()
@@ -707,25 +754,138 @@ local function BeginClean()
 end
 
 ---------------------------------------------------------------------------
+-- Guided trials. Start saves the old values of the trial's settings in the
+-- saved table, sets the new ones and shows the steps. The answer is stored
+-- like any result, and only then are the old values put back. The saved
+-- table keeps all of it, so a full restart (or a reload) loses nothing.
+--
+--   db.guided[id] = { stage = "restart" | "ask", old = { [name] = value | false },
+--                     started = "<date time>", notes = "<what was set>" }
+-- stage "restart": waiting for a full restart (PLAYER_ENTERING_WORLD with
+-- isInitialLogin true); a reload is not enough. "ask": the two answer
+-- buttons show. old[name] = false: the setting is not on this client.
+---------------------------------------------------------------------------
+
+local function SettingNow(name)
+    local get = Find("C_CVar.GetCVar")
+    if type(get) ~= "function" then return nil end
+    local ok, v = pcall(get, name)
+    return ok and Str(v) or nil
+end
+
+local function WriteSetting(name, value)
+    local set = Find("C_CVar.SetCVar")
+    if type(set) ~= "function" then return false end
+    local ok, done = pcall(set, name, value)
+    return ok and not IsSecret(done) and done and true or false
+end
+
+local function StartGuided(trial)
+    if type(trial) ~= "table" or trial.kind ~= "guided" then return end
+    local why = Refusal()
+    if why then return SetStatus(why) end
+    if db.guided[trial.id] then return SetStatus(trial.id .. " is already waiting for an answer") end
+    local missing = MissingNeed(trial)
+    if missing then
+        P.Record(trial.id, (P.Situation("press")), "missing", { message = missing .. " is not on this client" })
+        return SetStatus(trial.id .. ": " .. missing .. " is not on this client")
+    end
+    local old, notes = {}, {}
+    for _, pair in ipairs(trial.settings or {}) do
+        local name = pair[1]
+        local value = SettingNow(name)
+        old[name] = value == nil and false or value
+    end
+    -- Saved before anything is changed, so a crash still leaves the old values to put back.
+    local g = { stage = trial.restart and "restart" or "ask", old = old, started = P.Stamp("%Y-%m-%d %H:%M:%S") }
+    db.guided[trial.id] = g
+    for _, pair in ipairs(trial.settings or {}) do
+        local name, value = pair[1], pair[2]
+        if old[name] == false then
+            notes[#notes + 1] = name .. " not on this client"
+        else
+            local written = WriteSetting(name, value)
+            notes[#notes + 1] = name .. " " .. tostring(old[name]) .. " -> " .. value .. (written and "" or " (refused)")
+        end
+    end
+    g.notes = tconcat(notes, ", ")
+    Log(trial.id .. ": started; " .. g.notes)
+    SetStatus(trial.id .. ": " .. (g.stage == "restart" and (trial.steps or "restart the game") or (trial.ask or "answer")))
+end
+
+local function PutBack(g)
+    local notes = {}
+    for name, value in pairs(type(g.old) == "table" and g.old or {}) do
+        if type(value) == "string" then
+            local written = WriteSetting(name, value)
+            if not written then notes[#notes + 1] = name .. " could not be put back" end
+        end
+    end
+    return notes
+end
+
+local function AnswerGuided(trial, index)
+    if type(trial) ~= "table" or trial.kind ~= "guided" then return end
+    local g = db and db.guided[trial.id]
+    if type(g) ~= "table" or g.stage ~= "ask" then return end
+    local answer = trial.answers and trial.answers[index]
+    if type(answer) ~= "string" then return end
+    local problems = PutBack(g)
+    db.guided[trial.id] = nil
+    local key, facts = P.Situation("press")
+    P.EnsureSituation(key, facts)
+    P.Record(trial.id, key, answer:lower(), {
+        message = "set: " .. tostring(g.notes) .. "; started " .. tostring(g.started)
+            .. "; " .. (#problems > 0 and tconcat(problems, ", ") or "old values put back"),
+    })
+    SetStatus(trial.id .. ": answered, old values put back")
+end
+
+-- After a full restart, guided trials waiting for one ask their question.
+local function GuidedAfterLogin(isInitialLogin)
+    if IsSecret(isInitialLogin) or isInitialLogin ~= true then return end
+    for id, g in pairs(db.guided) do
+        if type(g) == "table" and g.stage == "restart" then
+            g.stage = "ask"
+            Log(tostring(id) .. ": the game was restarted; waiting for the answer")
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- Switches
+---------------------------------------------------------------------------
+
+local OPTION_WORDS = { risky = "risky trials", vendor = "vendor trials", auto = "automatic passes" }
+
+local function ToggleOption(name)
+    if not db or not OPTION_WORDS[name] then return end
+    db.options[name] = not db.options[name]
+    Log(OPTION_WORDS[name] .. " switched " .. (db.options[name] and "on" or "off"))
+    if name == "auto" then
+        if db.options.auto then
+            After(FIGHT_DELAY, TryFull)
+        else
+            pendingFull, pendingVendor = false, false
+            if pass and pass.trigger == "auto" then
+                pass = nil
+                Log("pass stopped: automatic passes switched off")
+            end
+        end
+    end
+    SetStatus("idle — " .. Covered())
+end
+
+---------------------------------------------------------------------------
 -- Button scripts and the slash command
 ---------------------------------------------------------------------------
 
-probeButton:SetScript("OnClick", Guard(PressPass))
-cleanButton:SetScript("OnClick", Guard(BeginClean))
-saveButton:SetScript("OnClick", Guard(Reload))
+local function TogglePanel()
+    if P.TogglePanel then P.TogglePanel() end
+end
+
+probeButton:SetScript("OnClick", Guard(TogglePanel))
 stopButton:SetScript("OnClick", Guard(Stop))
-vendorButton:SetScript("OnClick", Guard(function()
-    if not db then return end
-    db.options.vendor = not db.options.vendor
-    Log("vendor trials switched " .. (db.options.vendor and "on" or "off"))
-    UpdateVendorLabel()
-end))
-riskyButton:SetScript("OnClick", Guard(function()
-    if not db then return end
-    db.options.risky = not db.options.risky
-    Log("risky trials switched " .. (db.options.risky and "on" or "off"))
-    UpdateVendorLabel()
-end))
 nextButton:SetScript("OnClick", Guard(function()
     -- A trial still waiting for a vendor window is skipped.
     local waiting = P.cleanWaiting
@@ -743,8 +903,10 @@ if type(SlashCmdList) == "table" then
             BeginClean()
         elseif word == "stop" then
             Stop()
+        elseif word == "run" then
+            RunAllSafe()
         else
-            PressPass()
+            TogglePanel()
         end
     end)
 end
@@ -771,24 +933,32 @@ function handlers.ADDON_LOADED(name)
     if db or Str(name) ~= P.name then return end
     db = P.InitDB()
     cleanHold = db.clean.running
-    UpdateVendorLabel()
     if cleanHold then
         SetStatus("clean trials: the next one runs in a moment")
     else
-        SetStatus("idle — " .. Covered())
+        SetStatus("idle — " .. Covered() .. (AutoOn() and "" or " (tap Probe)"))
     end
 end
 
-function handlers.PLAYER_ENTERING_WORLD()
+function handlers.PLAYER_ENTERING_WORLD(isInitialLogin)
+    if not db then return end
+    GuidedAfterLogin(isInitialLogin)
     if cleanHold then
         if not cleanRan then After(LOGIN_DELAY, StartClean) end
     else
         After(LOGIN_DELAY, TryFull)
     end
+    if P.OnStatus then pcall(P.OnStatus) end
 end
 
-function handlers.PLAYER_REGEN_DISABLED() After(FIGHT_DELAY, TryFull) end
-function handlers.PLAYER_REGEN_ENABLED() After(FIGHT_DELAY, TryFull) end
+function handlers.PLAYER_REGEN_DISABLED()
+    After(FIGHT_DELAY, TryFull)
+    if P.OnCombat then P.OnCombat(true) end
+end
+function handlers.PLAYER_REGEN_ENABLED()
+    After(FIGHT_DELAY, TryFull)
+    if P.OnCombat then P.OnCombat(false) end
+end
 function handlers.ADDON_RESTRICTION_STATE_CHANGED() After(FIGHT_DELAY, TryFull) end
 
 function handlers.MERCHANT_SHOW()
@@ -801,14 +971,17 @@ function handlers.MERCHANT_SHOW()
     else
         After(VENDOR_DELAY, TryVendor)
     end
+    if P.OnStatus then pcall(P.OnStatus) end
 end
 
 function handlers.MERCHANT_CLOSED()
     P.vendorOpen = false
+    if P.OnStatus then pcall(P.OnStatus) end
 end
 
 function handlers.ADDON_ACTION_BLOCKED(addon, func) OnActionEvent("ADDON_ACTION_BLOCKED", addon, func) end
 function handlers.ADDON_ACTION_FORBIDDEN(addon, func) OnActionEvent("ADDON_ACTION_FORBIDDEN", addon, func) end
+function handlers.LUA_WARNING() if P.CountWarning then P.CountWarning() end end
 handlers.CHAT_MSG_WHISPER = OnWhisper
 
 local eventFrame = CreateFrame("Frame", nil, UIParent)
@@ -827,5 +1000,6 @@ end)
 
 EnsureHook()
 
--- For the offline tests.
-P.PressPass, P.Stop, P.BeginClean = PressPass, Stop, BeginClean
+-- For the panel and the offline tests.
+P.RunAllSafe, P.RunOne, P.Stop, P.BeginClean, P.Reload = RunAllSafe, RunOne, Stop, BeginClean, Reload
+P.ToggleOption, P.StartGuided, P.AnswerGuided = ToggleOption, StartGuided, AnswerGuided

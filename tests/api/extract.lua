@@ -89,6 +89,26 @@ local INDIRECT = {
     -- Bag icons: the frame that holds the bag buttons drawn inside the combined bag is reached
     -- by name (Blizzard_MainMenuBarBagButtons/Camelot/MainMenuBarBagButtons.xml:99).
     { "frame", "GamepadBagBar", "Bags.lua", "BAR_NAME" },
+    -- Restriction probe 0.3.0, areas Errors and Graphics (not used by the addon itself): checked
+    -- against the probe's files so the audit verifies them and the probe's tests may offer them.
+    { "event", "LUA_WARNING", "../../probe/PocketProbe/Run.lua", "LUA_WARNING" },
+    { "frame", "ScriptErrorsFrame", "../../probe/PocketProbe/Errors.lua", '"ScriptErrorsFrame"' },
+    { "method", "DisplayMessageInternal", "../../probe/PocketProbe/Errors.lua", '"DisplayMessageInternal"' },
+    { "global", "geterrorhandler", "../../probe/PocketProbe/Errors.lua", '"geterrorhandler"' },
+    { "global", "seterrorhandler", "../../probe/PocketProbe/Errors.lua", '"seterrorhandler"' },
+    { "global", "ConsoleGetAllCommands", "../../probe/PocketProbe/Errors.lua", '"ConsoleGetAllCommands"' },
+    { "namespace", "C_CVar.GetCVarInfo", "../../probe/PocketProbe/Errors.lua", '"C_CVar.GetCVarInfo"' },
+    { "namespace", "C_CVar.GetCVarDefault", "../../probe/PocketProbe/Errors.lua", '"C_CVar.GetCVarDefault"' },
+    { "namespace", "C_VideoOptions.IsOutlineModeSupported", "../../probe/PocketProbe/Errors.lua", '"C_VideoOptions.IsOutlineModeSupported"' },
+    { "namespace", "C_VideoOptions.IsSpellVisualDensitySystemSupported", "../../probe/PocketProbe/Errors.lua", '"C_VideoOptions.IsSpellVisualDensitySystemSupported"' },
+    { "cvar", "scriptErrors", "../../probe/PocketProbe/Errors.lua", '"scriptErrors"' },
+    { "cvar", "graphicsOutlineMode", "../../probe/PocketProbe/Errors.lua", '"graphicsOutlineMode"' },
+    { "cvar", "raidGraphicsOutlineMode", "../../probe/PocketProbe/Errors.lua", '"raidGraphicsOutlineMode"' },
+    { "cvar", "graphicsSpellDensity", "../../probe/PocketProbe/Errors.lua", '"graphicsSpellDensity"' },
+    { "cvar", "graphicsParticleDensity", "../../probe/PocketProbe/Errors.lua", '"graphicsParticleDensity"' },
+    { "cvar", "SoftTargetLowPriorityIcons", "../../probe/PocketProbe/Errors.lua", '"SoftTargetLowPriorityIcons"' },
+    { "cvar", "SoftTargetInteract", "../../probe/PocketProbe/Errors.lua", '"SoftTargetInteract"' },
+    { "cvar", "OutlineEngineMode", "../../probe/PocketProbe/Errors.lua", '"OutlineEngineMode"' },
 }
 -- Event names held as table keys rather than strings.
 -- Strings that look like events but are other constants.

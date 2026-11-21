@@ -272,7 +272,9 @@ function M.formatHeader(db, situations, areas)
         "Game " .. (db.game ~= nil and clean(db.game) or "unknown") .. ", probe " .. (db.probe ~= nil and clean(db.probe) or "unknown"),
         plural(#situations, "situation", "situations") .. ", " .. plural(trialCount(areas), "trial", "trials")
             .. (type(tbl(db.options).risky) == "boolean"
-                and (", risky trials " .. (db.options.risky and "on" or "off")) or ""),
+                and (", risky trials " .. (db.options.risky and "on" or "off")) or "")
+            .. (type(tbl(db.options).auto) == "boolean"
+                and (", automatic passes " .. (db.options.auto and "on" or "off")) or ""),
     }
 end
 
@@ -347,18 +349,33 @@ function M.formatTables(db, situations, areas, markdown)
     return out
 end
 
--- The "Not allowed" section: every detail entry, grouped by trial.
-function M.formatDetails(db, byKey, areas)
+-- Trials whose detail entries are readings or answers, not refusals (probe
+-- 0.3.0): "info" trials report what they read (counts, settings, names) and
+-- "guided" trials the player's answer.
+local READING_KINDS = { info = true, guided = true }
+
+local function readingIds(db)
+    local ids = {}
+    for _, t in ipairs(tbl(tbl(db).trials)) do
+        if type(t) == "table" and type(t.id) == "string" and READING_KINDS[t.kind] then ids[t.id] = true end
+    end
+    return ids
+end
+
+-- The detail entries, grouped by trial, printed under a heading.
+-- readings: true for the readings and answers, false for the refusals.
+local function formatEntries(db, byKey, areas, readings, heading)
     db = tbl(db)
+    local reading = readingIds(db)
     local byTrial, total = {}, 0
     for _, d in ipairs(tbl(db.details)) do
-        if type(d) == "table" and type(d.trial) == "string" then
+        if type(d) == "table" and type(d.trial) == "string" and (reading[d.trial] == true) == readings then
             byTrial[d.trial] = byTrial[d.trial] or {}
             table.insert(byTrial[d.trial], d)
             total = total + 1
         end
     end
-    local out = { "Not allowed: " .. plural(total, "entry", "entries") }
+    local out = { heading .. ": " .. plural(total, "entry", "entries") }
     for _, a in ipairs(areas) do
         for _, t in ipairs(a.trials) do
             local list = byTrial[t.id]
@@ -386,6 +403,45 @@ function M.formatDetails(db, byKey, areas)
                 end
             end
         end
+    end
+    return out
+end
+
+-- The "Not allowed" section: every refusal entry, grouped by trial.
+function M.formatDetails(db, byKey, areas)
+    return formatEntries(db, byKey, areas, false, "Not allowed")
+end
+
+-- The "Readings and answers" section (probe 0.3.0): what the Errors and
+-- Graphics trials read, and the answers to the guided trials. Empty when the
+-- file has none.
+function M.formatReadings(db, byKey, areas)
+    local out = formatEntries(db, byKey, areas, true, "Readings and answers")
+    if #out == 1 and out[1]:find(": 0 entries$") then return {} end
+    return out
+end
+
+local STAGE_WORDS = { restart = "waiting for a full restart of the game", ask = "waiting for the answer" }
+
+-- Guided trials started and not answered yet, with the settings they will put back.
+function M.formatGuided(db)
+    local guided = tbl(tbl(db).guided)
+    local ids = sortedKeys(guided)
+    if #ids == 0 then return {} end
+    local out = { "Guided trials not answered yet:" }
+    for _, id in ipairs(ids) do
+        local g = tbl(guided[id])
+        local stage = type(g.stage) == "string" and (STAGE_WORDS[g.stage] or clean(g.stage)) or "stage unknown"
+        local line = "  " .. clean(id) .. ": " .. stage
+        if g.started ~= nil then line = line .. ", started " .. clean(g.started) end
+        local back = {}
+        local old = tbl(g.old)
+        for _, name in ipairs(sortedKeys(old)) do
+            local v = old[name]
+            back[#back + 1] = clean(name) .. " " .. (v == false and "(not on this client)" or clean(v))
+        end
+        if #back > 0 then line = line .. "; to put back: " .. table.concat(back, ", ") end
+        out[#out + 1] = line
     end
     return out
 end
@@ -443,6 +499,8 @@ function M.format(db, opts)
     add(M.formatTables(db, situations, areas, opts.markdown), true)
     if not opts.markdown then
         add(M.formatSpoiled(db, byKey), true)
+        add(M.formatGuided(db), true)
+        add(M.formatReadings(db, byKey, areas), true)
         add(M.formatDetails(db, byKey, areas), true)
     end
     return out
