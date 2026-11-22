@@ -34,9 +34,10 @@ for w in ([[_G math table string os io type pcall xpcall pairs ipairs next selec
     tonumber setmetatable getmetatable rawget rawset rawequal error assert unpack coroutine
     bit require]]):gmatch("%S+") do STD[w] = true end
 -- Fields that look like methods but are plain data on a Blizzard frame.
--- (enum values and QuestieDB library members)
+-- (enum values and QuestieDB library members; the last five are C_EditMode's, read off a local
+-- holding that table in ControllerLayout.lua and listed as namespace names in INDIRECT below)
 local FIELD = {}
-for w in ("Account Character Combat Gamepad Mkb NumValues Poor Preset Quest Get RequireContract"):gmatch("%S+") do FIELD[w] = true end
+for w in ("Account Character Combat Gamepad Mkb NumValues Poor Preset Quest Get RequireContract GetLayouts SaveLayouts SetActiveLayout OnLayoutAdded IsValidLayoutName"):gmatch("%S+") do FIELD[w] = true end
 local STRMETHOD = {}   -- (lowercase ones are skipped anyway; kept for clarity)
 local OWN = {}
 for w in ([[PocketEssentials PocketEssentialsDB LibQuestieDB PocketEssentialsSettingsPanel
@@ -62,8 +63,15 @@ local INDIRECT = {
     -- Real widget methods whose names the addon also defines on its own objects.
     { "method", "SetShown", "UI.lua", ":SetShown(" },
     { "method", "IsEnabled", "UI.lua", "btn:IsEnabled()" },
-    -- The addon no longer uses these (the Layout helper went in 0.3.0); the stand-in client offers
-    -- them only for the restriction probe's tests, so they are checked against the probe's file.
+    -- Controller layout: C_EditMode's functions are read off a local (state.api) and called later.
+    { "namespace", "C_EditMode.GetLayouts", "ControllerLayout.lua", "api.GetLayouts" },
+    { "namespace", "C_EditMode.SetActiveLayout", "ControllerLayout.lua", "state.api.SetActiveLayout" },
+    { "namespace", "C_EditMode.SaveLayouts", "ControllerLayout.lua", "state.api.SaveLayouts" },
+    { "namespace", "C_EditMode.OnLayoutAdded", "ControllerLayout.lua", "state.api.OnLayoutAdded" },
+    { "namespace", "C_EditMode.IsValidLayoutName", "ControllerLayout.lua", "state.api.IsValidLayoutName" },
+    -- Controller layout: the gamepad bar's PageUnit method it hooks is named in a constant.
+    { "method", "RefreshCompactLayout", "ControllerLayout.lua", '"RefreshCompactLayout"' },
+    -- The restriction probe also uses these; the stand-in client offers them for its tests too.
     { "method", "IsEditModeActive", "../../probe/PocketProbe/Trials.lua", "IsEditModeActive" },
     { "frame", "EditModeManagerFrame", "../../probe/PocketProbe/Trials.lua", "EditModeManagerFrame" },
     { "namespace", "C_EditMode.GetLayouts", "../../probe/PocketProbe/Trials.lua", "C_EditMode.GetLayouts" },
@@ -111,6 +119,22 @@ local INDIRECT = {
     { "cvar", "OutlineEngineMode", "../../probe/PocketProbe/Errors.lua", '"OutlineEngineMode"' },
     { "cvar", "SoftTargetIconInteract", "../../probe/PocketProbe/Errors.lua", '"SoftTargetIconInteract"' },
     { "cvar", "SoftTargetIconGameObject", "../../probe/PocketProbe/Errors.lua", '"SoftTargetIconGameObject"' },
+    -- Restriction probe 0.4.0, controller layout trials: names reached through Find("...") strings.
+    { "namespace", "C_EditMode.SaveLayouts", "../../probe/PocketProbe/Trials.lua", '"C_EditMode.SaveLayouts"' },
+    { "global", "EditModePresetLayoutManager", "../../probe/PocketProbe/Trials.lua", '"EditModePresetLayoutManager"' },
+    { "method", "GetCopyOfPresetLayouts", "../../probe/PocketProbe/Trials.lua", "GetCopyOfPresetLayouts" },
+    { "method", "ClearAllPoints", "../../probe/PocketProbe/Trials.lua", "ClearAllPoints" },
+    { "method", "IsProtected", "../../probe/PocketProbe/Trials.lua", "IsProtected" },
+    { "enum", "Enum.EditModeLayoutType.Account", "../../probe/PocketProbe/Trials.lua", '"Enum.EditModeLayoutType.Account"' },
+    { "enum", "Enum.EditModeLayoutType.Character", "../../probe/PocketProbe/Trials.lua", '"Enum.EditModeLayoutType.Character"' },
+    { "frame", "MinimapCluster", "../../probe/PocketProbe/Trials.lua", "MinimapCluster" },
+    { "frame", "PlayerFrame", "../../probe/PocketProbe/Trials.lua", "PlayerFrame" },
+    { "frame", "PetFrame", "../../probe/PocketProbe/Trials.lua", "PetFrame" },
+    { "frame", "TargetFrame", "../../probe/PocketProbe/Trials.lua", "TargetFrame" },
+    { "frame", "ChatFrame1", "../../probe/PocketProbe/Trials.lua", "ChatFrame1" },
+    { "frame", "SwingTimerMainHandFrame", "../../probe/PocketProbe/Trials.lua", "SwingTimerMainHandFrame" },
+    { "frame", "GamepadMainActionBarFrame", "../../probe/PocketProbe/Trials.lua", "GamepadMainActionBarFrame" },
+    { "frame", "UIParent", "../../probe/PocketProbe/Trials.lua", "UIParent" },
     { "cvar", "SoftTargetIconEnemy", "../../probe/PocketProbe/Errors.lua", '"SoftTargetIconEnemy"' },}
 -- Event names held as table keys rather than strings.
 -- Strings that look like events but are other constants.

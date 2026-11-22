@@ -208,6 +208,12 @@ function Client.new(opts)
         chatLockdown = false,
         layouts = { layouts = {}, activeLayout = 1 },        -- C_EditMode.GetLayouts(); presets not included
         layoutImport = nil,          -- what C_EditMode.ConvertStringToLayoutInfo returns (a layout table), or nil
+        layoutsBroken = false,       -- true: C_EditMode.GetLayouts raises an error
+        layoutNameRefused = false,   -- true: C_EditMode.IsValidLayoutName answers false
+        layoutCallFails = {},        -- [name] = true: that C_EditMode function ("SaveLayouts", "OnLayoutAdded",
+                                     -- "SetActiveLayout") raises an error
+        layoutsLag = false,          -- true: OnLayoutAdded and SetActiveLayout do not change what GetLayouts
+                                     -- reads as active (the game may report it only after a reload)
         gamepadUI = opts.gamepadUI and true or false,
         instance = false, indoors = false,
         minimapZoom = 0,
@@ -1091,6 +1097,103 @@ function Client.new(opts)
     W[editMode].shown = false
     BlizzMethod(editMode, "IsEditModeActive", function() return world.editMode and true or false end)
     Blizz("Frame", "AddonCompartmentFrame", UIParent)
+    -- Blizzard_GamepadActionBars/MainActionBarFrame.xml (that addon loads on this client whatever
+    -- the input style: DefaultState enabled, AllowLoadGameType camelot).
+    local gamepadBar = Blizz("Frame", "GamepadMainActionBarFrame", UIParent)
+    gamepadBar:SetSize(656, 202)
+    gamepadBar:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 0)
+    -- Its PageUnit (ActionBarTemplates.xml GamepadActionBarPageUnitTemplate, 656 x 202) with the
+    -- four 50 x 50 bar anchors, CENTER on PageUnit at these offsets, each with a Bar anchored CENTER
+    -- on it. Children are reached by key (parentKey) and kept in c.barParts[frame], so that any
+    -- key the addon writes on these Blizzard frames is a new key: __newindex records it as an error.
+    -- The moving methods are logged as "GamepadBar.<path>:<Method>" and raise in combat (they hold
+    -- protected spell buttons); reading methods are logged too.
+    c.barParts = {}
+    local BAR_LOGGED = { GetPoint = true, GetNumPoints = true, SetPoint = true, ClearAllPoints = true,
+        SetScale = true, GetScale = true, SetAllPoints = true }
+    local BAR_MOVES = { SetPoint = true, ClearAllPoints = true, SetScale = true, SetAllPoints = true }
+    local function GuardBarFrame(w, label)
+        local base = getmetatable(w).__index
+        local parts = {}
+        c.barParts[w] = parts
+        setmetatable(w, {
+            __index = function(t, k)
+                local part = parts[k]
+                if part ~= nil then return part end
+                local f = base(t, k)
+                if type(f) == "function" and BAR_LOGGED[k] then
+                    return function(self, ...)
+                        Log(label .. ":" .. k, ...)
+                        if BAR_MOVES[k] and world.inCombat then
+                            error(label .. ":" .. k .. "(): blocked in combat (protected frame)", 2)
+                        end
+                        return f(self, ...)
+                    end
+                end
+                return f
+            end,
+            __newindex = function(_, k)
+                Record(label, "the addon wrote the key " .. tostring(k) .. " on a Blizzard frame")
+                error("the stand-in's " .. label .. " takes no new key (" .. tostring(k) .. ")", 2)
+            end,
+            __tostring = getmetatable(w).__tostring,
+        })
+        return base
+    end
+    local pageUnit = Blizz("Frame", nil, gamepadBar) -- reached by key only, as the addon does
+    pageUnit:SetSize(656, 202)
+    pageUnit:SetPoint("BOTTOM", gamepadBar, "BOTTOM", 0, 0)
+    local raw = {}            -- [frame] = the frame's own (unlogged) method lookup
+    local anchorStart = {}    -- [anchor] = its first point, as the template sets it
+    local ANCHORS = { { "TopCenteredAnchor", 0, 58 }, { "LeftCenteredAnchor", -195, 0 },
+        { "RightCenteredAnchor", 195, 0 }, { "BottomCenteredAnchor", 0, -58 } }
+    local anchorFrames = {}
+    for _, a in ipairs(ANCHORS) do
+        local anchor = Blizz("Frame", nil, pageUnit)
+        anchor:SetSize(50, 50)
+        anchor:SetPoint("CENTER", pageUnit, "CENTER", a[2], a[3])
+        anchorStart[anchor] = { a[2], a[3] }
+        local bar = Blizz("Frame", nil, anchor)
+        bar:SetSize(208, 68)
+        bar:SetPoint("CENTER", anchor, "CENTER", 0, 0)
+        anchorFrames[a[1]] = anchor
+        raw[bar] = GuardBarFrame(bar, "GamepadBar." .. a[1] .. ".Bar")
+        raw[anchor] = GuardBarFrame(anchor, "GamepadBar." .. a[1])
+        c.barParts[anchor].Bar = bar
+    end
+    -- PageUnit.lua:271-290: InitializeCompactLayout keeps the Top, Left and Right anchors' template
+    -- points in self.anchorPoints[anchor] = { { point, relativeTo, relativePoint, x, y }, ... }.
+    local anchorPoints = {}
+    for _, key in ipairs({ "TopCenteredAnchor", "LeftCenteredAnchor", "RightCenteredAnchor" }) do
+        local anchor = anchorFrames[key]
+        anchorPoints[anchor] = { { point = "CENTER", relativeTo = pageUnit, relativePoint = "CENTER",
+            x = anchorStart[anchor][1], y = anchorStart[anchor][2] } }
+    end
+    -- PageUnit.lua:292-315: with the gamepad bar's useCompactLayout (Edit Mode's Compact setting,
+    -- MainActionBarFrame.lua) on, the three anchors take all points of the bottom anchor; off, they
+    -- go back to anchorPoints. Blizzard code: not logged, and allowed in combat.
+    BlizzMethod(pageUnit, "RefreshCompactLayout", function(self)
+        local compact = c.barParts[gamepadBar].useCompactLayout
+        local parts = c.barParts[pageUnit]
+        for _, key in ipairs({ "TopCenteredAnchor", "LeftCenteredAnchor", "RightCenteredAnchor" }) do
+            local anchor = anchorFrames[key]
+            local get = raw[anchor]
+            if compact then
+                get(anchor, "SetAllPoints")(anchor, anchorFrames.BottomCenteredAnchor)
+            else
+                get(anchor, "ClearAllPoints")(anchor)
+                for _, p in ipairs((parts.anchorPoints or {})[anchor] or {}) do
+                    get(anchor, "SetPoint")(anchor, p.point, p.relativeTo, p.relativePoint, p.x, p.y)
+                end
+            end
+        end
+    end)
+    GuardBarFrame(pageUnit, "GamepadBar.PageUnit")
+    for k, anchor in pairs(anchorFrames) do c.barParts[pageUnit][k] = anchor end
+    c.barParts[pageUnit].anchorPoints = anchorPoints
+    GuardBarFrame(gamepadBar, "GamepadBar")
+    c.barParts[gamepadBar].PageUnit = pageUnit
+    c.barParts[gamepadBar].useCompactLayout = false -- tests set it (c.barParts[GamepadMainActionBarFrame])
     local tooltip = Blizz("Frame", "GameTooltip", UIParent)
     W[tooltip].shown = false
 
@@ -1180,6 +1283,23 @@ function Client.new(opts)
         EditModePresetLayouts = { Modern = 0, Classic = 1, Gamepad = 2 },
         EditModePresetLayoutsMeta = { MinValue = 0, MaxValue = 2, NumValues = 3 },
         InputDeviceInterfaceType = { Mkb = 0, Gamepad = 1 },
+        -- EditModeManagerConstantsDocumentation.lua (build 1.60.1.70938): the systems, settings and
+        -- indices Controller layout writes.
+        EditModeSystem = { ActionBar = 0, CastBar = 1, Minimap = 2, UnitFrame = 3, AuraFrame = 6, ChatFrame = 8,
+            ObjectiveTracker = 12, StatusTrackingBar = 15, SwingTimer = 29, GamepadMainActionBar = 30 },
+        EditModeMinimapSetting = { HeaderUnderneath = 0, RotateMinimap = 1, Size = 2, IconScale = 3 },
+        EditModeChatFrameSetting = { WidthHundreds = 0, WidthTensAndOnes = 1, HeightHundreds = 2, HeightTensAndOnes = 3 },
+        EditModeObjectiveTrackerSetting = { Height = 0, Opacity = 1, TextSize = 2 },
+        EditModeStatusTrackingBarSetting = { Height = 0, Width = 1, TextSize = 2, Size = 3 },
+        EditModeGamepadMainActionBarSetting = { Compact = 0, ShowEmptyBars = 1, ShowButtonPrompts = 2, ShowHighlight = 3,
+            ShouldExpand = 4 },
+        EditModeSwingTimerSetting = { Scale = 0, Opacity = 1, Visibility = 2, Width = 3, Height = 4, ShowBarTitle = 5,
+            ShowTime = 6 },
+        EditModeAuraFrameSystemIndices = { BuffFrame = 1, DebuffFrame = 2, ExternalDefensivesFrame = 3 },
+        EditModeUnitFrameSystemIndices = { Player = 1, Target = 2, Focus = 3, Party = 4, Raid = 5, Boss = 6, Arena = 7,
+            Pet = 8 },
+        EditModeSwingTimerSystemIndices = { MainHand = 1, OffHand = 2, Ranged = 3 },
+        EditModeStatusTrackingBarSystemIndices = { StatusTrackingBar1 = 1, StatusTrackingBar2 = 2 },
         -- RestrictedActionsConstantsDocumentation.lua
         AddOnRestrictionType = { Combat = 0, Encounter = 1, ChallengeMode = 2, PvPMatch = 3, Map = 4, Chat = 5 },
     }
@@ -1189,10 +1309,35 @@ function Client.new(opts)
     local PRESETS = {
         { layoutIndex = 0, layoutName = "Modern", layoutType = 0, interfaceStyle = 0, systems = { {} } },
         { layoutIndex = 1, layoutName = "Classic", layoutType = 0, interfaceStyle = 0, systems = { {} } },
-        { layoutIndex = 2, layoutName = "Gamepad", layoutType = 0, interfaceStyle = 1, systems = { {} } },
+        { layoutIndex = 2, layoutName = "Gamepad", layoutType = 0, interfaceStyle = 1, systems = {
+            -- a small part of the real Gamepad preset (EditModePresetLayouts.lua): enough for
+            -- Controller layout's template to have something to change and something to leave
+            { system = 2, isInDefaultPosition = true, settings = { { setting = 2, value = 5 } },
+              anchorInfo = { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", offsetX = -10, offsetY = -10 } },
+            { system = 0, systemIndex = 1, isInDefaultPosition = true, settings = {},
+              anchorInfo = { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = 0, offsetY = 0 } },
+            -- chat, the player, target and pet frames, and the three swing timers (all in the real
+            -- preset: Mainline/EditModePresetLayouts.lua), for the option rows that rewrite them
+            { system = 8, isInDefaultPosition = true, settings = { { setting = 0, value = 3 }, { setting = 1, value = 50 } },
+              anchorInfo = { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOMLEFT", offsetX = 35, offsetY = 50 } },
+            { system = 3, systemIndex = 1, isInDefaultPosition = true, settings = {},
+              anchorInfo = { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = -300, offsetY = 250 } },
+            { system = 3, systemIndex = 2, isInDefaultPosition = true, settings = {},
+              anchorInfo = { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = 300, offsetY = 250 } },
+            { system = 3, systemIndex = 8, isInDefaultPosition = true, settings = {},
+              anchorInfo = { point = "TOPRIGHT", relativeTo = "PlayerFrame", relativePoint = "BOTTOMRIGHT", offsetX = 0, offsetY = 0 } },
+            { system = 29, systemIndex = 1, isInDefaultPosition = true, settings = { { setting = 2, value = 0 } },
+              anchorInfo = { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", offsetX = 0, offsetY = -200 } },
+            { system = 29, systemIndex = 2, isInDefaultPosition = true, settings = { { setting = 2, value = 0 } },
+              anchorInfo = { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", offsetX = 0, offsetY = -215 } },
+            { system = 29, systemIndex = 3, isInDefaultPosition = true, settings = { { setting = 2, value = 0 } },
+              anchorInfo = { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", offsetX = 0, offsetY = -230 } },
+        } },
     }
-    -- (The preset manager frame went with the Layout helper in 0.3.0; the list
-    -- stays for C_EditMode.SetActiveLayout, which the restriction probe tries.)
+    -- EditModePresetLayoutsManager.lua:46: a fresh copy of the three presets on each call.
+    rawset(env, "EditModePresetLayoutManager", {
+        GetCopyOfPresetLayouts = function() return DeepCopy(PRESETS) end,
+    })
 
     -- ChatFrameUtil (Blizzard_ChatFrameBase/Shared/ChatFrameUtil.lua): the
     -- classic chat style always picks DEFAULT_CHAT_FRAME.editBox.
@@ -1422,21 +1567,43 @@ function Client.new(opts)
 
     local function NumPresets() return #PRESETS end
     Namespace("C_EditMode", {
-        GetLayouts = function() return DeepCopy(world.layouts) end,
+        GetLayouts = function()
+            if world.layoutsBroken then error("the stand-in's layout list is broken") end
+            return DeepCopy(world.layouts)
+        end,
+        -- EditModeManagerDocumentation.lua:69: true for a name the game accepts.
+        IsValidLayoutName = function(name)
+            return type(name) == "string" and name ~= "" and not world.layoutNameRefused
+        end,
         SetActiveLayout = function(index)
+            if world.layoutCallFails.SetActiveLayout then error("the stand-in's SetActiveLayout fails") end
+            if world.layoutsLag then return end
             if type(index) == "number" and index >= 1 and index <= NumPresets() + #world.layouts.layouts then
                 world.layouts.activeLayout = index
             end
         end,
+        -- Blizzard always sends the whole list, the presets first (EditModeManager.lua:1006-1009,
+        -- 1567-1589), and activeLayout counts them. What the game does with any other list is
+        -- unknown, so a list that does not start with the presets is recorded as an error.
         SaveLayouts = function(info)
+            if world.layoutCallFails.SaveLayouts then error("the stand-in's SaveLayouts fails") end
+            local list = type(info) == "table" and info.layouts or {}
+            for i = 1, NumPresets() do
+                local l = list[i]
+                if type(l) ~= "table" or l.layoutType ~= Enum.EditModeLayoutType.Preset or l.layoutIndex ~= i - 1 then
+                    Record("C_EditMode.SaveLayouts", "the list does not start with the " .. NumPresets() .. " presets")
+                    error("C_EditMode.SaveLayouts(): the list does not start with the presets", 2)
+                end
+            end
             local saved = {}
-            for _, l in ipairs(info.layouts or {}) do
+            for _, l in ipairs(list) do
                 if l.layoutType ~= Enum.EditModeLayoutType.Preset then saved[#saved + 1] = DeepCopy(l) end
             end
             world.layouts = { layouts = saved, activeLayout = info.activeLayout or world.layouts.activeLayout }
         end,
         OnLayoutAdded = function(index, activate)
-            if activate then world.layouts.activeLayout = index end
+            if world.layoutCallFails.OnLayoutAdded then error("the stand-in's OnLayoutAdded fails") end
+            if activate and not world.layoutsLag then world.layouts.activeLayout = index end
         end,
         -- world.layoutImport: the layout the game would read out of any string (nil: the string is refused).
         ConvertStringToLayoutInfo = function(text) return world.layoutImport and DeepCopy(world.layoutImport) or nil end,

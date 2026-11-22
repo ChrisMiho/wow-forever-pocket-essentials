@@ -34,6 +34,7 @@ local TABS = {
     { id = "bags", label = "Bags", features = { "bagWindow", "bags" } },
     { id = "vendors", label = "Vendors", features = { "sellJunk", "repair" } },
     { id = "chat", label = "Chat", features = { "chat" } },
+    { id = "controller", label = "Controller", features = { "ctrlLayout" } },
     { id = "gameFixes", label = "Game fixes", features = { "menuBg", "sparkles" }, heading = true },
     { id = "general", label = "General" },
     { id = "errors", label = "Errors" },

@@ -201,14 +201,14 @@ end
 
 local function near(a, b, eps) return math.abs(a - b) < (eps or 0.01) end
 
-test("tabs: nine tabs in the spec's order, each holding the spec's helpers", function()
+test("tabs: ten tabs in the spec's order, each holding the spec's helpers", function()
     local c, PE = T.new({})
     local got = {}
     for _, t in ipairs(PE.SETTINGS_TABS) do
         got[#got + 1] = t.id .. "=" .. t.label .. "=" .. table.concat(t.features or {}, ",")
     end
     eq(got, { "questIcons=Quest icons=questIcons", "questArrow=Quest arrow=questArrow", "bags=Bags=bagWindow,bags",
-        "vendors=Vendors=sellJunk,repair", "chat=Chat=chat", "gameFixes=Game fixes=menuBg,sparkles", "general=General=",
+        "vendors=Vendors=sellJunk,repair", "chat=Chat=chat", "controller=Controller=ctrlLayout", "gameFixes=Game fixes=menuBg,sparkles", "general=General=",
         "errors=Errors=", "debug=Debug log=" })
     openSettings(c, PE)
     for _, t in ipairs(PE.SETTINGS_TABS) do
@@ -220,7 +220,7 @@ test("tabs: nine tabs in the spec's order, each holding the spec's helpers", fun
     c:assertClean("tabs")
 end)
 
-test("tabs: all nine fit the window at every button size, stacked one border apart, never taller than a button", function()
+test("tabs: all ten fit the window at every button size, stacked one border apart, never taller than a button", function()
     for _, size in ipairs({ "small", "medium", "large" }) do
         local c, PE = T.new({})
         PE:SetUISetting("size", size)
@@ -233,9 +233,9 @@ test("tabs: all nine fit the window at every button size, stacked one border apa
             local b = tabButton(c, t.id)
             local _, _, top, bottom = c._rect(b)
             check(top - bottom <= M.button + 0.01, size .. ": a tab is taller than a button")
-            -- Spec 2026-11-20-error-catcher-and-probe-panel, Part 2: min(button, (contentHeight - 8 border) / 9).
-            check(near(top - bottom, math.min(M.button, (contentTop - contentBottom - 8 * M.border) / 9)),
-                size .. ": tab height is not min(button, (content - 8 borders) / 9)")
+            -- Spec 2026-11-20-error-catcher-and-probe-panel, Part 2: min(button, (contentHeight - 9 border) / 10).
+            check(near(top - bottom, math.min(M.button, (contentTop - contentBottom - 9 * M.border) / 10)),
+                size .. ": tab height is not min(button, (content - 9 borders) / 10)")
             check(bottom >= contentBottom - 0.01, size .. ": tab " .. t.id .. " is below the window")
             check(near(b:GetWidth(), M.button * 5), size .. ": tabs are not five buttons wide")
             if prevBottom then check(near(prevBottom - top, M.border), size .. ": tabs are not one border apart") end

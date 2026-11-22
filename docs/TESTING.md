@@ -1235,3 +1235,56 @@ errors; this build relies on that.
 6. Look at **General → Button size** at Large: all rows still look right, no
    cut-off choices.
 7. Tell me anything listed, and whether it was easier to read than the popup.
+
+### 21. Version 0.11.0: Controller layout (experimental, unprobed)
+
+This build was made before the probe round, so run the probe first. Install
+the 0.11.0 zip and the new `PocketProbe.zip` (delete the old `PocketEssentials`
+and `PocketProbe` folders first, keep `QuestieDB`) and fully restart the game.
+Leave Controller layout **off** for steps 1 to 3.
+
+1. **Probe, plain pass.** Open Pocket Probe and run a pass. On the
+   **Values** pages (Values 1 and Values 2) three new lines fill in: the sizes of the map, frames and
+   bars; which bar frames are protected; the bar settings.
+2. **Probe, risky pass.** Turn **Risky trials** on, reload, run a pass.
+   Three more lines: on the **Blizzard windows** pages, move a bar anchor to where it
+   already is and set its scale to what it already is; on **Controller and
+   layout**, save the layouts unchanged. Then fight something for a minute
+   and watch for "Interface action blocked".
+3. Reload, then send me `SavedVariables/PocketProbe.lua`. The sizes in it
+   replace my guesses (I read them with `scripts/read-probe.sh --details`).
+4. **Switch it on.** Settings, **Controller** tab, turn **Controller layout**
+   On. It should say a reload is needed; tap **Reload now**. Always reload
+   before you fight after switching it on or off.
+5. After the reload, look at the whole screen and take a screenshot:
+   - the map bottom middle, the chat top right, buffs and the quest tracker
+     under the chat, a wider XP bar;
+   - the LT bar left of the map, the RT bar right of it, the main bar above
+     the map;
+   - your frame bottom left, the target bottom right.
+   Tell me what overlaps, what is off centre and what is too big or small.
+6. Open Edit Mode. The layout list should show **Pocket Essentials** as the
+   active one, and your old layouts untouched.
+7. Hold LT, RT and both. The matching bar should light where it sits.
+   Open a pet or class wheel (shoulder + trigger): it should open around its
+   small button beside the map.
+8. **Fight for a few minutes**, pressing every bar. Watch for "Interface
+   action blocked" and for any bar jumping.
+9. Set **Spell button size** to 85%. If any spell on your bars opens its
+   own wheel, press it: does the wheel open around its button or beside it?
+   Then try the other choices one at a time: Main bar under the map; frames Stacked
+   and Side by side; Swing timers above the
+   bars and under the LT and RT bars; a timer on Hidden. The ones that ask
+   for a reload should say so.
+10. Move the map a little in Edit Mode and save. Reload: it should stay
+    where you put it.
+11. Open Edit Mode, then change **Player and target frames** in the
+    settings: it should refuse with "Close Edit Mode first."
+12. **Switch it off** and reload. Your old layout and the game's own bar
+    spots should be back exactly. Edit Mode should still list Pocket
+    Essentials, not active.
+13. Switch it on again and reload: it should return to the same Pocket
+    Essentials layout, with the map where you moved it in step 10.
+14. Send me `SavedVariables/PocketEssentials.lua` (the Errors page and the
+    debug log) with the screenshots.
+

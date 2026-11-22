@@ -1,6 +1,6 @@
 -- Rules for the setup guide (Setup.lua).
 -- Source: docs/superpowers/specs/2026-11-20-0.9.0-ui-redesign.md, section
--- "Setup guide" (nine screens, the Quest icon details screen only while Quest
+-- "Setup guide" (ten screens, the Quest icon details screen only while Quest
 -- icons is on, step dots, feature cards, "Move things now"), and the first-run
 -- rules it keeps from docs/superpowers/specs/2026-11-17-0.4.0-handheld-batch.md,
 -- section "5. Setup guide" (opening once, Skip and Finish saving, fights).
@@ -21,17 +21,17 @@ local ALL_KEYS = { PADDUP = NAV_NAME, PADDDOWN = NAV_NAME, PADDLEFT = NAV_NAME, 
 local TITLE = "Setup"
 -- The screens while Quest icons is off: "Quest icon details" is skipped.
 local ALL_SCREENS = { "Welcome", "Quest icons", "Quest arrow", "Bags", "Vendors and game fixes", "Round button and chat",
-    "Your screen", "All set" }
-local IDS = { "welcome", "questIcons", "questArrow", "bags", "vendors", "chat", "layout", "finish" }
+    "Controller", "Your screen", "All set" }
+local IDS = { "welcome", "questIcons", "questArrow", "bags", "vendors", "chat", "controller", "layout", "finish" }
 local N = #ALL_SCREENS
-local AT = { welcome = 1, questIcons = 2, questArrow = 3, bags = 4, vendors = 5, chat = 6, layout = 7, finish = 8 }
+local AT = { welcome = 1, questIcons = 2, questArrow = 3, bags = 4, vendors = 5, chat = 6, controller = 7, layout = 8, finish = 9 }
 -- The screen each feature's switch is on (Quest icons off).
-local SCREEN_OF = { questIcons = 2, questArrow = 3, bagWindow = 4, bags = 4, sellJunk = 5, repair = 5, menuBg = 5, sparkles = 5, chat = 6 }
+local SCREEN_OF = { questIcons = 2, questArrow = 3, bagWindow = 4, bags = 4, sellJunk = 5, repair = 5, menuBg = 5, sparkles = 5, chat = 6, ctrlLayout = 7 }
 -- Features the guide has no screen for (their switch is only in the settings window).
 local NOT_IN_GUIDE = { errors = "Catch all errors: the guide has no error screen (spec 2026-11-20-error-catcher-and-probe-panel, Part 2)" }
 -- The settings tab of each feature.
 local TAB_OF = { questIcons = "questIcons", questArrow = "questArrow", bagWindow = "bags", bags = "bags",
-    sellJunk = "vendors", repair = "vendors", chat = "chat", menuBg = "gameFixes", sparkles = "gameFixes", errors = "errors" }
+    sellJunk = "vendors", repair = "vendors", chat = "chat", menuBg = "gameFixes", sparkles = "gameFixes", errors = "errors", ctrlLayout = "controller" }
 -- Quest icons' rows in the guide: three on its own screen, three on the details screen.
 local QUEST_SCREEN_ROWS = { ["Show icons for"] = true, ["Icons on"] = true, ["Icon size"] = true }
 local QUEST_DETAIL_ROWS = { ["Merge icons closer than"] = true, ["Spots per objective"] = true, ["Blizzard blue quest haze"] = true }
@@ -398,17 +398,17 @@ test("setup: two gaps between the cards on Welcome, Bags, Vendors and All set", 
 end)
 
 -- The spec's skip: "Quest icon details" only while Quest icons is on.
-test("setup: the Quest icon details screen shows only while Quest icons is on, as screen 3 of 9", function()
+test("setup: the Quest icon details screen shows only while Quest icons is on, as screen 3 of 10", function()
     if not T.questieDB then return end
     local c, PE = T.new({ quest = true })
     open(c, PE)
-    eq(at(PE), "1 of 8")
+    eq(at(PE), "1 of 9")
     goTo(c, 2)
     eq(screenId(PE), "questIcons")
     c:click(switch(c, "questIcons"))
     c:advance(0.1)
-    eq(at(PE), "2 of 9", "switching Quest icons on did not add the details screen")
-    eq(#dots(c), 9)
+    eq(at(PE), "2 of 10", "switching Quest icons on did not add the details screen")
+    eq(#dots(c), 10)
     goTo(c, 2)
     eq(screenId(PE), "questDetails")
     check(hasText(c, "Quest icon details"), "no details title")
@@ -420,11 +420,11 @@ test("setup: the Quest icon details screen shows only while Quest icons is on, a
     check(not has(c, "Open"), "the Icon key row is in the guide")
     goTo(c, 2)
     eq(screenId(PE), "questArrow")
-    eq(at(PE), "4 of 9")
+    eq(at(PE), "4 of 10")
     -- off again: skipped
     PE:SetModuleEnabled("questIcons", false)
     c:advance(0.1)
-    eq(at(PE), "3 of 8")
+    eq(at(PE), "3 of 9")
     c:click(button(c, "Back"))
     c:advance(0.1)
     eq(screenId(PE), "questIcons")
@@ -625,7 +625,7 @@ test("setup: the finish screen lists what is on and what is off, then the Tap, H
     PE:SetModuleEnabled("chat", true)
     c:advance(0.1)
     check(hasText(c, "|cff59eb73On: |rAuto sell junk, Chat picker"), "the On line is wrong: " .. tostring(textWith(c, "On: |r")))
-    eq(textWith(c, "Off: |r"), "|cff9e9ea3Off: |rQuest icons, Quest arrow, Bag sorting, Bigger bag, Auto repair, Menu background, Loot sparkles, Catch all errors")
+    eq(textWith(c, "Off: |r"), "|cff9e9ea3Off: |rQuest icons, Quest arrow, Bag sorting, Bigger bag, Auto repair, Controller layout, Menu background, Loot sparkles, Catch all errors")
     for _, t in ipairs({ "Tap", "Hold", "Move things", "Opens the settings, or Chat picker when it is on.",
         "Always opens the settings.", "Settings, General tab." }) do
         check(hasText(c, t), "the tiles have no \"" .. t .. "\"")
@@ -663,7 +663,7 @@ test("setup: with every feature on the finish screen has no Off line", function(
     for _, mod in ipairs(PE.moduleList) do PE:SetModuleEnabled(mod.key, true) end
     c:advance(0.5)
     open(c, PE)
-    goTo(c, N + 1) -- nine screens with Quest icons on
+    goTo(c, N + 1) -- ten screens with Quest icons on
     check(textWith(c, "On: |rQuest icons, Quest arrow, Bag sorting"), "no On line")
     check(not textWith(c, "Off: |r"), "an Off line with everything on")
 end)
@@ -1565,26 +1565,26 @@ test("setup: the debug log has the lines of the spec", function()
     PE.Setup:Open("settings")
     goTo(c, N)
     c:click(button(c, "Finish"))
-    local all = "screens: welcome, questIcons, questArrow, bags, vendors, chat, layout, finish"
+    local all = "screens: welcome, questIcons, questArrow, bags, vendors, chat, controller, layout, finish"
     eq(debugLines(c, "setup"), {
         "first login check: not needed (finished)",
-        "opened (settings)", all, "screen 1 of 8: welcome",
-        "screen 2 of 8: questIcons", "screen 3 of 8: questArrow",
+        "opened (settings)", all, "screen 1 of 9: welcome",
+        "screen 2 of 9: questIcons", "screen 3 of 9: questArrow",
         "switch tapped: questArrow cannot be switched on",
-        "screen 4 of 8: bags", "screen 5 of 8: vendors",
+        "screen 4 of 9: bags", "screen 5 of 9: vendors",
         "switch tapped: menuBg -> on",
         "switch tapped: menuBg -> off",
         "closed: fight started, will come back",
         "not opened: in a fight",
-        "opened (after the fight)", all, "screen 5 of 8: vendors",
+        "opened (after the fight)", all, "screen 5 of 9: vendors",
         "closed: not remembered (Close)",
-        "opened (slash)", all, "screen 1 of 8: welcome",
+        "opened (slash)", all, "screen 1 of 9: welcome",
         "closed: not remembered (B, Escape or another window)",
-        "opened (settings)", all, "screen 1 of 8: welcome",
+        "opened (settings)", all, "screen 1 of 9: welcome",
         "closed: skipped",
-        "opened (settings)", all, "screen 1 of 8: welcome",
-        "screen 2 of 8: questIcons", "screen 3 of 8: questArrow", "screen 4 of 8: bags", "screen 5 of 8: vendors",
-        "screen 6 of 8: chat", "screen 7 of 8: layout", "screen 8 of 8: finish",
+        "opened (settings)", all, "screen 1 of 9: welcome",
+        "screen 2 of 9: questIcons", "screen 3 of 9: questArrow", "screen 4 of 9: bags", "screen 5 of 9: vendors",
+        "screen 6 of 9: chat", "screen 7 of 9: controller", "screen 8 of 9: layout", "screen 9 of 9: finish",
         "closed: finished",
     })
     eq(PE.db.setup, "finished")
@@ -1602,7 +1602,7 @@ test("setup: the debug log says when Move on screen takes the guide's place and 
     local lines = debugLines(c, "setup")
     eq({ lines[#lines - 3], lines[#lines - 2], lines[#lines - 1], lines[#lines] }, {
         "closed: Move on screen opened, will come back", "opened (after move)",
-        "screens: welcome, questIcons, questArrow, bags, vendors, chat, layout, finish", "screen 7 of 8: layout" })
+        "screens: welcome, questIcons, questArrow, bags, vendors, chat, controller, layout, finish", "screen 8 of 9: layout" })
 end)
 
 test("setup: the debug log says when it waits for a fight at login and when the answer cannot be kept", function()
@@ -1657,9 +1657,11 @@ end
 
 -- The screen of the guide that holds this row of a feature: "card" (the
 -- feature's own screen), "details" (Quest icon details) or nil (not in the
--- guide: rows that open another settings page).
+-- guide: rows that open another settings page, and Controller layout's rows,
+-- which its card leaves out: Setup.lua's "controller" screen has only = {}).
 local function guideScreenOf(mod, opt)
     if opt.page ~= nil then return nil end
+    if mod.key == "ctrlLayout" then return nil end
     if mod.key == "questIcons" then
         if QUEST_SCREEN_ROWS[opt.label] then return "card" end
         if QUEST_DETAIL_ROWS[opt.label] then return "details" end
@@ -1672,7 +1674,7 @@ local function goToFeature(c, PE, key)
     open(c, PE)
     for _ = 1, 12 do
         if screenId(PE) == (key == "bagWindow" and "bags" or (key == "sellJunk" or key == "repair" or key == "menuBg" or key == "sparkles") and "vendors"
-            or key) then break end
+            or key == "ctrlLayout" and "controller" or key) then break end
         c:click(nextButton(c))
         c:advance(0.1)
     end

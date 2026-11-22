@@ -79,10 +79,12 @@ local CORE_EVENTS = {
     DISPLAY_SIZE_CHANGED = "UI.lua: resizes everything",
 }
 
-local FEATURES = { "questIcons", "questArrow", "bags", "bagWindow", "sellJunk", "repair", "chat", "menuBg", "sparkles", "errors" }
+local FEATURES = { "questIcons", "questArrow", "bags", "bagWindow", "sellJunk", "repair", "chat", "menuBg", "sparkles", "errors", "ctrlLayout" }
 -- Features the setup guide has no screen for (their switch is only in the settings window).
 local NOT_IN_GUIDE = { errors = "Catch all errors (spec 2026-11-20-error-catcher-and-probe-panel, Part 2)" }
 local QUEST_FEATURES = { questIcons = true, questArrow = true }
+-- Blocked while the game's Gamepad UI is off (the client starts with it off).
+local GAMEPAD_FEATURES = { ctrlLayout = true }
 
 ---------------------------------------------------------------------------
 -- Helpers
@@ -173,7 +175,7 @@ local function guideOf(c) return rawget(c.env, "PocketEssentialsSetupPanel") end
 local function guideShown(c) return guideOf(c) ~= nil and guideOf(c):IsShown() end
 
 -- The settings window's pages (0.9.0): one per tab, and the Quest Icon Key.
-local PAGES = { "questIcons", "questArrow", "bags", "vendors", "chat", "gameFixes", "general", "errors", "debug", "key" }
+local PAGES = { "questIcons", "questArrow", "bags", "vendors", "chat", "controller", "gameFixes", "general", "errors", "debug", "key" }
 
 local function openPage(c, PE, page)
     PE:OpenSettings(page)
@@ -595,6 +597,16 @@ local function everythingOn(c, PE, hasQDB)
     c:fire("INPUT_DEVICE_INTERFACE_TRANSITION", 1, 0)
     c:advance(1.5)
     c:assertClean("switching to the Gamepad UI")
+    -- Controller layout was blocked until now (saved on, not running): switched on again, it
+    -- saves its Edit Mode layout and asks for a reload.
+    for key in pairs(GAMEPAD_FEATURES) do
+        check(not PE:IsModuleEnabled(key), key .. " ran without the Gamepad UI")
+        PE:SetModuleEnabled(key, true)
+        check(PE:IsModuleEnabled(key), key .. " did not switch on with the Gamepad UI")
+    end
+    c:advance(0.2)
+    check(#c:callsTo("C_EditMode.SaveLayouts") == 1, "Controller layout did not save its layout")
+    c:assertClean("Controller layout on")
 
     -- every feature's options, at each button size (switches and reload left alone)
     local skip = function(label, ctx, w) return isSwitch(label, w) or ctx == "Button size" end
@@ -689,7 +701,7 @@ scenarios[#scenarios + 1] = { name = "1 first install", run = function()
         check(PE:GetModule(key) ~= nil, "feature " .. key .. " did not register")
         check(not PE:IsModuleEnabled(key), key .. " is on at first install")
         local state = PE:GetModuleState(key)
-        check(state == (QUEST_FEATURES[key] and "blocked" or "off"), key .. " is " .. state .. " at first install")
+        check(state == ((QUEST_FEATURES[key] or GAMEPAD_FEATURES[key]) and "blocked" or "off"), key .. " is " .. state .. " at first install")
     end
     for _, rec in ipairs(addonFrames(c)) do
         check(rec.scripts.OnUpdate == nil, "a frame made by " .. rec.addonFile .. " has an OnUpdate at first install")
@@ -700,9 +712,9 @@ scenarios[#scenarios + 1] = { name = "1 first install", run = function()
     check(guideOf(c) == nil, "the setup guide was built at load")
     c:advance(2)
     check(guideShown(c), "the setup guide did not open by itself at first install")
-    -- Eight screens: Quest icon details shows only while Quest icons is on.
+    -- Nine screens: Quest icon details shows only while Quest icons is on.
     local screens = walkGuide(c, PE, "first install")
-    check(screens == 8, "the setup guide has " .. screens .. " screens at first install, expected 8")
+    check(screens == 9, "the setup guide has " .. screens .. " screens at first install, expected 9")
     local nothingOn = false
     for _, t in ipairs(visibleTexts(c, guideOf(c))) do
         if t:find("On: |rnothing yet", 1, true) then nothingOn = true end

@@ -4,6 +4,62 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.11.0] - 2026-11-21
+
+Twenty-fifth test build. From the owner, for the controller UI round:
+"minimap in center middle, we could build out the buttons around the map and
+then stick the chat up where the map used to be". Built while the owner was
+away ("can we start getting things made and then when I return we can run
+the probe and adjust from there"), before the probe round that was meant to
+come first. Spec `docs/superpowers/specs/2026-11-21-controller-layout.md`.
+Not yet tested on a device: every position and size in it is a first guess.
+Your saved choices carry over.
+
+### Added
+
+- **Controller layout** (new switch on a new **Controller** tab, off to
+  start with, marked experimental): one switch gives a new screen
+  arrangement for controller play. It needs the game's Gamepad UI.
+  - It creates a new Edit Mode layout named "Pocket Essentials", switches
+    to it and asks for a reload. Your own layouts are never changed.
+    Switching off goes back to the layout you had, with a reload.
+  - The map sits bottom middle; the chat is bigger, top right, with the
+    buffs and the quest tracker under it; the XP bar is wider.
+  - The left-trigger bar sits left of the map and the right-trigger bar
+    right of it. The main bar is above the map, or under it. The
+    both-triggers bar is smaller, above them.
+  - Choices: where the main bar goes; where the player, pet and target
+    frames go (corners, stacked, or side by side); one size for all spell
+    buttons (starts at 100%) with three fine-tunes; where the swing timers go; and for each
+    swing timer Always, In combat or Hidden.
+  - It is a starting point: what you then move in Edit Mode is kept.
+    "Start over" rebuilds the layout from the template.
+- **Setup guide:** a Controller screen with the same switch.
+- **Pocket Probe 0.4.0:** six new trials that measure the real sizes of the
+  map, frames and bars (on the Values pages) and test the moves this build
+  relies on (on the Blizzard windows and Controller and layout pages).
+
+### Known gaps
+
+- Spell button size starts at 100%. Below that, a spell that opens its own
+  wheel from a bar may open the wheel beside its button (unconfirmed).
+- Switching off during a fight and reloading before the fight ends leaves
+  the Pocket Essentials layout active. Switch on and off again to fix it.
+- Turning the game's Gamepad UI off makes the game pick its own Modern
+  layout. Switch the feature off first.
+
+### Not as drawn in the mockup
+
+- The main bar is whole, not split around the map. The game puts every
+  spell button back beside its bar's centre at each button press, in combat
+  too, and an addon may not move a spell button in combat.
+- The both-triggers bar has one spot. "Swap" waits for the probe's fade
+  result.
+- The two sub-menu buttons sit either side of the map at a fixed distance,
+  and their wheels are the game's own. The game does not let them be
+  placed freely or resized safely.
+- The target's target stays attached to the target frame.
+
 ## [0.10.0] - 2026-11-20
 
 Twenty-fourth test build. From the owner, after a Blizzard error popped up on

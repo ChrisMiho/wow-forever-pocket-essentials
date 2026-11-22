@@ -99,16 +99,10 @@ Chatting is hard on a handheld because targets are too small to tap.
 - Matching the desktop addon setup feature for feature.
 - Combat addons (damage meters, boss timers). The client does not support
   combat-log addons anyway.
-- Replacing or fighting Blizzard's gamepad support (no ConsolePort unless a
-  player asks).
 - An entry on Forever's radial wheel (dropped 2026-11-15: the game gives
   addons no safe way to add one; see `docs/DECISIONS.md`).
 - Icons for quests not yet picked up (dropped 2026-11-15: the addon stays
   focused on quests you have accepted).
-- Switching the game's Edit Mode layouts, and a bundled handheld layout
-  (dropped 2026-11-17 with the Layout helper, 0.3.0: never tested, the game
-  switches to its Gamepad layout by itself, and "Move things" places our own
-  pieces).
 
 ## What would make this a failure
 
@@ -436,6 +430,18 @@ per objective". The owner has more Quest icons ideas to bring after testing.
 Spec `docs/superpowers/specs/2026-11-18-tidier-settings.md`; device steps
 `docs/TESTING.md` 14.
 
+**0.11.0 (2026-11-21, untested, unprobed):** Controller layout, piece 3 of
+the controller UI round, on a new Controller tab (experimental, off). One
+switch creates a "Pocket Essentials" Edit Mode layout and places the game's
+gamepad bars around the map; switching off returns to the old layout. Built
+while the owner was away ("can we start getting things made and then when I
+return we can run the probe and adjust from there"), so before the probe
+round. The mockup's split main bar turned out not to be possible safely; the
+main bar is whole, and the spec's "Rulings" lists every call made without
+the owner. Pocket Probe 0.4.0 adds the trials that measure what this build
+guessed. Spec `docs/superpowers/specs/2026-11-21-controller-layout.md`,
+device steps `docs/TESTING.md` 21.
+
 **0.10.0 (2026-11-20, untested):** "Catch all errors" (the owner: "we need
 another feature to make managing bugs easier ... almost working like how
 bugsack works"; stands aside for BugSack, with no override; "Error popup:
@@ -599,6 +605,13 @@ Everything still to be built, in rough order of how much it is wanted.
 Built since they were parked here: a background for the quest log's pop-up
 menu ("Menu background", 0.4.0), the d-pad reaching the Sort tab ("D-pad to
 Sort", 0.4.0) and the chat text size stepper (0.4.0). All untested.
+- A flashing border for low health and low mana. Floated by the owner on
+  2026-11-21 while designing the Controller layout, and parked the same day:
+  the layout's "Side by side" frames put health back in the middle of the
+  screen. It would be the first feature that watches a fight, so it needs its
+  own spec. The game's files include a low-health screen flash of their own
+  (`Blizzard_FrameXML/Shared/LowHealthFrame.lua`); check on the device
+  whether it shows on Forever before building anything.
 
 Dropped on 2026-11-15 (see "Non-goals"): the radial wheel entry, and icons for
 quests not yet picked up.

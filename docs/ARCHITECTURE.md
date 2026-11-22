@@ -118,10 +118,9 @@ How the pieces protect each other:
      Any row may carry `always = true`: it is then also drawn while the
      feature is not on, so it must not need the feature (0.4.0, "Chat text
      size").
-   - A feature that is on and has `options` gets a "Hide options" / "Show
-     options" button in its row; the choice is saved in
-     `PocketEssentialsDB.ui.folded[key]` (0.1.0). A feature that is not on
-     gets one only when it has a row marked `always` (0.4.0).
+   - A feature that is on shows all its `options` rows under its switch.
+     There are no fold buttons since 0.9.0. A feature that is not on shows
+     only rows marked `always` (0.4.0).
    - Lifecycle: `OnLoad(mod)` once at login, before anything is enabled;
      `OnEnable(mod)` when switched on, and at login if saved on;
      `OnDisable(mod)` when switched off. An error in `OnEnable` marks the
@@ -165,6 +164,12 @@ so that being wrong cannot raise an error; the worst case is listed.
 
 | What | Used by | If it is wrong |
 |---|---|---|
+| An addon may call `C_EditMode.SaveLayouts` and `OnLayoutAdded` out of combat, and Edit Mode stays usable after the reload that is always asked for. The old Layout helper did the same and was never device-tested | Controller layout | "Interface action blocked" until the reload |
+| `GetLayouts` shows a saved layout and the new active index straight after the save. Not relied on: if it does not, the feature stays on and asks for the reload | Controller layout | After the reload the status line says another layout is active |
+| `SetPoint` and `SetScale` on the four gamepad bar anchors and on the both-triggers bar are allowed out of combat and are not blamed later in combat | Controller layout | A blocked-action message; switching off and reloading removes every trace |
+| The assumed sizes: map cluster 164 by 176 at 80%, a bar 208 by 68, a unit frame 232 by 100, the pet frame 120 by 49, a swing timer 170 by 12 at 80% | Controller layout | Pieces overlap or sit off centre until the probe's `layout.sizes` numbers replace them |
+| A spell on a scaled bar that opens its own wheel: the wheel is placed in the button's scaled units, so it may open beside the button. Spell button size starts at 100% for this reason | Controller layout | Below 100% such a wheel opens off its button; the spell still works |
+| Whether the game picks its own Gamepad preset when the Gamepad UI is turned off and on again | Controller layout | The status line says another layout is active and the bars stay as the game has them |
 | Which of two "priority" key overrides wins (ours on the panel vs Blizzard's gamepad ones) | Controller navigation in our windows; L3 sort | D-pad / A / B do nothing in our windows, or L3 keeps its normal job. Touch still works |
 | Custom click names passed through override bindings | Controller navigation | Same as above |
 | `GetPlayerFacing` direction convention (0 = north, counter-clockwise) | Quest arrow, rotating minimap | Arrow turns the wrong way. One marked line in `QuestArrow.lua` flips it |
