@@ -516,6 +516,193 @@ Add({
 })
 
 ---------------------------------------------------------------------------
+-- Controller layout: frame sizes, protection, the bar settings, and moves
+-- the layout feature needs to know are allowed. Value trials note the
+-- numbers they read as our own text (c:note); that is how a size gets to
+-- the saved file.
+---------------------------------------------------------------------------
+
+local BAR = "GamepadMainActionBarFrame"
+local ANCHORS = { "TopCenteredAnchor", "LeftCenteredAnchor", "RightCenteredAnchor", "BottomCenteredAnchor" }
+
+-- A frame by its dotted name from the globals, or nil.
+local function FrameAt(path)
+    local f = Find(path)
+    if type(f) == "table" then return f end
+end
+
+-- A number a frame method answers, or nil (never raises).
+local function Dim(frame, method)
+    if type(frame[method]) ~= "function" then return nil end
+    local ok, v = pcall(frame[method], frame)
+    if not ok then return nil end
+    return Num(v)
+end
+
+local SIZE_LIST = {
+    { "MinimapCluster", "MinimapCluster" }, { "PlayerFrame", "PlayerFrame" }, { "PetFrame", "PetFrame" },
+    { "TargetFrame", "TargetFrame" }, { "ChatFrame1", "ChatFrame1" },
+    { "SwingTimerMainHandFrame", "SwingTimerMainHandFrame" }, { BAR, BAR },
+}
+for _, a in ipairs(ANCHORS) do SIZE_LIST[#SIZE_LIST + 1] = { a, BAR .. ".PageUnit." .. a } end
+SIZE_LIST[#SIZE_LIST + 1] = { "TopCenteredAnchor.Bar", BAR .. ".PageUnit.TopCenteredAnchor.Bar" }
+SIZE_LIST[#SIZE_LIST + 1] = { "UIParent", "UIParent" }
+
+Add({
+    id = "layout.sizes", area = "Values", label = "Read the size and scale of the screen's frames and the bars", kind = "value",
+    read = function(c)
+        for _, entry in ipairs(SIZE_LIST) do
+            local name, frame = entry[1], FrameAt(entry[2])
+            if not frame then
+                c:add(name, nil)
+                c:note(name .. " missing")
+            else
+                local w, h, s = Dim(frame, "GetWidth"), Dim(frame, "GetHeight"), Dim(frame, "GetScale")
+                c:add(name .. " w", w); c:add(name .. " h", h); c:add(name .. " scale", s)
+                c:note(name .. " w=" .. (w and (math.floor(w * 10 + 0.5) / 10) or "?")
+                    .. " h=" .. (h and (math.floor(h * 10 + 0.5) / 10) or "?")
+                    .. " scale=" .. (s and (math.floor(s * 100 + 0.5) / 100) or "?"))
+            end
+        end
+    end,
+})
+
+Add({
+    id = "bars.protected", area = "Values", label = "Ask whether the gamepad bars are protected frames", kind = "value",
+    read = function(c)
+        local list = { { BAR, BAR }, { "PageUnit", BAR .. ".PageUnit" } }
+        for _, a in ipairs(ANCHORS) do list[#list + 1] = { a, BAR .. ".PageUnit." .. a } end
+        for _, a in ipairs(ANCHORS) do list[#list + 1] = { a .. ".Bar", BAR .. ".PageUnit." .. a .. ".Bar" } end
+        for _, entry in ipairs(list) do
+            local name, frame = entry[1], FrameAt(entry[2])
+            if not frame or type(frame.IsProtected) ~= "function" then
+                c:add(name, nil)
+                c:note(name .. " missing")
+            else
+                local ok, protected, explicit = pcall(frame.IsProtected, frame)
+                if not ok then
+                    c:add(name, nil)
+                    c:note(name .. " error")
+                else
+                    c:add(name .. " protected", protected)
+                    c:add(name .. " explicit", explicit)
+                    local function yn(v) if IsSecret(v) then return "secret" end return v and "yes" or "no" end
+                    c:note(name .. " protected=" .. yn(protected) .. " explicit=" .. yn(explicit))
+                end
+            end
+        end
+    end,
+})
+
+Add({
+    id = "bars.settings", area = "Values", label = "Read the gamepad bar settings and count the saved layouts", kind = "value",
+    needs = { "C_EditMode.GetLayouts" },
+    read = function(c)
+        local bar = FrameAt(BAR)
+        for _, field in ipairs({ "useCompactLayout", "showEmptyBars", "shouldExpand" }) do
+            local v = bar and bar[field]
+            c:add(field, v)
+            if v == nil then c:note(field .. " not set")
+            elseif IsSecret(v) then c:note(field .. " secret")
+            else c:note(field .. "=" .. (v and "yes" or "no")) end
+        end
+        local info = Find("C_EditMode.GetLayouts")()
+        if c:add("layouts", info) ~= "readable" or type(info) ~= "table" or type(info.layouts) ~= "table" then return end
+        local account, character = Find("Enum.EditModeLayoutType.Account"), Find("Enum.EditModeLayoutType.Character")
+        local nAccount, nCharacter = 0, 0
+        for _, layout in ipairs(info.layouts) do
+            local kind = type(layout) == "table" and layout.layoutType
+            if not IsSecret(kind) and kind ~= nil then
+                if kind == account then nAccount = nAccount + 1 elseif kind == character then nCharacter = nCharacter + 1 end
+            end
+        end
+        c:add("account layouts", nAccount); c:add("character layouts", nCharacter)
+        c:note("account layouts=" .. nAccount); c:note("character layouts=" .. nCharacter)
+    end,
+})
+
+-- ready(): in a fight these are not tried (nothing is saved for them).
+local function NotInCombat()
+    local fn = Find("InCombatLockdown")
+    if type(fn) == "function" then
+        local ok, fighting = pcall(fn)
+        if ok and not IsSecret(fighting) and fighting then return false, "in combat" end
+    end
+    return true
+end
+
+-- The left bar anchor, or nil and the name that is missing.
+local function LeftAnchor()
+    return FrameAt(BAR .. ".PageUnit.LeftCenteredAnchor")
+end
+
+Add({
+    id = "bars.move", area = "Blizzard windows", label = "Set the left bar to the place it already has", kind = "action",
+    risky = true,
+    ready = NotInCombat,
+    run = function()
+        local anchor = LeftAnchor()
+        if not anchor then return false, "the left bar is not there" end
+        if type(anchor.GetPoint) ~= "function" or type(anchor.SetPoint) ~= "function"
+            or type(anchor.ClearAllPoints) ~= "function" then return "missing", "frame point methods" end
+        -- Edit Mode's Compact setting anchors it with two points; re-setting only the first would change it.
+        if type(anchor.GetNumPoints) == "function" and Num(anchor:GetNumPoints()) ~= 1 then
+            return false, "more than one anchor point"
+        end
+        local point, rel, relPoint, x, y = anchor:GetPoint(1)
+        if IsSecret(point) or IsSecret(rel) or IsSecret(relPoint) then return false, "bar position unreadable" end
+        x, y = Num(x), Num(y)
+        if type(point) ~= "string" or not x or not y then return false, "the left bar has no position" end
+        anchor:ClearAllPoints()
+        anchor:SetPoint(point, rel, relPoint, x, y)
+        local point2, rel2, relPoint2, x2, y2 = anchor:GetPoint(1)
+        if IsSecret(point2) or IsSecret(rel2) or IsSecret(relPoint2) then return false, "bar position unreadable" end
+        return point2 == point and rel2 == rel and relPoint2 == relPoint and Num(x2) == x and Num(y2) == y
+    end,
+})
+
+Add({
+    id = "bars.scale", area = "Blizzard windows", label = "Set the left bar's size to the size it already has", kind = "action",
+    risky = true,
+    ready = NotInCombat,
+    run = function()
+        local anchor = LeftAnchor()
+        if not anchor then return false, "the left bar is not there" end
+        if type(anchor.GetScale) ~= "function" or type(anchor.SetScale) ~= "function" then return "missing", "frame scale methods" end
+        local scale = Num(anchor:GetScale())
+        if not scale or scale <= 0 then return false, "bar size unreadable" end
+        anchor:SetScale(scale)
+        return Num(anchor:GetScale()) == scale
+    end,
+})
+
+Add({
+    id = "layout.save", area = "Controller and layout", label = "Save the layouts exactly as they are", kind = "action", clean = true,
+    risky = true,
+    needs = { "C_EditMode.GetLayouts", "C_EditMode.SaveLayouts" },
+    ready = NotInCombat,
+    run = function()
+        if EditModeOpen() then return false, "Edit Mode open" end
+        local info = Find("C_EditMode.GetLayouts")()
+        if IsSecret(info) or type(info) ~= "table" or type(info.layouts) ~= "table" then return false, "layouts unreadable" end
+        local active, count = Num(info.activeLayout), #info.layouts
+        if not active then return false, "active layout unreadable" end
+        -- The list the game sends: the three presets first, then the saved layouts.
+        local manager = Find("EditModePresetLayoutManager")
+        if not Has(manager, "GetCopyOfPresetLayouts") then return false, "no preset list" end
+        local ok, presets = pcall(manager.GetCopyOfPresetLayouts, manager)
+        if not ok or IsSecret(presets) or type(presets) ~= "table" then return false, "no preset list" end
+        local list = {}
+        for _, layout in ipairs(presets) do list[#list + 1] = layout end
+        for _, layout in ipairs(info.layouts) do list[#list + 1] = layout end
+        Find("C_EditMode.SaveLayouts")({ layouts = list, activeLayout = info.activeLayout })
+        local after = Find("C_EditMode.GetLayouts")()
+        if IsSecret(after) or type(after) ~= "table" or type(after.layouts) ~= "table" then return false, "layouts unreadable afterwards" end
+        return Num(after.activeLayout) == active and #after.layouts == count
+    end,
+})
+
+---------------------------------------------------------------------------
 -- Vendor trials: the only ones that spend anything. Run.lua keeps
 -- P.vendorOpen true between MERCHANT_SHOW and MERCHANT_CLOSED.
 ---------------------------------------------------------------------------

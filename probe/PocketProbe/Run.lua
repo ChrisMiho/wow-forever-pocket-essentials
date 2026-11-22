@@ -318,6 +318,7 @@ local function Conclude(trial, key, inPress, cur, expected, message)
     P.Record(trial.id, key, result, {
         func = sig and sig.func, stack = sig and sig.stack, inPress = inPress, replace = replace,
         message = (#notes > 0) and P.Plain(tconcat(notes, " | "), 900) or nil,
+        keep = (trial.kind == "value" and #notes > 0) or nil,   -- numbers a value trial noted get a detail entry
     })
 end
 

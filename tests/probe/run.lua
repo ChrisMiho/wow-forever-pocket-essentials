@@ -357,7 +357,7 @@ test("saved table has the fixed shape", function()
     local c, P, db = new()
     eq(db.version, 1)
     eq(db.game, "1.16.0 (60000)")
-    eq(db.probe, "0.3.0")
+    eq(db.probe, "0.4.0")
     eq(db.options.vendor, true)
     eq(db.options.risky, false)
     eq(type(db.spoiled), "table")
@@ -411,7 +411,8 @@ test("nothing runs by itself in 0.3.0: Auto starts off, the listeners still reco
     noErrors(c)
 end)
 
-local RISKY = { "chat.open", "chat.openframe", "chat.focus", "chat.close", "bag.toggle", "layout.set" }
+local RISKY = { "chat.open", "chat.openframe", "chat.focus", "chat.close", "bag.toggle", "layout.set",
+    "bars.move", "bars.scale", "layout.save" }
 
 test("with the risky switch off (the default) a pass leaves the risky trials out", function()
     local c, P, db = new()
@@ -475,10 +476,11 @@ test("an automatic pass after login records every trial under trig=auto", functi
     check(s.first:match("^%d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d$"), "first is a date and time")
     for _, id in ipairs({ "chat.open", "chat.openframe", "chat.focus", "chat.type", "chat.close", "own.show", "own.escape",
         "own.create", "win.map.create", "win.map.attach", "win.bag.create", "win.chat.create", "bag.toggle", "bag.move",
-        "bag.scale", "pad.bind", "pad.mark", "bags.sort", "cvar.write", "layout.set" }) do
+        "bag.scale", "pad.bind", "pad.mark", "bags.sort", "cvar.write", "layout.set", "bars.move", "bars.scale",
+        "layout.save" }) do
         eq(cell(db, id, KEY_AUTO), "allowed", id)
     end
-    for _, id in ipairs({ "layout.read", "val.position", "val.facing", "val.map", "val.questlog", "val.objectives",
+    for _, id in ipairs({ "layout.read", "layout.sizes", "bars.protected", "bars.settings", "val.position", "val.facing", "val.map", "val.questlog", "val.objectives",
         "val.bagitem", "val.money", "val.repaircost", "val.name.player" }) do
         eq(cell(db, id, KEY_AUTO), "readable", id)
     end
@@ -687,6 +689,101 @@ test("an action that does nothing is 'no effect'; Edit Mode open is left alone",
     eq(#c:callsTo("C_EditMode.SetActiveLayout"), 0)
 end)
 
+test("layout.sizes notes each frame's width, height and scale; a missing frame says missing", function()
+    local c, P, db = new({ saved = riskyOn() })
+    c:advance(30)
+    noErrors(c)
+    eq(cell(db, "layout.sizes", KEY_AUTO), "readable")
+    local msg = db.last["layout.sizes"].message
+    check(msg, "no numbers noted")
+    check(msg:find("MinimapCluster w=230 h=230 scale=1", 1, true), "MinimapCluster size: " .. msg)
+    check(msg:find("PlayerFrame missing", 1, true), "a missing frame: " .. msg)
+    check(msg:find("GamepadMainActionBarFrame w=656", 1, true), "bar frame: " .. msg)
+    check(msg:find("LeftCenteredAnchor w=50", 1, true), "anchor: " .. msg)
+    check(msg:find("TopCenteredAnchor.Bar w=208", 1, true), "bar: " .. msg)
+    check(msg:find("UIParent w=", 1, true), "UIParent: " .. msg)
+    check(detail(db, "layout.sizes"), "the numbers are kept in a detail entry")
+end)
+
+test("bars.protected and bars.settings are readable and bars.settings counts layouts by type", function()
+    local c, P, db = new({ saved = riskyOn(), setup = function(cl)
+        cl.world.layouts = { activeLayout = 1, layouts = {
+            { layoutName = "A", layoutType = 1 }, { layoutName = "B", layoutType = 2 }, { layoutName = "C", layoutType = 2 } } }
+    end })
+    c:advance(30)
+    noErrors(c)
+    eq(cell(db, "bars.protected", KEY_AUTO), "readable")
+    eq(cell(db, "bars.settings", KEY_AUTO), "readable")
+    local msg = db.last["bars.settings"].message
+    check(msg:find("account layouts=1", 1, true), msg)
+    check(msg:find("character layouts=2", 1, true), msg)
+end)
+
+test("bars.move sets the left anchor to its own point; missing frame, combat", function()
+    local c, P, db = new({ saved = riskyOn() })
+    c:advance(30)
+    noErrors(c)
+    eq(cell(db, "bars.move", KEY_AUTO), "allowed")
+    eq(cell(db, "bars.scale", KEY_AUTO), "allowed")
+    check(#c:callsTo("GamepadBar.LeftCenteredAnchor:SetPoint") >= 1, "SetPoint was called")
+    check(#c:callsTo("GamepadBar.LeftCenteredAnchor:SetScale") >= 1, "SetScale was called")
+    local c2, P2, db2 = new({ saved = riskyOn(), setup = function(cl) rawset(cl.env, "GamepadMainActionBarFrame", nil) end })
+    c2:advance(30)
+    noErrors(c2)
+    eq(cell(db2, "bars.move", KEY_AUTO), "no effect")
+    check(detail(db2, "bars.move").message, "a reason is given")
+    local c3, P3, db3 = new({ saved = riskyOn() })
+    c3:advance(30)
+    c3:enterCombat(); c3:advance(30)
+    noErrors(c3)
+    -- Refused for combat: not tried and nothing saved (not a result that reads as "no effect").
+    for _, id in ipairs({ "bars.move", "bars.scale", "layout.save" }) do
+        eq(cell(db3, id, KEY_FIGHT), nil, id .. " saved a result in combat")
+    end
+    eq(#c3:callsTo("C_EditMode.SaveLayouts"), 1, "layout.save ran only out of combat")
+    check(countLog(db3, "bars.move: not tried, in combat") >= 1, "the refusal is logged")
+    -- Two anchor points (Compact on): left alone.
+    local c4, P4, db4 = new({ saved = riskyOn(), setup = function(cl)
+        local anchor = cl.env.GamepadMainActionBarFrame.PageUnit.LeftCenteredAnchor
+        anchor:SetPoint("TOP", cl.env.UIParent, "TOP", 0, 0)
+    end })
+    c4:advance(30)
+    noErrors(c4)
+    eq(cell(db4, "bars.move", KEY_AUTO), "no effect")
+    eq(detail(db4, "bars.move").message, "more than one anchor point")
+    eq(#c4:callsTo("GamepadBar.LeftCenteredAnchor:ClearAllPoints"), 0)
+end)
+
+test("layout.save sends the presets and the saved layouts once, unchanged", function()
+    local c, P, db = new({ saved = riskyOn(), setup = function(cl)
+        cl.world.layouts = { activeLayout = 4, layouts = { { layoutName = "Mine", layoutType = 1, layoutIndex = 3, systems = {} } } }
+    end })
+    c:advance(30)
+    noErrors(c)
+    eq(cell(db, "layout.save", KEY_AUTO), "allowed")
+    local calls = c:callsTo("C_EditMode.SaveLayouts")
+    eq(#calls, 1)
+    local info = calls[1].args and calls[1].args[1] or calls[1][1]
+    eq(info.activeLayout, 4)
+    eq(#info.layouts, 4)
+    eq(info.layouts[4].layoutName, "Mine")
+    eq(c.world.layouts.activeLayout, 4)
+    eq(#c.world.layouts.layouts, 1)
+end)
+
+test("layout.save refuses with Edit Mode open and says so without a preset list", function()
+    local c, P, db = new({ saved = riskyOn(), setup = function(cl) cl.world.editMode = true end })
+    c:advance(30)
+    eq(cell(db, "layout.save", KEY_AUTO), "no effect")
+    eq(detail(db, "layout.save").message, "Edit Mode open")
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), 0)
+    local c2, P2, db2 = new({ saved = riskyOn(), setup = function(cl) rawset(cl.env, "EditModePresetLayoutManager", nil) end })
+    c2:advance(30)
+    noErrors(c2)
+    eq(cell(db2, "layout.save", KEY_AUTO), "no effect")
+    eq(detail(db2, "layout.save").message, "no preset list")
+end)
+
 test("a missing function is 'missing'", function()
     local c, P, db = new({ setup = function(cl)
         rawset(cl.env.C_Container, "SortBags", nil)
@@ -735,7 +832,7 @@ test("the clean series runs one trial per reload, watches, and ends", function()
     local order = {}
     for i, t in ipairs(P.cleanList) do order[i] = t.id end
     eq(table.concat(order, " "), "chat.type chat.open chat.openframe chat.focus chat.close bag.toggle win.map.create "
-        .. "win.bag.create win.chat.create pad.bind pad.mark layout.set vendor.sell1")
+        .. "win.bag.create win.chat.create pad.bind pad.mark layout.set layout.save vendor.sell1")
     openPanel(c)
     eq(button(c, "PocketProbeCleanButton").ppLabel:GetText(), "Clean run (reloads)")
     c:click(button(c, "PocketProbeCleanButton"))
@@ -877,7 +974,7 @@ test("results from another probe version are cleared at load", function()
     }
     local c, P, db = new({ saved = saved })
     eq(db, saved)
-    eq(db.probe, "0.3.0")
+    eq(db.probe, "0.4.0")
     eq(next(db.last), nil, "the panel's newest results are cleared too")
     eq(db.guided["gfx.icons"].stage, "ask", "a guided trial's old values are kept, to be put back")
     eq(next(db.results), nil); eq(#db.details, 0); eq(next(db.situations), nil); eq(next(db.spoiled), nil)
@@ -1157,11 +1254,11 @@ test("the panel: Settings-sized, area tabs with counts, no scroll bar (big areas
     for _, rec in ipairs(c:frames()) do
         if rec.frame == panel then
             for _, region in ipairs(rec.regions or {}) do
-                if region.GetText and region:GetText() == "Pocket Probe 0.3.0" then titleText = true end
+                if region.GetText and region:GetText() == "Pocket Probe 0.4.0" then titleText = true end
             end
         end
     end
-    check(titleText, "titled Pocket Probe 0.3.0")
+    check(titleText, "titled Pocket Probe 0.4.0")
     local labels = tabLabels(P)
     eq(labels[1], "Errors"); eq(labels[2], "Graphics")
     local joined = table.concat(labels, "|")
@@ -1235,7 +1332,7 @@ test("at 1280x720 and Medium: at most 10 tabs, each at least 0.85 of a button ta
             eq((t.ppCount:GetPoint(1)), "TOPLEFT", t.ppName:GetText() .. ": the count sits under the name, not on one line")
         end
     end
-    check(#shown <= 10, #shown .. " tabs")
+    check(#shown <= 10, #shown .. " tabs: " .. table.concat(tabLabels(P), "|"))
     eq(table.concat(tabLabels(P), "|"), "Errors|Graphics|Our own windows|Blizzard windows 1|Blizzard windows 2|Chat box|"
         .. "Bags and vendor|Controller and layout|Values 1|Values 2")
     for _, page in ipairs(P.BuildPages(m.rowsFit)) do

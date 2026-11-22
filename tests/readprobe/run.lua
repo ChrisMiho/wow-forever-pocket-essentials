@@ -370,6 +370,36 @@ do
 end
 
 ---------------------------------------------------------------------------
+-- Probe 0.4.0: a value trial's noted numbers print as readings, not refusals
+---------------------------------------------------------------------------
+
+do
+    local PRESS = TOWN_PRESS
+    local db = {
+        version = 1, game = "1.60.1 (70959)", probe = "0.4.0",
+        options = { vendor = true, risky = true, auto = false },
+        trials = {
+            { id = "layout.sizes", area = "Values", label = "Read the sizes", kind = "value" },
+            { id = "val.money", area = "Values", label = "Money", kind = "value" },
+        },
+        situations = {},
+        results = { ["layout.sizes"] = { [PRESS] = "readable" }, ["val.money"] = { [PRESS] = "secret" } },
+        details = {
+            { trial = "layout.sizes", situation = PRESS, result = "readable", message = "MinimapCluster w=230 h=230 scale=1" },
+            { trial = "val.money", situation = PRESS, result = "secret", message = "money=secret" },
+        },
+        log = {},
+    }
+    local refusals = R.format(db, { detailsOnly = true })
+    eq(refusals[1], "Not allowed: 1 entry", "a readable value entry is not a refusal")
+    local text = table.concat(refusals, "\n")
+    check(not text:find("MinimapCluster", 1, true), "the numbers are not under Not allowed")
+    local readings = R.formatReadings(db, select(2, R.situations(db)), R.areas(db))
+    eq(readings[1], "Readings and answers: 1 entry")
+    check(table.concat(readings, "\n"):find("message: MinimapCluster w=230 h=230 scale=1", 1, true), "the numbers are readings")
+end
+
+---------------------------------------------------------------------------
 -- Probe 0.3.0: the Errors and Graphics areas, readings, guided answers
 ---------------------------------------------------------------------------
 

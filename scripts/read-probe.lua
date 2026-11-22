@@ -360,7 +360,8 @@ end
 
 -- Trials whose detail entries are readings or answers, not refusals (probe
 -- 0.3.0): "info" trials report what they read (counts, settings, names) and
--- "guided" trials the player's answer.
+-- "guided" trials the player's answer. A detail entry whose result is
+-- "readable" is a reading too (a value trial that noted numbers, probe 0.4.0).
 local READING_KINDS = { info = true, guided = true }
 
 local function readingIds(db)
@@ -378,7 +379,7 @@ local function formatEntries(db, byKey, areas, readings, heading)
     local reading = readingIds(db)
     local byTrial, total = {}, 0
     for _, d in ipairs(tbl(db.details)) do
-        if type(d) == "table" and type(d.trial) == "string" and (reading[d.trial] == true) == readings then
+        if type(d) == "table" and type(d.trial) == "string" and ((reading[d.trial] == true or d.result == "readable") == readings) then
             byTrial[d.trial] = byTrial[d.trial] or {}
             table.insert(byTrial[d.trial], d)
             total = total + 1

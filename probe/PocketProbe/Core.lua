@@ -89,6 +89,20 @@ local ADDON_NAME, P = ...
 --   "combinedBags" setting                       Blizzard_SettingsDefinitions_Shared/Preset.lua:94
 --   C_EditMode.GetLayouts / SetActiveLayout      Doc/EditModeManagerDocumentation.lua:60, 131
 --   EditModeManagerFrame:IsEditModeActive        Blizzard_EditMode/Shared/EditModeManager.lua:149
+--   C_EditMode.SaveLayouts                       Doc/EditModeManagerDocumentation.lua:110 (called: Blizzard_EditMode/Shared/EditModeManager.lua:909)
+--   Enum.EditModeLayoutType (Account, Character) Doc/EditModeManagerConstantsDocumentation.lua:511
+--   EditModePresetLayoutManager:GetCopyOfPresetLayouts  Blizzard_EditMode/Shared/EditModePresetLayoutsManager.lua:46
+--   MinimapCluster                               Blizzard_Minimap/Mainline/Minimap.xml:3
+--   PlayerFrame, PetFrame                        Blizzard_UnitFrame/Mainline/PlayerFrame.xml:13, PetFrame.xml:11
+--   TargetFrame                                  Blizzard_UnitFrame/Mainline/TargetFrame.xml:549
+--   SwingTimerMainHandFrame                      Blizzard_SwingTimer/Blizzard_SwingTimer.xml:56
+--   GamepadMainActionBarFrame                    Blizzard_GamepadActionBars/MainActionBarFrame.xml:3
+--     .PageUnit                                  Blizzard_GamepadActionBars/ActionBarEditFrame.xml:125
+--     .useCompactLayout / .showEmptyBars / .shouldExpand   Blizzard_GamepadActionBars/MainActionBarFrame.lua:113, 119, 136
+--   PageUnit's four anchors and their .Bar       Blizzard_GamepadActionBars/ActionBarTemplates.xml:600, 606
+--   UIParent (:GetWidth / :GetHeight)            Blizzard_UIParentPanelManager/Shared/UIParentPanelManager.lua:827 (the size read: Blizzard_NewPlayerExperience/Blizzard_TutorialKeyboardMouseFrame.lua:26)
+--   region :GetWidth / :GetHeight / :IsProtected Doc/SimpleScriptRegionAPIDocumentation.lua:323, 161, 540
+--   region :ClearAllPoints                       Doc/SimpleScriptRegionResizingAPIDocumentation.lua:22
 --   C_Map.GetBestMapForUnit                      Doc/MapDocumentation.lua:49
 --   C_Map.GetPlayerMapPosition (:GetXY)          Doc/MapDocumentation.lua:437, Blizzard_SharedXML/Vector2D.lua:77
 --   GetPlayerFacing                              Doc/PlayerScriptDocumentation.lua:828
@@ -110,7 +124,7 @@ local type, tostring, pairs, ipairs, pcall, select = type, tostring, pairs, ipai
 local tconcat, tremove = table.concat, table.remove
 
 P.name = ADDON_NAME or "PocketProbe"
-P.VERSION = "0.3.0"          -- used when the game cannot read the TOC's version line
+P.VERSION = "0.4.0"          -- used when the game cannot read the TOC's version line
 -- An action trial returns this when nothing refused it but it could not see
 -- whether it worked; it is stored as it is (never as "allowed").
 P.CANT_TELL = "can't tell"
@@ -463,7 +477,7 @@ function P.Record(trialId, key, result, info)
         .. (info.inPress == true and " (straight from the press)" or "")
         .. (info.func and (" [" .. info.func .. "]") or "")
         .. (info.message and (" - " .. info.message) or ""))
-    if QUIET[result] then return end
+    if QUIET[result] and not info.keep then return end
     local details = db.details
     local entry = {
         trial = trialId, situation = key, result = result, func = info.func, message = info.message,
@@ -526,6 +540,12 @@ function ClassesMeta:add(name, value)
     return class
 end
 
+-- Our own text about a value (a number we read, built into words): kept
+-- with the result. Never pass text that came from the game.
+function ClassesMeta:note(text)
+    self.notes[#self.notes + 1] = text
+end
+
 function ClassesMeta:result()
     local secret, readable = false, false
     local parts = {}
@@ -535,11 +555,15 @@ function ClassesMeta:result()
         parts[i] = self.names[i] .. "=" .. class
     end
     local result = secret and "secret" or (readable and "readable" or "nil")
-    return result, (result ~= "readable" and self.n > 0) and tconcat(parts, " ") or nil
+    local message = (result ~= "readable" and self.n > 0) and tconcat(parts, " ") or nil
+    if #self.notes > 0 then
+        message = (message and (message .. " | ") or "") .. tconcat(self.notes, "; ")
+    end
+    return result, message
 end
 
 function P.Classes()
-    return setmetatable({ n = 0, names = {}, classes = {} }, ClassesMeta)
+    return setmetatable({ n = 0, names = {}, classes = {}, notes = {} }, ClassesMeta)
 end
 
 -- The classes of a list of values given as arguments (an event's payload),
