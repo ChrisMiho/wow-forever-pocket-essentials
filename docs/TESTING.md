@@ -187,7 +187,7 @@ the vendor ones: it sells your grey junk and repairs your gear. The
 When you are done probing, delete the `PocketProbe` folder or untick it, and
 switch your features back on.
 
-### On the device (probe 0.3.0)
+### On the device (probe 0.3.0 and later)
 
 **Nothing runs by itself any more.** Logging in does nothing but put a small
 **Probe** button at the top centre of the screen, with a line of text under it
@@ -301,8 +301,25 @@ What you will see while it runs, all expected:
 
 For the values it reads, the file holds only the kind of answer ("readable",
 "secret"), never the value itself, so it holds no names. The exceptions are
-the Graphics settings (numbers like "2") and the names of the addons that had
-errors, which are not personal.
+the Graphics settings (numbers like "2"), the names of the addons that had
+errors, and (probe 0.4.0) the frame sizes and the names of the game's
+controller-button pictures, none of which is personal.
+
+**Probe 0.4.0** adds ten trials for the controller UI round, on existing tabs
+(still ten tabs at 720p). The steps for the handheld, and what each answer
+decides, are in section 22 of the device test plan. Two of them work
+differently from the rest:
+
+- **Park the main bar off screen** (Blizzard windows 2, risky) is a guided
+  trial: Start moves the game's main spell bar far above the top of the
+  screen, you press a spell button and answer **Spell cast** or **Nothing
+  happened**, and the bar comes back. It only starts outside a fight. If a
+  fight starts before you answer, the bar stays up there until the fight ends,
+  then comes back by itself. **Cancel**, **Stop** and a reload also bring it
+  back.
+- **Read the main bar's 8 spells** (Controller and layout) and **Set the left
+  bar's see-through** (Blizzard windows 2, risky) are meant to be run again
+  during a fight: the answer in a fight is the one that matters.
 
 ### Reading the file on a computer
 
@@ -1238,21 +1255,13 @@ errors; this build relies on that.
 
 ### 21. Version 0.11.0: Controller layout (experimental, unprobed)
 
-This build was made before the probe round, so run the probe first. Install
-the 0.11.0 zip and the new `PocketProbe.zip` (delete the old `PocketEssentials`
-and `PocketProbe` folders first, keep `QuestieDB`) and fully restart the game.
-Leave Controller layout **off** for steps 1 to 3.
+This build was made before the probe round, so run the probe first: steps 1
+to 3 are section 22 (Pocket Probe 0.4.0). 0.11.0 is not released yet; it
+comes after the probe results, with my guesses replaced by the measured
+sizes. When it does: install the 0.11.0 zip (delete the old
+`PocketEssentials` folder first, keep `QuestieDB`) and fully restart the game.
 
-1. **Probe, plain pass.** Open Pocket Probe and run a pass. On the
-   **Values** pages (Values 1 and Values 2) three new lines fill in: the sizes of the map, frames and
-   bars; which bar frames are protected; the bar settings.
-2. **Probe, risky pass.** Turn **Risky trials** on, reload, run a pass.
-   Three more lines: on the **Blizzard windows** pages, move a bar anchor to where it
-   already is and set its scale to what it already is; on **Controller and
-   layout**, save the layouts unchanged. Then fight something for a minute
-   and watch for "Interface action blocked".
-3. Reload, then send me `SavedVariables/PocketProbe.lua`. The sizes in it
-   replace my guesses (I read them with `scripts/read-probe.sh --details`).
+1. to 3. **Done in section 22.** Send the probe file before going on.
 4. **Switch it on.** Settings, **Controller** tab, turn **Controller layout**
    On. It should say a reload is needed; tap **Reload now**. Always reload
    before you fight after switching it on or off.
@@ -1288,3 +1297,96 @@ Leave Controller layout **off** for steps 1 to 3.
 14. Send me `SavedVariables/PocketEssentials.lua` (the Errors page and the
     debug log) with the screenshots.
 
+### 22. Pocket Probe 0.4.0 (testing tool): measurements for the controller UI
+
+**What this is for.** The new controller screen (map bottom middle, spell bars
+around it, and maybe a flat strip of your main spells under the map) was
+designed from Blizzard's code, not on the handheld. This round measures on the
+RP6 what the design guessed. Nothing of the new screen is in this release:
+only the probe changes. Download: the GitHub pre-release **probe-v0.4.0**,
+file `PocketProbe.zip`.
+
+**Before you start**
+
+1. In the game's `AddOns` folder, delete the old `PocketProbe` folder. Extract
+   the new `PocketProbe.zip` there, so `PocketProbe` sits next to
+   `PocketEssentials` and `QuestieDB`.
+2. Turn Pocket Essentials' features off for this session (round button, every
+   switch Off), or untick Pocket Essentials on the character-select AddOns
+   screen. Keep the game's Gamepad UI on, as you normally play.
+3. Close the game app completely and open it again (a new addon is only
+   picked up after a full restart). Log in somewhere quiet in a town.
+
+**Plain pass (nothing risky)**
+
+4. Tap **Probe** at the top of the screen. At the bottom, **Risky** should say
+   **Off**.
+5. Tap **Run all safe** and wait until the top of the window says
+   "pass done". The game's red error box may pop up for a moment near the end;
+   that is the probe's own test and it closes again.
+6. Have a quick look, no need to write anything down (tap a row to read its
+   Details line):
+   - **Controller and layout**: "Read the main bar's 8 spells" shows a blue
+     box (readable or secret).
+   - **Our own windows**: "Show the game's controller-button pictures" shows
+     something like "8 of 8 copied · Xbox".
+   - **Values 1**: "Read the size and scale of the screen's frames" is
+     readable.
+
+**In a fight (still nothing risky)**
+
+7. Cast a spell that has a cooldown, then pick a fight with something weak.
+   During the fight, open the probe **by touch** (the d-pad goes back to the
+   game in a fight), go to **Controller and layout** and tap **Run** on
+   "Read the main bar's 8 spells". If you can, do it while that spell is
+   still cooling down.
+
+**Risky pass (out of a fight)**
+
+8. Tap **Risky** so it says **On**. Run only the rows below, one at a time,
+   with their **Run** button. Leave the chat box and bag rows alone; we
+   already know they upset the controller.
+   - **Blizzard windows 2**: "Set the left bar to the place it already has",
+     "Set the left bar's size to the size it already has", and "Set the left
+     bar's see-through to what it has". Each should turn green (Allowed).
+     Nothing on screen should change.
+   - **Controller and layout**: "Save the layouts exactly as they are".
+9. **Park the main bar.** On **Blizzard windows 2**, tap **Start** on "Park
+   the main bar off screen, then press a spell button". Your main spell bar
+   (the one with no trigger held) disappears off the top of the screen and
+   the probe window closes by itself (while it is open it uses the d-pad and
+   A). Press a d-pad or face button that holds a spell you can use right now;
+   a buff on yourself is easiest. Did the spell go off? Tap **Probe** and, on
+   the same row, tap **Spell cast** or **Nothing happened**. The bar
+   comes back straight away. If anything looks wrong, **Cancel** brings it
+   back, and so does a reload.
+
+**Risky, in a fight**
+
+10. Pick another fight. During it, by touch: **Blizzard windows 2**, **Run** on
+    "Set the left bar's see-through to what it has". The two "Set the left bar
+    to the place / size" rows will say "not tried, in combat"; that is
+    expected, the probe never moves a bar in a fight.
+11. Keep fighting for about a minute, using all your bars. Watch the chat for
+    "Interface action failed because of an AddOn" and for a "blocked from an
+    action" pop-up (tap **Ignore** on the touchscreen). Tell me whether you
+    saw either.
+
+**Send it back**
+
+12. Tap **Save (reloads)**. The game writes the file when it reloads. Send me
+    this file:
+    `World of Warcraft/_forever_/WTF/Account/<account>/SavedVariables/PocketProbe.lua`
+13. Afterwards: tap **Risky** back to Off, and switch your Pocket Essentials
+    features back on (or delete the `PocketProbe` folder).
+
+**What each answer decides for the new controller screen**
+
+| What the probe measures | If it works | If it does not |
+|---|---|---|
+| The main bar's spells, read in a fight (step 7) | A flat strip of our own under the map can show your spells live: icon, cooldown and count | If cooldowns or counts come back "secret" in a fight, the strip can only show icons (still useful as a "which button is which" guide); if nothing can be read, the strip is dropped |
+| Parked main bar still casts (step 9) | The strip can take the main bar's place on screen while the game's real bar sits out of sight and still takes your presses | The game's main bar has to stay on screen; the strip idea only works if the bar can be faded instead (next row) |
+| See-through, out of a fight and in one (steps 8 and 10) | The game's bars can be faded: "Swap" (the both-triggers spells taking the main pads' place while both triggers are held) becomes possible, and the real main bar could be faded under the strip | No fading in a fight: "Swap" is dropped and the both-triggers bar keeps its own spot |
+| The controller-button pictures (step 6) | The strip shows the same button pictures as your controller (Xbox, PlayStation and so on) in each spell's corner | We draw simple pictures of our own |
+| Sizes of the map, frames, buff rows, quest tracker, XP bar, the two sub-menu buttons, the pet wheel and one spell button (step 5) | They replace my guessed sizes in the layout, so pieces stop overlapping or sitting off centre | (Always measured) |
+| Moving, resizing and saving layouts (step 8) and no "Interface action failed" afterwards (step 11) | Controller layout 0.11.0 can place the bars and make its own Edit Mode layout as built | The layout is redesigned around what the game allows; whatever was blamed is left out |

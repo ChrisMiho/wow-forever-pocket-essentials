@@ -705,6 +705,7 @@ local function RunOne(trial)
 end
 
 local CancelAllGuided       -- below, with the guided trials
+local PutBack               -- below, with the guided trials
 
 local function Stop()
     pass = nil
@@ -835,15 +836,42 @@ local function WriteSetting(name, value)
     return ok and not IsSecret(done) and done and true or false
 end
 
+-- Runs fn() (a guided trial's apply or restore) the way a trial runs, so a
+-- block or an error in it is pinned on that trial and not counted as an
+-- after-effect. Returns its two answers, the strongest sign seen, and all signs.
+local function Watched(id, fn)
+    EnsureHook()
+    local cur = { signals = {}, undoSignals = {}, phase = "run", id = id }
+    local before = current
+    current = cur
+    local ok, a, b = xpcall(fn, OnError)
+    current = before
+    local sig
+    for _, s in ipairs(cur.signals) do
+        if s.kind == "forbidden" then sig = s break end
+        if s.kind == "blocked" and (not sig or sig.kind == "error") then sig = s
+        elseif not sig then sig = s end
+    end
+    if not ok then a, b = nil, nil end
+    return a, b, sig, cur.signals
+end
+
 local function StartGuided(trial)
     if type(trial) ~= "table" or trial.kind ~= "guided" then return end
     local why = Refusal()
     if why then return SetStatus(why) end
     if db.guided[trial.id] then return SetStatus(trial.id .. " is already waiting for an answer") end
+    if trial.risky and not RiskyOn() then return SetStatus("risky trials are off: switch Risky on first") end
     local missing = MissingNeed(trial)
     if missing then
         P.Record(trial.id, (P.Situation("press")), "missing", { message = missing .. " is not on this client" })
         return SetStatus(trial.id .. ": " .. missing .. " is not on this client")
+    end
+    if trial.ready then
+        local ok, ready, reason = pcall(trial.ready)
+        if not ok or not ready then
+            return SetStatus(trial.id .. ": not started, " .. tostring(ok and (reason or "not now") or P.Plain(ready)))
+        end
     end
     -- What to set: the trial's own settings, plus each "ifZero" setting that is 0 now.
     local settings = {}
@@ -872,24 +900,80 @@ local function StartGuided(trial)
     for _, name in ipairs(trial.watch or {}) do
         if old[name] == nil then notes[#notes + 1] = name .. " " .. tostring(SettingNow(name) or "not on this client") end
     end
+    -- A trial that changes a frame (apply / restore in Trials.lua) does it now.
+    if trial.apply then
+        g.applied = true
+        local done, note, sig, all = Watched(trial.id, trial.apply)
+        if note then notes[#notes + 1] = P.Plain(note, 200) end
+        if sig or done ~= true then
+            -- Nothing to ask about: the result is stored now and anything moved goes back.
+            g.notes = tconcat(notes, ", ")
+            local failed = PutBack(trial.id, g)
+            local result = sig and ((sig.kind == "error") and "error" or sig.kind)
+                or ((done == "missing") and "missing" or "no effect")
+            if sig and sig.message then notes[#notes + 1] = sig.message end
+            if #all > 1 then notes[#notes + 1] = #all .. " signs" end
+            if #failed > 0 then notes[#notes + 1] = "could not put back " .. tconcat(failed, ", ") end
+            local key, facts = P.Situation("press")
+            P.EnsureSituation(key, facts)
+            P.Record(trial.id, key, result, {
+                func = sig and sig.func, stack = sig and sig.stack, inPress = true,
+                message = P.Plain(tconcat(notes, "; "), 900),
+            })
+            return SetStatus(trial.id .. ": " .. result .. (#failed > 0 and ("; could not put back " .. tconcat(failed, ", ")) or ""))
+        end
+    end
     g.notes = tconcat(notes, ", ")
     Log(trial.id .. ": started; " .. g.notes)
+    -- The panel holds the d-pad and A while open: closed so a press reaches the game.
+    if trial.closePanel and P.HidePanel then P.HidePanel() end
     SetStatus(trial.id .. ": " .. (g.stage == "restart" and (trial.steps or "restart the game") or (trial.ask or "answer")))
 end
 
 -- Writes the old values back. Keeps the entry, holding only the settings that
 -- failed, when any did; returns their names.
-local function PutBack(id, g)
+PutBack = function(id, g)
     local failed = P.PutBackSettings(g.old)
+    local keep = {}
+    for _, name in ipairs(failed) do keep[name] = g.old[name] end
+    local t = P.trialById[id]
+    if g.applied and t and t.restore then
+        local done, why, sig = Watched(id, t.restore)
+        if done == true and not sig then
+            g.applied, g.held = nil, nil
+            if why then
+                g.restoreNote = P.Plain(why, 120)
+                Log(tostring(id) .. ": " .. g.restoreNote)
+            end
+        else
+            why = sig and Describe(sig) or why
+            g.held = tostring(t.hold or "a frame") .. (why and (" (" .. P.Plain(why, 120) .. ")") or "")
+            failed[#failed + 1] = g.held
+        end
+    end
     if #failed == 0 then
         db.guided[id] = nil
     else
-        local keep = {}
-        for _, name in ipairs(failed) do keep[name] = g.old[name] end
         g.old, g.stage = keep, "putback"
         Log(tostring(id) .. ": could not put back " .. tconcat(failed, ", "))
     end
     return failed
+end
+
+-- After a fight: a guided trial whose frame could not go back in it tries again.
+local function RetryHeld()
+    if not db then return end
+    local ids = {}
+    for id, g in pairs(db.guided) do
+        if type(g) == "table" and g.stage == "putback" and g.applied then ids[#ids + 1] = id end
+    end
+    for _, id in ipairs(ids) do
+        local failed = PutBack(id, db.guided[id])
+        if #failed == 0 then
+            Log(tostring(id) .. ": put back after the fight")
+            SetStatus(tostring(id) .. ": put back after the fight")
+        end
+    end
 end
 
 local function CancelGuided(trial)
@@ -929,6 +1013,7 @@ local function AnswerGuided(trial, index)
     if type(answer) ~= "string" then return end
     local notes, started = g.notes, g.started
     local failed = PutBack(trial.id, g)
+    if g.restoreNote then notes = tostring(notes) .. ", " .. g.restoreNote end
     local key, facts = P.Situation("press")
     P.EnsureSituation(key, facts)
     P.Record(trial.id, key, answer:lower(), {
@@ -965,8 +1050,7 @@ local function GuidedAtLogout()
     for _, id in ipairs(ids) do
         local g, t = db.guided[id], P.trialById[id]
         if type(g) == "table" and not (t and t.restart) then
-            PutBack(id, g)
-            Log(tostring(id) .. ": put back at logout")
+            if #PutBack(id, g) == 0 then Log(tostring(id) .. ": put back at logout") end
         end
     end
 end
@@ -1076,6 +1160,7 @@ function handlers.PLAYER_REGEN_DISABLED()
 end
 function handlers.PLAYER_REGEN_ENABLED()
     After(FIGHT_DELAY, TryFull)
+    After(FIGHT_DELAY, RetryHeld)
     if P.OnCombat then P.OnCombat(false) end
 end
 function handlers.ADDON_RESTRICTION_STATE_CHANGED() After(FIGHT_DELAY, TryFull) end

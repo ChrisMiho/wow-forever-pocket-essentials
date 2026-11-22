@@ -103,6 +103,26 @@ local ADDON_NAME, P = ...
 --   UIParent (:GetWidth / :GetHeight)            Blizzard_UIParentPanelManager/Shared/UIParentPanelManager.lua:827 (the size read: Blizzard_NewPlayerExperience/Blizzard_TutorialKeyboardMouseFrame.lua:26)
 --   region :GetWidth / :GetHeight / :IsProtected Doc/SimpleScriptRegionAPIDocumentation.lua:323, 161, 540
 --   region :ClearAllPoints                       Doc/SimpleScriptRegionResizingAPIDocumentation.lua:22
+--   BuffFrame, DebuffFrame                       Blizzard_BuffFrame/BuffFrame.xml:6, 87
+--   ObjectiveTrackerFrame                        Blizzard_ObjectiveTracker/Blizzard_ObjectiveTracker.xml:3
+--   MainStatusTrackingBarContainer               Blizzard_StatusTrackingBar/Mainline/StatusTrackingBar.xml:41
+--   GamepadPetActionFlyout                       Blizzard_GamepadActionBars/Camelot/PetClassFlyouts.xml:18
+--   PageUnit.LeftClassAction / .RightClassAction Blizzard_GamepadActionBars/MainActionBarFrame.xml:94, 104
+--   a bar's .actionButtons[1..8]                 Blizzard_GamepadActionBars/ActionBar.lua:8-17
+--   a spell button's .action (its action slot)   Blizzard_ActionBar/Shared/ActionButton.lua:545
+--   C_ActionBar.HasAction / GetActionTexture     Doc/ActionBarFrameDocumentation.lua:467, 270
+--   C_ActionBar.GetActionCooldown (startTime, duration)   Doc/ActionBarFrameDocumentation.lua:164, Doc/SpellSharedDocumentation.lua:19
+--   C_ActionBar.GetActionDisplayCount / IsUsableAction    Doc/ActionBarFrameDocumentation.lua:199, 919
+--     (cooldown and count are documented "SecretWhenCooldownsRestricted")
+--   region :SetAlpha / :GetAlpha                 Doc/SimpleFrameAPIDocumentation.lua:1134, 276 (not a protected function)
+--   region :GetBottom / :GetTop                  Doc/SimpleScriptRegionAPIDocumentation.lua:130, 308
+--   frame :GetEffectiveScale                     Doc/SimpleFrameAPIDocumentation.lua:381
+--   a spell button's .ButtonIcon (InputIconTextureFrameTemplate)   Blizzard_GamepadActionBars/ActionBarTemplates.xml:163
+--     .mappedButtonKey, .NormalTexture           Blizzard_GamepadActionBars/ActionBarTemplates.xml:165,
+--                                                Blizzard_SharedXML/Shared/InputIcons/InputIconTexture.xml:10
+--   texture :GetAtlas / :SetAtlas                Doc/SimpleTextureBaseAPIDocumentation.lua:45, 368
+--   InputDeviceIconSetManager:GetActiveInputDeviceIconSet   Blizzard_SharedXML/Shared/InputIcons/InputDeviceIconSetManager.lua:9, 57
+--   InputIconTextureSetUtility.GetNormalActiveInputIconButtonTexture   Blizzard_SharedXML/Shared/InputIcons/InputIconTexture.lua:556, 565
 --   C_Map.GetBestMapForUnit                      Doc/MapDocumentation.lua:49
 --   C_Map.GetPlayerMapPosition (:GetXY)          Doc/MapDocumentation.lua:437, Blizzard_SharedXML/Vector2D.lua:77
 --   GetPlayerFacing                              Doc/PlayerScriptDocumentation.lua:828
@@ -301,11 +321,16 @@ function P.InitDB()
     db = saved
     P.db = saved
     -- A guided trial this version no longer has: its settings go back now.
+    -- One that moved a frame (apply / restore) is called off: a reload puts
+    -- the game's frames back by itself, and the spot it kept is gone.
     for id, g in pairs(saved.guided) do
-        if type(id) ~= "string" or not P.trialById[id] then
+        local t = type(id) == "string" and P.trialById[id] or nil
+        if not t or t.apply then
             local failed = P.PutBackSettings(type(g) == "table" and g.old or nil)
             saved.guided[id] = nil
-            earlyLog[#earlyLog + 1] = Stamp("%H:%M:%S") .. " " .. P.Plain(id, 40) .. ": no such trial any more; settings put back"
+            earlyLog[#earlyLog + 1] = Stamp("%H:%M:%S") .. " " .. P.Plain(id, 40)
+                .. (t and (": called off; the reload put " .. tostring(t.hold or "the frame") .. " back")
+                    or ": no such trial any more; settings put back")
                 .. (#failed > 0 and (", except " .. tconcat(failed, ", ")) or "")
         end
     end

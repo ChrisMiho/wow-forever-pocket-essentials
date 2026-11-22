@@ -135,6 +135,28 @@ local INDIRECT = {
     { "frame", "SwingTimerMainHandFrame", "../../probe/PocketProbe/Trials.lua", "SwingTimerMainHandFrame" },
     { "frame", "GamepadMainActionBarFrame", "../../probe/PocketProbe/Trials.lua", "GamepadMainActionBarFrame" },
     { "frame", "UIParent", "../../probe/PocketProbe/Trials.lua", "UIParent" },
+    -- Probe 0.4.0, second round (main bar spells, fading, parking, button pictures, more sizes).
+    { "namespace", "C_ActionBar.HasAction", "../../probe/PocketProbe/Trials.lua", '"C_ActionBar.HasAction"' },
+    { "namespace", "C_ActionBar.GetActionTexture", "../../probe/PocketProbe/Trials.lua", '"C_ActionBar.GetActionTexture"' },
+    { "namespace", "C_ActionBar.GetActionCooldown", "../../probe/PocketProbe/Trials.lua", '"C_ActionBar.GetActionCooldown"' },
+    { "namespace", "C_ActionBar.GetActionDisplayCount", "../../probe/PocketProbe/Trials.lua", '"C_ActionBar.GetActionDisplayCount"' },
+    { "namespace", "C_ActionBar.IsUsableAction", "../../probe/PocketProbe/Trials.lua", '"C_ActionBar.IsUsableAction"' },
+    { "frame", "BuffFrame", "../../probe/PocketProbe/Trials.lua", "\"BuffFrame\"" },
+    { "frame", "DebuffFrame", "../../probe/PocketProbe/Trials.lua", "\"DebuffFrame\"" },
+    { "frame", "ObjectiveTrackerFrame", "../../probe/PocketProbe/Trials.lua", "\"ObjectiveTrackerFrame\"" },
+    { "frame", "MainStatusTrackingBarContainer", "../../probe/PocketProbe/Trials.lua", "\"MainStatusTrackingBarContainer\"" },
+    { "frame", "GamepadPetActionFlyout", "../../probe/PocketProbe/Trials.lua", "\"GamepadPetActionFlyout\"" },
+    { "method", "GetAlpha", "../../probe/PocketProbe/Trials.lua", "GetAlpha" },
+    { "method", "SetAlpha", "../../probe/PocketProbe/Trials.lua", "SetAlpha" },
+    { "method", "GetBottom", "../../probe/PocketProbe/Trials.lua", "GetBottom" },
+    { "method", "GetTop", "../../probe/PocketProbe/Trials.lua", "GetTop" },
+    { "method", "GetEffectiveScale", "../../probe/PocketProbe/Trials.lua", "GetEffectiveScale" },
+    { "method", "GetAtlas", "../../probe/PocketProbe/Trials.lua", "GetAtlas" },
+    { "method", "SetAtlas", "../../probe/PocketProbe/Trials.lua", "SetAtlas" },
+    { "global", "InputDeviceIconSetManager", "../../probe/PocketProbe/Trials.lua", '"InputDeviceIconSetManager"' },
+    { "method", "GetActiveInputDeviceIconSet", "../../probe/PocketProbe/Trials.lua", "GetActiveInputDeviceIconSet" },
+    { "global", "InputIconTextureSetUtility", "../../probe/PocketProbe/Trials.lua", "InputIconTextureSetUtility" },
+    { "method", "GetNormalActiveInputIconButtonTexture", "../../probe/PocketProbe/Trials.lua", "GetNormalActiveInputIconButtonTexture" },
     { "cvar", "SoftTargetIconEnemy", "../../probe/PocketProbe/Errors.lua", '"SoftTargetIconEnemy"' },}
 -- Event names held as table keys rather than strings.
 -- Strings that look like events but are other constants.

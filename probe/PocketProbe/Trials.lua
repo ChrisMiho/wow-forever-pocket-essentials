@@ -41,6 +41,7 @@ local ADDON_NAME, P = ...
 -- the game: only classes ("readable", "secret", "nil") and our own text.
 
 local type, pairs, ipairs = type, pairs, ipairs
+local tconcat = table.concat
 local Find, IsSecret, Num, Str = P.Find, P.IsSecret, P.Num, P.Str
 
 P.trials = {}
@@ -539,20 +540,41 @@ local function Dim(frame, method)
     return Num(v)
 end
 
+local MAIN_BAR = BAR .. ".PageUnit.TopCenteredAnchor.Bar"
+
+-- One of the main bar's eight spell buttons (1-4 the d-pad, 5-8 the face
+-- buttons), or nil. The list is the bar's own: read, never written.
+local function MainButton(i)
+    local bar = FrameAt(MAIN_BAR)
+    local list = bar and bar.actionButtons
+    if IsSecret(list) or type(list) ~= "table" then return nil end
+    local b = list[i]
+    if type(b) == "table" then return b end
+end
+
 local SIZE_LIST = {
     { "MinimapCluster", "MinimapCluster" }, { "PlayerFrame", "PlayerFrame" }, { "PetFrame", "PetFrame" },
     { "TargetFrame", "TargetFrame" }, { "ChatFrame1", "ChatFrame1" },
     { "SwingTimerMainHandFrame", "SwingTimerMainHandFrame" }, { BAR, BAR },
 }
 for _, a in ipairs(ANCHORS) do SIZE_LIST[#SIZE_LIST + 1] = { a, BAR .. ".PageUnit." .. a } end
-SIZE_LIST[#SIZE_LIST + 1] = { "TopCenteredAnchor.Bar", BAR .. ".PageUnit.TopCenteredAnchor.Bar" }
+SIZE_LIST[#SIZE_LIST + 1] = { "TopCenteredAnchor.Bar", MAIN_BAR }
+-- Probe 0.4.0, second round: the rest of what the layout places.
+for _, entry in ipairs({
+    { "BuffFrame", "BuffFrame" }, { "DebuffFrame", "DebuffFrame" }, { "ObjectiveTrackerFrame", "ObjectiveTrackerFrame" },
+    { "MainStatusTrackingBarContainer", "MainStatusTrackingBarContainer" },
+    { "LeftClassAction", BAR .. ".PageUnit.LeftClassAction" }, { "RightClassAction", BAR .. ".PageUnit.RightClassAction" },
+    { "GamepadPetActionFlyout", "GamepadPetActionFlyout" },
+    { "TopCenteredAnchor.Bar button 1", function() return MainButton(1) end },
+}) do SIZE_LIST[#SIZE_LIST + 1] = entry end
 SIZE_LIST[#SIZE_LIST + 1] = { "UIParent", "UIParent" }
 
 Add({
     id = "layout.sizes", area = "Values", label = "Read the size and scale of the screen's frames and the bars", kind = "value",
     read = function(c)
         for _, entry in ipairs(SIZE_LIST) do
-            local name, frame = entry[1], FrameAt(entry[2])
+            local where = entry[2]
+            local name, frame = entry[1], (type(where) == "function") and where() or FrameAt(where)
             if not frame then
                 c:add(name, nil)
                 c:note(name .. " missing")
@@ -699,6 +721,261 @@ Add({
         local after = Find("C_EditMode.GetLayouts")()
         if IsSecret(after) or type(after) ~= "table" or type(after.layouts) ~= "table" then return false, "layouts unreadable afterwards" end
         return Num(after.activeLayout) == active and #after.layouts == count
+    end,
+})
+
+---------------------------------------------------------------------------
+-- Probe 0.4.0, second round: what a flat strip of our own under the map
+-- would need (the game plan's "Flat strip for the main bar"). Can the main
+-- bar's spells be read in a fight, can a bar be faded in a fight, does a
+-- controller press still cast with the main bar off screen, and can a frame
+-- of ours show the game's own controller-button pictures.
+---------------------------------------------------------------------------
+
+-- Reading the main bar's eight spells: only how many of each value were
+-- readable, secret, empty or raised an error is kept, never a value.
+local SPELL_FIELDS = { "slot", "has", "icon", "cooldown", "cd start", "cd duration", "count", "usable" }
+
+Add({
+    id = "bars.spells", area = "Controller and layout", label = "Read the main bar's 8 spells (run it in a fight too)",
+    kind = "value",
+    needs = { "C_ActionBar.HasAction", "C_ActionBar.GetActionTexture", "C_ActionBar.GetActionCooldown",
+        "C_ActionBar.GetActionDisplayCount", "C_ActionBar.IsUsableAction" },
+    read = function(c)
+        local tally = {}
+        -- One value of a field: counted by class; the first secret one (else
+        -- the first readable one) is what the field's class is taken from.
+        local function take(field, ok, v)
+            local t = tally[field]
+            if not t then
+                t = { readable = 0, secret = 0, ["nil"] = 0, error = 0 }
+                tally[field] = t
+            end
+            if not ok then
+                t.error = t.error + 1
+                return
+            end
+            local class = P.Class(v)
+            t[class] = t[class] + 1
+            -- Flags, not the sample itself, are compared: a secret may not be.
+            if class == "secret" and not t.secretSeen then t.sample, t.secretSeen = v, true
+            elseif class == "readable" and not t.secretSeen and not t.readableSeen then t.sample, t.readableSeen = v, true end
+        end
+        local has, texture, cooldown = Find("C_ActionBar.HasAction"), Find("C_ActionBar.GetActionTexture"), Find("C_ActionBar.GetActionCooldown")
+        local count, usable = Find("C_ActionBar.GetActionDisplayCount"), Find("C_ActionBar.IsUsableAction")
+        local buttons, filled = 0, 0
+        for i = 1, 8 do
+            local b = MainButton(i)
+            if b then
+                buttons = buttons + 1
+                local slot = b.action
+                take("slot", true, slot)
+                slot = Num(slot)
+                if slot and slot >= 1 then
+                    local ok, h = pcall(has, slot)
+                    take("has", ok, h)
+                    if ok and not IsSecret(h) and h then
+                        filled = filled + 1
+                        take("icon", pcall(texture, slot))
+                        local okc, info = pcall(cooldown, slot)
+                        take("cooldown", okc, info)
+                        if okc and not IsSecret(info) and type(info) == "table" then
+                            take("cd start", true, info.startTime)
+                            take("cd duration", true, info.duration)
+                        end
+                        take("count", pcall(count, slot))
+                        take("usable", pcall(usable, slot))
+                    end
+                end
+            end
+        end
+        if buttons == 0 then
+            c:add("buttons", nil)
+            c:note("the main bar's buttons are not there")
+            return
+        end
+        c:note("buttons " .. buttons .. ", with a spell " .. filled)
+        for _, field in ipairs(SPELL_FIELDS) do
+            local t = tally[field]
+            if t then
+                c:add(field, t.sample)
+                local parts = {}
+                for _, class in ipairs({ "readable", "secret", "nil", "error" }) do
+                    if t[class] > 0 then parts[#parts + 1] = class .. " " .. t[class] end
+                end
+                c:note(field .. " " .. tconcat(parts, " "))
+            end
+        end
+        c:note("issecretvalue " .. (type(issecretvalue) == "function" and "on this client" or "missing"))
+    end,
+})
+
+-- Fading a bar: the left bar's see-through set to the value it already has.
+-- Tried in a fight too (that is the question); risky like the other bar moves.
+Add({
+    id = "bars.alpha", area = "Blizzard windows", label = "Set the left bar's see-through to what it has (run it in a fight too)",
+    kind = "action", risky = true,
+    run = function(state)
+        local anchor = LeftAnchor()
+        if not anchor then return false, "the left bar is not there" end
+        if type(anchor.GetAlpha) ~= "function" or type(anchor.SetAlpha) ~= "function" then return "missing", "frame alpha methods" end
+        local alpha = anchor:GetAlpha()
+        if IsSecret(alpha) then return false, "see-through unreadable (secret)" end
+        alpha = Num(alpha)
+        if not alpha then return false, "see-through unreadable" end
+        state.anchor, state.alpha = anchor, alpha
+        anchor:SetAlpha(alpha)
+        local now = anchor:GetAlpha()
+        if IsSecret(now) then return P.CANT_TELL, "see-through unreadable afterwards" end
+        now = Num(now)
+        return now ~= nil and math.abs(now - alpha) < 0.001
+    end,
+    undo = function(state)
+        if state.anchor then state.anchor:SetAlpha(state.alpha) end
+    end,
+})
+
+-- Parking the main bar off screen: a guided trial. Start moves the top bar
+-- anchor far above the screen (out of a fight only), the player presses a
+-- spell button and answers, and the anchor goes back. The point it had is
+-- kept here, never in the saved table (it holds a frame). A reload puts the
+-- bar back by itself; a fight that starts while it is parked leaves it parked
+-- until the fight ends (no Blizzard frame is moved in a fight).
+local PARK_UP = 3000
+local parked                     -- { anchor, point, rel, relPoint, x, y, parkedY } while parked
+
+local function TopAnchor()
+    return FrameAt(BAR .. ".PageUnit.TopCenteredAnchor")
+end
+
+-- true / false whether the main bar's bottom edge is above the screen's top, or nil.
+local function BarOffScreen()
+    local bar, screen = FrameAt(MAIN_BAR), FrameAt("UIParent")
+    if not bar or not screen then return nil end
+    local bottom, top = Dim(bar, "GetBottom"), Dim(screen, "GetTop")
+    local bs, ss = Dim(bar, "GetEffectiveScale") or 1, Dim(screen, "GetEffectiveScale") or 1
+    if not bottom or not top then return nil end
+    return bottom * bs > top * ss
+end
+
+Add({
+    id = "bars.park", area = "Blizzard windows", label = "Park the main bar off screen, then press a spell button",
+    short = "Park the main bar", kind = "guided", manual = true, risky = true, hold = "the main bar",
+    ready = function()
+        local ok, why = NotInCombat()
+        if not ok then return false, why end
+        if EditModeOpen() then return false, "Edit Mode open" end
+        return true
+    end,
+    start = "Start",
+    ask = "The main bar is off screen now and this window has closed. Press a d-pad or face button that holds a "
+        .. "spell you can use here (a buff, a heal, or an attack with a target), then tap Probe and answer. "
+        .. "Stay out of fights until you answer.",
+    closePanel = true,             -- the panel holds the d-pad and A while open: closed on Start
+    answers = { "Spell cast", "Nothing happened" },
+    apply = function()
+        local anchor = TopAnchor()
+        if not anchor then return "missing", "the top bar anchor" end
+        if type(anchor.GetPoint) ~= "function" or type(anchor.SetPoint) ~= "function"
+            or type(anchor.ClearAllPoints) ~= "function" then return "missing", "frame point methods" end
+        if type(anchor.GetNumPoints) == "function" and Num(anchor:GetNumPoints()) ~= 1 then
+            return false, "more than one anchor point (Edit Mode's Compact setting?)"
+        end
+        local point, rel, relPoint, x, y = anchor:GetPoint(1)
+        if IsSecret(point) or IsSecret(rel) or IsSecret(relPoint) then return false, "bar position unreadable" end
+        x, y = Num(x), Num(y)
+        if type(point) ~= "string" or not x or not y then return false, "the top bar has no position" end
+        parked = { anchor = anchor, point = point, rel = rel, relPoint = relPoint, x = x, y = y, parkedX = x, parkedY = y + PARK_UP }
+        anchor:ClearAllPoints()
+        anchor:SetPoint(point, rel, relPoint, x, y + PARK_UP)
+        -- The spot as the game stores it (it may keep offsets less precisely than Lua).
+        local _, _, _, px, py = anchor:GetPoint(1)
+        px, py = Num(px), Num(py)
+        if px and py then parked.parkedX, parked.parkedY = px, py end
+        local off = BarOffScreen()
+        return true, "top bar anchor moved up " .. PARK_UP .. "; main bar off screen "
+            .. (off == nil and "unknown" or (off and "yes" or "no"))
+    end,
+    -- true when nothing is left to put back; false and why otherwise.
+    restore = function()
+        local p = parked
+        if not p then return true end
+        local ok = NotInCombat()
+        if not ok then return false, "in a fight: it goes back when the fight ends" end
+        local anchor = p.anchor
+        local function PutIt()
+            anchor:ClearAllPoints()
+            anchor:SetPoint(p.point, p.rel, p.relPoint, p.x, p.y)
+            parked = nil
+            return true
+        end
+        -- No point at all (a park that stopped half way): put it back.
+        if type(anchor.GetNumPoints) == "function" and Num(anchor:GetNumPoints()) == 0 then return PutIt() end
+        local point, rel, relPoint, x, y = anchor:GetPoint(1)
+        if IsSecret(point) or IsSecret(rel) or IsSecret(relPoint) then
+            return false, "its position is unreadable; a reload puts it back"
+        end
+        x, y = Num(x), Num(y)
+        -- Put back only if it is still where we parked it (the game may have placed it since).
+        if point == p.point and rel == p.rel and relPoint == p.relPoint and x and y
+            and math.abs(x - p.parkedX) < 0.5 and math.abs(y - p.parkedY) < 0.5 then
+            return PutIt()
+        end
+        parked = nil
+        return true, "left where the game had put it since"
+    end,
+})
+
+-- The game's controller-button pictures (the small prompt on each spell
+-- button): which atlas each of the eight shows, whether the game's own lookup
+-- gives the same one, and whether a texture of ours takes it. The atlas names
+-- and the icon set are kept (they name pictures, not anything personal).
+local promptFrame = CreateFrame("Frame", nil, holder)
+local promptTexture = promptFrame:CreateTexture(nil, "ARTWORK")
+
+local function AtlasOf(texture)
+    if type(texture) ~= "table" or type(texture.GetAtlas) ~= "function" then return nil end
+    local ok, atlas = pcall(texture.GetAtlas, texture)
+    if not ok then return nil end
+    atlas = Str(atlas)
+    if atlas == "" then return nil end
+    return atlas
+end
+
+Add({
+    id = "bars.prompts", area = "Our own windows", label = "Show the game's controller-button pictures on a frame of ours",
+    kind = "info", manual = true,
+    run = function()
+        if not MainButton(1) then return "missing", MAIN_BAR .. ".actionButtons" end
+        local parts = {}
+        local manager, set = Find("InputDeviceIconSetManager"), nil
+        if Has(manager, "GetActiveInputDeviceIconSet") then
+            local ok, v = pcall(manager.GetActiveInputDeviceIconSet, manager)
+            set = ok and Str(v) or nil
+        end
+        parts[1] = "icon set " .. (set and set:sub(1, 30) or "unknown")
+        local lookup = Find("InputIconTextureSetUtility.GetNormalActiveInputIconButtonTexture")
+        local read, copied, same = 0, 0, 0
+        for i = 1, 8 do
+            local b = MainButton(i)
+            local icon = b and b.ButtonIcon
+            if IsSecret(icon) or type(icon) ~= "table" then icon = nil end
+            local key = icon and Str(icon.mappedButtonKey)
+            local atlas = icon and AtlasOf(icon.NormalTexture)
+            if atlas then
+                read = read + 1
+                promptTexture:SetAtlas(atlas)
+                if AtlasOf(promptTexture) == atlas then copied = copied + 1 end
+                if key and type(lookup) == "function" then
+                    local ok, v = pcall(lookup, key)
+                    if ok and Str(v) == atlas then same = same + 1 end
+                end
+            end
+            parts[#parts + 1] = i .. " " .. (key and key:sub(1, 30) or "?") .. "=" .. (atlas and atlas:sub(1, 60) or "none")
+        end
+        parts[#parts + 1] = "the game's own lookup gives the same picture for " .. same .. " of " .. read
+        if read == 0 then return "no pictures read", tconcat(parts, "; ") end
+        return copied .. " of " .. read .. " copied" .. (set and (" · " .. set:sub(1, 20)) or ""), tconcat(parts, "; ")
     end,
 })
 

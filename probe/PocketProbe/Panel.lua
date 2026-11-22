@@ -367,6 +367,7 @@ local function DetailsFor(entry)
                 local names = {}
                 for name in pairs(type(g.old) == "table" and g.old or {}) do names[#names + 1] = tostring(name) end
                 table.sort(names)
+                if type(g.held) == "string" then names[#names + 1] = g.held end
                 return "Could not put back " .. tconcat(names, ", ") .. ": tap Cancel to retry."
             end
             local step = (g.stage == "restart") and (def.steps or "Fully restart the game.") or (def.ask or "Answer with the two buttons.")
@@ -620,7 +621,7 @@ local function ShowRows()
                     if type(g) == "table" then
                         SetButton(r.ppRun, "Cancel", "normal")
                     else
-                        SetButton(r.ppRun, def.start or "Start", "normal")
+                        SetButton(r.ppRun, def.start or "Start", "normal", def.risky and not risky)
                     end
                 else
                     SetButton(r.ppRun, "Run", "normal", RunDisabled(def))
@@ -878,4 +879,8 @@ P.panelTabs, P.panelRows, P.panelFooter, P.panelSizes = tabs, rows, footer, m
 
 function P.TogglePanel()
     if panel:IsShown() then panel:Hide() else panel:Show() end
+end
+
+function P.HidePanel()
+    if panel:IsShown() then panel:Hide() end
 end

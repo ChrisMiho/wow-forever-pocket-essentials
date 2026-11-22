@@ -441,6 +441,11 @@ main bar is whole, and the spec's "Rulings" lists every call made without
 the owner. Pocket Probe 0.4.0 adds the trials that measure what this build
 guessed. Spec `docs/superpowers/specs/2026-11-21-controller-layout.md`,
 device steps `docs/TESTING.md` 21.
+Pocket Probe 0.4.0 (2026-11-22) also measures what the "flat strip" idea
+needs (spells read in a fight, fading a bar in a fight, a press with the main
+bar parked off screen, the controller-button pictures) and more sizes. It is
+released alone as the pre-release `probe-v0.4.0`; 0.11.0 waits for its
+results. Device steps `docs/TESTING.md` 22.
 
 **0.10.0 (2026-11-20, untested):** "Catch all errors" (the owner: "we need
 another feature to make managing bugs easier ... almost working like how

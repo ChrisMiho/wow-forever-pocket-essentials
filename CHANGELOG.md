@@ -35,9 +35,16 @@ Your saved choices carry over.
   - It is a starting point: what you then move in Edit Mode is kept.
     "Start over" rebuilds the layout from the template.
 - **Setup guide:** a Controller screen with the same switch.
-- **Pocket Probe 0.4.0:** six new trials that measure the real sizes of the
-  map, frames and bars (on the Values pages) and test the moves this build
-  relies on (on the Blizzard windows and Controller and layout pages).
+- **Pocket Probe 0.4.0** (testing tool, released on its own as the GitHub
+  pre-release `probe-v0.4.0` before this build): ten new trials. They
+  measure the real sizes of the map, frames, buff rows, quest tracker, XP
+  bar, sub-menu buttons, pet wheel, bars and one spell button; test the moves
+  this build relies on; and answer what a flat strip of spells under the map
+  would need: whether the main bar's spells can be read in a fight, whether a
+  bar can be faded in a fight, whether a controller press still casts with
+  the main bar parked off screen (a guided trial), and which pictures the
+  game uses for the controller buttons. Device steps: `docs/TESTING.md`
+  section 22.
 
 ### Known gaps
 

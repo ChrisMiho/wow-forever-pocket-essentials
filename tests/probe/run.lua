@@ -339,7 +339,9 @@ local function passTrials(db)
     local out = {}
     for _, t in ipairs(db.trials) do
         -- The Errors and Graphics areas only run from the panel.
-        if not t.id:find("^vendor%.") and t.id ~= "val.whisper" and t.area ~= "Errors" and t.area ~= "Graphics" then
+        -- Guided and "info" trials (bars.park, bars.prompts) only run from the panel too.
+        if not t.id:find("^vendor%.") and t.id ~= "val.whisper" and t.area ~= "Errors" and t.area ~= "Graphics"
+            and t.kind ~= "guided" and t.kind ~= "info" then
             out[#out + 1] = t
         end
     end
@@ -372,7 +374,8 @@ test("saved table has the fixed shape", function()
         seen[t.id] = true
     end
     for _, id in ipairs({ "err.handler", "err.box", "err.hook", "err.others", "err.hide", "err.chain", "err.blocked",
-        "gfx.read", "gfx.write", "gfx.names", "gfx.outlines", "gfx.icons" }) do
+        "gfx.read", "gfx.write", "gfx.names", "gfx.outlines", "gfx.icons",
+        "bars.spells", "bars.alpha", "bars.park", "bars.prompts" }) do
         check(seen[id], "new trial missing: " .. id)
     end
     for _, key in ipairs({ "situations", "results", "details", "log", "last", "guided" }) do eq(type(db[key]), "table", key) end
@@ -412,7 +415,7 @@ test("nothing runs by itself in 0.3.0: Auto starts off, the listeners still reco
 end)
 
 local RISKY = { "chat.open", "chat.openframe", "chat.focus", "chat.close", "bag.toggle", "layout.set",
-    "bars.move", "bars.scale", "layout.save" }
+    "bars.move", "bars.scale", "layout.save", "bars.alpha", "bars.park" }
 
 test("with the risky switch off (the default) a pass leaves the risky trials out", function()
     local c, P, db = new()
@@ -477,10 +480,10 @@ test("an automatic pass after login records every trial under trig=auto", functi
     for _, id in ipairs({ "chat.open", "chat.openframe", "chat.focus", "chat.type", "chat.close", "own.show", "own.escape",
         "own.create", "win.map.create", "win.map.attach", "win.bag.create", "win.chat.create", "bag.toggle", "bag.move",
         "bag.scale", "pad.bind", "pad.mark", "bags.sort", "cvar.write", "layout.set", "bars.move", "bars.scale",
-        "layout.save" }) do
+        "layout.save", "bars.alpha" }) do
         eq(cell(db, id, KEY_AUTO), "allowed", id)
     end
-    for _, id in ipairs({ "layout.read", "layout.sizes", "bars.protected", "bars.settings", "val.position", "val.facing", "val.map", "val.questlog", "val.objectives",
+    for _, id in ipairs({ "layout.read", "layout.sizes", "bars.protected", "bars.settings", "bars.spells", "val.position", "val.facing", "val.map", "val.questlog", "val.objectives",
         "val.bagitem", "val.money", "val.repaircost", "val.name.player" }) do
         eq(cell(db, id, KEY_AUTO), "readable", id)
     end
@@ -702,6 +705,11 @@ test("layout.sizes notes each frame's width, height and scale; a missing frame s
     check(msg:find("LeftCenteredAnchor w=50", 1, true), "anchor: " .. msg)
     check(msg:find("TopCenteredAnchor.Bar w=208", 1, true), "bar: " .. msg)
     check(msg:find("UIParent w=", 1, true), "UIParent: " .. msg)
+    for _, part in ipairs({ "BuffFrame w=260 h=80", "DebuffFrame w=260", "ObjectiveTrackerFrame w=250 h=400",
+        "MainStatusTrackingBarContainer w=800", "LeftClassAction w=40", "RightClassAction w=40",
+        "GamepadPetActionFlyout w=160", "TopCenteredAnchor.Bar button 1 w=46 h=46" }) do
+        check(msg:find(part, 1, true), part .. ": " .. msg)
+    end
     check(detail(db, "layout.sizes"), "the numbers are kept in a detail entry")
 end)
 
@@ -1752,6 +1760,223 @@ test("Run all safe ends with the two error-box trials, and the box is closed aft
     eq(cell(db, "err.hide", KEY_PRESS), "allowed", "the box was closed again, so Hide could tell")
     eq(c.errorBox.shown, false)
     noErrors(c)
+end)
+
+
+---------------------------------------------------------------------------
+-- Probe 0.4.0, second round: main bar spells, fading, parking, pictures
+---------------------------------------------------------------------------
+
+-- The main bar's top anchor and its first point.
+local function topAnchor(c) return c.env.GamepadMainActionBarFrame.PageUnit.TopCenteredAnchor end
+local function topPoint(c)
+    local point, rel, relPoint, x, y = topAnchor(c):GetPoint(1)
+    return point, rel, relPoint, x, y
+end
+
+test("bars.spells counts what can be read of the main bar's 8 spells, in and out of a fight", function()
+    local c, P, db = new()
+    c:advance(30)
+    c:enterCombat(); c:advance(30)
+    noErrors(c)
+    eq(cell(db, "bars.spells", KEY_AUTO), "readable")
+    eq(cell(db, "bars.spells", KEY_FIGHT), "readable", "it runs in a fight too")
+    local msg = db.last["bars.spells"].message
+    for _, part in ipairs({ "buttons 8, with a spell 3", "slot readable 8", "has readable 8", "icon readable 3",
+        "cd start readable 3", "cd duration readable 3", "count readable 3", "usable readable 3",
+        "issecretvalue on this client" }) do
+        check(msg:find(part, 1, true), part .. ": " .. msg)
+    end
+    check(not msg:find("135274", 1, true), "a texture id was saved")
+    check(detail(db, "bars.spells"), "the counts are kept in a detail entry")
+end)
+
+test("bars.spells: a secret cooldown makes the result secret; an error and a missing bar are said", function()
+    local c, P, db = new({ setup = function(cl) cl.world.secrets[100] = true end })
+    c:advance(30)
+    noErrors(c)
+    eq(cell(db, "bars.spells", KEY_AUTO), "secret")
+    local msg = db.last["bars.spells"].message
+    check(msg:find("cd start=secret", 1, true), msg)
+    check(msg:find("cd start readable 2 secret 1", 1, true), msg)
+    check(msg:find("cd duration readable 3", 1, true), msg)
+    local c2, P2, db2 = new({ setup = function(cl)
+        rawset(cl.env.C_ActionBar, "GetActionTexture", function() error("no texture") end)
+    end })
+    c2:advance(30)
+    noErrors(c2)
+    check(db2.last["bars.spells"].message:find("icon error 3", 1, true), db2.last["bars.spells"].message)
+    local c3, P3, db3 = new({ setup = function(cl) rawset(cl.env, "GamepadMainActionBarFrame", nil) end })
+    c3:advance(30)
+    noErrors(c3)
+    eq(cell(db3, "bars.spells", KEY_AUTO), "nil")
+    check(db3.last["bars.spells"].message:find("the main bar's buttons are not there", 1, true), "said")
+end)
+
+test("bars.alpha sets the left bar's see-through to its own value, out of and in a fight; a block is recorded", function()
+    local c, P, db = new({ saved = riskyOn() })
+    c:advance(30)
+    c:enterCombat(); c:advance(30)
+    noErrors(c)
+    eq(cell(db, "bars.alpha", KEY_AUTO), "allowed")
+    eq(cell(db, "bars.alpha", KEY_FIGHT), "allowed", "tried in a fight too")
+    check(#c:callsTo("GamepadBar.LeftCenteredAnchor:SetAlpha") >= 2, "SetAlpha was called")
+    for _, call in ipairs(c:callsTo("GamepadBar.LeftCenteredAnchor:SetAlpha")) do
+        eq(call.args[1], 1, "always the value it already had")
+    end
+    local c2, P2, db2 = new({ saved = riskyOn(), setup = function(cl) cl.world.barAlphaBlocked = true end })
+    c2:advance(30)
+    c2:enterCombat(); c2:advance(30)
+    noErrors(c2)
+    eq(cell(db2, "bars.alpha", KEY_AUTO), "allowed")
+    eq(cell(db2, "bars.alpha", KEY_FIGHT), "blocked")
+    eq(detail(db2, "bars.alpha", KEY_FIGHT).func, "SetAlpha()")
+    eq(topAnchor(c2):GetAlpha(), 1)
+    -- Risky off: never tried.
+    local c3, P3, db3 = new()
+    c3:advance(30)
+    check(not db3.results["bars.alpha"], "ran with Risky off")
+    eq(#c3:callsTo("GamepadBar.LeftCenteredAnchor:SetAlpha"), 0)
+end)
+
+test("bars.park: refused with Risky off or in a fight; parks the main bar, asks, then puts it back exactly", function()
+    local saved = { options = { auto = false } }
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    local p1, r1, rp1, x1, y1 = topPoint(c)
+    local row = showTrial(c, P, "bars.park")
+    eq(row.ppRun.ppLabel:GetText(), "Start")
+    check(row.ppRun.ppDisabled, "Start is dimmed while Risky is off")
+    P.StartGuided(P.trialById["bars.park"])
+    eq(saved.guided["bars.park"], nil, "not started with Risky off")
+    check(P.status:find("risky trials are off", 1, true), P.status)
+    c:click(button(c, "PocketProbeRiskyButton"))
+    c:enterCombat()
+    c:click(showTrial(c, P, "bars.park").ppRun)
+    eq(saved.guided["bars.park"], nil, "not started in a fight")
+    check(P.status:find("not started, in combat", 1, true), P.status)
+    c:leaveCombat(); c:advance(2)
+    -- Start: parked far above the screen.
+    c:click(showTrial(c, P, "bars.park").ppRun)
+    local g = saved.guided["bars.park"]
+    check(g and g.stage == "ask", "waiting for the answer")
+    check(not rawget(c.env, "PocketProbePanel"):IsShown(), "the panel closed, so a press reaches the game")
+    local p2, r2, rp2, x2, y2 = topPoint(c)
+    eq(p2, p1); eq(r2, r1); eq(rp2, rp1); eq(x2, x1); eq(y2, y1 + 3000)
+    check(g.notes:find("main bar off screen yes", 1, true), g.notes)
+    local bar = topAnchor(c).Bar
+    check(bar:GetBottom() > c.env.UIParent:GetTop(), "the bar is above the screen")
+    for _, v in pairs(g) do check(type(v) ~= "table" or v == g.old, "no frame is kept in the saved table") end
+    row = showTrial(c, P, "bars.park")
+    eq(row.ppAnswer[1].ppLabel:GetText(), "Spell cast")
+    eq(row.ppAnswer[2].ppLabel:GetText(), "Nothing happened")
+    c:click(row.ppAnswer[1])
+    eq(cell(saved, "bars.park", KEY_PRESS), "spell cast")
+    check(saved.last["bars.park"].message:find("main bar off screen yes", 1, true), "the answer keeps the notes")
+    eq(saved.guided["bars.park"], nil)
+    local p3, r3, rp3, x3, y3 = topPoint(c)
+    eq(p3, p1); eq(r3, r1); eq(rp3, rp1); eq(x3, x1); eq(y3, y1)
+    eq(topAnchor(c):GetNumPoints(), 1)
+    noErrors(c)
+end)
+
+test("bars.park: an answer in a fight leaves it parked until the fight ends; a reload calls it off", function()
+    local saved = { options = { auto = false, risky = true } }
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    local _, _, _, _, y1 = topPoint(c)
+    c:click(showTrial(c, P, "bars.park").ppRun)
+    c:enterCombat()
+    local moves = #c:callsTo("GamepadBar.TopCenteredAnchor:SetPoint")
+    c:click(showTrial(c, P, "bars.park").ppAnswer[2])
+    eq(cell(saved, "bars.park", KEY_PRESS), nil, "recorded under the fight's situation")
+    eq(#c:callsTo("GamepadBar.TopCenteredAnchor:SetPoint"), moves, "nothing moved in the fight")
+    local g = saved.guided["bars.park"]
+    eq(g.stage, "putback")
+    check(g.held:find("the main bar", 1, true) and g.held:find("fight ends", 1, true), g.held)
+    local row = showTrial(c, P, "bars.park")
+    eq(row.ppChipText:GetText(), "Not put back")
+    c:leaveCombat(); c:advance(2)
+    eq(saved.guided["bars.park"], nil, "put back after the fight")
+    eq(select(5, topPoint(c)), y1)
+    eq(countLog(saved, "bars.park: put back after the fight"), 1)
+    noErrors(c)
+    -- Waiting when the interface reloads: the reload puts the bar back; the trial is called off.
+    local c2, P2 = new({ saved = saved })
+    c2:advance(5)
+    c2:click(showTrial(c2, P2, "bars.park").ppRun)
+    check(saved.guided["bars.park"], "waiting")
+    c2:enterCombat()
+    c2:fire("PLAYER_LOGOUT")
+    local c3 = new({ saved = saved })
+    eq(saved.guided["bars.park"], nil)
+    eq(countLog(saved, "bars.park: called off; the reload put the main bar back"), 1)
+    noErrors(c3)
+end)
+
+test("bars.park: two anchor points are left alone; a spot the game set meanwhile is kept", function()
+    local saved = { options = { auto = false, risky = true } }
+    local c, P = new({ saved = saved, setup = function(cl)
+        cl.env.GamepadMainActionBarFrame.PageUnit.TopCenteredAnchor:SetPoint("TOP", cl.env.UIParent, "TOP", 0, 0)
+    end })
+    c:advance(5)
+    c:click(showTrial(c, P, "bars.park").ppRun)
+    eq(saved.guided["bars.park"], nil, "nothing to ask")
+    eq(cell(saved, "bars.park", KEY_PRESS), "no effect")
+    check(saved.last["bars.park"].message:find("more than one anchor point", 1, true), saved.last["bars.park"].message)
+    eq(#c:callsTo("GamepadBar.TopCenteredAnchor:ClearAllPoints"), 0)
+    noErrors(c)
+    local saved2 = { options = { auto = false, risky = true } }
+    local c2, P2 = new({ saved = saved2 })
+    c2:advance(5)
+    c2:click(showTrial(c2, P2, "bars.park").ppRun)
+    local anchor = topAnchor(c2)
+    local pageUnit = c2.env.GamepadMainActionBarFrame.PageUnit
+    anchor:ClearAllPoints(); anchor:SetPoint("CENTER", pageUnit, "CENTER", 0, 99)
+    c2:click(showTrial(c2, P2, "bars.park").ppAnswer[1])
+    eq(select(5, topPoint(c2)), 99, "the game's spot is kept")
+    eq(saved2.guided["bars.park"], nil)
+    check(saved2.last["bars.park"].message:find("left where the game had put it since", 1, true), saved2.last["bars.park"].message)
+    noErrors(c2)
+    -- Left with no point at all: put back.
+    local saved3 = { options = { auto = false, risky = true } }
+    local c3, P3 = new({ saved = saved3 })
+    c3:advance(5)
+    local _, _, _, _, y0 = topPoint(c3)
+    c3:click(showTrial(c3, P3, "bars.park").ppRun)
+    topAnchor(c3):ClearAllPoints()
+    c3:click(showTrial(c3, P3, "bars.park").ppRun)
+    eq(saved3.guided["bars.park"], nil)
+    eq(select(5, topPoint(c3)), y0)
+    noErrors(c3)
+end)
+
+test("bars.prompts reads the 8 button pictures and shows them on a texture of ours", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    c:click(showTrial(c, P, "bars.prompts").ppRun)
+    noErrors(c)
+    eq(cell(db, "bars.prompts", KEY_PRESS), "8 of 8 copied · Xbox")
+    local msg = db.last["bars.prompts"].message
+    for _, part in ipairs({ "icon set Xbox", "1 PADDLEFT=gamepad-xbox-PADDLEFT", "5 PAD3=gamepad-xbox-PAD3",
+        "8 PAD1=gamepad-xbox-PAD1", "same picture for 8 of 8" }) do
+        check(msg:find(part, 1, true), part .. ": " .. msg)
+    end
+    local c2, P2, db2 = new({ auto = false, setup = function(cl)
+        rawset(cl.env, "InputDeviceIconSetManager", nil)
+        rawset(cl.env, "InputIconTextureSetUtility", nil)
+    end })
+    c2:advance(5)
+    c2:click(showTrial(c2, P2, "bars.prompts").ppRun)
+    noErrors(c2)
+    eq(cell(db2, "bars.prompts", KEY_PRESS), "8 of 8 copied")
+    check(db2.last["bars.prompts"].message:find("icon set unknown", 1, true), "said")
+    check(db2.last["bars.prompts"].message:find("same picture for 0 of 8", 1, true), "said")
+    local c3, P3, db3 = new({ auto = false, setup = function(cl) rawset(cl.env, "GamepadMainActionBarFrame", nil) end })
+    c3:advance(5)
+    c3:click(showTrial(c3, P3, "bars.prompts").ppRun)
+    noErrors(c3)
+    eq(cell(db3, "bars.prompts", KEY_PRESS), "missing")
 end)
 
 

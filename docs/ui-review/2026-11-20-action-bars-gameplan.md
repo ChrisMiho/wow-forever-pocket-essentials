@@ -411,3 +411,24 @@ our own can show the same pictures, so they match the player's controller.
 Owner (2026-11-22) on the both-triggers spells: "I like A and B honestly,
 both work, i could see both being popular". So it is a choice: share the
 strip while both triggers are held, or a small strip of its own.
+
+## Probe round for the strip (2026-11-22, Pocket Probe 0.4.0)
+
+The owner asked for the probe to answer what the strip needs before any
+spec. Released as the pre-release `probe-v0.4.0`; device steps and what each
+answer decides are in `docs/TESTING.md` section 22.
+
+- `bars.spells`: the main bar's eight spells (slot, icon, cooldown start and
+  duration, count, usable) read out of and in a fight, and whether any comes
+  back secret. Blizzard documents cooldowns and counts as "secret when
+  cooldowns are restricted".
+- `bars.alpha`: a bar anchor's see-through set to its own value, out of and
+  in a fight (decides "Swap" by fading, and fading the real bar under the
+  strip).
+- `bars.park`: the main bar's top anchor moved far off screen, out of a
+  fight; the owner presses a spell button and answers whether it cast.
+- `bars.prompts`: the atlas each spell button's controller picture uses, the
+  active icon set, and whether a texture of ours takes the same atlas.
+- `layout.sizes` now also reads the buff and debuff rows, the quest tracker,
+  the XP bar container, the two sub-menu buttons, the pet wheel and one
+  spell button.

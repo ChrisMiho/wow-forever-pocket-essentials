@@ -73,7 +73,7 @@ local M_SCRIPT_REGION = list([[Show Hide SetShown IsShown IsVisible GetWidth Get
     GetBottom GetLeft GetRight EnableMouse EnableMouseWheel SetMouseMotionEnabled SetScript GetScript HookScript IsProtected
     SetPoint ClearAllPoints SetAllPoints SetSize SetWidth SetHeight GetPoint GetNumPoints]])
 local M_REGION = list("GetAlpha SetAlpha GetScale SetScale GetEffectiveScale SetVertexColor CreateAnimationGroup")
-local M_TEXTURE = list("SetColorTexture SetTexture SetAtlas SetRotation SetTexCoord")
+local M_TEXTURE = list("SetColorTexture SetTexture SetAtlas GetAtlas SetRotation SetTexCoord")
 local M_LINE = list("SetColorTexture SetTexture SetStartPoint SetEndPoint SetThickness")
 local M_FONT_INSTANCE = list("SetFont GetFont SetFontObject SetTextColor SetShadowColor SetShadowOffset SetJustifyH SetJustifyV")
 local M_FONTSTRING = list("SetText GetText SetWordWrap SetMaxLines GetStringHeight GetUnboundedStringWidth SetRotation")
@@ -229,6 +229,14 @@ function Client.new(opts)
         openMenu = nil,              -- the open root pop-up menu's frame (Menu.GetManager():GetOpenMenu())
         questMenu = nil,             -- c:openMenu options for the quest log's menu ({ silent = true }: no announcement)
         menuArt = false,             -- true: the atlas "common-dropdown-bg" exists
+        -- C_ActionBar: [action slot] = { texture =, start =, duration =, count =, usable = } (a slot
+        -- not listed is empty). Slots 1-8 are the main gamepad bar's buttons, 9-16 the left bar's ...
+        actions = { [1] = { texture = 135274, start = 0, duration = 0, count = "", usable = true },
+                    [2] = { texture = 136096, start = 100, duration = 8, count = "", usable = false },
+                    [5] = { texture = 135952, start = 0, duration = 0, count = "3", usable = true } },
+        iconSet = "Xbox",            -- InputDeviceIconSetManager:GetActiveInputDeviceIconSet()
+        barAlphaBlocked = false,     -- true: SetAlpha on a gamepad bar frame in a fight is refused
+                                     -- (ADDON_ACTION_BLOCKED) and does nothing
     }
     c.world = world
 
@@ -607,6 +615,7 @@ function Client.new(opts)
         local st = St(self)
         st.atlas, st.texture, st.color = atlas, nil, nil
     end
+    function METHODS:GetAtlas() return St(self).atlas end
     function METHODS:SetRotation(r) CheckNumber(r, "SetRotation()"); St(self).rotation = r end
     function METHODS:SetTexCoord(left, right, top, bottom)
         CheckNumber(left, "SetTexCoord()"); CheckNumber(right, "SetTexCoord()")
@@ -1110,7 +1119,7 @@ function Client.new(opts)
     -- protected spell buttons); reading methods are logged too.
     c.barParts = {}
     local BAR_LOGGED = { GetPoint = true, GetNumPoints = true, SetPoint = true, ClearAllPoints = true,
-        SetScale = true, GetScale = true, SetAllPoints = true }
+        SetScale = true, GetScale = true, SetAllPoints = true, SetAlpha = true, GetAlpha = true }
     local BAR_MOVES = { SetPoint = true, ClearAllPoints = true, SetScale = true, SetAllPoints = true }
     local function GuardBarFrame(w, label)
         local base = getmetatable(w).__index
@@ -1126,6 +1135,10 @@ function Client.new(opts)
                         Log(label .. ":" .. k, ...)
                         if BAR_MOVES[k] and world.inCombat then
                             error(label .. ":" .. k .. "(): blocked in combat (protected frame)", 2)
+                        end
+                        if k == "SetAlpha" and world.barAlphaBlocked and world.inCombat then
+                            c:fire("ADDON_ACTION_BLOCKED", c.opts.addonName or "PocketEssentials", "SetAlpha()")
+                            return
                         end
                         return f(self, ...)
                     end
@@ -1190,10 +1203,73 @@ function Client.new(opts)
     end)
     GuardBarFrame(pageUnit, "GamepadBar.PageUnit")
     for k, anchor in pairs(anchorFrames) do c.barParts[pageUnit][k] = anchor end
+    -- MainActionBarFrame.xml:94, 104: the two sub-menu buttons (hidden until a class or pet uses them).
+    for _, key in ipairs({ "LeftClassAction", "RightClassAction" }) do
+        local b = Blizz("Button", nil, pageUnit)
+        b:SetSize(40, 40)
+        b:SetPoint("CENTER", anchorFrames.BottomCenteredAnchor, "CENTER", key == "LeftClassAction" and -138 or 138, -50)
+        W[b].shown = false
+        c.barParts[pageUnit][key] = b
+    end
+    -- ActionBar.lua:8-17: each bar's eight spell buttons, bar.actionButtons (1-4 the d-pad group,
+    -- 5-8 the face buttons). Each has its action slot (.action, ActionButton.lua:545) and its
+    -- controller-button picture (.ButtonIcon, InputIconTextureFrameTemplate: .mappedButtonKey and a
+    -- .NormalTexture holding the picture's atlas, InputIconTexture.lua:607-613).
+    local PROMPT_KEYS = { "PADDLEFT", "PADDUP", "PADDRIGHT", "PADDDOWN", "PAD3", "PAD4", "PAD2", "PAD1" }
+    c.barButtons = {}
+    for n, a in ipairs(ANCHORS) do
+        local bar = c.barParts[anchorFrames[a[1]]].Bar
+        local list = {}
+        for i = 1, 8 do
+            local b = Blizz("Button", nil, bar)
+            b:SetSize(46, 46)
+            b:SetPoint("CENTER", bar, "CENTER", (i - 4.5) * 24, 0)
+            rawset(b, "action", (n - 1) * 8 + i)
+            local icon = Blizz("Frame", nil, b)
+            icon:SetSize(20, 20)
+            local tex = icon:CreateTexture(nil, "ARTWORK")
+            tex:SetAtlas("gamepad-" .. string.lower(world.iconSet) .. "-" .. PROMPT_KEYS[i])
+            rawset(icon, "mappedButtonKey", PROMPT_KEYS[i])
+            rawset(icon, "NormalTexture", tex)
+            rawset(b, "ButtonIcon", icon)
+            list[i] = b
+        end
+        c.barParts[bar].actionButtons = list
+        c.barButtons[a[1]] = list
+    end
     c.barParts[pageUnit].anchorPoints = anchorPoints
     GuardBarFrame(gamepadBar, "GamepadBar")
     c.barParts[gamepadBar].PageUnit = pageUnit
     c.barParts[gamepadBar].useCompactLayout = false -- tests set it (c.barParts[GamepadMainActionBarFrame])
+    -- More pieces the Controller layout places (sizes read by the probe's layout.sizes).
+    for _, f in ipairs({ { "BuffFrame", 260, 80 }, { "DebuffFrame", 260, 40 }, { "ObjectiveTrackerFrame", 250, 400 },
+        { "MainStatusTrackingBarContainer", 800, 12 }, { "GamepadPetActionFlyout", 160, 160 } }) do
+        local frame = Blizz("Frame", f[1], UIParent)
+        frame:SetSize(f[2], f[3])
+        frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+        if f[1] == "GamepadPetActionFlyout" or f[1] == "MainStatusTrackingBarContainer" then W[frame].shown = false end
+    end
+    -- C_ActionBar (ActionBarFrameDocumentation.lua): a slot below 1 raises, as RequiresValidActionSlot does.
+    local function ActionAt(slot)
+        if type(slot) ~= "number" or slot < 1 then error("C_ActionBar: invalid action slot " .. tostring(slot), 3) end
+        return world.actions[slot]
+    end
+    Namespace("C_ActionBar", {
+        HasAction = function(slot) return ActionAt(slot) ~= nil end,
+        GetActionTexture = function(slot) local a = ActionAt(slot) return a and a.texture end,
+        GetActionCooldown = function(slot)
+            local a = ActionAt(slot) or { start = 0, duration = 0 }
+            return { startTime = a.start, duration = a.duration, isEnabled = true,
+                isActive = (a.duration or 0) > 0, modRate = 1 }
+        end,
+        GetActionDisplayCount = function(slot) local a = ActionAt(slot) return a and a.count or "" end,
+        IsUsableAction = function(slot) local a = ActionAt(slot) return a ~= nil and a.usable == true, false end,
+    })
+    -- The game's controller-button pictures (InputDeviceIconSetManager.lua, InputIconTexture.lua:565).
+    Global("InputDeviceIconSetManager", { GetActiveInputDeviceIconSet = function() return world.iconSet end })
+    Global("InputIconTextureSetUtility", { GetNormalActiveInputIconButtonTexture = function(key)
+        return "gamepad-" .. string.lower(world.iconSet) .. "-" .. tostring(key)
+    end })
     local tooltip = Blizz("Frame", "GameTooltip", UIParent)
     W[tooltip].shown = false
 
