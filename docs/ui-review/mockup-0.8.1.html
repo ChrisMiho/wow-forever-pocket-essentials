@@ -154,6 +154,7 @@ const FEATURES = [
 const FEAT = Object.fromEntries(FEATURES.map(f=>[f.key,f]));
 FEAT.quietBars={key:'quietBars',label:'Quiet bars'}; // proposed only, so it is not in the Today lists
 FEAT.kit={key:'kit',label:'Quick slots'};
+FEAT.layout={key:'layout',label:'Controller layout',statusAlways:true,status:()=>'Switching on or off reloads. Your old layout comes back when off.'}; S.on.layout=true; S.opt.layout={size:100}; S.clFine=false;
 
 /* ---------- drawing helpers (all positions in 720p units) ---------- */
 let K=1, M=null;
@@ -539,9 +540,9 @@ const VIEWS=[
  ['While playing',[['hud','Whole screen'],['hub','Round button'],['arrow','Quest arrow'],['prompt','Press A to type']]],
  ['Windows',[['settings','Settings'],['setup','Setup guide'],['chat','Chat window'],['move','Move on screen']]],
  ['On game windows',[['icons','Quest icons and tap label'],['mapbutton','Round button on the map'],['bag','Bag Sort tab'],['menu','Menu background']]],
- ['New (draft)',[['quietbars','Quiet bars in play'],['kit','Quick slots (round button window)'],['questitem','Quest item button'],['qbsettings','Controller tab'],['catcher','Error catcher'],['probe','Probe panel']]],
+ ['New (draft)',[['layout','Controller layout'],['quietbars','Quiet bars in play'],['kit','Quick slots (round button window)'],['questitem','Quest item button'],['qbsettings','Controller tab'],['catcher','Error catcher'],['probe','Probe panel']]],
 ];
-const NEW_VIEWS=['catcher','probe','quietbars','qbsettings','kit','questitem'];
+const NEW_VIEWS=['layout','catcher','probe','quietbars','qbsettings','kit','questitem'];
 Object.assign(S,{errFilter:'all',errIdx:0,boxHide:true,otherCatcher:false,probeArea:'errors',probeSel:0,probeRisky:false,
   dotEx:'all', kitMoment:'out',kitHand:16,kitUsed:'',
   qbMoment:'out',compact:false,qbPressUntil:0,qbLast:null,qbTimer:null});
@@ -694,8 +695,20 @@ const POPTS={
   {label:'After you use something',key:'close',seg:[[true,'Close'],[false,'Stay open']],setup:true},
   {label:'Quick slots in combat',key:'combat',seg:[[true,'Allow'],[false,'Block']],setup:true}],
 };
-const PNAME={quietBars:'Quiet bars',kit:'Quick slots',questIcons:'Quest icons',questArrow:'Quest arrow',bagWindow:'Bigger bag',bags:'Bag sorting',sellJunk:'Auto sell junk',repair:'Auto repair',chat:'Chat picker',menuBg:'Menu background'};
-const PDESC={quietBars:'Fades your spell buttons when you are not in combat.',kit:'Items and spells you pick, under the chat buttons.',questIcons:'Icons on the map and minimap where your quest objectives are.',questArrow:'Points to the nearest objective of your focused quest.',
+const CL_FINE=[[.85,'Smaller'],[1,'Same'],[1.15,'Bigger']], CL_VIS=[['always','Always'],['combat','In combat'],['hidden','Hidden']];
+Object.defineProperty(POPTS,'layout',{get:()=>{ const fine=(label,key)=>({label,seg:CL_FINE,get:()=>S[key],set:v=>{S[key]=v;}});
+  const rows=[{label:'Both-triggers pads',seg:[['small','Above'],['corner','Corners'],['swap','Swap']],get:()=>S.clBoth,set:v=>{S.clBoth=v;}},
+   {label:'Player and target frames',seg:[['corner','Corners'],['above','Stacked'],['flat','Side by side']],get:()=>S.clFrames,set:v=>{S.clFrames=v;}},
+   {label:'Spell button size',key:'size',num:{min:70,max:100,step:5,suffix:'%',unit:'of normal'}},
+   {label:'Fine-tune sizes',act:S.clFine?'Hide':'Show',go:()=>{S.clFine=!S.clFine;}}];
+  if(S.clFine) rows.push(fine('Main pads','clKm'),fine('LT and RT bars','clKo'),fine('Both-triggers pads','clKb'));
+  const swr=(label,key,seg)=>({label,seg,get:()=>S.clSw[key],set:v=>{S.clSw[key]=v;}});
+  rows.push({label:'Swing timers',act:S.clSwFold?'Hide':'Show',go:()=>{S.clSwFold=!S.clSwFold;}});
+  if(S.clSwFold) rows.push(swr('Where','spot',[['bars','Under bars'],['above','Above map'],['under','Under map']]),swr('Ranged','rg',CL_VIS),swr('Main Hand','mh',CL_VIS),swr('Off Hand','oh',CL_VIS));
+  rows.push({label:'Map, chat, buffs',info:'Move them in Edit Mode. It is kept.'});
+  return rows; }});
+const PNAME={layout:'Controller layout',quietBars:'Quiet bars',kit:'Quick slots',questIcons:'Quest icons',questArrow:'Quest arrow',bagWindow:'Bigger bag',bags:'Bag sorting',sellJunk:'Auto sell junk',repair:'Auto repair',chat:'Chat picker',menuBg:'Menu background'};
+const PDESC={layout:'Map bottom middle, spell buttons around it, chat top right.',quietBars:'Fades your spell buttons when you are not in combat.',kit:'Items and spells you pick, under the chat buttons.',questIcons:'Icons on the map and minimap where your quest objectives are.',questArrow:'Points to the nearest objective of your focused quest.',
  bagWindow:'A bigger and better organized bag window.',bags:'Sort your bags with one press.',sellJunk:'Sells grey items when you open a vendor.',
  repair:'Repairs your gear at vendors, with your own gold.',chat:'Tap the round button to pick who to talk to.',menuBg:'A dark panel behind pop-up menus, so they are easy to read.'};
 function pRow(d,x,y,iw,label,draw,help,need){
@@ -733,7 +746,7 @@ function pFeature(d,f,x,y,w,setup,onlyKeys){
     ty+=text(d.c,'font',PNAME[f.key],ix,ty,tw)+M.gap*.2;
     ty+=text(d.c,'small',PDESC[f.key],ix,ty,tw);
     if(setup&&PHOW[f.key]){ const hw=typeof PHOW[f.key]==='function'?PHOW[f.key]():PHOW[f.key]; ty+=M.gap*.3+text(d.c,'small',[['How: ',C(1,.82,0)],[hw,C(.84,.84,.84)]],ix,ty+M.gap*.3,tw); }
-    const st=f.status&&S.on[f.key]&&f.key!=='bags'?f.status():''; if(st) ty+=M.gap*.3+text(d.c,'small',st,ix,ty+M.gap*.3,tw,COL.status);
+    const st=f.status&&(S.on[f.key]||f.statusAlways)&&f.key!=='bags'?f.status():''; if(st) ty+=M.gap*.3+text(d.c,'small',st,ix,ty+M.gap*.3,tw,COL.status);
     const hh=Math.max(M.button,ty-iy); switchCtl(d.c,ix+iw-sw,iy+(hh-M.button)/2,S.on[f.key],()=>{S.on[f.key]=!S.on[f.key];});
     let y2=iy+hh+M.gap;
     const rows=(POPTS[f.key]||[]).filter(o=>(S.on[f.key]||o.always)&&(!onlyKeys||onlyKeys.includes(o.key))&&!(setup&&o.act==='Open'));
@@ -750,7 +763,7 @@ function compactTip(d,x,y,w){ // shown only while the game's Compact setting is 
   const H=h+pad*1.4; bg.style.height=u(H); gold.style.height=u(H); return y+H+M.gap;
 }
 const PTABS=[['questIcons','Quest icons',['questIcons']],['questArrow','Quest arrow',['questArrow']],['bags','Bags',['bagWindow','bags']],
- ['vendors','Vendors',['sellJunk','repair']],['chat','Chat',['chat']],['controller','Controller',['quietBars','kit']],['menuBg','Menu background',['menuBg']],['general','General',[]],['errors','Errors and log',[]]];
+ ['vendors','Vendors',['sellJunk','repair']],['chat','Chat',['chat']],['controller','Controller',['layout','quietBars','kit']],['menuBg','Menu background',['menuBg']],['general','General',[]],['errors','Errors and log',[]]];
 function pSettings(scr){
   const [w,h]=settingsSize(); const p=panel(scr,'Pocket Essentials',w,h); const c=p.content;
   const nw=M.button*5, b=M.border, n=PTABS.length; const th=Math.min(M.button,(c.h-(n-1)*b)/n);
@@ -1222,7 +1235,193 @@ function pQuestItem(scr){
   text(scr,'small','Bristleback Totem',x-80,y+s+4,s+160,C(.92,.92,.92),'center');
   t.onclick=()=>{ S.qiCd=true; render(); setTimeout(()=>{S.qiCd=false;render();},1500); };
 }
+/* ---------- new (draft): Controller layout ---------- */
+S.clBuilt='strip'; S.clGlyph=true; S.clStripBoth='shared'; S.clMain='above'; S.clHold='none'; S.clSw={spot:'under',mh:'combat',rg:'combat',oh:'hidden'}; S.clSwFold=false; S.clBoth='small'; S.clFrames='corner'; S.clMenu='closed'; S.clKm=1; S.clKo=1; S.clKb=1;
+const CL_ICONS=[C(.55,.25,.75),C(.85,.35,.15),C(.30,.55,.85),C(.75,.70,.25),C(.25,.65,.35),C(.70,.20,.25),C(.45,.45,.55),C(.60,.40,.20)];
+function clButton(g,cx,cy,s,round,i){ const b=rect(g,cx-s/2,cy-s/2,s,s,C(.70,.62,.40),{borderRadius:round?'50%':u(6)}); rect(b,2,2,s-4,s-4,CL_ICONS[i%8],{borderRadius:round?'50%':u(5)}); }
+function clCluster(g,cx,cy,s,off,round,i0){ [[0,-off],[-off,0],[off,0],[0,off]].forEach(([bx,by],k)=>clButton(g,cx+bx,cy+by,s,round,i0+k)); }
+function clTag(scr,x,y,w,t){ const d=el('div',scr,{left:u(x),top:u(y),width:u(w),fontSize:u(11),textAlign:'center',color:'rgba(255,255,255,.55)',fontFamily:'var(--ui)',whiteSpace:'nowrap'}); d.textContent=t; }
+function clSwing(scr,x,y,w,label){ const g=gameFrame(scr,x,y,w,16,''); const t=el('div',g,{left:u(6),top:u(1),fontSize:u(10),color:'rgba(255,255,255,.6)',fontFamily:'var(--ui)',whiteSpace:'nowrap'}); t.textContent=label; return g; }
+function clAuras(scr,right,y){ // buffs in a row growing left from `right`, debuffs under them
+  for(let i=0;i<5;i++) rect(scr,right-(i+1)*32+4,y,28,28,CL_ICONS[(i+2)%8],{border:'1px solid rgba(255,255,255,.4)'});
+  for(let i=0;i<2;i++) rect(scr,right-(i+1)*32+4,y+36,28,28,C(.45,.12,.12),{border:'1px solid '+C(.9,.2,.2)});
+  clTag(scr,right-164,y+68,164,"game's buffs and debuffs");
+}
+// The game's sub-menu wheels: up to 8 places on a ring around the button that opened them (FlyoutRadial.lua).
+const CL_WHEELS={petcmd:[[1,'Atk',C(.75,.2,.2)],[2,'Fol',C(.3,.6,.3)],[3,'Go',C(.3,.5,.8)],[5,'Pas',C(.45,.45,.55)],[6,'Def',C(.7,.6,.25)],[7,'Ast',C(.75,.4,.15)]],
+  petspell:[[1,'',C(.85,.35,.15)],[2,'',C(.55,.25,.75)],[3,'',C(.30,.55,.85)],[4,'',C(.25,.65,.35)]]};
+function clClassBtn(scr,cx,cy,s,label,on){ const b=rect(scr,cx-s/2,cy-s/2,s,s,on?C(1,.82,0):C(.70,.62,.40),{borderRadius:'50%'}); rect(b,2,2,s-4,s-4,C(.2,.18,.14),{borderRadius:'50%'});
+  const t=el('div',b,{left:0,top:0,width:u(s),height:u(s),lineHeight:u(s),textAlign:'center',fontSize:u(s*.34),fontFamily:'var(--ui)',color:'#fff',fontWeight:'600'}); t.textContent=label; }
+function clWheel(scr,cx,cy,R,s,kind,backdrop){
+  if(backdrop){ const D=2*(R+s/2+10); rect(scr,cx-D/2,cy-D/2,D,D,'rgba(0,0,0,.72)',{borderRadius:'50%',border:'1px solid '+C(.62,.52,.22)}); }
+  CL_WHEELS[kind].forEach(([i,l,col])=>{ const a=(i-1)*Math.PI/4, x=cx+Math.sin(a)*R, y=cy-Math.cos(a)*R;
+    const b=rect(scr,x-s/2,y-s/2,s,s,C(.70,.62,.40),{borderRadius:'50%'}); rect(b,2,2,s-4,s-4,col,{borderRadius:'50%'});
+    if(l){ const t=el('div',b,{left:0,top:0,width:u(s),height:u(s),lineHeight:u(s),textAlign:'center',fontSize:u(Math.max(9,s*.34)),fontFamily:'var(--ui)',color:'#fff',fontWeight:'600',textShadow:'0 1px 1px #000'}); t.textContent=l; } });
+}
+function clSubMenus(scr,lx,rx,cy,s,R,ws,backdrop){ // the two class-action buttons and whichever wheel is open
+  const m=S.clMenu; clClassBtn(scr,lx,cy,s,'Pet',m==='petcmd'); clClassBtn(scr,rx,cy,s,'Sp',m==='petspell');
+  if(m==='petcmd') clWheel(scr,lx,cy,R,ws,'petcmd',backdrop); if(m==='petspell') clWheel(scr,rx,cy,R,ws,'petspell',backdrop);
+}
+function pLayout(scr){
+  const today=S.ver==='today', [hx,hy]=hubHome(); drawHub(scr,hx,hy,{});
+  gameFrame(scr,10,10,290,92,"game's controller hints");
+  if(today) gameFrame(scr,312,14,334,10,''); else { gameFrame(scr,341,14,434,10,''); clTag(scr,341,26,434,"game's XP bar, 130% wide (the game's limit)"); }
+  if(today){
+    drawArrow(scr,'distance');
+    gameFrame(scr,190,360,260,58,"game's player frame"); gameFrame(scr,240,424,130,36,"pet frame");
+    gameFrame(scr,830,360,260,58,"game's target frame (spot approximate)"); gameFrame(scr,1010,424,110,34,"target's target");
+    drawMinimap(scr,false);
+    clAuras(scr,1060,14);
+    gameFrame(scr,1060,250,196,170,"game's quest tracker");
+    gameFrame(scr,24,560,380,140,"game's chat");
+    clBars(scr,{none:[638,468],lt:[455,522],rt:[821,522],both:[638,582]},30,24,[638,582]);
+    clSubMenus(scr,546,730,628,30,58,34,true);
+    clSwing(scr,485,676,310,'Ranged'); clSwing(scr,485,698,310,'Main Hand');
+    return;
+  }
+  if(S.clBuilt==='strip'){ pLayoutStrip(scr); return; }
+  if(S.clBuilt){ pLayoutBuilt(scr); return; }
+  // Proposed: one low band. Map bottom middle, main bar split around it, LT and RT bars low and outside, frames in the bottom corners.
+  arrowP(scr,'distance');
+  const sw=S.clSw, r=85, mx=640, my=sw.spot==='under'?586:622, K0=S.opt.layout.size/100, k=Math.min(1,K0*S.clKm), ko=Math.min(1,K0*S.clKo), kb=Math.min(1,K0*S.clKb), // a group never goes past 100%
+     mode=S.clBoth, corner=mode==='corner';
+  gameFrame(scr,mx-r,my-r,2*r,2*r,'',true); clTag(scr,mx-r,my-8,2*r,"game's minimap");
+  const h=S.clHold, swap=mode==='swap';
+  // main bar split: d-pad half left of the map, face half right of it. With "swap", the both-triggers bar takes these spots while both are held.
+  const inner=swap&&h==='both'?'both':'none', innerOn=h==='none'||(swap&&h==='both');
+  const px=r+22+46*k, py=corner?630:712-46*k;
+  clHalf(scr,mx-px,py,36*k,28*k,false,CL_BARS[inner][1],innerOn,inner==='both'?'LT+RT':'');
+  clHalf(scr,mx+px,py,36*k,28*k,true,CL_BARS[inner][1]+4,innerOn,inner==='both'?'LT+RT':'');
+  if(corner){ const cxo=sw.spot==='under'?70+8+27*kb:92; // beside the stacked timers when they are under the map
+    clHalf(scr,mx-cxo,691,22*kb,16*kb,false,7,h==='both','LT+RT','left'); clHalf(scr,mx+cxo,691,22*kb,16*kb,true,11,h==='both','LT+RT','right'); }
+  if(mode==='small'){ const sy=py-46*k-4-30*kb, dy=Math.min(Math.abs(sy-my),r), dx=Math.sqrt(r*r-dy*dy)+6+30*kb; // resting on the main pad, against the map's side
+    clHalf(scr,mx-dx,sy,24*kb,18*kb,false,7,h==='both','LT+RT','left'); clHalf(scr,mx+dx,sy,24*kb,18*kb,true,11,h==='both','LT+RT','right'); }
+  const prev=S.compact; S.compact=false;
+  const ox=px+46*k+18+81*ko, oy=sw.spot==='bars'?690-38*ko:712-38*ko; clBars(scr,{lt:[mx-ox,oy,30*ko,23*ko],rt:[mx+ox,oy,30*ko,23*ko]},30*ko,23*ko);
+  S.compact=prev;
+  // swing timers: each is its own Edit Mode piece with Always / In combat / Hidden
+  const tms=[['Ranged','rg'],['Main Hand','mh']].filter(([,key])=>sw[key]!=='hidden');
+  tms.forEach(([label,key],i)=>{ let x,y,w=150;
+    if(sw.spot==='bars'){ w=160; x=(key==='rg'?mx-ox:mx+ox)-80; y=698; }
+    else if(sw.spot==='above'){ x=mx-75; y=my-r-30-(tms.length-1-i)*18; }
+    else { w=140; x=mx-70; y=my+r+6+i*18; }
+    const g=clSwing(scr,x,y,w,label+(sw[key]==='combat'?' (in combat only)':'')); if(sw[key]==='combat') g.style.opacity='.45'; });
+  // sub-menus: the two class-action buttons ride the top of the map's rim; a smaller wheel opens around them, with no dark disc
+  // further out along the rim; with the "above" pads they stay nearer the top so an open wheel never covers a pad
+  const tight=mode==='small'&&sw.spot!=='under', ca=(mode==='small'?(tight?(kb>.9?22:30):44):50)*Math.PI/180, cr=r+4; clSubMenus(scr,mx-Math.sin(ca)*cr,mx+Math.sin(ca)*cr,my-Math.cos(ca)*cr,24,tight?(kb>.9?36:40):44,tight?(kb>.9?24:26):28,false);
+  // unit frames in the bottom corners
+  if(S.clFrames==='flat'){ const fw=200, fr=mx-px-46*k-6, fb=oy-38*ko-22; // one flat row: pet outside the player frame, the target's target outside the target
+    gameFrame(scr,fr-fw,fb-54,fw,54,"game's player frame"); gameFrame(scr,fr-fw-6-124,fb-44,124,34,"pet frame");
+    gameFrame(scr,2*mx-fr,fb-54,fw,54,"game's target frame"); gameFrame(scr,2*mx-fr+fw+6,fb-44,110,34,"target's target"); }
+  else if(S.clFrames==='above'){ const fw=200, fr=mx-px-46*k-6, fb=oy-38*ko-22; // above the LT and RT bars, snug against the main pads
+    gameFrame(scr,fr-fw,fb-54,fw,54,"game's player frame"); gameFrame(scr,fr-124,fb-54-40,124,34,"pet frame");
+    gameFrame(scr,2*mx-fr,fb-54,fw,54,"game's target frame"); gameFrame(scr,2*mx-fr,fb-54-40,110,34,"target's target"); }
+  else { gameFrame(scr,24,650,210,58,"game's player frame"); gameFrame(scr,24,606,130,36,"pet frame");
+    gameFrame(scr,1046,650,210,58,"game's target frame"); gameFrame(scr,1146,606,110,36,"target's target"); }
+  const cw=440,ch=200,cx=1280-24-cw;
+  const chat=gameFrame(scr,cx,24,cw,ch,"game's chat, where the map was");
+  [['General',0],['Combat Log',78],['Guild',172]].forEach(([t,x])=>{ const d=el('div',chat,{left:u(10+x),top:u(-18),fontSize:u(11),color:'rgba(255,255,255,.55)',fontFamily:'var(--ui)'}); d.textContent=t; });
+  clAuras(scr,1256,236);
+  gameFrame(scr,1060,340,196,170,"game's quest tracker");
+}
+// Idea, not built: a flat strip of our own shows the main bar's eight spells under the map; the game's main bar sits off screen and still does the casting.
+function clStrip(scr,cx,top,s,i0,on,label){ // four squares (d-pad), a gap, four circles (face buttons)
+  const gap=4, mid=14, w=8*s+6*gap+mid, x0=cx-w/2;
+  const box=el('div',scr,{left:u(x0-6),top:u(top-6),width:u(w+12),height:u(s+12),borderRadius:u(8),opacity:on?'1':'.5',
+    border:on?`${u(2)} solid ${C(1,.82,0)}`:`${u(2)} solid transparent`,background:on?'rgba(255,209,0,.10)':'rgba(0,0,0,.25)'});
+  const PAD=[['\u25C0','#ddd'],['\u25B2','#ddd'],['\u25B6','#ddd'],['\u25BC','#ddd'],['X',C(.35,.62,1)],['Y',C(1,.82,.2)],['B',C(.95,.3,.3)],['A',C(.4,.9,.45)]];
+  for(let i=0;i<8;i++){ const x=6+i*(s+gap)+(i>3?mid-gap:0); clButton(box,x+s/2-2,6+s/2-2,s,i>3,i0+i);
+    if(S.clGlyph){ const d=Math.max(12,s*.42), b=el('div',box,{left:u(x+s-d*.75-2),top:u(6-d*.3-2),width:u(d),height:u(d),lineHeight:u(d),borderRadius:'50%',background:'rgba(8,8,10,.92)',border:`1px solid ${PAD[i][1]}`,
+        color:PAD[i][1],fontSize:u(d*(i>3?.68:.55)),fontFamily:'var(--ui)',fontWeight:'700',textAlign:'center'}); b.textContent=PAD[i][0]; } }
+  if(label){ const t=el('div',box,{right:u(w+16),top:u(s/2-2),fontSize:u(11),fontFamily:'var(--ui)',color:on?C(1,.82,0):'rgba(255,255,255,.7)',fontWeight:'600',whiteSpace:'nowrap'}); t.textContent=label; }
+  return w;
+}
+function pLayoutStrip(scr){
+  const U=.9375, o=S.opt.layout, sw=S.clSw, K0=o.size/100, h=S.clHold, own=S.clStripBoth==='own';
+  const kS=Math.min(1,K0*S.clKo), s=38*Math.min(1,K0*S.clKm), sB=26*Math.min(1,K0*S.clKb);
+  arrowP(scr,'distance');
+  let y=720-8-s; // main strip on the bottom edge
+  const shared=!own&&h==='both';
+  const w=clStrip(scr,640,y,s,shared?7:0,h==='none'||shared,shared?'LT+RT':'');
+  if(own){ y-=sB+14; clStrip(scr,640,y,sB,7,h==='both','LT+RT'); }
+  const tms=[['Ranged','rg'],['Main Hand','mh'],['Off Hand','oh']].filter(([,k])=>sw[k]!=='hidden');
+  if(sw.spot==='under'){ y-=8; tms.slice().reverse().forEach(([label,key])=>{ y-=18; const g=clSwing(scr,640-80,y,160,label+(sw[key]==='combat'?' (in combat only)':'')); if(sw[key]==='combat') g.style.opacity='.45'; }); }
+  const mapW=164*U, mapH=176*U, mapTop=y-10-mapH, mapCy=mapTop+mapH/2;
+  gameFrame(scr,640-mapW/2,mapTop,mapW,mapH,'',true); clTag(scr,640-mapW/2,mapCy-8,mapW,"game's minimap");
+  const sideX=Math.max(mapW/2,w/2+6)+14+97*kS, sideY=720-8-34*kS-(sw.spot==='bars'?22:0);
+  const prev=S.compact; S.compact=false;
+  clBars(scr,{lt:[640-sideX,sideY,30*kS,23*kS],rt:[640+sideX,sideY,30*kS,23*kS]},30*kS,23*kS); S.compact=prev;
+  clSubMenus(scr,640-129,640+129,mapCy-10,36,56,30,true);
+  if(sw.spot!=='under') tms.forEach(([label,key],i)=>{ let x=640-80,yy;
+    if(sw.spot==='above') yy=mapTop-12-(tms.length-i)*18; else { x=(key==='rg'?640-sideX:640+sideX)-80; yy=key==='oh'?720-40:720-22; }
+    const g=clSwing(scr,x,yy,160,label+(sw[key]==='combat'?' (in combat only)':'')); if(sw[key]==='combat') g.style.opacity='.45'; });
+  const F=S.clFrames, fw=232*U, fh=100*U, pw=120*U, ph=49*U, py=v=>720-v*U, fx=sideX+97*kS+12;
+  if(F==='corner'){ gameFrame(scr,20*U,py(20)-fh,fw,fh,"game's player frame"); gameFrame(scr,40*U,py(124)-ph,pw,ph,"pet frame"); gameFrame(scr,1280-20*U-fw,py(20)-fh,fw,fh,"game's target frame, its target attached"); }
+  else { const fb=sideY-34*kS-26; gameFrame(scr,640-mapW/2-34-fw,fb-fh,fw,fh,"game's player frame"); gameFrame(scr,640+mapW/2+34,fb-fh,fw,fh,"game's target frame, its target attached");
+    if(F==='above') gameFrame(scr,640-mapW/2-54-pw,fb-fh-ph-6,pw,ph,"pet frame"); else gameFrame(scr,640-mapW/2-40-fw-pw,fb-ph-18,pw,ph,"pet frame"); }
+  const cw=430*U,ch=210*U,cx=1280-30*U-cw;
+  const chat=gameFrame(scr,cx,40*U,cw,ch,"game's chat, where the map was");
+  [['General',0],['Combat Log',78],['Guild',172]].forEach(([t,x])=>{ const d=el('div',chat,{left:u(10+x),top:u(-18),fontSize:u(11),color:'rgba(255,255,255,.55)',fontFamily:'var(--ui)'}); d.textContent=t; });
+  clAuras(scr,1280-30*U,262*U);
+  gameFrame(scr,1280-30*U-220,345*U,220,200,"game's quest tracker");
+}
+// As built in 0.11.0 (unprobed): whole bars. Numbers follow the spec's tables, in UI units times 0.9375 for 720p.
+function pLayoutBuilt(scr){
+  const U=.9375, o=S.opt.layout, sw=S.clSw, under=S.clMain==='under', K0=o.size/100;
+  const kM=Math.min(1,K0*S.clKm), kS=Math.min(1,K0*S.clKo), kB=Math.min(1,K0*S.clKb)*.7;
+  const mapW=164, mapH=176, W=208, H=68, lift=sw.spot==='bars'?22:0, offShown=sw.oh!=='hidden';
+  const mapY=under?(90+(sw.spot==='under'?36:0)+(sw.spot==='under'&&offShown?16:0)):(sw.spot==='under'?(offShown?60:44):6);
+  const px=x=>640+x*U, py=y=>720-y*U;
+  arrowP(scr,'distance');
+  gameFrame(scr,px(-mapW/2),py(mapY+mapH),mapW*U,mapH*U,'',true); clTag(scr,px(-mapW/2),py(mapY+mapH/2)-8,mapW*U,"game's minimap");
+  const sideX=under?(W*kM/2+12+W*kS/2):(mapW/2+14+W*kS/2), sideY=8+lift+H*kS/2;
+  const topY=under?(8+lift+H*kM/2):(mapY+mapH+12+H*kM/2);
+  const bothY=under?(mapY+mapH+14+H*kB/2):(topY+H*kM/2+22+H*kB/2);
+  const bar=(k)=>[30*k,23*k];
+  const prev=S.compact; S.compact=false;
+  const spots={none:[px(0),py(topY),...bar(kM)],lt:[px(-sideX),py(sideY),...bar(kS)],rt:[px(sideX),py(sideY),...bar(kS)],both:[px(0),py(bothY),...bar(kB)]};
+  clBars(scr,spots,30,23); S.compact=prev;
+  const subY=mapY+mapH*(under?.5:.62);
+  clSubMenus(scr,px(-138),px(138),py(subY),36,56,30,true);
+  const tms=[['Ranged','rg'],['Main Hand','mh'],['Off Hand','oh']].filter(([,k])=>sw[k]!=='hidden');
+  const hiTop=(under?(mapY+mapH+14+H*.7):(mapY+mapH+12+H+22+H*.7));
+  tms.forEach(([label,key],i)=>{ let x=0,y; const n=tms.length;
+    if(sw.spot==='under') y=8+(n-1-i)*16+(under?78:0);
+    else if(sw.spot==='above') y=hiTop+8+(n-1-i)*16;
+    else { x=(key==='rg'?-1:1)*(under?(W/2+12+W/2):(mapW/2+14+W/2)); y=key==='oh'?22:6; }
+    const g=clSwing(scr,px(x)-80,py(y)-12,160,label+(sw[key]==='combat'?' (in combat only)':'')); if(sw[key]==='combat') g.style.opacity='.45'; });
+  const F=S.clFrames, fw=232*U, fh=100*U, pw=120*U, ph=49*U;
+  if(F==='corner'){ gameFrame(scr,20*U,py(20)-fh,fw,fh,"game's player frame"); gameFrame(scr,40*U,py(124)-ph,pw,ph,"pet frame"); gameFrame(scr,1280-20*U-fw,py(20)-fh,fw,fh,"game's target frame, its target attached"); }
+  else { gameFrame(scr,px(-165)-fw,py(112)-fh,fw,fh,"game's player frame"); gameFrame(scr,px(165),py(112)-fh,fw,fh,"game's target frame, its target attached");
+    if(F==='above') gameFrame(scr,px(-185)-pw,py(216)-ph,pw,ph,"pet frame"); else gameFrame(scr,px(-401)-pw,py(130)-ph,pw,ph,"pet frame"); }
+  const cw=430*U,ch=210*U,cx=1280-30*U-cw;
+  const chat=gameFrame(scr,cx,40*U,cw,ch,"game's chat, where the map was");
+  [['General',0],['Combat Log',78],['Guild',172]].forEach(([t,x])=>{ const d=el('div',chat,{left:u(10+x),top:u(-18),fontSize:u(11),color:'rgba(255,255,255,.55)',fontFamily:'var(--ui)'}); d.textContent=t; });
+  clAuras(scr,1280-30*U,262*U);
+  gameFrame(scr,1280-30*U-220,345*U,220,200,"game's quest tracker");
+}
+// The game's four gamepad bars: no trigger, left trigger, right trigger, both. Each is a d-pad diamond plus a face-button diamond.
+const CL_BARS={none:['',0],lt:['LT',2],rt:['RT',5],both:['LT+RT',7]};
+function clHalf(scr,cx,cy,s,off,round,i0,on,label,side){ // one half of a bar: a d-pad diamond or a face-button diamond
+  const half=off+s/2, w=2*half+8;
+  const g=el('div',scr,{left:u(cx-w/2),top:u(cy-w/2),width:u(w),height:u(w),opacity:on?'1':'.5',borderRadius:u(10),
+    border:on?`${u(2)} solid ${C(1,.82,0)}`:`${u(2)} solid transparent`,background:on?'rgba(255,209,0,.10)':'none'});
+  clCluster(g,w/2-2,w/2-2,s,off,round,i0);
+  if(label){ const pos=side==='left'?{right:u(w+2),top:u(w/2-8),textAlign:'right'}:side==='right'?{left:u(w+2),top:u(w/2-8),textAlign:'left'}:{left:0,top:u(-15),width:u(w),textAlign:'center'};
+    const t=el('div',g,Object.assign({fontSize:u(11),fontFamily:'var(--ui)',color:on?C(1,.82,0):'rgba(255,255,255,.7)',fontWeight:'600',whiteSpace:'nowrap'},pos)); t.textContent=label; }
+}
+function clBars(scr,spots,s0,off0,compactSpot){
+  const held=spots[S.clHold]?S.clHold:'none';
+  for(const k in spots){ if(S.compact&&k!==held) continue;
+    let [cx,cy,s,off]=spots[k]; if(S.compact) [cx,cy,s,off]=compactSpot; s=s||s0; off=off||off0;
+    const half=off+s/2, gap=half+5, on=k===held, w=2*(gap+half)+12, h=2*half+12;
+    const g=el('div',scr,{left:u(cx-w/2),top:u(cy-h/2),width:u(w),height:u(h),opacity:on?'1':'.5',borderRadius:u(10),
+      border:on?`${u(2)} solid ${C(1,.82,0)}`:`${u(2)} solid transparent`,background:on?'rgba(255,209,0,.10)':'none'});
+    clCluster(g,w/2-gap-2,h/2-2,s,off,false,CL_BARS[k][1]); clCluster(g,w/2+gap-2,h/2-2,s,off,true,CL_BARS[k][1]+4);
+    if(CL_BARS[k][0]){ const t=el('div',g,{left:0,top:u(-15),width:u(w),textAlign:'center',fontSize:u(11),fontFamily:'var(--ui)',color:on?C(1,.82,0):'rgba(255,255,255,.7)',fontWeight:'600'}); t.textContent=CL_BARS[k][0]; } }
+}
 const PROPOSED={
+  layout:pLayout,
   catcher:pCatcher, probe:pProbe, quietbars:pQuiet, qbsettings:pSettings, kit:pKit, questitem:pQuestItem,
   bag:pBag,
   hud:scr=>{ const [hx,hy]=hubHome(); drawHub(scr,hx,hy,{badge:S.on.chat?'2':null,tap:()=>{S.view=S.on.chat?'chat':'settings';}}); arrowP(scr,'distance'); drawMinimap(scr,true); },
@@ -1230,10 +1429,11 @@ const PROPOSED={
   settings:pSettings, chat:pChat, move:pMove, setup:pSetup,
 };
 const NOTES_P={
+ layout:{what:['"Bars: Flat strip" is an idea, not built. A flat row of our own, under the map, shows the main bar\'s eight spells: four d-pad squares, then four face-button circles, with cooldowns. Each spell carries a small picture of its controller button in the corner (d-pad left, up, right, down, then X, Y, B, A), so the straight line still tells you what to press. It only shows them. The game\'s real main bar sits off screen and still does the casting, so your controller works as now. Tapping the strip does nothing.','The LT and RT bars stay the game\'s own, in their controller shape, either side. Both-triggers spells either take over the strip while you hold both (set "You hold" to Both), or get a small strip of their own above it.','Draft. "Bars: As built in 0.11.0" shows what the first build really does; it is untested and every spot is a first guess. "As first designed" shows the split main bar we drew together, which the game does not allow: it puts every spell button back beside its bar\'s centre at each press, even in combat.','As built: the main bar is whole, above the map or under it. The LT bar is left of the map and the RT bar right. The both-triggers bar is smaller, above. The two sub-menu buttons sit a fixed distance either side of the map, and their wheel is the game\'s own size. The target\'s target stays on the target frame. Spell button size starts at 100%. The "Both-triggers bar" control only applies to the first design.','The game has four bars, each with a d-pad half and a face-button half: no trigger, left trigger (LT), right trigger (RT) and both. "You hold" above lights the one you would be using.','Proposed: everything sits in one low band. The minimap is bottom middle. The main bar is split around it and scooted out a little. The LT and RT bars sit lower, down beside the timers.','Both-triggers pads (pick above). "Above": small, resting on top of each main pad, against the map\'s side. "Bottom corners": small, wedged under each main pad; the timers slide out under the LT and RT bars. "Swap": hold both triggers and the main pads show those spells.','Frames (pick above): "Bottom corners" puts your player and pet frames bottom left and the target and its target bottom right. "Above the bars, stacked" puts them over the LT and RT bars, snug against the main pads, with the pet and the target\'s target on top. "Side by side" keeps the same spot but lays them flat: pet outside your frame, the target\'s target outside the target. Both are ready-made spots, so it is a choice on the Controller tab.','The XP bar is widened to 130%, the most the game allows, and centred in the gap between the controller hints and the chat.','The quest arrow and its text stay top middle. The chat is top right (440 by 200), with buffs and debuffs under it, then the quest tracker.','Sub-menus (pick above): the game opens a wheel around a small button. Today it is a big wheel on a dark disc over the bars. Proposed: the two buttons ride the map\'s rim, out toward its upper corners, and the wheel is smaller with no disc. With the "Above" pads they sit a little nearer the top so an open wheel never covers a pad. Pet commands are on the left button, pet spells on the right; druid, paladin and warrior class wheels use the same two buttons.','Swing timers (pick above): stacked under the map to start (the map lifts a little to make room), or stacked above it, or under the LT and RT bars. Each timer has the game\'s own choice: Always, In combat or Hidden, so a caster can keep Ranged and hide Main Hand. They start on "In combat", with Off Hand hidden. "In combat" is drawn faint here.','"Spell button size" shrinks every spell button; it starts at 85%. The three "Fine-tune" controls nudge one group; no group goes past 100%. Every pairing of pads, frames and timer spot was checked at 70%, 85% and 100%, with each wheel open, and with every fine-tune setting.','One switch on the Controller tab would set all of this, as a new Edit Mode layout named "Pocket Essentials". It needs the game\'s Compact setting off.'],fix:[]},
  kit:{what:['Experimental draft, not built. Tap PE: the chat buttons are on top and your quick slots are under them, in the same window. With Chat picker off, PE opens the quick slots alone (try it above).','You fill it yourself: tap + and pick anything from your bags or your spellbook. Nothing is filled in for you, so nothing is wrong.','Tap a slot to use it. Its name shows on the line under the slots. Cooldowns show on the picture (Hearthstone), counts in the corner.','Stones and oils: when you add one, pick Main hand or Off hand; the slot shows MH or OH and one tap puts it on that hand.','Four slots to start, in one row. Want more? "Number of slots" on the Controller tab goes from 2 to 12 (try it above); a new row starts after six. Empty slots wait as faint squares, with + on the first one.','"Edit slots" lets you take things out of slots.','In combat (try Moment above): with "Quick slots in combat: Allow" your slots work as usual; adding and removing wait until the fight ends. "Block" hides them in combat so a stray tap cannot use anything. Chat has the same choice ("Chat picker in combat", Chat tab). Try both on Block: PE does nothing in combat.','Names are examples for a warlock. The Cozy Sleeping Bag and Basic Campfire are the real names of Forever\'s camping pieces.'],fix:[]},
  questitem:{what:['Draft, not built. When your focused quest has an item to use, one big button for it sits under the quest arrow, so you no longer tap the small icon in the quest tracker.','Tap it to use the item; the count shows in the corner and the cooldown on the picture. Tap it here to see.','It follows the quest arrow: the arrow\'s focused quest, and it moves with the arrow in Move on screen.','Only the focused quest gets a button. Nothing focused, or the focused quest has no item: no button. If you carry items for 2 or more quests and none of them is focused, a short hint shows instead: "Focus a quest to get a button for its item" (try it above).','A choice under Quest arrow: "Button for the quest\'s item: Show / Hide".','In combat it still works. Only which item it holds cannot change until the fight ends (the game\'s rule for addon buttons).'],fix:[]},
  quietbars:{what:['Draft, not built. The game\'s own gamepad bars, drawn as stand-ins, at the opacity Quiet bars gives them right now.','Pick a moment above. In combat, or with an enemy targeted, they are full. Out of combat and in cities they use your two opacity settings from the Controller tab.','"Press a spell" (or tap any bar button on the screen) brings them back to full, then they fade back once "Stay visible after a press" runs out.','Your buttons still work at any opacity, even hidden: in a city at 0%, tap where a button is and the bars come back.','Compact is the game\'s own Edit Mode setting: only the bar page you are on shows, in the same spot. Turn it on above to see the room it frees next to the chat.','Everything else on screen is a dashed stand-in for the game\'s own frames.'],fix:[]},
- qbsettings:{what:['Draft, not built. A new Controller tab, after Chat. Quiet bars is the first piece and has its own switch.','Opacity: 100% is fully shown, 0% reads "Hidden". The grey help line sits under its row, on one line.','The Compact tip shows only while the game\'s Compact setting is off. Try "Compact in Edit Mode" above.','In combat the bars are always full, so there is no setting for it.','No scroll bar: no heading card, and every line is one line long. Quick slots and Controller layout are on this tab; the layout joins it when they are built.','Tabs: Errors and Debug log are one tab again, "Errors and log", with the debug log card under the errors. That frees a place on the left for later.','Tab dots: green when everything on that tab is on, blue when only some of it is, red when it is all off. Try the Example switch above: "Partly on" turns Bags and Vendors blue, "All off" is a first install.','The setup guide gets a Controller screen with the same switch and options (Setup guide, screen 8).'],fix:[]},
+ qbsettings:{what:['Draft, not built. A new Controller tab, after Chat. Quiet bars is the first piece and has its own switch.','Opacity: 100% is fully shown, 0% reads "Hidden". The grey help line sits under its row, on one line.','The Compact tip shows only while the game\'s Compact setting is off. Try "Compact in Edit Mode" above.','In combat the bars are always full, so there is no setting for it.','Controller layout is the first card: its switch, where the both-triggers pads go, one size for all spell buttons, and three fine-tune sizes behind "Show". Moving the map, chat or buffs is done in the game\'s Edit Mode and is kept. The new Edit Mode layout is named "Pocket Essentials". With three cards the tab scrolls.','Tabs: Errors and Debug log are one tab again, "Errors and log", with the debug log card under the errors. That frees a place on the left for later.','Tab dots: green when everything on that tab is on, blue when only some of it is, red when it is all off. Try the Example switch above: "Partly on" turns Bags and Vendors blue, "All off" is a first install.','The setup guide gets a Controller screen with the same switch and options (Setup guide, screen 8).'],fix:[]},
  hud:{what:['The same pieces, with the quest arrow at your chosen size. Try the size control on the Quest arrow view.'],fix:[]},
  arrow:{what:['One size control (50% to 150%, in steps of 10) sets the arrow and its text together. It no longer follows Button size, and there are no fixed Small/Normal/Large choices.','Change it in Move on screen while you watch the arrow, or in the settings under Quest arrow.','The quest line is smaller and starts with "Quest:", the same way turn-ins start with "Turn in:".','Turn around shows no arrow: just "Turn around" with the quest line under it, so there is no gap.','"No location" now reads "No map data for this quest".','In a city or inn with no quest focused, the hint is hidden (a choice in the settings).'],fix:[[7,'"Here" is green in both the arrow and the text'],[25,'the old fixed positions and sizes go']]},
  settings:{what:['Tabs on the left, one page at a time on the right. Bags and Vendors each hold their two helpers, matching the setup guide.','Every row is the same: the name on the left, one control of one width on the right. A green dot on a tab means a helper there is on.','Only one tab is drawn at a time, so less is built and kept on screen: lighter for the handheld.','Feature names are suggestions (Bigger bag, Bag sorting, Sell junk, Repair gear, Chat picker); say which you prefer.','Bigger bag always puts the bag pictures in one row at the top, so its "Bag pictures" choice is gone. Off, the game shows its own bag.','The choices explain themselves ("Show, to tap" / "Hide", "Left stick" / "Right stick"), and each section has one plain line under its name.','General: "I play with: Touch controls / Controller" takes the place of "Touch screen: Yes/No". It is the same question the setup guide asks.','A row can still have one short grey line when it needs it (Chat text size).'],fix:[[5,'switches are On/Off only; two-way choices are segmented, so green no longer means "the second choice"'],[8,'sentence case everywhere'],[9,'one switch shape for every helper'],[10,'tab names match the setup guide'],[15,'one Reload, under General'],[16,'Save, Empty the log and Clear errors are on separate rows'],[17,'the "press and hold" tip is gone'],[18,'Chat text size has its own tab, so it no longer forces options to show'],[21,'every control has the same width'],[23,'the scroll bar shows only when a page is too long'],[24,'names always sit left of their control']]},
@@ -1266,7 +1466,15 @@ function subControls(){
     const g=el('div',sub,null,'seg'); el('span',g).textContent='Try it'; const b=el('button',g); b.textContent='Press a spell'; b.onclick=()=>{pressSpell();render(true);};
     const q=el('div',sub,null,'seg'); el('span',q).textContent='Quiet bars';
     [[true,'On'],[false,'Off']].forEach(([v,l])=>{ const bb=el('button',q); bb.textContent=l; bb.setAttribute('aria-pressed',String(S.on.quietBars===v)); bb.onclick=()=>{S.on.quietBars=v;render();}; }); }
-  if(S.view==='quietbars'||S.view==='qbsettings') mk('Compact in Edit Mode',[[false,'Off'],[true,'On']],'compact');
+  if(S.view==='layout'&&S.ver==='proposed'){ mk('Bars',[['strip','Flat strip for the main bar (idea)'],[true,'As built in 0.11.0 (whole bars)'],[false,'As first designed (split, not possible)']],'clBuilt'); if(S.clBuilt==='strip') mk('Button pictures',[[true,'On each spell'],[false,'Off']],'clGlyph'); if(S.clBuilt==='strip') mk('Both-triggers spells',[['shared','Share the strip while both are held'],['own','Own small strip']],'clStripBoth'); if(S.clBuilt===true) mk('Main bar',[['above','Above the map'],['under','Under the map']],'clMain'); }
+  if(S.view==='layout'&&S.ver==='proposed'){ const mk2=(label,opts,key)=>{ const g=el('div',sub,null,'seg'); el('span',g).textContent=label; opts.forEach(([v,l])=>{ const b=el('button',g); b.textContent=l; b.setAttribute('aria-pressed',String(S.clSw[key]===v)); b.onclick=()=>{S.clSw[key]=v;render();}; }); };
+    mk2('Swing timers',[['bars','Under the trigger bars'],['above','Stacked above the map'],['under','Stacked under the map']],'spot');
+    mk2('Ranged',CL_VIS,'rg'); mk2('Main Hand',CL_VIS,'mh'); }
+  if(S.view==='layout'){ if(S.ver==='proposed') mk('Frames',[['corner','Bottom corners'],['above','Above the bars, stacked'],['flat','Above the bars, side by side']],'clFrames'); mk('Sub-menu',[['closed','Closed'],['petcmd','Pet commands'],['petspell','Pet spells']],'clMenu'); mk('You hold',[['none','Nothing'],['lt','Left trigger'],['rt','Right trigger'],['both','Both']],'clHold');
+    if(S.ver==='proposed'){ mk('Both-triggers bar',[['small','Small, above the pads'],['corner','Small, bottom corners'],['swap','Swaps with the main pads']],'clBoth');
+      { const g=el('div',sub,null,'seg'); el('span',g).textContent='Spell button size'; [100,85,70].forEach(v=>{ const bb=el('button',g); bb.textContent=v+'%'; bb.setAttribute('aria-pressed',String(S.opt.layout.size===v)); bb.onclick=()=>{S.opt.layout.size=v;render();}; }); }
+      [['Main pads','clKm'],['LT and RT bars','clKo'],['Both-triggers pads','clKb']].forEach(([l,key])=>mk('Fine-tune: '+l,[[.85,'Smaller'],[1,'Same'],[1.15,'Bigger']],key)); } }
+  if((S.view==='layout'&&S.ver==='today')||S.view==='quietbars'||S.view==='qbsettings') mk('Compact in Edit Mode',[[false,'Off'],[true,'On']],'compact');
   if(S.view==='kit'){
     mk('Moment',[['out','Out of combat'],['combat','In combat']],'kitMoment');
     [['Chat in combat','chat'],['Quick slots in combat','kit']].forEach(([lab,key])=>{ const g2=el('div',sub,null,'seg'); el('span',g2).textContent=lab;
