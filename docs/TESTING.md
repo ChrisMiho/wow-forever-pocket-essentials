@@ -1510,12 +1510,12 @@ feature, split by what you were doing. Nothing to type and nothing to watch.
 On a computer: `scripts/read-probe.sh <PocketProbe.lua> --perf` prints the
 report, and `--perf --diff <older file>` compares two recordings.
 
-### 25. Version 0.11.1 and Pocket Probe 0.7.0: the lunch test
+### 25. Version 0.11.2 and Pocket Probe 0.7.0: the lunch test
 
 **What this is for.** Check the four layout fixes, and let the probe answer
 the face-bar questions while you play. Out of a fight first (about five
 minutes), then just play. The only thing to do in a fight is one tap on the
-round **Fight** button, once. Download: the GitHub pre-release **v0.11.1**,
+round **Fight** button, once. Download: the GitHub pre-release **v0.11.2**,
 which holds both zips.
 
 **Install**
