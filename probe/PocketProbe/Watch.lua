@@ -122,6 +122,8 @@ end
 
 local function Changed()
     if P.OnWatchChanged then pcall(P.OnWatchChanged) end
+    -- The floating Fight button (Perf.lua) shows in a fight only while armed or recording.
+    if P.UpdateFightButton then pcall(P.UpdateFightButton) end
 end
 
 local function Status(text)

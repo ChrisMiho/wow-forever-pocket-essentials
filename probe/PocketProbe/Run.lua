@@ -6,7 +6,8 @@ local ADDON_NAME, P = ...
 -- Nothing runs by itself: a pass starts from the panel (Run, Run all safe,
 -- Fight tests), the clean series from Clean run, and the automatic passes of 0.2.0 only
 -- with the Auto switch on. While a performance recording runs (Perf.lua)
--- none of them starts. Nothing here runs every frame. A pass is a chain
+-- none of them starts, except the fight tests from the floating Fight button
+-- (probe 0.7.0), which pause it. Nothing here runs every frame. A pass is a chain
 -- of short timers (C_Timer.After), one trial about every 0.3 seconds.
 
 local type, ipairs, pcall, xpcall = type, ipairs, pcall, xpcall
@@ -618,8 +619,19 @@ local function FightSummary(p, words)
     return words .. ": " .. p.run .. " run, " .. p.good .. " allowed or readable, " .. p.refused .. " refused"
 end
 
+-- A pass is over, however it ended: its onDone (the floating Fight button's,
+-- Perf.lua) is called once.
+local function PassOver(p)
+    local done = p and p.onDone
+    if not done then return end
+    p.onDone = nil
+    local ok, err = pcall(done)
+    if not ok then Log("error in the probe: " .. P.Plain(err)) end
+end
+
 local function FinishPass(p)
     pass = nil
+    PassOver(p)
     if p.full then
         completed[p.doneKey] = true
         local s = db.situations[p.key]
@@ -676,6 +688,7 @@ NextStep = function(p)
     if p.ran then changed = not facts.lockdown end
     if changed then
         pass = nil
+        PassOver(p)
         Log("pass stopped: the situation changed")
         if p.ran then
             Log("fight tests stopped, the fight ended: " .. tconcat(p.ran, ", "), LIST_LOG)
@@ -698,10 +711,11 @@ end
 -- firstInPress: list[1] runs right now, in the caller's own call stack.
 -- note: what a pass that is not a whole one is ("vendor trials only").
 -- count: the pass keeps each trial's result for its last line (the fight tests).
-local function StartPass(trigger, list, full, firstInPress, note, count)
+-- onDone: called once when the pass is over, however it ends.
+local function StartPass(trigger, list, full, firstInPress, note, count, onDone)
     local key, facts = P.Situation(trigger)
     P.EnsureSituation(key, facts)
-    local p = { trigger = trigger, key = key, list = list, pos = 0, full = full, doneKey = DoneKey(key) }
+    local p = { trigger = trigger, key = key, list = list, pos = 0, full = full, doneKey = DoneKey(key), onDone = onDone }
     if count then p.ran, p.run, p.good, p.refused = {}, 0, 0, 0 end
     pass = p
     FlushQuiet()
@@ -739,10 +753,11 @@ TryVendor = function()
     StartPass("auto", VendorList(), false, false, "vendor trials only")
 end
 
--- Says why nothing can start now, or returns nil.
-local function Refusal()
+-- Says why nothing can start now, or returns nil. duringRecording: the
+-- floating Fight button's pass, which pauses the recording (Perf.lua).
+local function Refusal(duringRecording)
     if not db then return "loading" end
-    if Recording() then return RECORDING end
+    if Recording() and not duringRecording then return RECORDING end
     if cleanHold then return "the clean run is going: tap Next, or Stop" end
     if current then return "wait: " .. tostring(current.id) .. " is still running" end
     return nil
@@ -752,7 +767,9 @@ local function TakeOver(why)
     if not pass then return end
     Log("pass stopped: " .. why)
     if pass.full and pass.trigger == "auto" then pendingFull = true end
+    local old = pass
     pass = nil
+    PassOver(old)
 end
 
 -- "Run all safe": a pass straight from the tap. Its first trial runs inside
@@ -769,13 +786,24 @@ end
 -- "Fight tests": one tap in a fight runs what is worth running there (see
 -- FightList), the first trial inside the tap as Run all safe does. Out of a
 -- fight it only says so: Run all safe covers the rest.
-local function RunFightTests()
-    local why = Refusal()
-    if why then return SetStatus(why) end
+-- opts (the floating Fight button, Perf.lua): duringRecording = true lets it
+-- run while a recording is paused for it; onDone is called when the pass is
+-- over. Returns true when the pass started.
+local function RunFightTests(opts)
+    opts = type(opts) == "table" and opts or {}
+    local why = Refusal(opts.duringRecording == true)
+    if why then
+        SetStatus(why)
+        return false
+    end
     local _, facts = P.Situation("press")
-    if not facts.lockdown then return SetStatus("Fight tests: start a fight first, then tap this.") end
+    if not facts.lockdown then
+        SetStatus("Fight tests: start a fight first, then tap this.")
+        return false
+    end
     TakeOver("Fight tests take over")
-    StartPass("press", FightList(), false, true, "fight tests", true)
+    StartPass("press", FightList(), false, true, "fight tests", true, opts.onDone)
+    return true
 end
 
 -- One trial, straight from its Run button.
@@ -808,7 +836,9 @@ local CancelAllGuided       -- below, with the guided trials
 local PutBack               -- below, with the guided trials
 
 local function Stop()
+    local old = pass
     pass = nil
+    PassOver(old)
     pendingFull, pendingVendor = false, false
     CancelAllGuided("stopped")
     if db and db.clean.running then
@@ -894,7 +924,9 @@ end
 local function BeginClean()
     if not db then return end
     if Recording() then return SetStatus(RECORDING) end
+    local old = pass
     pass = nil
+    PassOver(old)
     pendingFull, pendingVendor = false, false
     db.clean.index = 0
     db.clean.running = true
@@ -1474,12 +1506,14 @@ function handlers.PLAYER_REGEN_DISABLED()
     GuidedFightStart()
     After(FIGHT_DELAY, TryFull)
     if P.OnCombat then P.OnCombat(true) end
+    if P.FightButtonCombat then P.FightButtonCombat(true) end
 end
 function handlers.PLAYER_REGEN_ENABLED()
     GuidedFightEnd()
     After(FIGHT_DELAY, TryFull)
     After(FIGHT_DELAY, RetryHeld)
     if P.OnCombat then P.OnCombat(false) end
+    if P.FightButtonCombat then P.FightButtonCombat(false) end
 end
 function handlers.ADDON_RESTRICTION_STATE_CHANGED() After(FIGHT_DELAY, TryFull) end
 
