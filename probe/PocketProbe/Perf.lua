@@ -12,11 +12,20 @@ local ADDON_NAME, P = ...
 --   * A small red dot in the bottom-right corner shows while it records. The
 --     dot takes no mouse and no touch.
 --   * Trials and a recording never run together (Run.lua refuses the one
---     while the other is going).
+--     while the other is going), with one exception (probe 0.7.0): the
+--     floating Fight button. It shows only in a fight, and only while a
+--     recording runs or the watchers are armed (Watch.lua). One tap runs the
+--     fight tests; a recording pauses for them (no samples, the ticker kept
+--     but skipping) and goes on when the pass is over. The sample after the
+--     pause has dt=0 and the letter p, so the report can leave it out. The
+--     button is round, amber, as big as Stop, beside it on the side away from
+--     the PE button (in Stop's spot when Stop is not showing). After the pass
+--     it shows a tick for 3 seconds, then a tap runs the pass again.
 --   * One ticker, only while recording. The activity tags come from events
 --     and from show / hide hooks, never from a check every frame. Every frame
 --     is made now, at load, so nothing is created in a fight.
---   * Without Pocket Essentials nothing here starts or shows.
+--   * Without Pocket Essentials nothing here starts or shows (the Fight
+--     button aside, in a fight while the watchers are armed).
 --   * Only numbers and our own short tags are saved: no names, no chat.
 --
 -- The saved data (PocketProbeDB.perf):
@@ -44,9 +53,13 @@ local ADDON_NAME, P = ...
 --       t=    seconds since the run started
 --       dt=   seconds this sample covers (0 for the first one and after a reload)
 --       a=    activity letters seen in that time: c fight, d dungeon or
---             other instance, v vendor, w world map, b bags, m moving, s still
+--             other instance, v vendor, w world map, b bags, m moving, s still;
+--             p: the first sample after a pause for the fight tests (dt=0);
+--             r: the first sample after a reload the run carried on over (dt=0)
 --       fps=  frame rate
---       mem=  memory in KB: Pocket Essentials, QuestieDB, Pocket Probe
+--       mem=  memory in KB: Pocket Essentials, QuestieDB, Pocket Probe; a
+--             reading the game gave as 0 (right after a reload) is left
+--             empty, as for an addon that is not loaded: "mem=,812,96"
 --       pe=   the whole addon in that time: ms, runs, slowest run (0 when
 --             no run was slower than every one before it)
 --       f=    the same per feature: key number:ms:runs:slowest, ...
@@ -82,6 +95,9 @@ local ADDON_NAME, P = ...
 --   frame :GetFrameLevel / :SetFrameLevel        Doc/SimpleFrameAPIDocumentation.lua:421, 1281
 --   texture :SetTexture (returns success)        Doc/SimpleTextureBaseAPIDocumentation.lua:604-618
 --   region :SetVertexColor                       Doc/SimpleRegionAPIDocumentation.lua:191
+--   the atlas "common-icon-checkmark" (the Fight button's tick)
+--                                                Blizzard_CharacterCreate/Camelot/Blizzard_CharacterCreate.lua:2986
+--                                                (texture :SetAtlas / :GetAtlas: Core.lua)
 --
 -- Not proven by the source, and guarded:
 --   PocketEssentials:StartMeasure / :StopMeasure / :MeasureCounters and the
@@ -117,6 +133,7 @@ local TRIAL_RUNNING = "A trial is running: let it finish or tap Stop first."
 local FULL = "Recording stopped by itself: 2 hours reached"
 
 local run                   -- the run being recorded, or nil
+local paused = false        -- a pass of the floating Fight button runs: no samples
 local counters              -- the table Pocket Essentials' hook handed over
 local ticker
 local tickToken = 0         -- changes at every start and stop, so an old ticker does nothing
@@ -322,22 +339,51 @@ local function CenterDisc(texture, size)
     texture:SetSize(size, size)
 end
 
--- The dot in the bottom-right corner. Stop beside the PE button, on the side
+-- The floating Fight button (probe 0.7.0): made now, hidden. Amber, as big as Stop.
+local fight = CreateFrame("Button", "PocketProbeFloatFight", UIParent)
+fight:SetFrameStrata("HIGH")
+fight:Hide()
+local fightRing = fight:CreateTexture(nil, "BACKGROUND")
+Disc(fightRing, 1, 0.7, 0.1)
+local fightFill = fight:CreateTexture(nil, "BORDER")
+Disc(fightFill, 0.32, 0.19, 0.02)
+local fightLabel = P.NewText(fight, "small")
+fightLabel:SetJustifyH("CENTER")
+fightLabel:SetPoint("CENTER", fight, "CENTER", 0, 0)
+fightLabel:SetText("Fight")
+local fightTick = fight:CreateTexture(nil, "ARTWORK")
+fightTick:SetPoint("CENTER", fight, "CENTER", 0, 0)
+local TICK_ATLAS = "common-icon-checkmark"
+pcall(fightTick.SetAtlas, fightTick, TICK_ATLAS)
+local tickAtlas = fightTick.GetAtlas and select(2, pcall(fightTick.GetAtlas, fightTick)) == TICK_ATLAS
+fightTick:Hide()
+P.floatFight = { button = fight, label = fightLabel, tick = fightTick }
+
+local function CenterOn(frame, texture, size)
+    texture:ClearAllPoints()
+    texture:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    texture:SetSize(size, size)
+end
+
+local PlaceFight            -- below
+
+-- Puts a round button where Stop goes: beside the PE button, on the side
 -- facing the middle of the screen, and as big as it; above the dot when the
--- PE button is not there or not showing.
-Place = function()
+-- PE button is not there or not showing. Returns its size, its frame level,
+-- and "right" or "left" (of the PE button) or "corner".
+local function PlaceRound(f)
     local unit = P.Units
     local gap, dotSize, size = unit(10), unit(20), unit(60)
-    dot:ClearAllPoints()
-    dot:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -gap, gap)
-    dot:SetSize(dotSize, dotSize)
-    stop:ClearAllPoints()
-    local beside, level = false, stopLevel
+    f:ClearAllPoints()
+    local side, level = nil, stopLevel
     local hub = HubButton()
     if hub then
         if hubHooked ~= hub and type(hub.HookScript) == "function" then
             hubHooked = hub
-            local again = Guard(function() if run then Place() end end)
+            local again = Guard(function()
+                if run then Place() end
+                if fight:IsShown() then PlaceFight() end
+            end)
             pcall(hub.HookScript, hub, "OnShow", again)
             pcall(hub.HookScript, hub, "OnHide", again)
         end
@@ -349,24 +395,63 @@ Place = function()
             local oks, screen = pcall(UIParent.GetWidth, UIParent)
             x, screen = okc and Num(x), oks and Num(screen)
             if x and screen and x < screen / 2 then
-                beside = pcall(stop.SetPoint, stop, "LEFT", hub, "RIGHT", gap, 0)
+                side = pcall(f.SetPoint, f, "LEFT", hub, "RIGHT", gap, 0) and "right" or nil
             else
-                beside = pcall(stop.SetPoint, stop, "RIGHT", hub, "LEFT", -gap, 0)
+                side = pcall(f.SetPoint, f, "RIGHT", hub, "LEFT", -gap, 0) and "left" or nil
             end
             -- On the world map the PE button is raised above the map's border.
             local okl, hubLevel = pcall(hub.GetFrameLevel, hub)
             if okl and Num(hubLevel) then level = hubLevel end
         end
     end
-    if not beside then
-        stop:ClearAllPoints()
-        stop:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -gap, gap + dotSize + gap)
-        level = stopLevel
+    if not side then
+        f:ClearAllPoints()
+        f:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -gap, gap + dotSize + gap)
+        level, side = stopLevel, "corner"
     end
-    pcall(stop.SetFrameLevel, stop, level)
-    stop:SetSize(size, size)
+    pcall(f.SetFrameLevel, f, level)
+    f:SetSize(size, size)
+    return size, level, side
+end
+
+local stopSide = "corner"   -- where Stop was put last
+
+-- The dot in the bottom-right corner, and Stop (PlaceRound).
+Place = function()
+    local unit = P.Units
+    local gap, dotSize = unit(10), unit(20)
+    dot:ClearAllPoints()
+    dot:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -gap, gap)
+    dot:SetSize(dotSize, dotSize)
+    local size, level
+    size, level, stopSide = PlaceRound(stop)
     CenterDisc(stopRing, size * DISC_SCALE)
     CenterDisc(stopFill, max(size - max(unit(4), 2) * 2, 1) * DISC_SCALE)
+end
+
+-- Fight beside Stop, on the side away from the PE button (left of Stop when
+-- Stop sits above the dot); in Stop's spot when Stop is not showing.
+PlaceFight = function()
+    local unit = P.Units
+    local gap = unit(10)
+    local size
+    if stop:IsShown() then
+        Place()
+        size = stop:GetWidth()
+        fight:ClearAllPoints()
+        if stopSide == "right" then
+            fight:SetPoint("LEFT", stop, "RIGHT", gap, 0)
+        else
+            fight:SetPoint("RIGHT", stop, "LEFT", -gap, 0)
+        end
+        pcall(fight.SetFrameLevel, fight, stop:GetFrameLevel())
+        fight:SetSize(size, size)
+    else
+        size = PlaceRound(fight)
+    end
+    CenterOn(fight, fightRing, size * DISC_SCALE)
+    CenterOn(fight, fightFill, max(size - max(unit(4), 2) * 2, 1) * DISC_SCALE)
+    CenterOn(fight, fightTick, size * 0.6)
 end
 
 ---------------------------------------------------------------------------
@@ -435,7 +520,8 @@ local function MemoryField(r, kind, now)
         if Loaded(name) then
             local ok, kb = pcall(get, name)
             kb = ok and Num(kb)
-            if kb then out[i], any = Fmt(kb, 0), true end
+            -- 0 is no reading (the game has not counted since a reload): left empty.
+            if kb and kb > 0 then out[i], any = Fmt(kb, 0), true end
         end
     end
     return any and ("mem=" .. tconcat(out, ",")) or nil
@@ -575,9 +661,10 @@ local function ProfilerFields(r, base, parts)
     end
 end
 
--- kind: "base" (the first sample of a run, and the first after a reload:
--- it only notes where every counter stands), "tick", or "final".
-local function Sample(kind)
+-- kind: "base" (the first sample of a run, the first after a reload, and
+-- the first after a pause: it only notes where every counter stands),
+-- "tick", or "final". mark: letters added to a= ("p" after a pause).
+local function Sample(kind, mark)
     local r = run
     if not r then return end
     local now = Clock()
@@ -588,7 +675,7 @@ local function Sample(kind)
     local parts = {
         "t=" .. Fmt(max((now or r.t0) - r.t0, 0), 0),
         "dt=" .. Fmt(dt, 1),
-        "a=" .. TagText(),
+        "a=" .. TagText() .. (mark or ""),
     }
     local rate = Find("GetFramerate")
     if type(rate) == "function" then
@@ -616,7 +703,7 @@ local function StopTicker()
 end
 
 local function Tick()
-    if not run then return end
+    if not run or paused then return end
     Sample("tick")
     if #run.samples >= MAX_SAMPLES then return P.StopRecording("full") end
     EnsureHooks()
@@ -664,9 +751,11 @@ local function Begin(carryOn)
     local perf = Saved()
     local now = Clock()
     local r = carryOn and perf.runs[#perf.runs] or nil
+    local carried = false
     if type(r) == "table" and type(r.samples) == "table" and #r.samples < MAX_SAMPLES and r.ended == nil
         and now and type(r.t0) == "number" and now >= r.t0 and type(r.keys) == "table" and type(r.feat) == "table" then
         r.reloads = (type(r.reloads) == "number" and r.reloads or 0) + 1
+        carried = true
         Log("recording carries on after the reload")
     else
         if perf.on then CloseLast(perf, "ended at a reload or a logout") end
@@ -693,7 +782,9 @@ local function Begin(carryOn)
     ReadTags()
     Listen(true)
     EnsureHooks()
-    Sample("base")
+    -- The first sample after a reload says so (r): the report leaves the
+    -- next 30 seconds out of its plain words.
+    Sample("base", carried and "r" or nil)
     StartTicker()
     Place()
     dot:Show()
@@ -702,6 +793,7 @@ local function Begin(carryOn)
     local after = Find("C_Timer.After")
     if type(after) == "function" then after(1, placeLater) end
     if P.RefreshPanel then P.RefreshPanel() end
+    P.UpdateFightButton()
 end
 
 function P.Recording()
@@ -741,7 +833,9 @@ end
 function P.StopRecording(why)
     local r = run
     if not r then return end
-    if why ~= "full" then pcall(Sample, "final") end
+    -- During a pause the last stretch is the probe's own pass: left out.
+    if why ~= "full" and not paused then pcall(Sample, "final") end
+    paused = false
     StopTicker()
     Listen(false)
     Hook("StopMeasure")
@@ -755,9 +849,131 @@ function P.StopRecording(why)
     stop:Hide()
     Log("recording " .. (why == "full" and "stopped by itself: 2 hours reached" or "stopped") .. ", " .. #r.samples .. " samples")
     P.SetStatus(why == "full" and FULL or "Recording stopped")
+    P.UpdateFightButton()
 end
 
 stop:SetScript("OnClick", Guard(function() P.StopRecording() end))
+
+---------------------------------------------------------------------------
+-- The floating Fight button (probe 0.7.0) and the recording's pause
+---------------------------------------------------------------------------
+
+local TICK_SHOW = 3         -- seconds the tick shows after a pass
+local fighting = false      -- between PLAYER_REGEN_DISABLED and _ENABLED (Run.lua tells)
+local fightBusy = false     -- its pass runs
+local ticking = false       -- the tick shows
+local tickToken2 = 0
+
+-- No samples while the fight tests run; the ticker goes on, skipping.
+function P.PerfPause()
+    if not run or paused then return false end
+    paused = true
+    Log("recording paused for the fight tests")
+    return true
+end
+
+-- The sample after the pause has dt=0 and the letter p, and only notes
+-- where the counters stand, so the pass's own work is not counted.
+function P.PerfResume()
+    if not paused then return end
+    paused = false
+    if run then
+        Sample("base", "p")
+        Log("recording goes on after the fight tests")
+    end
+end
+
+local function Armed()
+    return P.WatchArmed ~= nil and P.WatchArmed() == true
+end
+
+local function FightLook()
+    local dim = fightBusy
+    pcall(fightRing.SetVertexColor, fightRing, dim and 0.55 or 1, dim and 0.4 or 0.7, dim and 0.1 or 0.1)
+    if ticking and tickAtlas then
+        fightTick:Show()
+        fightLabel:Hide()
+    else
+        fightTick:Hide()
+        fightLabel:SetText(ticking and "Done" or "Fight")
+        fightLabel:Show()
+    end
+end
+
+-- Shown only in a fight, and only while armed or recording.
+function P.UpdateFightButton()
+    if fighting and (run ~= nil or Armed()) then
+        PlaceFight()
+        FightLook()
+        fight:Show()
+    else
+        fight:Hide()
+    end
+end
+
+local PassDone             -- below
+
+-- From Run.lua at PLAYER_REGEN_DISABLED / _ENABLED. When the fight ends and
+-- no pass runs any more but ours never said it was over, it is over now: the
+-- recording goes on and the button works again.
+function P.FightButtonCombat(on)
+    fighting = on and true or false
+    if not fighting and fightBusy and not (P.Busy and P.Busy()) then PassDone() end
+    P.UpdateFightButton()
+end
+
+PassDone = function()
+    fightBusy = false
+    P.PerfResume()
+    ticking = true
+    tickToken2 = tickToken2 + 1
+    local token = tickToken2
+    local after = Find("C_Timer.After")
+    if type(after) == "function" then
+        after(TICK_SHOW, Guard(function()
+            if token ~= tickToken2 then return end
+            ticking = false
+            FightLook()
+        end))
+    else
+        ticking = false
+    end
+    FightLook()
+end
+
+fight:SetScript("OnClick", Guard(function()
+    -- A tap while its pass runs, while the tick shows, or while another pass
+    -- runs does nothing: never a second pass.
+    if fightBusy or ticking then return end
+    if P.Busy and P.Busy() then
+        P.SetStatus("A pass is already running: let it finish.")
+        return
+    end
+    -- A guided trial in its timed steps (screenshots) is not cut into either.
+    for _, g in pairs(type(P.db) == "table" and type(P.db.guided) == "table" and P.db.guided or {}) do
+        if type(g) == "table" and g.stage == "prepare" then
+            P.SetStatus("A guided trial is starting: wait a moment.")
+            return
+        end
+    end
+    local pausing = P.PerfPause()
+    fightBusy = true
+    FightLook()
+    local ok, started = false, false
+    if P.RunFightTests then
+        ok, started = pcall(P.RunFightTests, { duringRecording = true, onDone = PassDone })
+        if not ok then
+            Log("error in the probe: " .. P.Plain(started))
+            -- A pass that did get going still ends through PassDone (its end, Stop or the fight's end).
+            started = P.Busy and P.Busy() or false
+        end
+    end
+    if not started and fightBusy then
+        fightBusy = false
+        if pausing then P.PerfResume() end
+        FightLook()
+    end
+end))
 
 ---------------------------------------------------------------------------
 -- Login, reload, logout
@@ -766,6 +982,10 @@ stop:SetScript("OnClick", Guard(function() P.StopRecording() end))
 local entered = false       -- this session's first PLAYER_ENTERING_WORLD has come
 
 local function OnEnteringWorld(isInitialLogin, isReloadingUi)
+    -- A reload in a fight: no PLAYER_REGEN_DISABLED comes for this fight, so
+    -- the Fight button learns it here.
+    fighting = Truth(InCombatLockdown)
+    P.UpdateFightButton()
     local perf = Saved()
     if not perf then return end
     if entered then
@@ -794,7 +1014,7 @@ end
 loginFrame:SetScript("OnEvent", Guard(function(_, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
         OnEnteringWorld(...)
-    elseif run then
+    elseif run and not paused then
         -- The game writes the saved file after this: the last stretch goes in.
         Sample("final")
     end

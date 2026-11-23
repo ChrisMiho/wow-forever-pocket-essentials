@@ -5,7 +5,12 @@
 --
 -- --perf prints the performance recordings (probe 0.6.0) instead of the
 -- trial results; with --diff it puts the newest recording of each file side
--- by side.
+-- by side. Its plain words (probe 0.7.0) leave out the pauses for the fight
+-- tests and the 30 seconds after each reload, and give no verdict on less
+-- than 10 minutes of samples.
+--
+-- --details also prints the watchers' armings (probe 0.7.0), as does the
+-- full report.
 --
 -- The saved file is Lua that sets PocketProbeDB. It is run in an empty
 -- environment (no os, io, require or any other global), text only (compiled
@@ -494,7 +499,16 @@ function M.format(db, opts)
     if opts.logOnly then return M.formatLog(db) end
     local situations, byKey = M.situations(db)
     local areas = M.areas(db)
-    if opts.detailsOnly then return M.formatDetails(db, byKey, areas) end
+    if opts.detailsOnly then
+        local out = M.formatDetails(db, byKey, areas)
+        -- The watchers' armings (probe 0.7.0), when the file has any.
+        local watch = M.formatWatch(db)
+        if #watch > 0 then
+            out[#out + 1] = ""
+            for _, line in ipairs(watch) do out[#out + 1] = line end
+        end
+        return out
+    end
     local out = {}
     local function add(lines, gap)
         if #lines == 0 then return end
@@ -515,6 +529,7 @@ function M.format(db, opts)
     if not opts.markdown then
         add(M.formatSpoiled(db, byKey), true)
         add(M.formatGuided(db), true)
+        add(M.formatWatch(db), true)
         add(M.formatReadings(db, byKey, areas), true)
         add(M.formatDetails(db, byKey, areas), true)
     end
@@ -701,9 +716,53 @@ local function busiest(t)
     return best
 end
 
+local RELOAD_GAP = 30                      -- seconds after a reload left out of the plain words
+local PLAIN_MIN = 600                      -- seconds of samples the plain words need
+
+-- True when the file comes from a probe older than 0.7.0 (which did not mark
+-- reloads), or does not say which probe wrote it.
+function M.beforeMarks(db)
+    local v = type(db) == "table" and db.probe or nil
+    local major, minor = (type(v) == "string" and v or ""):match("^(%d+)%.(%d+)")
+    if not major then return true end
+    return tonumber(major) == 0 and tonumber(minor) < 7
+end
+
+-- The reloads in a run's samples, in seconds since its start: a sample
+-- marked r (probe 0.7.0). In older files (old = true) any sample after the
+-- first with dt=0 is taken as one too. Also how many pauses (p) there were.
+local function reloadsOf(samples, old)
+    local at, pauses, n = {}, 0, 0
+    for _, s in ipairs(samples) do
+        n = n + 1
+        if s.tags:find("p", 1, true) then
+            pauses = pauses + 1
+        elseif s.tags:find("r", 1, true) or (old and n > 1 and s.dt == 0) then
+            at[#at + 1] = s.t
+        end
+    end
+    return at, pauses
+end
+
+-- True when a sample is left out of the plain words: a pause (p), or any
+-- part of its time inside the 30 seconds after a reload.
+local function leftOut(s, reloads)
+    if s.tags:find("p", 1, true) then return true end
+    for _, r in ipairs(reloads) do
+        if s.t >= r and s.t - s.dt < r + RELOAD_GAP then return true end
+    end
+    return false
+end
+
 -- Everything the report prints about one run, worked out from its samples.
-function M.perfSummary(run)
+-- opts.plain (probe 0.7.0): only what the plain words go on, leaving out the
+-- pauses for the fight tests and the 30 seconds after each reload.
+-- opts.marked: the file is from probe 0.7.0 or later, which marks its reloads
+-- (otherwise a sample with dt=0 after the first counts as one).
+function M.perfSummary(run, opts)
     run = tbl(run)
+    opts = type(opts) == "table" and opts or {}
+    local plain = opts.plain == true
     local keys = tbl(run.keys)
     local out = {
         started = type(run.started) == "string" and clean(run.started) or nil,
@@ -717,14 +776,22 @@ function M.perfSummary(run)
         missing = {}, samples = 0, total = newTally(), byTag = {}, memory = {}, featureRows = {},
     }
     for _, name in ipairs(sortedKeys(tbl(run.missing))) do out.missing[#out.missing + 1] = clean(name) end
-    local lastFps
+    local parsed = {}
     for _, line in ipairs(tbl(run.samples)) do
         local s = M.perfSample(line)
-        if s then
+        if s then parsed[#parsed + 1] = s end
+    end
+    out.reloadsAt, out.pauses = reloadsOf(parsed, opts.marked ~= true)
+    local lastFps
+    for _, s in ipairs(parsed) do
+        if plain and leftOut(s, out.reloadsAt) then
+            out.leftOutSamples = (out.leftOutSamples or 0) + 1
+        else
             out.samples = out.samples + 1
             for i = 1, 3 do
                 local kb = s.mem[i]
-                if kb then
+                -- 0 is no reading (a 0.6.0 file stored it right after a reload).
+                if kb and kb > 0 then
                     local m = out.memory[i]
                     if not m then
                         m = { start = kb, min = kb, max = kb, startAt = s.t }
@@ -838,9 +905,9 @@ local function runTitle(sum)
     return line
 end
 
--- The lines for one run.
-function M.formatPerfRun(run, heading)
-    local sum = M.perfSummary(run)
+-- The lines for one run. marked: the file marks its reloads (perfSummary).
+function M.formatPerfRun(run, heading, marked)
+    local sum = M.perfSummary(run, { marked = marked })
     local t = sum.total
     local out = { heading .. ": " .. runTitle(sum) }
     local function add(lines) for _, line in ipairs(lines) do out[#out + 1] = line end end
@@ -848,6 +915,11 @@ function M.formatPerfRun(run, heading)
         .. show(sum.interval, 0) .. " s)" .. (sum.addon and (", Pocket Essentials " .. sum.addon) or "")
         .. (sum.reloads > 0 and (", carried on over " .. plural(sum.reloads, "reload", "reloads")) or "")
     if #sum.missing > 0 then out[#out + 1] = "  Not on this client, so left out: " .. table.concat(sum.missing, ", ") end
+    if #sum.reloadsAt > 0 then
+        local at = {}
+        for i, t in ipairs(sum.reloadsAt) do at[i] = math.floor(t / 60) .. " min" end
+        out[#out + 1] = "  Reloads at: " .. table.concat(at, ", ")
+    end
     if sum.seconds <= 0 then
         out[#out + 1] = "  Too short: no full sample yet."
         return out, sum
@@ -981,10 +1053,11 @@ function M.formatPerf(db)
         return out
     end
     out[#out + 1] = plural(#runs, "run", "runs") .. " in this file, the newest last"
+    local marked = not M.beforeMarks(db)
     local newest
     for i, run in ipairs(runs) do
         out[#out + 1] = ""
-        local lines, sum = M.formatPerfRun(run, "Run " .. i .. " of " .. #runs)
+        local lines, sum = M.formatPerfRun(run, "Run " .. i .. " of " .. #runs, marked)
         for _, line in ipairs(lines) do out[#out + 1] = line end
         newest = sum
     end
@@ -993,9 +1066,36 @@ function M.formatPerf(db)
     if newest.seconds <= 0 then
         out[#out + 1] = "  Too short to say anything."
     else
-        for _, line in ipairs((M.perfVerdict(newest))) do out[#out + 1] = line end
+        for _, line in ipairs(M.perfPlain(runs[#runs], marked)) do out[#out + 1] = line end
     end
     return out
+end
+
+-- What the plain words leave out of a run, as words, or nil.
+local function leftOutText(sum)
+    local parts = {}
+    if #sum.reloadsAt > 0 then parts[#parts + 1] = "the 30 s after each of " .. plural(#sum.reloadsAt, "reload", "reloads") end
+    if sum.pauses > 0 then parts[#parts + 1] = plural(sum.pauses, "pause", "pauses") .. " for the fight tests" end
+    if #parts == 0 then return nil end
+    return table.concat(parts, " and ")
+end
+
+-- The plain words for one run (probe 0.7.0): they leave out the pauses for
+-- the fight tests and the 30 seconds after each reload, and give no verdict
+-- on less than 10 minutes of samples. Returns the lines, then the overall
+-- word ("too short to judge" when there is none) and the reason. marked:
+-- the file marks its reloads (perfSummary).
+function M.perfPlain(run, marked)
+    local sum = M.perfSummary(run, { plain = true, marked = marked })
+    local left = leftOutText(sum)
+    if sum.seconds < PLAIN_MIN then
+        local have, need = duration(sum.seconds) .. " of samples to go on", (duration(PLAIN_MIN):gsub(" 0 s$", "")) .. " needed"
+        return { "  Too short to judge: " .. have .. " (" .. need .. ")" .. (left and (", after leaving out " .. left) or "") .. "." },
+            "too short to judge", have .. ", " .. need
+    end
+    local lines, overall = M.perfVerdict(sum)
+    if left then table.insert(lines, 1, "  Left out of these words: " .. left .. ".") end
+    return lines, overall
 end
 
 local function change(before, after)
@@ -1011,14 +1111,15 @@ function M.perfDiff(a, b, nameA, nameB)
     a, b = tbl(a), tbl(b)
     local runsA, runsB = M.perfRuns(a), M.perfRuns(b)
     local out = { "Comparing performance recordings (the newest run of each file)" }
-    local sides = { { "before", nameA or "first file", runsA }, { "after", nameB or "second file", runsB } }
+    local sides = { { "before", nameA or "first file", runsA, not M.beforeMarks(a) },
+        { "after", nameB or "second file", runsB, not M.beforeMarks(b) } }
     local sums = {}
     for i, side in ipairs(sides) do
         local run = side[3][#side[3]]
         if not run then
             out[#out + 1] = "  " .. side[1] .. ": " .. side[2] .. " has no recording."
         else
-            sums[i] = M.perfSummary(run)
+            sums[i] = M.perfSummary(run, { marked = side[4] })
             out[#out + 1] = "  " .. pad(side[1] .. ":", 8) .. side[2] .. " (" .. runTitle(sums[i]) .. ", " .. duration(sums[i].seconds)
                 .. (sums[i].addon and (", Pocket Essentials " .. sums[i].addon) or "") .. ")"
         end
@@ -1092,10 +1193,139 @@ function M.perfDiff(a, b, nameA, nameB)
     end
     out[#out + 1] = ""
     out[#out + 1] = "In plain words"
-    for i, sum in ipairs({ x, y }) do
-        local lines, overall = M.perfVerdict(sum)
-        out[#out + 1] = "  " .. sides[i][1] .. ": " .. overall
-        for k = 1, #lines - 1 do out[#out + 1] = "  " .. lines[k] end
+    for i = 1, 2 do
+        local side = sides[i]
+        local lines, overall, why = M.perfPlain(side[3][#side[3]], side[4])
+        if why then
+            out[#out + 1] = "  " .. side[1] .. ": " .. overall .. " (" .. why .. ")"
+        else
+            out[#out + 1] = "  " .. side[1] .. ": " .. overall
+            for k = 1, #lines - 1 do out[#out + 1] = "  " .. lines[k] end
+        end
+    end
+    return out
+end
+
+---------------------------------------------------------------------------
+-- The watchers (probe 0.7.0, the saved "watch" table; its layout is at the
+-- top of probe/PocketProbe/Watch.lua). Printed by --details and in the full
+-- report; nothing when the file has none.
+---------------------------------------------------------------------------
+
+local WATCH_WHY = { disarmed = "Disarm", reload = "ended by a reload or a logout", cleared = "ended by Clear saved results" }
+local WATCH_BARS = { "main", "left", "right", "both", "other", "secret", "error" }
+local WATCH_PRESS = { "main", "left", "right", "both" }
+local WATCH_EVENTS = { "ACTIONBAR_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_USABLE", "ACTIONBAR_UPDATE_STATE",
+    "ACTIONBAR_SLOT_CHANGED", "SPELL_UPDATE_COOLDOWN", "UPDATE_BONUS_ACTIONBAR" }
+
+local function count(pair, side)
+    return num(tbl(pair)[side]) or 0
+end
+
+local function armingLines(i, w)
+    local out = {}
+    local line = "  Arming " .. i .. ": started " .. (w.started ~= nil and clean(w.started) or "at an unknown time")
+    if w.ended ~= nil then line = line .. ", ended " .. clean(w.ended) end
+    if w.why ~= nil then
+        line = line .. " (" .. (WATCH_WHY[w.why] or clean(w.why)) .. ")"
+    elseif w.ended == nil then
+        line = line .. " (still armed when the file was written)"
+    end
+    out[#out + 1] = line
+    local events = tbl(w.events)
+    local secs = tbl(events._secs)
+    local inFight, outFight = num(secs.c) or 0, num(secs.o) or 0
+    out[#out + 1] = "    Time: " .. duration(inFight) .. " in fights, " .. duration(outFight) .. " out of them"
+    -- The active bar.
+    local bar = tbl(w.bar)
+    if bar.missing ~= nil then out[#out + 1] = "    Active bar: not watched (not found: " .. clean(bar.missing) .. ")" end
+    local parts = {}
+    for _, name in ipairs(WATCH_BARS) do
+        if type(bar[name]) == "table" then
+            parts[#parts + 1] = name .. " " .. show(count(bar[name], "c"), 0) .. " / " .. show(count(bar[name], "o"), 0)
+        end
+    end
+    if #parts > 0 then
+        out[#out + 1] = "    Active bar, in a fight / out of one: " .. table.concat(parts, ", ")
+    elseif bar.missing == nil then
+        out[#out + 1] = "    Active bar: no change seen"
+    end
+    local first = {}
+    for _, change in ipairs(tbl(bar.first)) do
+        if type(change) == "string" then first[#first + 1] = clean(change) end
+    end
+    if #first > 0 then
+        out[#out + 1] = "    First changes (seconds since Arm; bar; c in a fight, o out of one): " .. table.concat(first, ", ")
+    end
+    -- The presses.
+    local press = tbl(w.press)
+    if press.missing ~= nil then
+        out[#out + 1] = "    Presses: not watched (not found: " .. clean(press.missing) .. ")"
+    else
+        local sides = {}
+        for _, side in ipairs({ "c", "o" }) do
+            local per = {}
+            for _, name in ipairs(WATCH_PRESS) do
+                local p = press[name]
+                if type(p) == "table" then
+                    local down, up, other = count(p.down, side), count(p.up, side), count(p.other, side)
+                    if down + up + other > 0 then
+                        per[#per + 1] = name .. " " .. show(down, 0) .. " / " .. show(up, 0)
+                            .. (other > 0 and (" (" .. show(other, 0) .. " unreadable)") or "")
+                    end
+                end
+            end
+            sides[#sides + 1] = (side == "c" and "in a fight: " or "out of one: ") .. (#per > 0 and table.concat(per, ", ") or "none")
+        end
+        out[#out + 1] = "    Presses (down / up), " .. table.concat(sides, "; ")
+        out[#out + 1] = "    \"pressed\" read as: " .. (press.kind ~= nil and clean(press.kind) or "nothing pressed")
+            .. "; buttons hooked: " .. show(num(press.hooked), 0)
+    end
+    -- The events.
+    if events.missing ~= nil then out[#out + 1] = "    Events not on this client: " .. clean(events.missing) end
+    local rows, listed = {}, {}
+    local names = {}
+    for _, name in ipairs(WATCH_EVENTS) do names[#names + 1] = name end
+    for _, name in ipairs(sortedKeys(events)) do names[#names + 1] = name end
+    for _, name in ipairs(names) do
+        local pair = events[name]
+        if not listed[name] and name ~= "_secs" and type(pair) == "table" then
+            listed[name] = true
+            local c, o = count(pair, "c"), count(pair, "o")
+            rows[#rows + 1] = { clean(name), show(perMinute(c, inFight), 1) .. " / " .. show(perMinute(o, outFight), 1),
+                "(" .. show(c, 0) .. " / " .. show(o, 0) .. ")" }
+        end
+    end
+    if #rows > 0 then
+        out[#out + 1] = "    Events per minute, in a fight / out of one (the counts in brackets):"
+        for _, l in ipairs(columns(rows, "      ")) do out[#out + 1] = l end
+    end
+    -- The cooldown sweep.
+    local sw = tbl(w.sweep)
+    if sw.result ~= nil then
+        out[#out + 1] = "    Cooldown sweep: " .. clean(sw.result)
+            .. ", frame shown by itself " .. (sw.shownByItself ~= nil and clean(sw.shownByItself) or "unknown")
+            .. ", duration afterwards " .. (sw.durClass ~= nil and clean(sw.durClass) or "unknown")
+            .. ", screenshot " .. (sw.screenshot ~= nil and clean(sw.screenshot) or "none")
+            .. (num(sw.t) and (", " .. duration(sw.t) .. " after Arm") or "")
+            .. (sw.missing ~= nil and (" (not found: " .. clean(sw.missing) .. ")") or "")
+    elseif sw.missing ~= nil then
+        out[#out + 1] = "    Cooldown sweep: not tried (not found: " .. clean(sw.missing) .. ")"
+    else
+        out[#out + 1] = "    Cooldown sweep: not tried (nothing was on cooldown in a fight)"
+    end
+    return out
+end
+
+function M.formatWatch(db)
+    local list = {}
+    for _, w in ipairs(tbl(tbl(db).watch)) do
+        if type(w) == "table" then list[#list + 1] = w end
+    end
+    if #list == 0 then return {} end
+    local out = { "Watch my next fights: " .. plural(#list, "arming", "armings") .. ", the newest last" }
+    for i, w in ipairs(list) do
+        for _, line in ipairs(armingLines(i, w)) do out[#out + 1] = line end
     end
     return out
 end

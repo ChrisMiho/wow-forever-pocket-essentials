@@ -1,6 +1,6 @@
 local ADDON_NAME, P = ...
 
--- The panel that drives the probe: "Pocket Probe 0.6.0".
+-- The panel that drives the probe: "Pocket Probe 0.7.0".
 --
 --   top     the title, the status line, and (only with Pocket Essentials
 --           loaded) the recording line: "Recording 12 min" and Stop, or
@@ -8,7 +8,12 @@ local ADDON_NAME, P = ...
 --           The minutes are as of the last redraw: nothing ticks for them.
 --   left    one tab per area, each with "N / M run"
 --   right   one row per trial: its label, a result chip and Run (or, for a
---           guided trial, Start and then its two answer buttons)
+--           guided trial, Start and then its two answer buttons). Two rows
+--           are not trials (probe 0.7.0): "Watch my next fights" (Arm /
+--           Disarm, "Watching, 23 min": Watch.lua) at the end of Blizzard
+--           windows, with the bar trials, and "Clear saved results" (Clear,
+--           then "Tap again to clear" for 5 seconds) at the end of Controller
+--           and layout. The tab counts leave them out.
 --   below   Details of the row tapped last, then the footer: Run all safe,
 --           Fight tests, Clean run (reloads), Risky, Vendor, Auto, Save (reloads)
 --
@@ -96,6 +101,24 @@ local function AreaName(area)
     if type(area) ~= "string" then return "Other" end
     if area:find("^Afterwards") then return "Afterwards" end
     return area
+end
+
+-- The two rows that are not trials (probe 0.7.0), each at the end of its tab.
+local CONTROLS = {
+    { id = "ctl.watch", area = "Blizzard windows", label = "Watch my next fights", control = "watch" },
+    { id = "ctl.clear", area = "Controller and layout", label = "Clear saved results", control = "clear" },
+}
+
+local function InFightNow()
+    if type(InCombatLockdown) ~= "function" then return false end
+    local ok, locked = pcall(InCombatLockdown)
+    return ok and not P.IsSecret(locked) and locked and true or false
+end
+
+local function SavedCount()
+    local n = 0
+    for _ in pairs(P.db and P.db.last or {}) do n = n + 1 end
+    return n
 end
 
 ---------------------------------------------------------------------------
@@ -300,6 +323,13 @@ for i = 1, POOL_ROWS do
     r.ppChipText:SetPoint("CENTER", r.ppChip, "CENTER", 0, 0)
     r.ppRun = NewButton(r, nil, function()
         local e = r.ppEntry
+        if e and e.control == "watch" then
+            if P.WatchArmed() then P.WatchDisarm() else P.WatchArm() end
+            return Refresh()
+        elseif e and e.control == "clear" then
+            P.ClearSaved()
+            return Refresh()
+        end
         if not e or not e.def then return end
         if e.def.kind == "guided" then
             -- Start, or Cancel while the trial waits (it puts the old values back).
@@ -388,7 +418,8 @@ function P.ShowBig(text)
     bigText:SetWidth(width)
     bigText:SetText(tostring(text))
     big:ClearAllPoints()
-    big:SetPoint("TOP", UIParent, "TOP", 0, -sh * 0.19)
+    -- As much lower as the Probe button moved (probe 0.7.0: 24 units, Core.lua).
+    big:SetPoint("TOP", UIParent, "TOP", 0, -sh * 0.19 + (P.TOP_Y + 4))
     big:SetSize(width + pad * 2, Px(FONTS.big.size) * 2.5 + pad * 2)
     big:Show()
 end
@@ -431,6 +462,14 @@ end
 -- One line of details for the row tapped last.
 local function DetailsFor(entry)
     if not entry then return "" end
+    if entry.control == "watch" then
+        return "Arm, out of a fight, and every fight after it is counted until Disarm or a reload: the bar the triggers "
+            .. "bring up, the presses, how often the action bar events fire, and once a cooldown sweep on a square of ours "
+            .. "with a screenshot. In a fight a round Fight button runs the fight tests."
+    elseif entry.control == "clear" then
+        return "Empties the saved results, answers, watch counts and recordings, after stopping anything that runs. "
+            .. "The switches are kept. Tap twice within 5 seconds, out of a fight."
+    end
     local def = entry.def
     local db = P.db
     local g = db and db.guided[entry.id]
@@ -444,6 +483,7 @@ local function DetailsFor(entry)
                 return "Could not put back " .. tconcat(names, ", ") .. ": tap Cancel to retry."
             end
             local step = (g.stage == "restart") and (def.steps or "Fully restart the game.") or (def.ask or "Answer with the two buttons.")
+            if (g.stage == "waitfight" or g.stage == "infight") and def.wait then step = def.wait end
             return step .. " Cancel puts the old values back. Set: " .. tostring(g.notes or "") .. "."
         end
     end
@@ -491,6 +531,11 @@ local function BuildPages(rowsFit)
             local entries = byArea[area]
             entries[#entries + 1] = { id = t.id, label = (def and def.label) or Str(t.label) or t.id, def = def }
         end
+    end
+    for _, ctl in ipairs(CONTROLS) do
+        if not byArea[ctl.area] then byArea[ctl.area] = {} end
+        local entries = byArea[ctl.area]
+        entries[#entries + 1] = { id = ctl.id, label = ctl.label, control = ctl.control }
     end
     for _, area in ipairs(AREA_ORDER) do
         if byArea[area] then order[#order + 1] = area end
@@ -639,13 +684,16 @@ local function ShowTabs()
             t.ppBar:SetSize(max(4, border * 2), th)
             t.ppBar:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], 1)
             if selected then t.ppBar:Show() else t.ppBar:Hide() end
-            local run = 0
+            local run, trials = 0, 0
             local last = P.db and P.db.last or {}
             for _, e in ipairs(page.entries) do
-                if last[e.id] ~= nil then run = run + 1 end
+                if not e.control then
+                    trials = trials + 1
+                    if last[e.id] ~= nil then run = run + 1 end
+                end
             end
             t.ppName:SetText(page.label)
-            t.ppCount:SetText(run .. " / " .. #page.entries .. " run")
+            t.ppCount:SetText(run .. " / " .. trials .. " run")
             t.ppName:ClearAllPoints()
             t.ppCount:ClearAllPoints()
             if compact then
@@ -690,7 +738,30 @@ local function ShowRows()
             FitLabel({ ppLabel = r.ppLabel }, m.labelW)
             Color(r.ppLabel, dim and LABEL_DIM or LABEL)
             local g = db and db.guided[e.id]
-            if def and def.kind == "guided" and type(g) == "table" and g.stage == "ask" then
+            -- The rows are shared by all tabs: a long label (FitLabel below) is undone first.
+            UseFont(r.ppRun.ppLabel, "font")
+            r.ppRun.ppLabel:SetWordWrap(false)
+            if e.control then
+                -- Watch my next fights / Clear saved results: a status chip and one button.
+                for _, b in ipairs(r.ppAnswer) do b:Hide() end
+                local fight = InFightNow()
+                local word, label, disabled
+                if e.control == "watch" then
+                    local armed = P.WatchArmed()
+                    word, label, disabled = P.WatchText(), armed and "Disarm" or "Arm", fight and not armed
+                else
+                    local n = SavedCount()
+                    word = n == 0 and "Nothing saved" or (n .. (n == 1 and " result saved" or " results saved"))
+                    label, disabled = P.ClearPending() and "Tap again to clear" or "Clear", fight
+                end
+                Paint(r.ppChip, CHIP.value.fill, CHIP.value.border)
+                r.ppChipText:SetText(word)
+                Color(r.ppChipText, { 1, 1, 1 })
+                r.ppChip:Show()
+                SetButton(r.ppRun, label, "normal", disabled)
+                FitLabel(r.ppRun, m.button * 2.2 - m.gap * 0.5)
+                r.ppRun:Show()
+            elseif def and def.kind == "guided" and type(g) == "table" and g.stage == "ask" then
                 r.ppChip:Hide()
                 for k, b in ipairs(r.ppAnswer) do
                     SetButton(b, def.answers[k], "normal")
@@ -782,6 +853,7 @@ end
 P.RefreshPanel = Refresh
 
 P.OnRecord = function() if panel:IsShown() then Refresh() end end
+P.OnWatchChanged = function() if panel:IsShown() then Refresh() end end
 P.OnStatus = function()
     if not panel:IsShown() then return end
     statusLine:SetText(tostring(P.status or "") .. (P.warning and (" — " .. P.warning) or ""))

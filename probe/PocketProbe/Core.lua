@@ -8,6 +8,8 @@ local ADDON_NAME, P = ...
 --   Trials.lua  the list of trials (one small function each, plus an undo)
 --   Errors.lua  the Errors and Graphics trials, and the error box listener
 --   Run.lua     noticing blocks, passes, the clean series, guided trials
+--   Watch.lua   the watchers armed for the next fights, and Clear saved
+--               results (probe 0.7.0; its game names are listed at its top)
 --   Panel.lua   the window that drives it all (touch and d-pad)
 --   Perf.lua    the performance recorder (probe 0.6.0; its game names and
 --               their proof are listed at its top)
@@ -154,6 +156,25 @@ local ADDON_NAME, P = ...
 --   region :SetAllPoints                         Doc/SimpleScriptRegionResizingAPIDocumentation.lua:111
 --   texture :SetTexture                          Doc/SimpleTextureBaseAPIDocumentation.lua:604
 --
+-- Added in 0.7.0 for the two guided bar trials (Trials.lua; the watchers'
+-- names are at the top of Watch.lua, the Fight button's at the top of Perf.lua):
+--   UNIT_SPELLCAST_SUCCEEDED                     Doc/UnitDocumentation.lua:4847 (its unit may be secret
+--                                                in a fight: "SecretWhenUnitSpellCastRestricted")
+--   frame :RegisterUnitEvent(event, unit)        Doc/SimpleFrameAPIDocumentation.lua:1064
+--   frame :UnregisterAllEvents                   Doc/SimpleFrameAPIDocumentation.lua:1588
+--   PageUnit:OnFlyoutOpened(button)              Blizzard_GamepadActionBars/PageUnit.lua:719 (called for a
+--                                                spell wheel on a bar button: ActionBarButton.lua:737-742)
+--   the wheel button's .popup                    Blizzard_GamepadActionBars/PageUnit.lua:726
+--   GamepadPetSpellFlyout                        Blizzard_GamepadActionBars/Camelot/PetClassFlyouts.xml:72
+--   GamepadPetActionFlyout (above) and it: the two sub-menu wheels. Their
+--     buttons (LeftClassAction, RightClassAction) are on no bar, so they never
+--     reach PageUnit:OnFlyoutOpened (ActionBarButton.lua:738-742; a button's bar
+--     is set only at ActionBar.lua:34-35): their own OnShow is hooked instead.
+--   region :HookScript                           Doc/SimpleScriptRegionAPIDocumentation.lua:365
+--   frame :GetEffectiveAlpha                     Doc/SimpleFrameAPIDocumentation.lua:366
+--   a wheel re-parents itself to UIParent and is centred on its button
+--                                                Blizzard_GamepadActionBars/FlyoutRadial.lua:200-224
+--
 -- Not proven by the source, and guarded:
 --   debugstack(start, count1, count2)  only debugstack() and debugstack(level)
 --     appear in the source; if the long form fails the short one is used.
@@ -174,7 +195,7 @@ local type, tostring, pairs, ipairs, pcall, select = type, tostring, pairs, ipai
 local tconcat, tremove = table.concat, table.remove
 
 P.name = ADDON_NAME or "PocketProbe"
-P.VERSION = "0.6.0"          -- used when the game cannot read the TOC's version line
+P.VERSION = "0.7.0"          -- used when the game cannot read the TOC's version line
 -- An action trial returns this when nothing refused it but it could not see
 -- whether it worked; it is stored as it is (never as "allowed").
 P.CANT_TELL = "can't tell"
@@ -182,6 +203,12 @@ P.CANT_TELL = "can't tell"
 local LOG_MAX, LOG_DROP = 2000, 200   -- the activity log drops its oldest lines in blocks
 local DETAILS_MAX = 400
 P.PERF_RUNS = 3                        -- performance recordings kept (Perf.lua)
+P.WATCH_KEEP = 3                       -- armings of the watchers kept (Watch.lua)
+-- How far down from the top of the screen the Probe button sits, and with it
+-- the sweep squares (Trials.lua) and the big message (Panel.lua). Probe 0.7.0
+-- moved them 24 lower, out of the way of the XP bar at the top middle
+-- (Pocket Essentials 0.11.1).
+P.TOP_Y = -28
 local MESSAGE_MAX = 1500               -- a detail's message, at most
 P.MESSAGE_MAX = MESSAGE_MAX
 
@@ -350,6 +377,16 @@ function P.InitDB()
     if type(saved.perf.runs) ~= "table" then saved.perf.runs = {} end
     while #saved.perf.runs > P.PERF_RUNS do tremove(saved.perf.runs, 1) end
     saved.perf.on, saved.perf.stopped = saved.perf.on == true, saved.perf.stopped == true
+    -- The watchers' armings (Watch.lua): the last few are kept. A reload ends
+    -- an arming; one the logout did not close (the game stopped) is closed now.
+    if type(saved.watch) ~= "table" then saved.watch = {} end
+    for i = #saved.watch, 1, -1 do
+        if type(saved.watch[i]) ~= "table" then tremove(saved.watch, i) end
+    end
+    while #saved.watch > P.WATCH_KEEP do tremove(saved.watch, 1) end
+    for _, w in ipairs(saved.watch) do
+        if w.ended == nil and w.why == nil then w.why = "reload" end
+    end
     -- The trial list is written fresh; the "afterwards" entries earlier
     -- sessions added (see P.AddTrial) are kept at its end.
     local old = type(saved.trials) == "table" and saved.trials or {}
@@ -367,8 +404,11 @@ function P.InitDB()
         if not t or t.apply then
             local failed = P.PutBackSettings(type(g) == "table" and g.old or nil)
             saved.guided[id] = nil
+            -- One still waiting for its fight (probe 0.7.0) had changed nothing yet.
+            local waited = type(g) == "table" and g.stage == "waitfight"
             earlyLog[#earlyLog + 1] = Stamp("%H:%M:%S") .. " " .. P.Plain(id, 40)
-                .. (t and (": called off; the reload put " .. tostring(t.hold or "the frame") .. " back")
+                .. (t and (waited and ": called off by the reload"
+                    or (": called off; the reload put " .. tostring(t.hold or "the frame") .. " back"))
                     or ": no such trial any more; settings put back")
                 .. (#failed > 0 and (", except " .. tconcat(failed, ", ")) or "")
         end

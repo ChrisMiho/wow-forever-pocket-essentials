@@ -276,6 +276,77 @@ local function install(c)
             bar:Hide()
             c.barParts[spec[1]][spec[2]] = bar
         end
+        -- Probe 0.7.0. PageUnit's active bar: SetActiveActionBar keeps it and fires the callback
+        -- registered with RegisterActiveActionBarUpdatedCallback, which calls func(owner)
+        -- (PageUnit.lua:527-542, 705; CallbackRegistry.lua:112, 184). c:setActiveBar(bar) is a
+        -- trigger pressed or let go; world.activeBarError makes GetActiveBar raise.
+        local callbacks = {}
+        c.barCallbacks = callbacks
+        world.activeBar = top.Bar
+        rawset(pageUnit, "RegisterActiveActionBarUpdatedCallback", function(_, fn, owner)
+            if type(fn) ~= "function" then error("CallbackRegistryMixin::RegisterCallback 'func' requires function type.") end
+            if type(owner) == "number" then error("'owner' as number is reserved internally.") end
+            callbacks[#callbacks + 1] = { fn = fn, owner = owner }
+        end)
+        rawset(pageUnit, "GetActiveBar", function()
+            if world.activeBarError then error("GetActiveBar failed") end
+            return world.activeBar
+        end)
+        function c:setActiveBar(bar)
+            world.activeBar = bar
+            for _, cb in ipairs(callbacks) do self._protect("active bar callback", cb.fn, cb.owner) end
+        end
+        -- Each spell button carries the mixin's ApplyPressedStyle (ActionBarButton.lua:421, mixed in at
+        -- creation: ActionBarButton.xml:4); the game calls it on a press and a release (:1111-1114).
+        c.pressedStyles = 0
+        for _, list in pairs(c.barButtons) do
+            for _, b in ipairs(list) do
+                rawset(b, "ApplyPressedStyle", function() c.pressedStyles = c.pressedStyles + 1 end)
+            end
+        end
+        function c:pressButton(anchorKey, i, pressed)
+            local b = self.barButtons[anchorKey][i]
+            self._protect("press", function() b:ApplyPressedStyle(pressed) end)
+        end
+        -- The wheels. A spell wheel on a bar button calls PageUnit:OnFlyoutOpened(button) with the
+        -- button's .popup (PageUnit.lua:719-726, ActionBarButton.lua:737-742); the popup is re-parented
+        -- to UIParent and centred on the button (FlyoutRadial.lua:200-224). The two sub-menu wheels
+        -- (LB+LT, RB+RT) are the frames GamepadPetActionFlyout and GamepadPetSpellFlyout
+        -- (Camelot/PetClassFlyouts.xml:18, 72); their buttons are not on a bar, so they never reach
+        -- PageUnit:OnFlyoutOpened (ActionBarButton.lua:738-742, set only at ActionBar.lua:34-35).
+        rawset(pageUnit, "OnFlyoutOpened", function() end)
+        local spellPopup = create("Frame", nil, env.UIParent)
+        spellPopup:SetSize(175, 175)
+        spellPopup:SetPoint("CENTER", env.UIParent, "BOTTOMLEFT", 683, 250)
+        spellPopup:Hide()
+        local flyoutButton = create("Button", nil, env.UIParent)
+        rawset(flyoutButton, "popup", spellPopup)
+        local petSpell = create("Frame", "GamepadPetSpellFlyout", env.UIParent)
+        petSpell:SetSize(175, 175)
+        petSpell:SetPoint("CENTER", env.UIParent, "BOTTOMLEFT", 820, 189)
+        petSpell:Hide()
+        rawset(env, "GamepadPetSpellFlyout", petSpell)
+        local petAction = env.GamepadPetActionFlyout
+        petAction:ClearAllPoints()
+        petAction:SetPoint("CENTER", env.UIParent, "BOTTOMLEFT", 544, 189)
+        c.wheels = { spell = spellPopup, pet = petAction, petspell = petSpell }
+        function c:openWheel(kind)
+            local popup = self.wheels[kind]
+            popup:Show()
+            if kind == "spell" then
+                self._protect("OnFlyoutOpened", function() pageUnit:OnFlyoutOpened(flyoutButton) end)
+            end
+        end
+        function c:closeWheel(kind) self.wheels[kind]:Hide() end
+    end
+    -- Region:GetEffectiveAlpha (SimpleFrameAPIDocumentation.lua:366): its own alpha times its parents'.
+    c.typeMethods.Frame.GetEffectiveAlpha = function(self)
+        local a, f = 1, self
+        while f do
+            a = a * (f:GetAlpha() or 1)
+            f = f:GetParent()
+        end
+        return a
     end
     -- MinimapCluster.MinimapContainer (Minimap.xml:47); Edit Mode's map size is its scale.
     local container = create("Frame", nil, env.MinimapCluster)
@@ -283,6 +354,13 @@ local function install(c)
     container:SetPoint("CENTER", env.MinimapCluster, "CENTER", 0, 0)
     container:SetScale(0.8)
     rawset(env.MinimapCluster, "MinimapContainer", container)
+
+    -- Probe 0.7.0, the watchers: the six action bar events (ActionBarFrameDocumentation.lua:1085-1119,
+    -- SpellBookDocumentation.lua:927) and the cast event (UnitDocumentation.lua:4847).
+    for _, event in ipairs({ "ACTIONBAR_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_USABLE", "ACTIONBAR_UPDATE_STATE",
+        "ACTIONBAR_SLOT_CHANGED", "SPELL_UPDATE_COOLDOWN", "UPDATE_BONUS_ACTIONBAR", "UNIT_SPELLCAST_SUCCEEDED" }) do
+        c.snapshot.event[event] = true
+    end
 
     -- A small world with names in it.
     world.bags[0][1] = { itemID = 101, quality = 0, price = 50, count = 1, name = "Broken Fang" }
@@ -436,7 +514,7 @@ test("saved table has the fixed shape", function()
     local c, P, db = new()
     eq(db.version, 1)
     eq(db.game, "1.16.0 (60000)")
-    eq(db.probe, "0.6.0")
+    eq(db.probe, "0.7.0")
     eq(db.options.vendor, true)
     eq(db.options.risky, false)
     eq(type(db.spoiled), "table")
@@ -1065,7 +1143,7 @@ test("results from another probe version are cleared at load", function()
     }
     local c, P, db = new({ saved = saved })
     eq(db, saved)
-    eq(db.probe, "0.6.0")
+    eq(db.probe, "0.7.0")
     eq(next(db.last), nil, "the panel's newest results are cleared too")
     eq(db.guided["gfx.icons"].stage, "ask", "a guided trial's old values are kept, to be put back")
     eq(next(db.results), nil); eq(#db.details, 0); eq(next(db.situations), nil); eq(next(db.spoiled), nil)
@@ -1354,11 +1432,11 @@ test("the panel: Settings-sized, area tabs with counts, no scroll bar (big areas
     for _, rec in ipairs(c:frames()) do
         if rec.frame == panel then
             for _, region in ipairs(rec.regions or {}) do
-                if region.GetText and region:GetText() == "Pocket Probe 0.6.0" then titleText = true end
+                if region.GetText and region:GetText() == "Pocket Probe 0.7.0" then titleText = true end
             end
         end
     end
-    check(titleText, "titled Pocket Probe 0.6.0")
+    check(titleText, "titled Pocket Probe 0.7.0")
     local labels = tabLabels(P)
     eq(labels[1], "Errors"); eq(labels[2], "Graphics")
     local joined = table.concat(labels, "|")
@@ -1375,7 +1453,8 @@ test("the panel: Settings-sized, area tabs with counts, no scroll bar (big areas
         check(#page.entries <= m.rowsFit, page.label .. " has more rows than fit")
         total = total + #page.entries
     end
-    eq(total, #db.trials, "every trial is on a tab")
+    -- Every trial, and the two rows of probe 0.7.0 (Watch my next fights, Clear saved results).
+    eq(total, #db.trials + 2, "every trial is on a tab")
     for _, rec in ipairs(c:frames()) do
         check(rec.type ~= "ScrollFrame" or not rec.addonFile or not rec.addonFile:find("Panel", 1, true), "the panel made a scroll frame")
     end
@@ -3273,7 +3352,7 @@ end)
 test("recorder: 480 samples, then it stops by itself and says so; the last three runs are kept", function()
     local samples = {}
     for i = 1, 478 do samples[i] = "t=" .. (i * 15) .. ";dt=15;a=s;fps=60" end
-    local saved = { probe = "0.6.0", perf = { on = true, runs = {
+    local saved = { probe = "0.7.0", perf = { on = true, runs = {
         { started = "2026-11-20 10:00:00", why = "stopped", samples = { "t=0;dt=0;a=s" }, keys = {}, feat = {} },
         { started = "2026-11-21 10:00:00", why = "stopped", samples = { "t=0;dt=0;a=s" }, keys = {}, feat = {} },
         { started = "2026-11-21 11:00:00", why = "stopped", samples = { "t=0;dt=0;a=s" }, keys = {}, feat = {} },
@@ -3571,6 +3650,1302 @@ test("recorder with Pocket Essentials loaded: a play session records and stops c
     P2.StopRecording()
     noErrors(c2)
     check(table.concat(Reader.formatPerf(db2), "\n"):find("no per-feature numbers", 1, true), "the report says there are no per-feature numbers")
+end)
+
+---------------------------------------------------------------------------
+-- Probe 0.7.0: the watchers (Watch.lua) and Clear saved results
+---------------------------------------------------------------------------
+
+local WATCH_EVENTS = { "ACTIONBAR_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_USABLE", "ACTIONBAR_UPDATE_STATE",
+    "ACTIONBAR_SLOT_CHANGED", "SPELL_UPDATE_COOLDOWN", "UPDATE_BONUS_ACTIONBAR" }
+
+-- The frame of Watch.lua that listens for the action bar events, or nil.
+local function watchFrame(c)
+    for _, rec in ipairs(c:frames()) do
+        if rec.addonFile and rec.addonFile:find("Watch.lua", 1, true) and rec.scripts.OnEvent then return rec end
+    end
+end
+
+local function watchSaved() return { options = { auto = false } } end
+
+test("watch: arm refused in a fight", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    c:enterCombat(); c:advance(1)
+    local ok = P.WatchArm()
+    eq(ok, false)
+    eq(P.WatchArmed(), false)
+    eq(P.WatchCurrent(), nil)
+    eq(#saved.watch, 0, "nothing stored")
+    check(P.status:find("out of a fight", 1, true), P.status)
+    local rec = watchFrame(c)
+    check(rec, "the watch frame is made at load")
+    eq(next(rec.events), nil, "no event registered")
+    noErrors(c)
+end)
+
+test("watch: arm and disarm", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    local rec = watchFrame(c)
+    eq(next(rec.events), nil, "nothing is registered before Arm")
+    local changed = 0
+    P.OnWatchChanged = function() changed = changed + 1 end
+    eq(P.WatchArm(), true)
+    eq(P.WatchArmed(), true)
+    local cur = P.WatchCurrent()
+    eq(cur, saved.watch[1])
+    eq(#saved.watch, 1)
+    check(type(cur.started) == "string" and cur.started ~= "", "started is stored")
+    eq(cur.ended, nil)
+    for _, key in ipairs({ "bar", "press", "events", "sweep" }) do eq(type(cur[key]), "table", key) end
+    for _, event in ipairs(WATCH_EVENTS) do check(rec.events[event], event .. " registered while armed") end
+    check(changed >= 1, "the panel is told")
+    eq(P.WatchArm(), true, "a second Arm changes nothing")
+    eq(#saved.watch, 1)
+    c:fire("ACTIONBAR_UPDATE_USABLE")
+    P.WatchDisarm()
+    eq(P.WatchArmed(), false)
+    eq(P.WatchCurrent(), nil)
+    eq(cur.why, "disarmed")
+    check(type(cur.ended) == "string" and cur.ended ~= "", "ended is stored")
+    eq(next(rec.events), nil, "every event unregistered on Disarm")
+    eq(cur.events.ACTIONBAR_UPDATE_USABLE.o, 1)
+    c:fire("PLAYER_REGEN_DISABLED")
+    eq(cur.events.ACTIONBAR_UPDATE_USABLE.o, 1, "nothing counted after Disarm")
+    noErrors(c)
+end)
+
+test("watch: events counted in and out of a fight", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.WatchArm()
+    for _, event in ipairs(WATCH_EVENTS) do c:fire(event); c:fire(event) end
+    c:advance(10)
+    c:enterCombat()
+    for _, event in ipairs(WATCH_EVENTS) do c:fire(event); c:fire(event); c:fire(event) end
+    c:advance(20)
+    c:leaveCombat()
+    c:advance(5)
+    local cur = P.WatchCurrent()
+    P.WatchDisarm()
+    for _, event in ipairs(WATCH_EVENTS) do
+        eq(cur.events[event].o, 2, event .. " out of a fight")
+        eq(cur.events[event].c, 3, event .. " in a fight")
+    end
+    check(math.abs(cur.events._secs.c - 20) < 0.3, "seconds in a fight: " .. tostring(cur.events._secs.c))
+    check(math.abs(cur.events._secs.o - 15) < 0.3, "seconds out of a fight: " .. tostring(cur.events._secs.o))
+    noErrors(c)
+end)
+
+test("watch: reload ends it", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.WatchArm()
+    c:advance(3)
+    c:fire("PLAYER_LOGOUT")
+    eq(saved.watch[1].why, "reload")
+    check(saved.watch[1].ended, "ended at the logout")
+    local c2, P2 = new({ saved = saved })
+    c2:advance(5)
+    eq(P2.WatchArmed(), false, "not armed again after the reload")
+    eq(next(watchFrame(c2).events), nil)
+    eq(#saved.watch, 1)
+    -- An arming the logout never closed (the game stopped): closed at the next load.
+    saved.watch[2] = { started = "2026-11-23 12:00:00", bar = {}, press = {}, events = {}, sweep = {} }
+    local c3 = new({ saved = saved })
+    eq(saved.watch[2].why, "reload")
+    noErrors(c); noErrors(c2); noErrors(c3)
+end)
+
+test("watch: old file and trim to 3", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    eq(type(saved.watch), "table", "an old file gets an empty watch table")
+    eq(#saved.watch, 0)
+    noErrors(c)
+    local list = {}
+    for i = 1, 5 do list[i] = { started = "arming " .. i, ended = "x", why = "disarmed", bar = {}, press = {}, events = {}, sweep = {} } end
+    local saved2 = { options = { auto = false }, watch = list }
+    local c2, P2 = new({ saved = saved2 })
+    eq(#saved2.watch, 3, "trimmed to 3")
+    eq(saved2.watch[1].started, "arming 3", "the oldest are dropped")
+    c2:advance(5)
+    P2.WatchArm()
+    eq(#saved2.watch, 3, "still 3 after a new arming")
+    eq(saved2.watch[1].started, "arming 4")
+    eq(saved2.watch[3], P2.WatchCurrent())
+    noErrors(c2)
+    local saved3 = { options = { auto = false }, watch = "broken" }
+    local c3 = new({ saved = saved3 })
+    eq(type(saved3.watch), "table")
+    noErrors(c3)
+end)
+
+test("clear: refused in a fight", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.RunOne(P.trialById["own.show"])
+    eq(cell(saved, "own.show", KEY_PRESS), "allowed")
+    c:enterCombat(); c:advance(1)
+    eq(P.ClearSaved(), false)
+    eq(P.ClearSaved(), false, "a second tap in a fight is refused too")
+    eq(cell(saved, "own.show", KEY_PRESS), "allowed", "nothing cleared")
+    check(P.status:find("out of a fight", 1, true), P.status)
+    noErrors(c)
+end)
+
+test("clear: first tap only arms, second within 5 s clears, after 5 s starts over", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.RunOne(P.trialById["own.show"])
+    local changed = 0
+    P.OnWatchChanged = function() changed = changed + 1 end
+    eq(P.ClearSaved(), false, "the first tap only arms")
+    eq(P.ClearPending(), true)
+    eq(cell(saved, "own.show", KEY_PRESS), "allowed", "nothing cleared yet")
+    c:advance(5.5)
+    eq(P.ClearPending(), false, "after 5 seconds it starts over")
+    check(changed >= 2, "the panel is told when it starts over")
+    eq(P.ClearSaved(), false, "a tap after the 5 seconds arms again")
+    c:advance(3)
+    local ok = P.ClearSaved()
+    eq(ok, true, "the second tap within 5 seconds clears")
+    eq(P.ClearPending(), false)
+    eq(next(saved.results), nil, "results emptied")
+    eq(next(saved.last), nil)
+    eq(next(saved.details), nil)
+    eq(next(saved.situations), nil)
+    eq(#saved.watch, 0)
+    eq(#saved.perf.runs, 0)
+    check(#saved.trials >= 40, "the trial list stays")
+    eq(countLog(saved, "saved results cleared"), 1)
+    noErrors(c)
+end)
+
+test("clear: options kept", function()
+    local saved = { options = { auto = false, risky = true, vendor = false } }
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.RunOne(P.trialById["own.show"])
+    P.ClearSaved(); c:advance(1); P.ClearSaved()
+    eq(next(saved.results), nil)
+    eq(saved.options.risky, true); eq(saved.options.vendor, false); eq(saved.options.auto, false)
+    noErrors(c)
+end)
+
+test("clear: stops recording and watchers first", function()
+    local c, P, db = newPerf()
+    c:advance(20)
+    eq(P.Recording(), true)
+    P.WatchArm()
+    local cur = P.WatchCurrent()
+    eq(#db.perf.runs, 1)
+    P.ClearSaved(); c:advance(1); P.ClearSaved()
+    eq(P.Recording(), false, "the recording stopped first")
+    eq(P.WatchArmed(), false, "the watchers stopped first")
+    eq(cur.why, "cleared")
+    eq(#db.perf.runs, 0)
+    eq(#db.watch, 0)
+    c:advance(60)
+    eq(#db.perf.runs, 0, "no sample writes into the cleared table")
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    eq(#db.watch, 0)
+    -- A guided trial waiting: called off and its frame put back before the clear.
+    local saved = riskySaved()
+    local c2, P2 = new({ saved = saved })
+    c2:advance(5)
+    P2.StartGuided(P2.trialById["bars.fadecast"]); c2:advance(1.7)
+    eq(mainBar(c2):GetAlpha(), 0)
+    P2.ClearSaved(); c2:advance(1); P2.ClearSaved()
+    eq(mainBar(c2):GetAlpha(), 1, "put back first")
+    eq(next(saved.guided), nil)
+    noErrors(c); noErrors(c2)
+end)
+
+local function anchorBar(c, key) return c.env.GamepadMainActionBarFrame.PageUnit[key].Bar end
+
+test("watch: bar callback names each anchor's bar", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    eq(#c.barCallbacks, 0, "no callback before Arm")
+    P.WatchArm()
+    eq(#c.barCallbacks, 1, "the callback is set on the first Arm")
+    check(type(c.barCallbacks[1].owner) == "table", "the owner is a table of ours")
+    local pageUnit = c.env.GamepadMainActionBarFrame.PageUnit
+    c:setActiveBar(anchorBar(c, "LeftCenteredAnchor")); c:advance(1)
+    c:setActiveBar(anchorBar(c, "RightCenteredAnchor"))
+    c:setActiveBar(anchorBar(c, "BottomCenteredAnchor"))
+    c:setActiveBar(pageUnit.TopCenteredAnchor.PossessBar)
+    c:setActiveBar(anchorBar(c, "TopCenteredAnchor"))
+    c:enterCombat()
+    c:setActiveBar(anchorBar(c, "LeftCenteredAnchor"))
+    c:setActiveBar(anchorBar(c, "TopCenteredAnchor"))
+    c:leaveCombat()
+    local cur = P.WatchCurrent()
+    eq(cur.bar.left.o, 1); eq(cur.bar.left.c, 1)
+    eq(cur.bar.right.o, 1); eq(cur.bar.both.o, 1); eq(cur.bar.other.o, 1)
+    eq(cur.bar.main.o, 1); eq(cur.bar.main.c, 1)
+    eq(#cur.bar.first, 7)
+    eq(cur.bar.first[1], "t=0;left;o")
+    eq(cur.bar.first[2], "t=1;right;o")
+    eq(cur.bar.first[6], "t=1;left;c")
+    -- At most 20 kept in order; the counts go on.
+    for _ = 1, 30 do c:setActiveBar(anchorBar(c, "RightCenteredAnchor")) end
+    eq(#cur.bar.first, 20)
+    eq(cur.bar.right.o, 31)
+    -- A second arming in the same session: the callback is not set twice, and counts go to the new one.
+    P.WatchDisarm()
+    c:setActiveBar(anchorBar(c, "LeftCenteredAnchor"))
+    eq(cur.bar.left.o, 1, "nothing counted while not armed")
+    P.WatchArm()
+    eq(#c.barCallbacks, 1)
+    c:setActiveBar(anchorBar(c, "LeftCenteredAnchor"))
+    eq(P.WatchCurrent().bar.left.o, 1)
+    eq(cur.bar.left.o, 1)
+    for _, v in ipairs(dump(saved.watch)) do check(not v:find("table: ", 1, true), "no frame stored: " .. v) end
+    eq(c:callsTo("GamepadBar.PageUnit:SetAlpha")[1], nil, "PageUnit's alpha is never written")
+    noErrors(c)
+end)
+
+test("watch: GetActiveBar secret and error told apart", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.WatchArm()
+    local hidden = {}
+    c.world.secrets[hidden] = true
+    c:setActiveBar(hidden)
+    c.world.activeBarError = true
+    c:setActiveBar(anchorBar(c, "LeftCenteredAnchor"))
+    c.world.activeBarError = false
+    c:setActiveBar(nil)
+    local cur = P.WatchCurrent()
+    eq(cur.bar.secret.o, 1)
+    eq(cur.bar.error.o, 1)
+    eq(cur.bar.other.o, 1, "no bar at all is 'other'")
+    eq(cur.bar.left, nil)
+    noErrors(c)
+end)
+
+test("watch: no PageUnit", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved, setup = function(cl) rawset(cl.env, "GamepadMainActionBarFrame", nil) end })
+    c:advance(5)
+    eq(P.WatchArm(), true, "Arm still works")
+    local cur = P.WatchCurrent()
+    eq(cur.bar.missing, "PageUnit")
+    eq(cur.press.missing, "the bars' buttons")
+    eq(cur.sweep.missing, "the main bar")
+    c:enterCombat()
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    c:advance(2)
+    eq(cur.events.ACTIONBAR_UPDATE_COOLDOWN.c, 1, "the events are still counted")
+    eq(cur.sweep.result, nil)
+    c:leaveCombat()
+    P.WatchDisarm()
+    noErrors(c)
+    -- PageUnit there, without the callback method.
+    local saved2 = watchSaved()
+    local c2, P2 = new({ saved = saved2, setup = function(cl)
+        rawset(cl.env.GamepadMainActionBarFrame.PageUnit, "RegisterActiveActionBarUpdatedCallback", nil)
+    end })
+    c2:advance(5)
+    P2.WatchArm()
+    eq(P2.WatchCurrent().bar.missing, "RegisterActiveActionBarUpdatedCallback")
+    eq(P2.WatchCurrent().press.missing, nil)
+    noErrors(c2)
+end)
+
+test("watch: press hook counts down and up per bar, in and out of a fight", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    c:pressButton("TopCenteredAnchor", 5, true)
+    P.WatchArm()
+    local cur = P.WatchCurrent()
+    eq(cur.press.hooked, 32, "the eight buttons of each of the four bars")
+    c:pressButton("TopCenteredAnchor", 5, true); c:pressButton("TopCenteredAnchor", 5, false)
+    c:pressButton("BottomCenteredAnchor", 1, true)
+    c:enterCombat()
+    c:pressButton("LeftCenteredAnchor", 8, true); c:pressButton("LeftCenteredAnchor", 8, false)
+    c:pressButton("TopCenteredAnchor", 2, true)
+    c:leaveCombat()
+    eq(cur.press.main.down.o, 1); eq(cur.press.main.up.o, 1); eq(cur.press.main.down.c, 1)
+    eq(cur.press.both.down.o, 1)
+    eq(cur.press.left.down.c, 1); eq(cur.press.left.up.c, 1)
+    eq(cur.press.right, nil)
+    eq(cur.press.kind, "boolean")
+    eq(c.pressedStyles, 7, "the game's own style still runs")
+    -- A secret or other value is counted apart, never compared.
+    local hidden = {}
+    c.world.secrets[hidden] = true
+    c:pressButton("RightCenteredAnchor", 1, hidden)
+    c:pressButton("RightCenteredAnchor", 1, 1)
+    eq(cur.press.right.other.o, 2)
+    eq(cur.press.kind, "boolean / secret / other")
+    noErrors(c)
+end)
+
+test("watch: press hooks installed once", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    eq(P.WatchInstallPressHooks(), 32)
+    eq(P.WatchInstallPressHooks(), 32, "a second call hooks nothing more")
+    P.WatchArm(); P.WatchDisarm(); P.WatchArm()
+    c:pressButton("TopCenteredAnchor", 1, true)
+    eq(P.WatchCurrent().press.main.down.o, 1, "one press counts once")
+    -- A button without the method is left alone.
+    local saved2 = watchSaved()
+    local c2, P2 = new({ saved = saved2, setup = function(cl)
+        rawset(cl.barButtons.TopCenteredAnchor[1], "ApplyPressedStyle", nil)
+    end })
+    c2:advance(5)
+    eq(P2.WatchInstallPressHooks(), 31)
+    noErrors(c); noErrors(c2)
+end)
+
+test("watch: sweep runs once per arming, only in a fight, at most one check per second, stores no value", function()
+    local saved = watchSaved()
+    local checks = 0
+    local c, P = new({ saved = saved, setup = function(cl)
+        local get = cl.env.C_ActionBar.GetActionCooldown
+        rawset(cl.env.C_ActionBar, "GetActionCooldown", function(...) checks = checks + 1 return get(...) end)
+    end })
+    c:advance(5)
+    P.WatchArm()
+    local cur = P.WatchCurrent()
+    -- Out of a fight: nothing.
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    eq(checks, 0, "no check out of a fight")
+    eq(#c.cooldownCalls, 0)
+    -- In a fight, nothing on cooldown: checked, nothing done.
+    c.world.actions[2].duration = 0
+    c:enterCombat()
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    check(checks > 0, "checked in a fight")
+    eq(#c.cooldownCalls, 0)
+    local after = checks
+    c.world.actions[2].duration = 8
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    eq(checks, after, "a second event within a second is not checked")
+    c:advance(1.1)
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    eq(#c.cooldownCalls, 1, "the sweep ran")
+    eq(c.cooldownCalls[1].method, "SetCooldownFromDurationObject")
+    eq(c.cooldownCalls[1].frame, c.cooldowns[1].frame, "on square 1")
+    check(button(c, "PocketProbeSweep"):IsShown(), "the squares show")
+    eq(cur.sweep.result, "allowed")
+    eq(cur.sweep.shownByItself, "yes")
+    eq(cur.sweep.durClass, "readable")
+    eq(cur.sweep.screenshot, "none", "not yet")
+    c:advance(1.2)
+    eq(c.shots, 1)
+    eq(cur.sweep.screenshot, "taken")
+    c:advance(8)
+    check(not button(c, "PocketProbeSweep"):IsShown(), "hidden after 8 seconds")
+    after = checks
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN"); c:advance(1.5); c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    eq(#c.cooldownCalls, 1, "once per arming")
+    eq(checks, after, "done until the next Arm")
+    for k, v in pairs(cur.sweep) do check(type(v) == "string" or k == "t", "only words are stored: " .. k) end
+    c:leaveCombat()
+    -- The next arming runs it again; a refusal is the result.
+    P.WatchDisarm()
+    c.world.cooldownModes.SetCooldownFromDurationObject = "blocked"
+    P.WatchArm()
+    c:enterCombat()
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    eq(#c.cooldownCalls, 2)
+    eq(P.WatchCurrent().sweep.result, "blocked")
+    eq(cell(saved, "after.SetCooldownFromDurationObject", KEY_FIGHT), nil, "not counted as an afterwards refusal")
+    noErrors(c)
+end)
+
+test("watch: screenshot missing changes nothing else", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved, setup = function(cl) rawset(cl.env, "Screenshot", nil) end })
+    c:advance(5)
+    P.WatchArm()
+    c:enterCombat()
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    c:advance(2)
+    local cur = P.WatchCurrent()
+    eq(cur.sweep.result, "allowed")
+    eq(cur.sweep.shownByItself, "yes")
+    eq(cur.sweep.screenshot, "none")
+    eq(c.shots, nil)
+    noErrors(c)
+end)
+
+---------------------------------------------------------------------------
+-- Probe 0.7.0: the two guided bar trials
+---------------------------------------------------------------------------
+
+local NEXT_START = "Main bar will vanish in your next fight. Just play."
+local NEXT_BIG = "Did your spells cast while the bar was invisible?"
+local WHEELS_BIG = "Bars faded. Open the pet wheel (LB+LT), then a spell wheel. Then tap Probe."
+local FOUR = { "TopCenteredAnchor", "LeftCenteredAnchor", "RightCenteredAnchor", "BottomCenteredAnchor" }
+
+local function startFadeNext(c, P)
+    P.StartGuided(P.trialById["bars.fadenext"])
+    c:advance(0.5)
+end
+
+test("fadenext: refused in a fight", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    local t = P.trialById["bars.fadenext"]
+    eq(t.area, "Blizzard windows"); eq(t.kind, "guided"); check(t.manual and t.risky, "manual and risky")
+    eq(t.short, "Fade for next fight")
+    c:enterCombat(); c:advance(1)
+    P.StartGuided(t)
+    eq(saved.guided["bars.fadenext"], nil)
+    check(P.status:find("bars.fadenext: not started, in combat", 1, true), P.status)
+    eq(mainBar(c):GetAlpha(), 1)
+    noErrors(c)
+end)
+
+test("fadenext: fades on fight start, reads back, puts back on fight end, then asks", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    c:click(showTrial(c, P, "bars.fadenext").ppRun)
+    check(not rawget(c.env, "PocketProbePanel"):IsShown(), "the panel closes at Start")
+    local g = saved.guided["bars.fadenext"]
+    eq(g.stage, "waitfight")
+    eq(shownText(c, "PocketProbeBigMessage"), NEXT_START)
+    check(P.status:find("Fade for next fight is waiting for your next fight", 1, true), P.status)
+    c:advance(3.5)
+    eq(shownText(c, "PocketProbeBigMessage"), NEXT_START, "still up before 4 seconds")
+    c:advance(0.6)
+    eq(shownText(c, "PocketProbeBigMessage"), nil, "gone after 4 seconds")
+    eq(mainBar(c):GetAlpha(), 1, "nothing faded before the fight")
+    local row = showTrial(c, P, "bars.fadenext")
+    eq(row.ppRun.ppLabel:GetText(), "Cancel")
+    check(not row.ppAnswer[1]:IsShown(), "no answers while it waits")
+    c:click(button(c, "PocketProbeCloseButton"))
+    c:advance(30)
+    c:enterCombat()
+    eq(mainBar(c):GetAlpha(), 0, "faded as the fight starts")
+    eq(g.stage, "infight")
+    c:advance(8)
+    eq(mainBar(c):GetAlpha(), 0, "still faded in the fight")
+    c:leaveCombat()
+    eq(mainBar(c):GetAlpha(), 1, "put back as the fight ends")
+    eq(g.stage, "ask")
+    eq(shownText(c, "PocketProbeBigMessage"), NEXT_BIG)
+    row = showTrial(c, P, "bars.fadenext")
+    eq(row.ppAnswer[1].ppLabel:GetText(), "Yes, they cast"); eq(row.ppAnswer[2].ppLabel:GetText(), "No")
+    c:click(row.ppAnswer[1])
+    eq(cell(saved, "bars.fadenext", KEY_PRESS), "yes, they cast")
+    local msg = saved.last["bars.fadenext"].message
+    for _, part in ipairs({ "main bar see-through 1 -> 0", "still invisible at the end: yes", "main bar presses in the fight: 0",
+        "casts in the fight: 0", "old values put back" }) do
+        check(msg:find(part, 1, true), "message lacks " .. part .. ": " .. msg)
+    end
+    eq(saved.guided["bars.fadenext"], nil)
+    eq(shownText(c, "PocketProbeBigMessage"), nil)
+    -- The game showed the bar again by itself in the fight: noted.
+    startFadeNext(c, P)
+    c:enterCombat(); mainBar(c):SetAlpha(0.4); c:leaveCombat()
+    P.AnswerGuided(P.trialById["bars.fadenext"], 2)
+    eq(saved.last["bars.fadenext"].result, "no")
+    check(saved.last["bars.fadenext"].message:find("still invisible at the end: no", 1, true), saved.last["bars.fadenext"].message)
+    eq(mainBar(c):GetAlpha(), 1)
+    noErrors(c)
+end)
+
+test("fadenext: refused write stored at once and put back when the fight ends", function()
+    -- The game refuses the fade: the result at once, nothing asked, nothing left changed.
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    startFadeNext(c, P)
+    local bar = mainBar(c)
+    local set = bar.SetAlpha
+    rawset(bar, "SetAlpha", function(self, a)
+        if a == 0 then c:fire("ADDON_ACTION_BLOCKED", "PocketProbe", "SetAlpha()") return end
+        return set(self, a)
+    end)
+    c:enterCombat()
+    eq(saved.last["bars.fadenext"].result, "blocked")
+    eq(detail(saved, "bars.fadenext").func, "SetAlpha()")
+    eq(saved.guided["bars.fadenext"], nil, "nothing to ask")
+    eq(bar:GetAlpha(), 1)
+    c:leaveCombat(); c:advance(2)
+    eq(shownText(c, "PocketProbeBigMessage"), nil)
+    noErrors(c)
+    -- The write leaves it at 0.5: "no effect", and it goes back.
+    local saved2 = riskySaved()
+    local c2, P2 = new({ saved = saved2 })
+    c2:advance(5)
+    startFadeNext(c2, P2)
+    local bar2 = mainBar(c2)
+    local set2 = bar2.SetAlpha
+    rawset(bar2, "SetAlpha", function(self, a) return set2(self, a == 0 and 0.5 or a) end)
+    c2:enterCombat()
+    eq(saved2.last["bars.fadenext"].result, "no effect")
+    check(saved2.last["bars.fadenext"].message:find("still 0.5 after setting it to 0", 1, true), saved2.last["bars.fadenext"].message)
+    eq(bar2:GetAlpha(), 1, "put back")
+    eq(saved2.guided["bars.fadenext"], nil)
+    noErrors(c2)
+    -- Faded; a put-back the game refuses in the fight is held and done when the fight ends.
+    local saved3 = riskySaved()
+    local c3, P3 = new({ saved = saved3 })
+    c3:advance(5)
+    startFadeNext(c3, P3)
+    c3:enterCombat()
+    eq(mainBar(c3):GetAlpha(), 0)
+    c3.world.barAlphaBlocked = true
+    P3.CancelGuided(P3.trialById["bars.fadenext"])
+    eq(saved3.guided["bars.fadenext"].stage, "putback")
+    eq(mainBar(c3):GetAlpha(), 0, "held in the fight")
+    c3.world.barAlphaBlocked = false
+    c3:leaveCombat(); c3:advance(2)
+    eq(mainBar(c3):GetAlpha(), 1, "put back when the fight ends")
+    eq(saved3.guided["bars.fadenext"], nil)
+    noErrors(c3)
+end)
+
+test("fadenext: counts presses and casts", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    startFadeNext(c, P)
+    c:pressButton("TopCenteredAnchor", 5, true); c:pressButton("TopCenteredAnchor", 5, false)
+    c:fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-1", 133)
+    c:enterCombat()
+    c:pressButton("TopCenteredAnchor", 5, true); c:pressButton("TopCenteredAnchor", 5, false)
+    c:pressButton("TopCenteredAnchor", 6, true); c:pressButton("TopCenteredAnchor", 6, false)
+    c:pressButton("LeftCenteredAnchor", 1, true)
+    c:fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-2", 133)
+    c:fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-3", 133)
+    c:fire("UNIT_SPELLCAST_SUCCEEDED", "target", "Cast-4", 99)
+    local hidden = {}
+    c.world.secrets[hidden] = true
+    c:fire("UNIT_SPELLCAST_SUCCEEDED", hidden, "Cast-5", 1)
+    c:leaveCombat()
+    c:pressButton("TopCenteredAnchor", 5, true)
+    c:fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-6", 133)
+    P.AnswerGuided(P.trialById["bars.fadenext"], 1)
+    local msg = saved.last["bars.fadenext"].message
+    check(msg:find("main bar presses in the fight: 2", 1, true), msg)
+    check(msg:find("casts in the fight: 2", 1, true), msg)
+    check(msg:find("casts unreadable: 1", 1, true), msg)
+    check(not msg:find("Cast-", 1, true) and not msg:find("133", 1, true), "no cast or spell is stored: " .. msg)
+    local rec
+    for _, r in ipairs(c:frames()) do if r.events and r.events.UNIT_SPELLCAST_SUCCEEDED then rec = r end end
+    eq(rec, nil, "the cast event is only listened to during the fight")
+    noErrors(c)
+end)
+
+test("fadenext: Cancel, Stop, logout put back", function()
+    for _, way in ipairs({ "cancel", "stop", "logout" }) do
+        for _, when in ipairs({ "before", "in" }) do
+            local saved = riskySaved()
+            local c, P = new({ saved = saved })
+            c:advance(5)
+            startFadeNext(c, P)
+            if when == "in" then c:enterCombat(); eq(mainBar(c):GetAlpha(), 0) end
+            if way == "stop" then P.Stop()
+            elseif way == "logout" then c:fire("PLAYER_LOGOUT")
+            else P.CancelGuided(P.trialById["bars.fadenext"]) end
+            eq(mainBar(c):GetAlpha(), 1, way .. " " .. when)
+            eq(saved.guided["bars.fadenext"], nil, way .. " " .. when)
+            eq(saved.results["bars.fadenext"], nil, way .. ": no answer")
+            eq(shownText(c, "PocketProbeBigMessage"), nil, way .. " " .. when)
+            if when == "in" then c:leaveCombat() end
+            c:advance(2)
+            eq(mainBar(c):GetAlpha(), 1, way .. " " .. when .. ": nothing faded afterwards")
+            eq(shownText(c, "PocketProbeBigMessage"), nil, way .. " " .. when .. ": no question afterwards")
+            noErrors(c, way .. " " .. when)
+        end
+    end
+end)
+
+test("fadenext: reload during fight puts back on next login", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    startFadeNext(c, P)
+    c:enterCombat()
+    eq(mainBar(c):GetAlpha(), 0)
+    -- The reload: the logout could not put it back (the game went down); the next load calls it off.
+    local c2, P2 = new({ saved = saved })
+    eq(saved.guided["bars.fadenext"], nil)
+    eq(countLog(saved, "bars.fadenext: called off; the reload put the main bar's see-through back"), 1)
+    eq(mainBar(c2):GetAlpha(), 1)
+    c2:enterCombat(); c2:leaveCombat(); c2:advance(2)
+    eq(mainBar(c2):GetAlpha(), 1, "nothing waits for a fight after the reload")
+    eq(shownText(c2, "PocketProbeBigMessage"), nil)
+    noErrors(c2)
+    -- A reload before any fight: called off too ("until a reload").
+    local saved3 = riskySaved()
+    local c3, P3 = new({ saved = saved3 })
+    c3:advance(5)
+    startFadeNext(c3, P3)
+    local c4 = new({ saved = saved3 })
+    eq(saved3.guided["bars.fadenext"], nil)
+    eq(countLog(saved3, "bars.fadenext: called off by the reload"), 1)
+    noErrors(c4)
+end)
+
+test("fadenext: never touches PageUnit", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    startFadeNext(c, P)
+    c:enterCombat(); c:advance(3); c:leaveCombat()
+    P.AnswerGuided(P.trialById["bars.fadenext"], 1)
+    check(#c:callsTo("GamepadBar.TopCenteredAnchor.Bar:SetAlpha") >= 2, "the main bar was faded and put back")
+    eq(#c:callsTo("GamepadBar.PageUnit:SetAlpha"), 0, "PageUnit's alpha is never written")
+    eq(#c:callsTo("GamepadBar.TopCenteredAnchor:SetAlpha"), 0, "nor the anchor's")
+    noErrors(c)
+end)
+
+test("wheels: refused in a fight", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    local t = P.trialById["bars.wheels"]
+    eq(t.area, "Blizzard windows"); eq(t.short, "Wheels on a faded bar"); check(t.closePanel and t.risky and t.manual, "flags")
+    c:enterCombat(); c:advance(1)
+    P.StartGuided(t)
+    eq(saved.guided["bars.wheels"], nil)
+    for _, key in ipairs(FOUR) do eq(anchorBar(c, key):GetAlpha(), 1) end
+    noErrors(c)
+end)
+
+test("wheels: fades four and reads back", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    c:click(showTrial(c, P, "bars.wheels").ppRun)
+    check(not rawget(c.env, "PocketProbePanel"):IsShown(), "the panel closes at Start")
+    for _, key in ipairs(FOUR) do eq(anchorBar(c, key):GetAlpha(), 0, key) end
+    local g = saved.guided["bars.wheels"]
+    eq(g.stage, "ask")
+    check(g.notes:find("four bars' see-through 1, 1, 1, 1 -> 0", 1, true), g.notes)
+    eq(shownText(c, "PocketProbeBigMessage"), WHEELS_BIG)
+    local row = showTrial(c, P, "bars.wheels")
+    eq(row.ppAnswer[1].ppLabel:GetText(), "Wheel visible"); eq(row.ppAnswer[2].ppLabel:GetText(), "Wheel hidden")
+    eq(#c:callsTo("GamepadBar.PageUnit:SetAlpha"), 0, "PageUnit's alpha is never written")
+    noErrors(c)
+    -- One bar does not take the fade: "no effect", the others go back.
+    local saved2 = riskySaved()
+    local c2, P2 = new({ saved = saved2, setup = function(cl)
+        rawset(cl.env.GamepadMainActionBarFrame.PageUnit.RightCenteredAnchor.Bar, "SetAlpha", function() end)
+    end })
+    c2:advance(5)
+    P2.StartGuided(P2.trialById["bars.wheels"])
+    eq(saved2.last["bars.wheels"].result, "no effect")
+    check(saved2.last["bars.wheels"].message:find("right bar still 1", 1, true), saved2.last["bars.wheels"].message)
+    for _, key in ipairs(FOUR) do eq(anchorBar(c2, key):GetAlpha(), 1, key .. " put back") end
+    eq(saved2.guided["bars.wheels"], nil)
+    noErrors(c2)
+end)
+
+test("wheels: records up to two wheels (centre, size, effective alpha, shown) 0.2 s after open", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    c:openWheel("pet"); c:advance(1); c:closeWheel("pet")       -- before Start: not recorded
+    P.StartGuided(P.trialById["bars.wheels"])
+    c:openWheel("pet")
+    c:advance(0.3)
+    c:closeWheel("pet")
+    c:openWheel("spell")
+    c:advance(0.3)
+    c:openWheel("petspell")                                      -- a third: not recorded
+    c:advance(1)
+    P.AnswerGuided(P.trialById["bars.wheels"], 1)
+    eq(cell(saved, "bars.wheels", KEY_PRESS), "wheel visible")
+    local msg = saved.last["bars.wheels"].message
+    for _, part in ipairs({ "wheels seen: 2", "wheel 1 (pet wheel): centre 544,189, size 160 x 160, effective alpha 1, shown yes",
+        "wheel 2 (bar wheel): centre 683,250, size 175 x 175, effective alpha 1, shown yes", "screenshot: taken",
+        "bars still invisible at the answer: 4 of 4", "old values put back" }) do
+        check(msg:find(part, 1, true), "message lacks " .. part .. ": " .. msg)
+    end
+    check(not msg:find("wheel 3", 1, true), msg)
+    for _, key in ipairs(FOUR) do eq(anchorBar(c, key):GetAlpha(), 1, key .. " put back") end
+    -- After the answer the hooks do nothing.
+    c:openWheel("spell"); c:advance(1)
+    noErrors(c)
+    -- No wheel opened: said so.
+    P.StartGuided(P.trialById["bars.wheels"])
+    P.AnswerGuided(P.trialById["bars.wheels"], 2)
+    check(saved.last["bars.wheels"].message:find("wheels seen: 0", 1, true), saved.last["bars.wheels"].message)
+    noErrors(c)
+end)
+
+test("wheels: one screenshot 0.5 s after the first wheel", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.StartGuided(P.trialById["bars.wheels"])
+    eq(c.shots, nil, "no picture at Start")
+    c:openWheel("pet")
+    c:advance(0.3)
+    eq(c.shots, nil)
+    c:advance(0.3)
+    eq(c.shots, 1, "one picture half a second after the first wheel")
+    c:openWheel("spell"); c:advance(2)
+    eq(c.shots, 1, "none for the second wheel")
+    noErrors(c)
+    -- Without Screenshot nothing else changes.
+    local saved2 = riskySaved()
+    local c2, P2 = new({ saved = saved2, setup = function(cl) rawset(cl.env, "Screenshot", nil) end })
+    c2:advance(5)
+    P2.StartGuided(P2.trialById["bars.wheels"])
+    c2:openWheel("pet"); c2:advance(1)
+    P2.AnswerGuided(P2.trialById["bars.wheels"], 1)
+    local msg = saved2.last["bars.wheels"].message
+    check(msg:find("wheels seen: 1", 1, true) and msg:find("screenshot: none", 1, true), msg)
+    noErrors(c2)
+end)
+
+test("wheels: puts four back on answer, Cancel, Stop, logout", function()
+    for _, way in ipairs({ "answer", "cancel", "stop", "logout" }) do
+        local saved = riskySaved()
+        local c, P = new({ saved = saved })
+        c:advance(5)
+        P.StartGuided(P.trialById["bars.wheels"])
+        for _, key in ipairs(FOUR) do eq(anchorBar(c, key):GetAlpha(), 0) end
+        if way == "answer" then P.AnswerGuided(P.trialById["bars.wheels"], 2)
+        elseif way == "stop" then P.Stop()
+        elseif way == "logout" then c:fire("PLAYER_LOGOUT")
+        else P.CancelGuided(P.trialById["bars.wheels"]) end
+        for _, key in ipairs(FOUR) do eq(anchorBar(c, key):GetAlpha(), 1, way .. ": " .. key) end
+        eq(saved.guided["bars.wheels"], nil, way)
+        eq(shownText(c, "PocketProbeBigMessage"), nil, way)
+        noErrors(c, way)
+    end
+    -- A reload while it waits: called off (the reload resets the bars).
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.StartGuided(P.trialById["bars.wheels"])
+    local c2 = new({ saved = saved })
+    eq(saved.guided["bars.wheels"], nil)
+    eq(countLog(saved, "bars.wheels: called off; the reload put the four bars' see-through back"), 1)
+    noErrors(c2)
+end)
+
+---------------------------------------------------------------------------
+-- Probe 0.7.0: the floating Fight button and the recording's pause
+---------------------------------------------------------------------------
+
+local function floatFight(c) return button(c, "PocketProbeFloatFight") end
+
+-- Advances until no pass runs (at most a minute).
+local function untilIdle(c, P)
+    for _ = 1, 600 do
+        if not P.Busy() then return end
+        c:advance(0.1)
+    end
+    error("the pass did not end", 2)
+end
+
+test("fight button: hidden out of a fight", function()
+    local c, P, db = newPerf()
+    c:advance(5)
+    eq(P.Recording(), true)
+    P.WatchArm()
+    local f = floatFight(c)
+    check(not f:IsShown(), "hidden out of a fight while recording and armed")
+    eq(c._state(f).strata, "HIGH")
+    eq(c._state(f).parent, c.UIParent)
+    check(not f:IsProtected(), "a plain frame")
+    c:enterCombat(); c:advance(1)
+    check(f:IsShown(), "shown in the fight")
+    c:leaveCombat()
+    check(not f:IsShown(), "hidden as the fight ends")
+    noErrors(c)
+end)
+
+test("fight button: hidden in a fight when not armed and not recording", function()
+    local c, P = new({ saved = watchSaved() })
+    c:advance(5)
+    eq(P.Recording(), false)
+    c:enterCombat(); c:advance(1)
+    check(not floatFight(c):IsShown(), "never shown in normal play")
+    c:leaveCombat()
+    -- Armed, then disarmed in the fight: it goes.
+    P.WatchArm()
+    c:enterCombat()
+    check(floatFight(c):IsShown())
+    P.WatchDisarm()
+    check(not floatFight(c):IsShown(), "hidden once neither armed nor recording")
+    noErrors(c)
+end)
+
+test("fight button: shown in a fight when armed, and when recording", function()
+    local c, P = new({ saved = watchSaved() })
+    c:advance(5)
+    P.WatchArm()
+    c:enterCombat()
+    local f = floatFight(c)
+    check(f:IsShown(), "shown when armed")
+    eq(P.floatFight.label:GetText(), "Fight")
+    check(f:GetHeight() >= 40, "big enough for a finger")
+    noErrors(c)
+    local c2, P2 = newPerf()
+    c2:advance(5)
+    eq(P2.WatchArmed(), false)
+    c2:enterCombat()
+    check(floatFight(c2):IsShown(), "shown when recording")
+    P2.StopRecording()
+    check(not floatFight(c2):IsShown(), "hidden when the recording stops in the fight")
+    noErrors(c2)
+end)
+
+test("fight button: placed beside Stop away from the PE button, or in Stop's spot", function()
+    local c, P = newPerf()
+    c:advance(5)
+    c:enterCombat()
+    local f, stop = floatFight(c), button(c, "PocketProbeRecStopButton")
+    local fl, fr, ft, fb = c._rect(f)
+    local sl, sr, st, sb = c._rect(stop)
+    local hl = c._rect(c.hub)
+    check(sl < hl, "Stop is left of the PE button (the PE button is on the right)")
+    check(fr <= sl + 0.01, "Fight is left of Stop, away from the PE button")
+    check(math.abs((ft + fb) / 2 - (st + sb) / 2) < 0.5, "on the same line")
+    check(math.abs((fr - fl) - (sr - sl)) < 0.5 and math.abs((ft - fb) - (st - sb)) < 0.5, "as big as Stop")
+    noErrors(c)
+    -- No recording (armed only): Fight takes Stop's spot.
+    local c2, P2 = newPerf()
+    c2:advance(5)
+    P2.StopRecording()
+    P2.WatchArm()
+    c2:enterCombat()
+    local f2 = floatFight(c2)
+    local l2, r2, t2, b2 = c2._rect(f2)
+    eq(math.floor(l2 + 0.5), math.floor(sl + 0.5), "in Stop's spot: left")
+    eq(math.floor(t2 + 0.5), math.floor(st + 0.5), "in Stop's spot: top")
+    noErrors(c2)
+    -- The PE button on the left: Fight right of Stop.
+    local c3 = newPerf({ setup = function(cl)
+        local hub = rawget(cl.env, "PocketEssentialsHubButton")
+        hub:ClearAllPoints(); hub:SetPoint("TOPLEFT", cl.env.UIParent, "TOPLEFT", 20, -200)
+    end })
+    c3:advance(5)
+    c3:enterCombat()
+    local a = c3._rect(floatFight(c3))
+    local _, sr3 = c3._rect(button(c3, "PocketProbeRecStopButton"))
+    check(a >= sr3 - 0.01, "Fight is right of Stop when the PE button is on the left")
+    noErrors(c3)
+    -- No PE button: Stop above the red dot, Fight left of Stop.
+    local c4 = newPerf({ noButton = true })
+    c4:advance(5)
+    c4:enterCombat()
+    local _, r4 = c4._rect(floatFight(c4))
+    local l4 = c4._rect(button(c4, "PocketProbeRecStopButton"))
+    check(r4 <= l4 + 0.01, "Fight left of Stop above the dot")
+    noErrors(c4)
+end)
+
+test("fight button: tap during a recording pauses, runs the pass, resumes; next sample has dt=0 and p", function()
+    local c, P, db = newPerf({ saved = { options = { auto = false } } })
+    c:advance(20)
+    local r = lastRun(db)
+    c:enterCombat(); c:advance(9)
+    -- The ticker's next turn (30 s after the start) falls inside the pass.
+    local n0, at = #r.samples, c.now
+    c:click(floatFight(c))
+    eq(P.Recording(), true, "still recording")
+    check(P.Busy(), "the pass runs")
+    check(cell(db, "bars.spells", KEY_FIGHT_PRESS), "the first trial ran inside the tap")
+    while P.Busy() do
+        c:advance(0.1)
+        if P.Busy() then eq(#r.samples, n0, "no sample while the pass runs") end
+        check(c.now - at < 60, "the pass ends")
+    end
+    check(c.now - at > 2, "the pass took a while")
+    -- No sample while the pass ran; then one that marks the pause.
+    eq(#r.samples, n0 + 1, "one sample: the one after the pause")
+    local s = fields(r.samples[#r.samples])
+    eq(s.dt, "0")
+    check(s.a:find("p", 1, true), "the pause's letter: " .. s.a)
+    check(s.a:find("c", 1, true), "still in the fight: " .. s.a)
+    eq(s.pe, nil, "no work counted for the pause")
+    c:advance(16)
+    local s2 = fields(r.samples[#r.samples])
+    eq(#r.samples, n0 + 2)
+    check(tonumber(s2.dt) > 0 and tonumber(s2.dt) <= 15.05, "the next sample covers only the time after the pause: " .. s2.dt)
+    check(not s2.a:find("p", 1, true), "only the one sample has p")
+    check(countLog(db, "recording paused for the fight tests"), "logged")
+    noErrors(c)
+end)
+
+test("fight button: Run all safe still refused during a recording", function()
+    local c, P, db = newPerf({ saved = { options = { auto = false } } })
+    c:advance(5)
+    c:enterCombat(); c:advance(1)
+    P.RunAllSafe(); eq(P.status, "Recording: tap Stop first.")
+    P.RunFightTests(); eq(P.status, "Recording: tap Stop first.", "the panel's Fight tests too")
+    eq(next(db.results), nil)
+    noErrors(c)
+end)
+
+test("fight button: second tap during a pass is ignored", function()
+    local c, P, db = newPerf({ saved = { options = { auto = false } } })
+    c:advance(5)
+    c:enterCombat(); c:advance(1)
+    c:click(floatFight(c))
+    c:advance(0.5)
+    c:click(floatFight(c))
+    c:advance(0.5)
+    c:click(floatFight(c))
+    eq(countLog(db, "pass started"), 1, "one pass")
+    untilIdle(c, P)
+    noErrors(c)
+    -- A pass the panel started (no recording): the tap does not take over.
+    local c2, P2, db2 = new({ saved = watchSaved() })
+    c2:advance(5)
+    P2.WatchArm()
+    c2:enterCombat(); c2:advance(1)
+    P2.RunFightTests()
+    c2:advance(0.5)
+    c2:click(floatFight(c2))
+    eq(countLog(db2, "pass started"), 1, "the running pass is left alone")
+    eq(countLog(db2, "pass stopped"), 0)
+    noErrors(c2)
+    -- A guided trial in its timed steps (screenshots): not cut into.
+    local saved3 = riskySaved()
+    local c3, P3 = new({ saved = saved3 })
+    c3:advance(5)
+    P3.WatchArm()
+    c3:enterCombat(); c3:advance(1)
+    P3.StartGuided(P3.trialById["bars.fadecast"])
+    eq(saved3.guided["bars.fadecast"].stage, "prepare")
+    c3:click(floatFight(c3))
+    eq(countLog(saved3, "pass started"), 0, "no pass during the timed steps")
+    c3:advance(2)
+    eq(saved3.guided["bars.fadecast"].stage, "ask")
+    c3:click(floatFight(c3))
+    eq(countLog(saved3, "pass started"), 1, "a guided trial waiting for its answer does not stop it")
+    untilIdle(c3, P3)
+    noErrors(c3)
+end)
+
+test("fight button: tick shown 3 s then usable again", function()
+    local c, P, db = newPerf({ saved = { options = { auto = false } } })
+    c:advance(5)
+    c:enterCombat(); c:advance(1)
+    local f = P.floatFight
+    check(not f.tick:IsShown(), "no tick before")
+    c:click(floatFight(c))
+    untilIdle(c, P)
+    check(f.tick:IsShown(), "the tick shows after the pass")
+    eq(f.tick:GetAtlas(), "common-icon-checkmark")
+    check(not f.label:IsShown(), "the label makes room for it")
+    c:click(floatFight(c))
+    eq(countLog(db, "pass started"), 1, "a tap while the tick shows does nothing")
+    c:advance(3.1)
+    check(not f.tick:IsShown(), "gone after 3 seconds")
+    check(f.label:IsShown())
+    c:click(floatFight(c))
+    eq(countLog(db, "pass started"), 2, "a second tap in the same fight runs the pass again")
+    untilIdle(c, P)
+    noErrors(c)
+end)
+
+---------------------------------------------------------------------------
+-- Probe 0.7.0: recorder fixes
+---------------------------------------------------------------------------
+
+test("perf: memory 0 stored as missing", function()
+    local c, P, db = newPerf()
+    c.world.perf.memory.PocketEssentials = 0
+    c:advance(15.3)
+    local r = lastRun(db)
+    eq(fields(r.samples[#r.samples]).mem, ",10000,300", "a reading of 0 leaves the field empty")
+    c.world.perf.memory.PocketEssentials, c.world.perf.memory.QuestieDB, c.world.perf.memory.PocketProbe = 0, 0, 0
+    c:advance(15)
+    eq(fields(r.samples[#r.samples]).mem, nil, "no reading at all: no mem field")
+    noErrors(c)
+end)
+
+test("perf: first sample after a reload has r", function()
+    local saved = {}
+    local c = newPerf({ saved = saved })
+    c:advance(20)
+    c:fire("PLAYER_LOGOUT")
+    local r = saved.perf.runs[1]
+    for _, line in ipairs(r.samples) do check(not fields(line).a:find("r", 1, true), "no r before the reload") end
+    local c2 = newPerf({ saved = saved, reload = true, setup = function(cl) cl.now = 1100 end })
+    local n = #r.samples
+    local s = fields(r.samples[n])
+    eq(s.dt, "0")
+    check(s.a:find("r", 1, true), "the first sample after the reload has r: " .. s.a)
+    c2:advance(15.3)
+    check(not fields(r.samples[n + 1]).a:find("r", 1, true), "only that one")
+    -- A fresh run (not carried on) has no r.
+    local c3, P3, db3 = newPerf()
+    check(not fields(lastRun(db3).samples[1]).a:find("r", 1, true), "a new run's first sample has no r")
+    noErrors(c); noErrors(c2); noErrors(c3)
+end)
+
+---------------------------------------------------------------------------
+-- Probe 0.7.0: the panel's new rows, the Probe button out of the XP bar's way
+---------------------------------------------------------------------------
+
+test("panel: watch row arms and shows Watching", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    local row = showTrial(c, P, "ctl.watch")
+    eq(row.ppLabel:GetText(), "Watch my next fights")
+    eq(row.ppChipText:GetText(), "Not watching")
+    eq(row.ppRun.ppLabel:GetText(), "Arm")
+    eq(row.ppRun.ppDisabled, false)
+    c:click(row.ppRun)
+    eq(P.WatchArmed(), true)
+    eq(row.ppChipText:GetText(), "Watching, 0 min")
+    eq(row.ppRun.ppLabel:GetText(), "Disarm")
+    c:advance(125)
+    c:click(button(c, "PocketProbeCloseButton"))
+    row = showTrial(c, P, "ctl.watch")
+    eq(row.ppChipText:GetText(), "Watching, 2 min", "the minutes as of the redraw")
+    c:click(row)
+    local detailsText
+    for _, rec in ipairs(c:frames()) do
+        if rec.frame == rawget(c.env, "PocketProbePanel") then
+            for _, region in ipairs(rec.regions or {}) do
+                local t = region.GetText and region:GetText()
+                if type(t) == "string" and t:find("Details:", 1, true) then detailsText = t end
+            end
+        end
+    end
+    check(detailsText and detailsText:find("until Disarm or a reload", 1, true), "details: " .. tostring(detailsText))
+    c:click(row.ppRun)
+    eq(P.WatchArmed(), false)
+    eq(row.ppRun.ppLabel:GetText(), "Arm")
+    -- In a fight Arm is dim (it is refused there); a tab's count leaves the row out.
+    c:enterCombat()
+    eq(showTrial(c, P, "ctl.watch").ppRun.ppDisabled, true)
+    noErrors(c)
+end)
+
+test("panel: clear row two taps", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.RunOne(P.trialById["own.show"])
+    local row = showTrial(c, P, "ctl.clear")
+    eq(row.ppLabel:GetText(), "Clear saved results")
+    eq(row.ppRun.ppLabel:GetText(), "Clear")
+    eq(row.ppChipText:GetText(), "1 result saved")
+    c:click(row.ppRun)
+    eq(row.ppRun.ppLabel:GetText(), "Tap again to clear")
+    check(saved.results["own.show"], "not cleared by one tap")
+    c:advance(5.5)
+    eq(row.ppRun.ppLabel:GetText(), "Clear", "back after 5 seconds")
+    c:click(row.ppRun)
+    c:advance(1)
+    c:click(row.ppRun)
+    eq(next(saved.results), nil, "two taps clear")
+    eq(row.ppRun.ppLabel:GetText(), "Clear")
+    eq(row.ppChipText:GetText(), "Nothing saved")
+    -- With the d-pad: A on the row's button.
+    P.RunOne(P.trialById["own.show"])
+    c:enterCombat()
+    eq(showTrial(c, P, "ctl.clear").ppRun.ppDisabled, true, "dim in a fight")
+    noErrors(c)
+end)
+
+test("panel: still fits ten tabs at 1365 by 768 with the new rows and trials", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    local area = {}
+    for _, t in ipairs(db.trials) do area[t.id] = t.area end
+    eq(area["bars.fadenext"], "Blizzard windows"); eq(area["bars.wheels"], "Blizzard windows")
+    eq(area["bars.spells"], "Blizzard windows", "moved to make room")
+    eq(area["win.chat.create"], "Chat box", "moved to make room"); eq(area["win.chat.attach"], "Chat box")
+    eq(area["bag.move"], "Bags and vendor", "moved to make room"); eq(area["bag.scale"], "Bags and vendor")
+    openPanel(c)
+    eq(math.floor(c.UIParent:GetWidth() + 0.5), 1365); eq(c.UIParent:GetHeight(), 768)
+    eq(table.concat(tabLabels(P), "|"), "Errors|Graphics|Our own windows|Blizzard windows 1|Blizzard windows 2|Chat box|"
+        .. "Bags and vendor|Controller and layout|Values 1|Values 2")
+    local m = P.panelSizes
+    local where = {}
+    for _, page in ipairs(P.BuildPages(m.rowsFit)) do
+        check(#page.entries <= m.rowsFit, page.label .. " has more rows than fit")
+        for _, e in ipairs(page.entries) do where[e.id] = page.label end
+    end
+    eq(where["ctl.watch"], "Blizzard windows 2", "the watch row sits with the bar trials")
+    eq(where["ctl.clear"], "Controller and layout")
+    eq(where["bars.fadenext"], "Blizzard windows 2"); eq(where["bars.wheels"], "Blizzard windows 2")
+    -- The tab counts leave the two rows out: they are not trials.
+    for _, t in ipairs(P.panelTabs) do
+        if t:IsShown() and t.ppName:GetText() == "Controller and layout" then eq(t.ppCount:GetText(), "0 / 6 run") end
+    end
+    noErrors(c)
+end)
+
+test("probe button at TOP 0,-28; big message and sweep squares follow it", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    local point, rel, relPoint, x, y = button(c, "PocketProbeButton"):GetPoint(1)
+    eq(point, "TOP"); eq(rel, c.UIParent); eq(relPoint, "TOP"); eq(x, 0); eq(y, -28)
+    local _, _, statusTop = c._rect(button(c, "PocketProbeStatus"))
+    local _, _, buttonTop, buttonBottom = c._rect(button(c, "PocketProbeButton"))
+    eq(math.floor(768 - buttonTop + 0.5), 28, "24 lower than before")
+    check(statusTop <= buttonBottom + 0.01, "the status line still sits under the button")
+    local sp, srel, srelPoint, sx, sy = button(c, "PocketProbeSweep"):GetPoint(1)
+    eq(sp, "TOPLEFT"); eq(srel, c.UIParent); eq(srelPoint, "TOP"); eq(sx, 230); eq(sy, -28)
+    P.StartGuided(P.trialById["bars.wheels"])
+    local _, _, bigTop = c._rect(button(c, "PocketProbeBigMessage"))
+    eq(math.floor(768 - bigTop + 0.5), math.floor(768 * 0.19 + 24 + 0.5), "the big message 24 lower too")
+    noErrors(c)
+end)
+
+---------------------------------------------------------------------------
+-- Probe 0.7.0, review fixes: the recording never stays paused, the Fight
+-- button after a reload in a fight, Clear forgets the covered situations
+---------------------------------------------------------------------------
+
+-- The recording takes samples again: one more sample with dt > 0 within 16 s.
+local function recordsAgain(c, r, where)
+    local n = #r.samples
+    c:advance(16)
+    check(#r.samples > n, where .. ": no sample after the pause")
+    local s = fields(r.samples[#r.samples])
+    check(tonumber(s.dt) > 0, where .. ": the new sample covers time (" .. s.dt .. ")")
+end
+
+test("fight button: the recording resumes when RunFightTests raises", function()
+    local c, P, db = newPerf({ saved = { options = { auto = false } } })
+    c:advance(5)
+    c:enterCombat(); c:advance(1)
+    local real = P.RunFightTests
+    P.RunFightTests = function() error("broken on purpose") end
+    c:click(floatFight(c))
+    check(countLog(db, "error in the probe: ") >= 1, "the error is logged")
+    eq(P.floatFight.label:GetText(), "Fight", "the button is usable again")
+    recordsAgain(c, lastRun(db), "raised")
+    P.RunFightTests = real
+    c:click(floatFight(c))
+    eq(countLog(db, "pass started"), 1, "the next tap runs the pass")
+    untilIdle(c, P)
+    -- Remove the logged error so noErrors does not count it.
+    for i = #db.log, 1, -1 do if db.log[i]:find("broken on purpose", 1, true) then table.remove(db.log, i) end end
+    noErrors(c)
+end)
+
+test("fight button: the recording resumes when the fight ends mid-pass", function()
+    local c, P, db = newPerf({ saved = { options = { auto = false } } })
+    c:advance(5)
+    c:enterCombat(); c:advance(1)
+    local r = lastRun(db)
+    c:click(floatFight(c))
+    c:advance(2)
+    c:leaveCombat()
+    untilIdle(c, P)
+    check(fields(r.samples[#r.samples]).a:find("p", 1, true), "the sample after the pause")
+    recordsAgain(c, r, "fight ended")
+    noErrors(c)
+    -- A pass that never calls back (stand-in): the fight's end ends the pause.
+    local c2, P2, db2 = newPerf({ saved = { options = { auto = false } } })
+    c2:advance(5)
+    c2:enterCombat(); c2:advance(1)
+    P2.RunFightTests = function() return true end
+    c2:click(floatFight(c2))
+    local r2 = lastRun(db2)
+    local n = #r2.samples
+    c2:advance(16)
+    eq(#r2.samples, n, "paused while it thinks the pass runs")
+    c2:leaveCombat()
+    recordsAgain(c2, r2, "no call back")
+    noErrors(c2)
+end)
+
+test("fight button: the recording resumes when Stop is tapped during the pass", function()
+    local c, P, db = newPerf({ saved = { options = { auto = false } } })
+    c:advance(5)
+    c:enterCombat(); c:advance(1)
+    local r = lastRun(db)
+    c:click(floatFight(c))
+    c:advance(1)
+    c:click(button(c, "PocketProbeStopButton"))
+    eq(P.Busy(), false)
+    check(fields(r.samples[#r.samples]).a:find("p", 1, true), "the sample after the pause")
+    recordsAgain(c, r, "probe Stop")
+    c:advance(3)
+    c:click(floatFight(c))
+    eq(countLog(db, "pass started"), 2, "the button works again")
+    untilIdle(c, P)
+    noErrors(c)
+end)
+
+test("fight button: the recorder's Stop during the pause ends cleanly", function()
+    local c, P, db = newPerf({ saved = { options = { auto = false } } })
+    c:advance(5)
+    c:enterCombat(); c:advance(1)
+    local r = lastRun(db)
+    c:click(floatFight(c))
+    local n = #r.samples
+    c:click(button(c, "PocketProbeRecStopButton"))
+    eq(P.Recording(), false)
+    eq(#r.samples, n, "no last sample for the pause")
+    eq(r.why, "stopped")
+    untilIdle(c, P)
+    eq(#r.samples, n, "nothing written when the pass ends")
+    check(not floatFight(c):IsShown(), "hidden: neither recording nor armed")
+    -- A new recording records normally.
+    P.StartRecording()
+    recordsAgain(c, lastRun(db), "new recording")
+    noErrors(c)
+end)
+
+test("fight button: a reload during the pass, in a fight, records and shows the button again", function()
+    local saved = { options = { auto = false } }
+    local c, P = newPerf({ saved = saved })
+    c:advance(5)
+    c:enterCombat(); c:advance(1)
+    c:click(floatFight(c))
+    c:advance(1)
+    local r = saved.perf.runs[1]
+    local n = #r.samples
+    c:fire("PLAYER_LOGOUT")
+    eq(#r.samples, n, "no last sample for the pause at the logout")
+    local c2, P2 = newPerf({ saved = saved, reload = true, setup = function(cl)
+        cl.now = 1100
+        cl.world.inCombat = true
+    end })
+    eq(P2.Recording(), true, "the run carries on")
+    check(fields(r.samples[#r.samples]).a:find("r", 1, true), "marked as after a reload")
+    check(floatFight(c2):IsShown(), "the button shows: the fight goes on after the reload")
+    recordsAgain(c2, r, "after the reload")
+    c2:click(floatFight(c2))
+    eq(countLog(saved, "pass started"), 2, "it runs the pass")
+    untilIdle(c2, P2)
+    c2:leaveCombat()
+    check(not floatFight(c2):IsShown())
+    noErrors(c2)
+end)
+
+test("clear: the automatic passes run again after Clear", function()
+    local saved = { options = { auto = true } }
+    local c, P = new({ saved = saved })
+    c:advance(25)
+    eq(saved.situations[KEY_AUTO].passes, 1)
+    P.ClearSaved(); c:advance(1); P.ClearSaved()
+    eq(next(saved.situations), nil)
+    c:enterCombat(); c:advance(0.5); c:leaveCombat(); c:advance(30)
+    eq(saved.situations[KEY_AUTO] and saved.situations[KEY_AUTO].passes, 1, "the situation is covered again")
+    noErrors(c)
 end)
 
 ---------------------------------------------------------------------------
