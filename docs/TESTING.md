@@ -1253,15 +1253,18 @@ errors; this build relies on that.
    cut-off choices.
 7. Tell me anything listed, and whether it was easier to read than the popup.
 
-### 21. Version 0.11.0: Controller layout (experimental, unprobed)
+### 21. Version 0.11.0: Controller layout (experimental)
 
-This build was made before the probe round, so run the probe first: steps 1
-to 3 are section 22 (Pocket Probe 0.4.0). 0.11.0 is not released yet; it
-comes after the probe results, with my guesses replaced by the measured
-sizes. When it does: install the 0.11.0 zip (delete the old
-`PocketEssentials` folder first, keep `QuestieDB`) and fully restart the game.
+Do section 23 (Pocket Probe 0.5.0) first, in the same sitting. Both zips are
+in the one pre-release **v0.11.0**. This build now has the map's measured
+size in it; the spots and gaps between pieces are still my first guesses,
+so expect to tell me what overlaps.
 
-1. to 3. **Done in section 22.** Send the probe file before going on.
+Install: delete the old `PocketEssentials` folder (keep `QuestieDB`), unzip
+`wow-forever-pocket-essentials.zip` into `AddOns`, fully restart the game.
+Turn the probe off on the character-select AddOns screen for this part.
+
+1. to 3. **Done in section 23.** Send the probe file before going on.
 4. **Switch it on.** Settings, **Controller** tab, turn **Controller layout**
    On. It should say a reload is needed; tap **Reload now**. Always reload
    before you fight after switching it on or off.
@@ -1279,7 +1282,10 @@ sizes. When it does: install the 0.11.0 zip (delete the old
    small button beside the map.
 8. **Fight for a few minutes**, pressing every bar. Watch for "Interface
    action blocked" and for any bar jumping.
-9. Set **Spell button size** to 85%. If any spell on your bars opens its
+9. Set **Map size** to 60% and reload when asked. The bars should close in
+   around the smaller map. Take a screenshot. Try 70% the same way. Tell me
+   which of 60, 70 and 80% you want as the starting size.
+   Then set **Spell button size** to 85%. If any spell on your bars opens its
    own wheel, press it: does the wheel open around its button or beside it?
    Then try the other choices one at a time: Main bar under the map; frames Stacked
    and Side by side; Swing timers above the
@@ -1390,3 +1396,81 @@ file `PocketProbe.zip`.
 | The controller-button pictures (step 6) | The strip shows the same button pictures as your controller (Xbox, PlayStation and so on) in each spell's corner | We draw simple pictures of our own |
 | Sizes of the map, frames, buff rows, quest tracker, XP bar, the two sub-menu buttons, the pet wheel and one spell button (step 5) | They replace my guessed sizes in the layout, so pieces stop overlapping or sitting off centre | (Always measured) |
 | Moving, resizing and saving layouts (step 8) and no "Interface action failed" afterwards (step 11) | Controller layout 0.11.0 can place the bars and make its own Edit Mode layout as built | The layout is redesigned around what the game allows; whatever was blamed is left out |
+
+### 23. Pocket Probe 0.5.0 (testing tool): does a hidden bar still cast?
+
+**What this is for.** Three answers decide how compact the controller screen
+can get: does your main bar still cast when it is moved off screen or made
+invisible, can a bar really be faded during a fight, and can a button of our
+own show a cooldown sweep. About ten minutes. Download: the GitHub
+pre-release **v0.11.0**, file `PocketProbe.zip`.
+
+**Before you start**
+
+1. In `AddOns`, delete the old `PocketProbe` folder and unzip the new
+   `PocketProbe.zip` there.
+2. Turn every Pocket Essentials feature Off for this part (or untick Pocket
+   Essentials on the character-select AddOns screen).
+3. Close the game completely and open it again. Log in somewhere quiet.
+
+**Park the main bar (out of a fight)**
+
+4. Without holding a trigger, **count the spell bars** you can see. Remember
+   the number.
+5. Tap **Probe**. On the bottom row tap **Risky** so it says **On**.
+6. Tap the tab **Blizzard windows 2**. On the row "Park the main bar off
+   screen, then press a spell button" tap **Start**. The window closes by
+   itself.
+7. Wait about two seconds for big letters: "Main bar parked. Press a spell,
+   then tap Probe."
+8. **Count the bars again.** Tell me both numbers.
+9. Press a d-pad or face button that holds a spell you can use right now (a
+   buff on yourself is easiest). Watch whether it casts.
+10. Tap **Probe**. On the same row tap **Spell cast** or **Nothing
+    happened**. The bar comes back.
+
+**Fade the main bar (out of a fight)**
+
+11. Same tab, the row "Fade the main bar to nothing, then press a spell
+    button": tap **Start**. Wait for the big letters: "Main bar is
+    invisible. Press a spell, then tap Probe."
+12. Is the main bar gone from view? Press a spell on it as in step 9.
+13. Tap **Probe**. On the same row tap **Spell cast** or **Nothing
+    happened**.
+
+If anything looks wrong at any point, **Cancel** on the row puts it back,
+and so does a reload.
+
+**In a fight**
+
+14. Pick a fight that will last half a minute. If you have a spell with a
+    cooldown of a few seconds, cast it first.
+15. During the fight, **by touch** (the d-pad belongs to the game in a
+    fight): tap **Probe**, then **Fight tests** (bottom row, second button).
+16. Look at the top of the screen, just right of the Probe button. Two
+    small squares marked **1** and **2** show for 8 seconds. Does a dark
+    sweep turn on square 1, square 2, both or neither? Your left bar blinks
+    once; that is the fade test.
+17. Keep fighting until the top line says "Fight tests done". Tell me the
+    numbers it shows.
+18. Start one more fight. During it, by touch, do steps 11 to 13 again (the
+    fade test, this time in a fight).
+19. Keep fighting for a minute with all your bars. Tell me if you saw
+    "Interface action failed because of an AddOn" or a "blocked" pop-up.
+
+**Send it back**
+
+20. Tap **Probe**, then **Save (reloads)**.
+21. Send me `WTF/Account/<account>/SavedVariables/PocketProbe.lua`. The
+    probe also took a few screenshots (before and after parking and fading,
+    and of the two squares); send those too if you can find the game's
+    `Screenshots` folder.
+22. Tap **Risky** back to Off, then go on to section 21.
+
+**What each answer decides**
+
+| Question | If yes | If no |
+|---|---|---|
+| A parked or invisible main bar still casts (steps 9 and 12) | A flat strip of our own can take the main bar's place on screen while the game's real bar does the casting out of sight | The game's main bar stays visible; we only shrink and arrange it |
+| A real fade in a fight (step 16, the blink) | Quiet bars can fade the LT, RT and both-triggers bars until their trigger is held, in a fight too | Bars fade only out of a fight |
+| A cooldown sweep on our own square (step 16) | The strip can show the game's own cooldown sweep | The strip dims an icon while it is on cooldown instead (already proven readable) |

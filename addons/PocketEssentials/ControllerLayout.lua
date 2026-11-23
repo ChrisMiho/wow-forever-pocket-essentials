@@ -1,7 +1,8 @@
 local ADDON_NAME, PE = ...
 
 -- Controller layout: a ready-made screen arrangement for playing with a
--- controller (spec 2026-11-21-controller-layout.md).
+-- controller (spec 2026-11-21-controller-layout.md; the sizes are from
+-- 2026-11-22-controller-layout-measured-sizes.md).
 --
 -- This file has two halves.
 --
@@ -19,8 +20,10 @@ local ADDON_NAME, PE = ...
 --     its one hook (installed the first time it is switched on) does nothing
 --     while it is off.
 --
--- Every size and spot is a first guess until the probe has measured the real
--- ones.
+-- The map's size at 100% was measured on a device and the bar's size is
+-- Blizzard's own (see SIZE). Still first guesses: the map's size below 100%
+-- (taken as the measured size times the percentage), the swing timer's size,
+-- and every spot and gap.
 
 local type, pairs, ipairs = type, pairs, ipairs
 local min = math.min
@@ -33,6 +36,7 @@ Plan.NAME = "Pocket Essentials"
 
 Plan.DEFAULTS = {
     main = "above",     -- the main bar: "above" or "under" the map
+    map = 80,           -- the map's size in percent: 60, 70 or 80
     frames = "corner",  -- player, pet and target frames: "corner", "stacked" or "flat"
     size = 100,         -- spell button size in percent, 70 to 100 (below 100 a spell's own wheel may open beside its button)
     fineMain = 1,       -- main bar size: 0.85, 1 or 1.15
@@ -44,8 +48,21 @@ Plan.DEFAULTS = {
     offHand = 2,
 }
 
--- First guesses; the probe trial layout.sizes measures the real ones.
-local SIZE = { MAP_W = 164, MAP_H = 176, BAR_W = 208, BAR_H = 68 }
+-- The map at 100%: measured by the probe (273 by 283 at UI scale 1); the
+-- Gamepad preset's map size is 100%
+-- (Blizzard_EditMode/Mainline/EditModePresetLayouts.lua:397). At another
+-- size it is taken as this times the percentage; the real map may be a few
+-- units larger, because only a part inside it is scaled
+-- (Blizzard_Minimap/Mainline/Minimap.lua:418-419).
+-- A bar: Blizzard's size for a bar that does not grow
+-- (Blizzard_GamepadActionBars/ActionBarStyles.lua:172); the template switches
+-- growing off (ShouldExpand 0).
+local SIZE = { MAP_W = 273, MAP_H = 283, BAR_W = 208, BAR_H = 68 }
+
+-- The map sizes offered. 100% is left out: the two sub-menu buttons sit a
+-- fixed 138 either side of the map's centre and a map that wide would cover
+-- them.
+local MAP_SIZES = { [60] = true, [70] = true, [80] = true }
 
 local MAIN_UNDER_MAP_Y = 8 + SIZE.BAR_H + 14 -- the map's height with the main bar under it, written for size 100%
 local TIMERS_UNDER_LIFT = 36         -- what the swing timers under the map add to that
@@ -61,7 +78,13 @@ local function Fill(opts)
         local v = opts[k]
         if type(v) == type(default) then out[k] = v else out[k] = default end
     end
+    if not MAP_SIZES[out.map] then out.map = Plan.DEFAULTS.map end
     return out
+end
+
+-- The map's width and height at the chosen size. `o` is already filled.
+local function MapSize(o)
+    return SIZE.MAP_W * o.map / 100, SIZE.MAP_H * o.map / 100
 end
 
 local function DeepCopy(v)
@@ -104,7 +127,8 @@ end
 function Plan.BarSpots(opts)
     local o = Fill(opts)
     local kM, kS, kB = Plan.Scales(o)
-    local W, H, mapW, mapH = SIZE.BAR_W, SIZE.BAR_H, SIZE.MAP_W, SIZE.MAP_H
+    local W, H = SIZE.BAR_W, SIZE.BAR_H
+    local mapW, mapH = MapSize(o)
     local mapY = Plan.MapY(o)
     local lift = o.timers == "bars" and 22 or 0
     local left, top, both, bottom
@@ -125,7 +149,7 @@ end
 
 -- The numbers the timers "above" and "bars" placements hang on: the top of the
 -- highest bar above the map, and the LT bar's centre, both at size 100% and
--- fine-tunes of 1, for the current main bar choice.
+-- fine-tunes of 1, for the current main bar choice and map size.
 local function TimerAnchors(o)
     local at100 = Fill(o)
     at100.size, at100.fineMain, at100.fineSide, at100.fineBoth = 100, 1, 1, 1
@@ -187,7 +211,8 @@ function Plan.Pieces(opts)
     local function add(system, index, anchor, settings)
         list[#list + 1] = { system = system, index = index, anchor = anchor, settings = settings, moved = anchor and true or nil }
     end
-    add("Minimap", nil, Spot("BOTTOM", "BOTTOM", 0, Plan.MapY(o)), { Size = 3 })
+    -- The stored Size counts in steps of 10% from 50%: 80% is 3.
+    add("Minimap", nil, Spot("BOTTOM", "BOTTOM", 0, Plan.MapY(o)), { Size = (o.map - 50) / 10 })
     add("ChatFrame", nil, Spot("TOPRIGHT", "TOPRIGHT", -30, -40),
         { WidthHundreds = 4, WidthTensAndOnes = 30, HeightHundreds = 2, HeightTensAndOnes = 10 })
     add("AuraFrame", "BuffFrame", Spot("TOPRIGHT", "TOPRIGHT", -30, -262), nil)
@@ -965,6 +990,7 @@ end
 local function TimersAndMap(p) return p.system == "SwingTimer" or p.system == "Minimap" end
 local REWRITES = {
     main = TimersAndMap,                                         -- the map's height and the timer stack under it
+    map = TimersAndMap,                                          -- the map's size, and the timers that hang on the bars
     frames = function(p) return p.system == "UnitFrame" end,     -- Player, Pet, Target
     timers = TimersAndMap,
     ranged = function(p) return p.system == "SwingTimer" and p.index == "Ranged" end,
@@ -1103,6 +1129,9 @@ local OPTIONS = {
     { key = "main", label = "Main bar",
       choices = { { value = "above", label = "Above the map" }, { value = "under", label = "Under the map" } },
       OnChange = LayoutRow("main", true) },
+    { key = "map", label = "Map size",
+      choices = { { value = 60, label = "60%" }, { value = 70, label = "70%" }, { value = 80, label = "80%" } },
+      OnChange = LayoutRow("map", true) },
     { key = "frames", label = "Player and target frames",
       choices = { { value = "corner", label = "Corners" }, { value = "stacked", label = "Stacked" },
                   { value = "flat", label = "Side by side" } },

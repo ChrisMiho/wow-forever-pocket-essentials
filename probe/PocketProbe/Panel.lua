@@ -1,12 +1,16 @@
 local ADDON_NAME, P = ...
 
--- The panel that drives the probe: "Pocket Probe 0.3.0".
+-- The panel that drives the probe: "Pocket Probe 0.5.0".
 --
 --   left    one tab per area, each with "N / M run"
 --   right   one row per trial: its label, a result chip and Run (or, for a
 --           guided trial, Start and then its two answer buttons)
 --   below   Details of the row tapped last, then the footer: Run all safe,
---           Clean run (reloads), Risky, Vendor, Auto, Save (reloads)
+--           Fight tests, Clean run (reloads), Risky, Vendor, Auto, Save (reloads)
+--
+-- Also here, because it shares the panel's fonts: the big message, a frame
+-- of its own that shows a guided trial's question in big letters while the
+-- panel is closed (probe 0.5.0).
 --
 -- It uses no Pocket Essentials code. It copies Pocket Essentials' sizes (the
 -- Medium button size, in 720p pixels) and colours so it looks the same, and
@@ -93,6 +97,7 @@ local FONTS = {
     title = { name = "PocketProbeFontTitle", size = SIZE.font * 1.12,  color = GOLD,                  fallback = "GameFontNormalLarge" },
     tab   = { name = "PocketProbeFontTab",   size = SIZE.font * 0.92,  color = { 1, 1, 1 },          fallback = "GameFontHighlight" },
     tiny  = { name = "PocketProbeFontTiny",  size = SIZE.small * 0.85, color = COUNT,                 fallback = "GameFontHighlight" },
+    big   = { name = "PocketProbeFontBig",   size = SIZE.font * 2,     color = { 1, 1, 1 },          fallback = "GameFontNormalLarge" },
 }
 local fontObjects = {}
 local fontFile, fontFlags
@@ -299,6 +304,7 @@ details:SetMaxLines(2)
 
 local FOOTER = {
     { key = "runall", name = "PocketProbeRunAllButton", click = function() P.RunAllSafe() end },
+    { key = "fight",  name = "PocketProbeFightButton",  click = function() P.RunFightTests() end },
     { key = "clean",  name = "PocketProbeCleanButton",  click = function() P.BeginClean() end },
     { key = "risky",  name = "PocketProbeRiskyButton",  click = function() P.ToggleOption("risky") end },
     { key = "vendor", name = "PocketProbeVendorButton", click = function() P.ToggleOption("vendor") end },
@@ -323,6 +329,47 @@ for i = 1, 4 do
     ring.edges[i] = e
 end
 ring:Hide()
+
+---------------------------------------------------------------------------
+-- The big message (probe 0.5.0): a guided trial's question in letters twice
+-- the panel's size, on a dark backing in the upper third of the screen,
+-- under the Probe button. At most two lines, wrapped inside 60% of the
+-- screen's width. A plain frame: it takes no clicks and no controller keys.
+-- Run.lua shows it when the question starts and hides it when it is over.
+---------------------------------------------------------------------------
+
+local big = CreateFrame("Frame", "PocketProbeBigMessage", UIParent)
+big:SetFrameStrata("HIGH")
+big:EnableMouse(false)
+big:Hide()
+local bigBack = big:CreateTexture(nil, "BACKGROUND")
+bigBack:SetAllPoints(big)
+bigBack:SetColorTexture(0, 0, 0, 0.8)
+local bigText = NewText(big, "big")
+bigText:SetJustifyH("CENTER")
+bigText:SetWordWrap(true)
+bigText:SetMaxLines(2)
+bigText:SetPoint("CENTER", big, "CENTER", 0, 0)
+
+function P.ShowBig(text)
+    factor = Factor()
+    SetupFonts()
+    UseFont(bigText, "big")
+    local sw, sh = UIParent:GetWidth(), UIParent:GetHeight()
+    if type(sw) ~= "number" or sw < 100 then sw = 1024 end
+    if type(sh) ~= "number" or sh < 100 then sh = 768 end
+    local width, pad = sw * 0.6, Px(SIZE.pad)
+    bigText:SetWidth(width)
+    bigText:SetText(tostring(text))
+    big:ClearAllPoints()
+    big:SetPoint("TOP", UIParent, "TOP", 0, -sh * 0.19)
+    big:SetSize(width + pad * 2, Px(FONTS.big.size) * 2.5 + pad * 2)
+    big:Show()
+end
+
+function P.HideBig()
+    big:Hide()
+end
 
 ---------------------------------------------------------------------------
 -- What the panel shows
@@ -643,6 +690,7 @@ local function ShowFooter()
     local function onOff(word, on) return word .. ": " .. (on and "On" or "Off"), on and "on" or "off" end
     local labels = {
         { "Run all safe", "normal" },
+        { "Fight tests", "normal" },
         { "Clean run (reloads)", "normal" },
         { onOff("Risky", o.risky) },
         { onOff("Vendor", o.vendor) },

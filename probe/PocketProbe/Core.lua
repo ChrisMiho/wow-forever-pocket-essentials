@@ -130,6 +130,26 @@ local ADDON_NAME, P = ...
 --   C_QuestLog.GetQuestObjectives                Doc/QuestLogDocumentation.lua:477
 --   UnitName                                     Doc/UnitDocumentation.lua:2489
 --
+-- Added in 0.5.0 (the fight button, the park and fade tests, the sweep tests):
+--   Screenshot                                   Doc/ClientDocumentation.lua:95 (a plain function; Blizzard calls it from Lua
+--                                                at Blizzard_CharacterCreate/Camelot/Blizzard_CharacterCreate.lua:457)
+--   C_ActionBar.GetActionCooldownDuration        Doc/ActionBarFrameDocumentation.lua:181 (returns a LuaDurationObject)
+--   cooldown info .isActive / .isEnabled         Doc/SpellSharedDocumentation.lua:26, 25 (both "NeverSecret")
+--   Cooldown:SetCooldownFromDurationObject       Doc/FrameAPICooldownDocumentation.lua:308 (marked protected)
+--   Cooldown:SetCooldown(start, duration)        Doc/FrameAPICooldownDocumentation.lua:281 (marked protected)
+--   Cooldown:GetCooldownDuration                 Doc/FrameAPICooldownDocumentation.lua:34
+--   Cooldown:SetHideCountdownNumbers             Doc/FrameAPICooldownDocumentation.lua:461
+--   CooldownFrameTemplate                        Blizzard_FrameXMLUtil/Mainline/Cooldown.xml:3 (hidden until a cooldown is set;
+--                                                used at Blizzard_ObjectiveTracker/Blizzard_ObjectiveTrackerShared.xml:35)
+--   TopCenteredAnchor.PossessBar / .StanceBar    Blizzard_GamepadActionBars/PageUnit.lua:115, 116
+--   PageUnit.FriendlyTargetingActionBar, .HostileTargetingActionBar, .ShortcutsActionBar
+--                                                Blizzard_GamepadActionBars/PageUnit.lua:119-121 (moved under the top anchor: 136-147)
+--   MinimapCluster.MinimapContainer, Minimap     Blizzard_Minimap/Mainline/Minimap.xml:47, 56 (the container takes the
+--                                                Edit Mode size: Blizzard_Minimap/Mainline/Minimap.lua:418-419)
+--   region :GetCenter / :IsShown / :IsVisible    Doc/SimpleScriptRegionAPIDocumentation.lua:145, 568, 582
+--   region :SetAllPoints                         Doc/SimpleScriptRegionResizingAPIDocumentation.lua:111
+--   texture :SetTexture                          Doc/SimpleTextureBaseAPIDocumentation.lua:604
+--
 -- Not proven by the source, and guarded:
 --   debugstack(start, count1, count2)  only debugstack() and debugstack(level)
 --     appear in the source; if the long form fails the short one is used.
@@ -139,19 +159,26 @@ local ADDON_NAME, P = ...
 --     ClearOverrideBindings, OpenAllBags, CloseAllBags: used by Blizzard's own
 --     code but not in the generated documentation, so their restrictions are
 --     unknown. Finding those out is what the probe is for.
+--   Cooldown:SetCooldown and :SetCooldownFromDurationObject are documented as
+--     protected: a refusal is a possible answer, and it is recorded as one.
+--   CreateFrame("Cooldown", ..., "CooldownFrameTemplate") is inside a pcall;
+--     without it the sweep trials answer "missing".
+--   Whether a Cooldown frame shows itself when a cooldown is set is not in
+--     the source (the template starts hidden): the sweep trials note it.
 
 local type, tostring, pairs, ipairs, pcall, select = type, tostring, pairs, ipairs, pcall, select
 local tconcat, tremove = table.concat, table.remove
 
 P.name = ADDON_NAME or "PocketProbe"
-P.VERSION = "0.4.0"          -- used when the game cannot read the TOC's version line
+P.VERSION = "0.5.0"          -- used when the game cannot read the TOC's version line
 -- An action trial returns this when nothing refused it but it could not see
 -- whether it worked; it is stored as it is (never as "allowed").
 P.CANT_TELL = "can't tell"
 
 local LOG_MAX, LOG_DROP = 2000, 200   -- the activity log drops its oldest lines in blocks
 local DETAILS_MAX = 400
-local MESSAGE_MAX = 900                -- a detail's message, at most
+local MESSAGE_MAX = 1500               -- a detail's message, at most
+P.MESSAGE_MAX = MESSAGE_MAX
 
 ---------------------------------------------------------------------------
 -- Looking names up, and values the game may hide
@@ -227,8 +254,9 @@ local function Stamp(fmt)
 end
 P.Stamp = Stamp
 
-function P.Log(text)
-    local line = Stamp("%H:%M:%S") .. " " .. P.Plain(text, 400)
+-- limit: how long the line may be (400 unless given).
+function P.Log(text, limit)
+    local line = Stamp("%H:%M:%S") .. " " .. P.Plain(text, limit or 400)
     local log = db and db.log or earlyLog
     log[#log + 1] = line
     if #log > LOG_MAX then

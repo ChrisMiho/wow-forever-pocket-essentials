@@ -3,8 +3,8 @@ local ADDON_NAME, P = ...
 -- Running the trials: noticing when the game blocks one, passes, the clean
 -- series (one trial per reload), guided trials, and the small Probe button.
 --
--- Nothing runs by itself: a pass starts from the panel (Run, Run all safe),
--- the clean series from Clean run, and the automatic passes of 0.2.0 only
+-- Nothing runs by itself: a pass starts from the panel (Run, Run all safe,
+-- Fight tests), the clean series from Clean run, and the automatic passes of 0.2.0 only
 -- with the Auto switch on. Nothing here runs every frame. A pass is a chain
 -- of short timers (C_Timer.After), one trial about every 0.3 seconds.
 
@@ -16,6 +16,8 @@ local STEP = 0.3            -- seconds between trials
 local LOGIN_DELAY = 3       -- after login or a loading screen
 local FIGHT_DELAY = 1       -- after a fight starts or ends (lockdown begins after the event)
 local VENDOR_DELAY = 0.3    -- after a vendor window opens
+local SHOT_GAP = 0.5        -- between the timed steps of a guided trial with screenshots
+local LIST_LOG = 4000       -- the longest log line: every trial of the fight tests and its result
 
 local db                    -- the saved table, once loaded
 
@@ -317,7 +319,7 @@ local function Conclude(trial, key, inPress, cur, expected, message)
     end
     P.Record(trial.id, key, result, {
         func = sig and sig.func, stack = sig and sig.stack, inPress = inPress, replace = replace,
-        message = (#notes > 0) and P.Plain(tconcat(notes, " | "), 900) or nil,
+        message = (#notes > 0) and P.Plain(tconcat(notes, " | "), P.MESSAGE_MAX) or nil,
         keep = (trial.kind == "value" and #notes > 0) or nil,   -- numbers a value trial noted get a detail entry
     })
 end
@@ -469,6 +471,8 @@ local function GuidedNote()
             parts[#parts + 1] = name .. " is waiting for a game restart, or Cancel"
         elseif stage == "putback" then
             parts[#parts + 1] = name .. " could not put back: tap Cancel to retry"
+        elseif stage == "prepare" then
+            parts[#parts + 1] = name .. " is starting: wait for the big message, or Cancel"
         else
             parts[#parts + 1] = name .. " is waiting: answer or Cancel"
         end
@@ -568,6 +572,40 @@ local function DoneKey(key)
     return key .. (RiskyOn() and " +risky" or "")
 end
 
+-- "Fight tests": the trials marked fight that are not risky, in file order;
+-- then the rest of what Run all safe runs, without the trials marked noFight
+-- (known to be refused in a fight), last (they pop the game's error box) or
+-- manual, and without the vendor trials; with Risky on, the risky trials
+-- marked fight come last.
+local function FightList()
+    local list, listed = {}, {}
+    local function add(t)
+        if not listed[t.id] then
+            listed[t.id] = true
+            list[#list + 1] = t
+        end
+    end
+    local function passable(t) return t.kind ~= "guided" and not t.event and not t.vendor end
+    for _, t in ipairs(P.trials) do
+        if t.fight and not t.risky and passable(t) then add(t) end
+    end
+    for _, t in ipairs(SafeList(false)) do
+        if not t.fight and not t.noFight and not t.last and not t.manual then add(t) end
+    end
+    if RiskyOn() then
+        for _, t in ipairs(P.trials) do
+            if t.fight and t.risky and passable(t) then add(t) end
+        end
+    end
+    return list
+end
+P.FightList = FightList
+
+-- The fight tests' last words: how many ran, were allowed, were refused.
+local function FightSummary(p, words)
+    return words .. ": " .. p.run .. " run, " .. p.good .. " allowed or readable, " .. p.refused .. " refused"
+end
+
 local function FinishPass(p)
     pass = nil
     if p.full then
@@ -576,7 +614,12 @@ local function FinishPass(p)
         if type(s) == "table" then s.passes = (type(s.passes) == "number" and s.passes or 0) + 1 end
     end
     Log("pass done: " .. p.key)
-    SetStatus("pass done — " .. Covered())
+    if p.ran then
+        Log("fight tests: " .. tconcat(p.ran, ", "), LIST_LOG)
+        SetStatus(FightSummary(p, "Fight tests done"))
+    else
+        SetStatus("pass done — " .. Covered())
+    end
     if pendingFull then
         pendingFull = false
         TryFull()
@@ -586,14 +629,43 @@ local function FinishPass(p)
     end
 end
 
-local function NextStep(p)
+local NextStep              -- below
+
+local REFUSED = { blocked = true, forbidden = true, error = true }
+
+-- One trial of a pass, then the next after a short wait. A pass that keeps
+-- count (the fight tests: p.ran) notes each trial's result as it is stored.
+local function Step(p, trial, inPress)
+    local before = db.last[trial.id]
+    RunTrial(trial, p, inPress, function()
+        if p.ran then
+            -- A trial that stored a result has a new "last" entry; one not tried has not.
+            local now = db.last[trial.id]
+            local result = (now ~= before and type(now) == "table") and tostring(now.result) or nil
+            p.ran[#p.ran + 1] = trial.id .. " " .. (result or "not tried")
+            if result then
+                p.run = p.run + 1
+                if result == "allowed" or result == "readable" then p.good = p.good + 1 end
+                if REFUSED[result] then p.refused = p.refused + 1 end
+            end
+        end
+        After(STEP, function() NextStep(p) end)
+    end)
+end
+
+NextStep = function(p)
     if pass ~= p then return end
     -- A fight starting or ending mid-pass: the trial just run is kept, the
     -- pass stops and (with Auto on) the new situation gets its own pass.
     if P.Situation(p.trigger) ~= p.key then
         pass = nil
         Log("pass stopped: the situation changed")
-        SetStatus("situation changed")
+        if p.ran then
+            Log("fight tests stopped, the fight ended: " .. tconcat(p.ran, ", "), LIST_LOG)
+            SetStatus(FightSummary(p, "Fight tests stopped, the fight ended"))
+        else
+            SetStatus("situation changed")
+        end
         After(FIGHT_DELAY, TryFull)
         return
     end
@@ -603,17 +675,17 @@ local function NextStep(p)
     SetStatus("pass " .. p.pos .. "/" .. #p.list .. " " .. trial.id)
     local inPress = nil
     if p.trigger == "press" then inPress = false end
-    RunTrial(trial, p, inPress, function()
-        After(STEP, function() NextStep(p) end)
-    end)
+    Step(p, trial, inPress)
 end
 
 -- firstInPress: list[1] runs right now, in the caller's own call stack.
 -- note: what a pass that is not a whole one is ("vendor trials only").
-local function StartPass(trigger, list, full, firstInPress, note)
+-- count: the pass keeps each trial's result for its last line (the fight tests).
+local function StartPass(trigger, list, full, firstInPress, note, count)
     local key, facts = P.Situation(trigger)
     P.EnsureSituation(key, facts)
     local p = { trigger = trigger, key = key, list = list, pos = 0, full = full, doneKey = DoneKey(key) }
+    if count then p.ran, p.run, p.good, p.refused = {}, 0, 0, 0 end
     pass = p
     FlushQuiet()
     Log("pass started: " .. key .. (note and (" (" .. note .. ")") or ""))
@@ -621,9 +693,7 @@ local function StartPass(trigger, list, full, firstInPress, note)
     if firstInPress and list[1] then
         p.pos = 1
         SetStatus("pass 1/" .. #list .. " " .. list[1].id)
-        RunTrial(list[1], p, true, function()
-            After(STEP, function() NextStep(p) end)
-        end)
+        Step(p, list[1], true)
     else
         NextStep(p)
     end
@@ -676,6 +746,18 @@ local function RunAllSafe()
     TakeOver("Run all safe takes over")
     local list = SafeList(VendorOn())
     StartPass("press", list, true, true, "run all safe")
+end
+
+-- "Fight tests": one tap in a fight runs what is worth running there (see
+-- FightList), the first trial inside the tap as Run all safe does. Out of a
+-- fight it only says so: Run all safe covers the rest.
+local function RunFightTests()
+    local why = Refusal()
+    if why then return SetStatus(why) end
+    local _, facts = P.Situation("press")
+    if not facts.lockdown then return SetStatus("Fight tests: start a fight first, then tap this.") end
+    TakeOver("Fight tests take over")
+    StartPass("press", FightList(), false, true, "fight tests", true)
 end
 
 -- One trial, straight from its Run button.
@@ -809,10 +891,11 @@ end
 -- like any result, and only then are the old values put back. The saved
 -- table keeps all of it, so a full restart (or a reload) loses nothing.
 --
---   db.guided[id] = { stage = "restart" | "ask" | "putback",
+--   db.guided[id] = { stage = "prepare" | "restart" | "ask" | "putback",
 --                     old = { [name] = value | false }, started = "<date time>",
 --                     notes = "<what was set>" }
--- stage "restart": waiting for a full restart (PLAYER_ENTERING_WORLD with
+-- stage "prepare": a trial with screenshots is going through its timed steps
+-- (below); nothing is asked yet. "restart": waiting for a full restart (PLAYER_ENTERING_WORLD with
 -- isInitialLogin true); a reload is not enough. "ask": the two answer
 -- buttons show. "putback": answered, but some old values could not be
 -- written back; old then holds only those, and Cancel tries again.
@@ -820,7 +903,49 @@ end
 --
 -- Nothing is left changed for good: Cancel, Stop and /probe stop put the old
 -- values back, and so does logging out for a trial that needs no restart.
+--
+-- A trial with shots = true (probe 0.5.0) starts in timed steps, so the two
+-- screenshots show the screen before and after its change: the panel closes;
+-- half a second later screenshot 1; half a second later the change (the
+-- trial's ready() is asked again first: a fight that has started since means
+-- nothing is changed); half a second later screenshot 2; then the question.
+-- A trial with a big text has its question shown in big letters (Panel.lua)
+-- from then until it is answered or called off.
 ---------------------------------------------------------------------------
+
+local bigFor                -- the id of the trial whose big message is showing
+
+local function ShowBig(id, text)
+    bigFor = id
+    if P.ShowBig then P.ShowBig(text) end
+end
+
+local function HideBig(id)
+    if bigFor ~= id then return end
+    bigFor = nil
+    if P.HideBig then P.HideBig() end
+end
+
+-- One screenshot, if this client has the function. Counted on the trial's entry.
+local function Shot(g)
+    local shot = Find("Screenshot")
+    if type(shot) ~= "function" then return end
+    g.shotsTried = true
+    if pcall(shot) then g.shots = (g.shots or 0) + 1 end
+end
+
+local function ShotsNote(g)
+    local note
+    if (g.shots or 0) > 0 then
+        note = "screenshots: " .. g.shots
+    elseif g.shotsTried then
+        note = "screenshots: none (the call failed)"
+    else
+        note = "screenshots: none (not on this client)"
+    end
+    g.shots, g.shotsTried = nil, nil
+    return note
+end
 
 local function SettingNow(name)
     local get = Find("C_CVar.GetCVar")
@@ -856,6 +981,87 @@ local function Watched(id, fn)
     return a, b, sig, cur.signals
 end
 
+-- A trial that changes a frame (apply / restore in Trials.lua) does it here.
+-- True when it went through. Otherwise there is nothing to ask about: the
+-- result is stored now, anything changed goes back, and false is returned.
+local function ApplyGuided(trial, g, notes, inPress)
+    if not trial.apply then return true end
+    g.applied = true
+    local done, note, sig, all = Watched(trial.id, trial.apply)
+    if note then notes[#notes + 1] = P.Plain(note, 1000) end
+    if not sig and done == true then return true end
+    if trial.shots then notes[#notes + 1] = ShotsNote(g) end
+    g.notes = tconcat(notes, ", ")
+    local failed = PutBack(trial.id, g)
+    local result = sig and ((sig.kind == "error") and "error" or sig.kind)
+        or ((done == "missing") and "missing" or "no effect")
+    if sig and sig.message then notes[#notes + 1] = sig.message end
+    if #all > 1 then notes[#notes + 1] = #all .. " signs" end
+    if #failed > 0 then notes[#notes + 1] = "could not put back " .. tconcat(failed, ", ") end
+    local key, facts = P.Situation("press")
+    P.EnsureSituation(key, facts)
+    P.Record(trial.id, key, result, {
+        func = sig and sig.func, stack = sig and sig.stack, inPress = inPress,
+        message = P.Plain(tconcat(notes, "; "), P.MESSAGE_MAX),
+    })
+    SetStatus(trial.id .. ": " .. result .. (#failed > 0 and ("; could not put back " .. tconcat(failed, ", ")) or ""))
+    return false
+end
+
+-- The question: from here the trial waits for its answer (or for a restart).
+local function AskGuided(trial, g, notes)
+    g.notes = tconcat(notes, ", ")
+    g.stage = trial.restart and "restart" or "ask"
+    Log(trial.id .. ": started; " .. g.notes, P.MESSAGE_MAX)
+    -- The panel holds the d-pad and A while open: closed so a press reaches the game.
+    if trial.closePanel and P.HidePanel then P.HidePanel() end
+    if g.stage == "ask" and trial.big then
+        -- The big message says what to do; the status line stays short.
+        ShowBig(trial.id, trial.big)
+        return SetStatus(trial.id .. ": started")
+    end
+    SetStatus(trial.id .. ": " .. (g.stage == "restart" and (trial.steps or "restart the game") or (trial.ask or "answer")))
+end
+
+-- The timed steps of a trial with screenshots (see the top of this section).
+-- Cancel, Stop or a logout in between take the entry away, and the steps stop.
+local function StartInSteps(trial, g, notes)
+    local id = trial.id
+    local function alive() return db.guided[id] == g and g.stage == "prepare" end
+    if trial.closePanel and P.HidePanel then P.HidePanel() end
+    SetStatus(id .. ": starting")
+    local function ask()
+        if not alive() then return end
+        notes[#notes + 1] = ShotsNote(g)
+        AskGuided(trial, g, notes)
+    end
+    local function change()
+        if not alive() then return end
+        if trial.ready then
+            local ok, ready, reason = pcall(trial.ready)
+            if not ok or not ready then
+                local why = tostring(ok and (reason or "not now") or P.Plain(ready))
+                PutBack(id, g)
+                Log(id .. ": not tried, " .. why)
+                return SetStatus(id .. ": not tried, " .. why)
+            end
+        end
+        if not ApplyGuided(trial, g, notes, false) then return end
+        local function second()
+            if not alive() then return end
+            Shot(g)
+            ask()
+        end
+        if not After(SHOT_GAP, second) then ask() end
+    end
+    local function first()
+        if not alive() then return end
+        Shot(g)
+        if not After(SHOT_GAP, change) then change() end
+    end
+    if not After(SHOT_GAP, first) then change() end
+end
+
 local function StartGuided(trial)
     if type(trial) ~= "table" or trial.kind ~= "guided" then return end
     local why = Refusal()
@@ -885,7 +1091,8 @@ local function StartGuided(trial)
         old[pair[1]] = value == nil and false or value
     end
     -- Saved before anything is changed, so a crash still leaves the old values to put back.
-    local g = { stage = trial.restart and "restart" or "ask", old = old, started = P.Stamp("%Y-%m-%d %H:%M:%S") }
+    local g = { stage = trial.shots and "prepare" or (trial.restart and "restart" or "ask"), old = old,
+        started = P.Stamp("%Y-%m-%d %H:%M:%S") }
     db.guided[trial.id] = g
     for _, pair in ipairs(settings) do
         local name, value = pair[1], pair[2]
@@ -900,39 +1107,16 @@ local function StartGuided(trial)
     for _, name in ipairs(trial.watch or {}) do
         if old[name] == nil then notes[#notes + 1] = name .. " " .. tostring(SettingNow(name) or "not on this client") end
     end
-    -- A trial that changes a frame (apply / restore in Trials.lua) does it now.
-    if trial.apply then
-        g.applied = true
-        local done, note, sig, all = Watched(trial.id, trial.apply)
-        if note then notes[#notes + 1] = P.Plain(note, 200) end
-        if sig or done ~= true then
-            -- Nothing to ask about: the result is stored now and anything moved goes back.
-            g.notes = tconcat(notes, ", ")
-            local failed = PutBack(trial.id, g)
-            local result = sig and ((sig.kind == "error") and "error" or sig.kind)
-                or ((done == "missing") and "missing" or "no effect")
-            if sig and sig.message then notes[#notes + 1] = sig.message end
-            if #all > 1 then notes[#notes + 1] = #all .. " signs" end
-            if #failed > 0 then notes[#notes + 1] = "could not put back " .. tconcat(failed, ", ") end
-            local key, facts = P.Situation("press")
-            P.EnsureSituation(key, facts)
-            P.Record(trial.id, key, result, {
-                func = sig and sig.func, stack = sig and sig.stack, inPress = true,
-                message = P.Plain(tconcat(notes, "; "), 900),
-            })
-            return SetStatus(trial.id .. ": " .. result .. (#failed > 0 and ("; could not put back " .. tconcat(failed, ", ")) or ""))
-        end
-    end
-    g.notes = tconcat(notes, ", ")
-    Log(trial.id .. ": started; " .. g.notes)
-    -- The panel holds the d-pad and A while open: closed so a press reaches the game.
-    if trial.closePanel and P.HidePanel then P.HidePanel() end
-    SetStatus(trial.id .. ": " .. (g.stage == "restart" and (trial.steps or "restart the game") or (trial.ask or "answer")))
+    if trial.shots then return StartInSteps(trial, g, notes) end
+    if not ApplyGuided(trial, g, notes, true) then return end
+    AskGuided(trial, g, notes)
 end
 
 -- Writes the old values back. Keeps the entry, holding only the settings that
 -- failed, when any did; returns their names.
 PutBack = function(id, g)
+    -- The question is over, however this ends.
+    HideBig(id)
     local failed = P.PutBackSettings(g.old)
     local keep = {}
     for _, name in ipairs(failed) do keep[name] = g.old[name] end
@@ -1012,13 +1196,18 @@ local function AnswerGuided(trial, index)
     local answer = trial.answers and trial.answers[index]
     if type(answer) ~= "string" then return end
     local notes, started = g.notes, g.started
+    -- What the trial reads at the answer, before anything is put back.
+    if trial.atAnswer then
+        local ok, note = pcall(trial.atAnswer)
+        if ok and type(note) == "string" then notes = tostring(notes) .. ", " .. note end
+    end
     local failed = PutBack(trial.id, g)
     if g.restoreNote then notes = tostring(notes) .. ", " .. g.restoreNote end
     local key, facts = P.Situation("press")
     P.EnsureSituation(key, facts)
     P.Record(trial.id, key, answer:lower(), {
-        message = "set: " .. tostring(notes) .. "; started " .. tostring(started) .. "; "
-            .. (#failed > 0 and ("could not put back " .. tconcat(failed, ", ")) or "old values put back"),
+        message = P.Plain("set: " .. tostring(notes) .. "; started " .. tostring(started) .. "; "
+            .. (#failed > 0 and ("could not put back " .. tconcat(failed, ", ")) or "old values put back"), P.MESSAGE_MAX),
     })
     if #failed > 0 then
         SetStatus(trial.id .. ": answered; could not put back " .. tconcat(failed, ", ") .. ": tap Cancel to retry")
@@ -1214,3 +1403,4 @@ EnsureHook()
 P.RunAllSafe, P.RunOne, P.Stop, P.BeginClean, P.Reload = RunAllSafe, RunOne, Stop, BeginClean, Reload
 P.ToggleOption, P.StartGuided, P.AnswerGuided = ToggleOption, StartGuided, AnswerGuided
 P.CancelGuided = CancelGuided
+P.RunFightTests = RunFightTests

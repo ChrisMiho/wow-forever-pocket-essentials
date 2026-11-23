@@ -11,6 +11,12 @@ local ADDON_NAME, P = ...
 --                           own actions until a reload; runs last in a pass,
 --                           and only with the "Risky trials" switch on
 --   vendor = true           costs something; only with a vendor window open
+--   fight = true            worth running in a fight: first in the "Fight tests"
+--                           pass (a risky one last, and only with Risky on)
+--   noFight = true          known to be refused in a fight: left out of that pass
+--   shots = true            a guided trial that takes a screenshot before and
+--                           after its change (Run.lua, the timed steps)
+--   big = "..."             a guided trial's question in big letters on the screen
 --   needs = { "A.B", ... }  game names it calls; one missing -> "missing"
 --   gate()                  false: not this trial's moment (skipped silently)
 --   ready()                 false, reason: nothing to try right now (logged)
@@ -40,8 +46,8 @@ local ADDON_NAME, P = ...
 -- "blocked" signals while one runs. Nothing here stores a value read from
 -- the game: only classes ("readable", "secret", "nil") and our own text.
 
-local type, pairs, ipairs = type, pairs, ipairs
-local tconcat = table.concat
+local type, pairs, ipairs, pcall, tostring, unpack = type, pairs, ipairs, pcall, tostring, unpack
+local tconcat, floor, abs = table.concat, math.floor, math.abs
 local Find, IsSecret, Num, Str = P.Find, P.IsSecret, P.Num, P.Str
 
 P.trials = {}
@@ -348,7 +354,7 @@ for _, w in ipairs(WINDOWS) do
 end
 
 Add({
-    id = "bag.toggle", area = "Blizzard windows", label = "Open and close the bags", kind = "action", clean = true, risky = true,
+    id = "bag.toggle", area = "Bags and vendor", label = "Open and close the bags", kind = "action", clean = true, risky = true,
     needs = { "OpenAllBags", "CloseAllBags", "IsAnyBagOpen" },
     run = function(state)
         local open = Find("IsAnyBagOpen")()
@@ -412,7 +418,7 @@ Add({
 
 Add({
     id = "pad.bind", area = "Controller and layout", label = "Take a controller button for ourselves and give it back",
-    kind = "action", clean = true,
+    kind = "action", clean = true, noFight = true,
     needs = { "SetOverrideBindingClick", "ClearOverrideBindings" },
     run = function(state)
         state.touched = true
@@ -430,7 +436,7 @@ Add({
 
 Add({
     id = "pad.mark", area = "Controller and layout", label = "Mark one of our buttons for the controller's navigation",
-    kind = "action", clean = true,
+    kind = "action", clean = true, noFight = true,
     needs = { "SmartNavigation_MarkFrameIgnored", "SmartNavigation_ClearIgnoreStatus" },
     run = function(state)
         state.touched = true
@@ -567,6 +573,13 @@ for _, entry in ipairs({
     { "GamepadPetActionFlyout", "GamepadPetActionFlyout" },
     { "TopCenteredAnchor.Bar button 1", function() return MainButton(1) end },
 }) do SIZE_LIST[#SIZE_LIST + 1] = entry end
+-- Probe 0.5.0: the map's container (Edit Mode's map size is its scale, so
+-- it tells which size a measurement was taken at), the map, the other bars.
+SIZE_LIST[#SIZE_LIST + 1] = { "MinimapCluster.MinimapContainer", "MinimapCluster.MinimapContainer" }
+SIZE_LIST[#SIZE_LIST + 1] = { "Minimap", "Minimap" }
+for _, a in ipairs({ "LeftCenteredAnchor", "RightCenteredAnchor", "BottomCenteredAnchor" }) do
+    SIZE_LIST[#SIZE_LIST + 1] = { a .. ".Bar", BAR .. ".PageUnit." .. a .. ".Bar" }
+end
 SIZE_LIST[#SIZE_LIST + 1] = { "UIParent", "UIParent" }
 
 Add({
@@ -736,31 +749,49 @@ Add({
 -- readable, secret, empty or raised an error is kept, never a value.
 local SPELL_FIELDS = { "slot", "has", "icon", "cooldown", "cd start", "cd duration", "count", "usable" }
 
+-- Counting what was read of one field over several buttons. take(field, ok,
+-- value) counts one value by class; the first secret one (else the first
+-- readable one) is what the field's class is taken from.
+local function Tally()
+    local tally = {}
+    local function take(field, ok, v)
+        local t = tally[field]
+        if not t then
+            t = { readable = 0, secret = 0, ["nil"] = 0, error = 0 }
+            tally[field] = t
+        end
+        if not ok then
+            t.error = t.error + 1
+            return
+        end
+        local class = P.Class(v)
+        t[class] = t[class] + 1
+        -- Flags, not the sample itself, are compared: a secret may not be.
+        if class == "secret" and not t.secretSeen then t.sample, t.secretSeen = v, true
+        elseif class == "readable" and not t.secretSeen and not t.readableSeen then t.sample, t.readableSeen = v, true end
+    end
+    return tally, take
+end
+
+-- One field's class and its counts ("icon readable 3 secret 1") go to the result.
+local function TallyNote(c, tally, field)
+    local t = tally[field]
+    if not t then return end
+    c:add(field, t.sample)
+    local parts = {}
+    for _, class in ipairs({ "readable", "secret", "nil", "error" }) do
+        if t[class] > 0 then parts[#parts + 1] = class .. " " .. t[class] end
+    end
+    c:note(field .. " " .. tconcat(parts, " "))
+end
+
 Add({
     id = "bars.spells", area = "Controller and layout", label = "Read the main bar's 8 spells (run it in a fight too)",
-    kind = "value",
+    kind = "value", fight = true,
     needs = { "C_ActionBar.HasAction", "C_ActionBar.GetActionTexture", "C_ActionBar.GetActionCooldown",
         "C_ActionBar.GetActionDisplayCount", "C_ActionBar.IsUsableAction" },
     read = function(c)
-        local tally = {}
-        -- One value of a field: counted by class; the first secret one (else
-        -- the first readable one) is what the field's class is taken from.
-        local function take(field, ok, v)
-            local t = tally[field]
-            if not t then
-                t = { readable = 0, secret = 0, ["nil"] = 0, error = 0 }
-                tally[field] = t
-            end
-            if not ok then
-                t.error = t.error + 1
-                return
-            end
-            local class = P.Class(v)
-            t[class] = t[class] + 1
-            -- Flags, not the sample itself, are compared: a secret may not be.
-            if class == "secret" and not t.secretSeen then t.sample, t.secretSeen = v, true
-            elseif class == "readable" and not t.secretSeen and not t.readableSeen then t.sample, t.readableSeen = v, true end
-        end
+        local tally, take = Tally()
         local has, texture, cooldown = Find("C_ActionBar.HasAction"), Find("C_ActionBar.GetActionTexture"), Find("C_ActionBar.GetActionCooldown")
         local count, usable = Find("C_ActionBar.GetActionDisplayCount"), Find("C_ActionBar.IsUsableAction")
         local buttons, filled = 0, 0
@@ -795,17 +826,7 @@ Add({
             return
         end
         c:note("buttons " .. buttons .. ", with a spell " .. filled)
-        for _, field in ipairs(SPELL_FIELDS) do
-            local t = tally[field]
-            if t then
-                c:add(field, t.sample)
-                local parts = {}
-                for _, class in ipairs({ "readable", "secret", "nil", "error" }) do
-                    if t[class] > 0 then parts[#parts + 1] = class .. " " .. t[class] end
-                end
-                c:note(field .. " " .. tconcat(parts, " "))
-            end
-        end
+        for _, field in ipairs(SPELL_FIELDS) do TallyNote(c, tally, field) end
         c:note("issecretvalue " .. (type(issecretvalue) == "function" and "on this client" or "missing"))
     end,
 })
@@ -814,7 +835,7 @@ Add({
 -- Tried in a fight too (that is the question); risky like the other bar moves.
 Add({
     id = "bars.alpha", area = "Blizzard windows", label = "Set the left bar's see-through to what it has (run it in a fight too)",
-    kind = "action", risky = true,
+    kind = "action", risky = true, fight = true,
     run = function(state)
         local anchor = LeftAnchor()
         if not anchor then return false, "the left bar is not there" end
@@ -829,6 +850,31 @@ Add({
         if IsSecret(now) then return P.CANT_TELL, "see-through unreadable afterwards" end
         now = Num(now)
         return now ~= nil and math.abs(now - alpha) < 0.001
+    end,
+    undo = function(state)
+        if state.anchor then state.anchor:SetAlpha(state.alpha) end
+    end,
+})
+
+-- Probe 0.5.0: a real change. The left bar's see-through set to nothing and
+-- read back, then the old value written back whatever happened.
+Add({
+    id = "bars.fade", area = "Blizzard windows", label = "Fade the left bar to nothing and back (run it in a fight)",
+    kind = "action", risky = true, fight = true,
+    run = function(state)
+        local anchor = LeftAnchor()
+        if not anchor then return false, "the left bar is not there" end
+        if type(anchor.GetAlpha) ~= "function" or type(anchor.SetAlpha) ~= "function" then return "missing", "frame alpha methods" end
+        local alpha = anchor:GetAlpha()
+        if IsSecret(alpha) then return false, "see-through unreadable (secret)" end
+        alpha = Num(alpha)
+        if not alpha then return false, "see-through unreadable" end
+        state.anchor, state.alpha = anchor, alpha
+        anchor:SetAlpha(0)
+        local now = anchor:GetAlpha()
+        if IsSecret(now) then return P.CANT_TELL, "see-through unreadable afterwards" end
+        now = Num(now)
+        return now ~= nil and now < 0.001
     end,
     undo = function(state)
         if state.anchor then state.anchor:SetAlpha(state.alpha) end
@@ -858,9 +904,62 @@ local function BarOffScreen()
     return bottom * bs > top * ss
 end
 
+-- Probe 0.5.0: where the bars are, as our own text: the four bars and the
+-- bars that ride on the top anchor. For each: shown or hidden (as the player
+-- sees it), its centre in screen units, on or off the screen; then how many
+-- are shown and on the screen. Taken just before and just after the park.
+local SNAPSHOT_BARS = {
+    { "top", MAIN_BAR }, { "left", BAR .. ".PageUnit.LeftCenteredAnchor.Bar" },
+    { "right", BAR .. ".PageUnit.RightCenteredAnchor.Bar" }, { "bottom", BAR .. ".PageUnit.BottomCenteredAnchor.Bar" },
+    { "possess", BAR .. ".PageUnit.TopCenteredAnchor.PossessBar" }, { "stance", BAR .. ".PageUnit.TopCenteredAnchor.StanceBar" },
+    { "friendly", BAR .. ".PageUnit.FriendlyTargetingActionBar" }, { "hostile", BAR .. ".PageUnit.HostileTargetingActionBar" },
+    { "shortcuts", BAR .. ".PageUnit.ShortcutsActionBar" },
+}
+
+-- true / false as the player sees the frame (its parents count too), or nil.
+local function Seen(frame)
+    local method = Has(frame, "IsVisible") and "IsVisible" or (Has(frame, "IsShown") and "IsShown")
+    if not method then return nil end
+    local ok, v = pcall(frame[method], frame)
+    if not ok or IsSecret(v) then return nil end
+    return v and true or false
+end
+
+local function BarsSnapshot()
+    local screen = FrameAt("UIParent")
+    local sw, sh = screen and Dim(screen, "GetWidth"), screen and Dim(screen, "GetHeight")
+    local ss = screen and Dim(screen, "GetEffectiveScale") or 1
+    local parts, count = {}, 0
+    for _, entry in ipairs(SNAPSHOT_BARS) do
+        local name, frame = entry[1], FrameAt(entry[2])
+        if not frame then
+            parts[#parts + 1] = name .. " missing"
+        else
+            local seen = Seen(frame)
+            local x, y, on
+            if Has(frame, "GetCenter") then
+                local ok, cx, cy = pcall(frame.GetCenter, frame)
+                if ok then x, y = Num(cx), Num(cy) end
+            end
+            if x and y then
+                local scale = (Dim(frame, "GetEffectiveScale") or 1) / ss
+                x, y = x * scale, y * scale
+                if sw and sh then on = x >= 0 and x <= sw and y >= 0 and y <= sh end
+            end
+            parts[#parts + 1] = name .. " " .. (seen == nil and "shown ?" or (seen and "shown" or "hidden"))
+                .. " " .. ((x and y) and (floor(x + 0.5) .. "," .. floor(y + 0.5)) or "?,?")
+                .. " " .. (on == nil and "on screen ?" or (on and "on screen" or "off screen"))
+            if seen and on then count = count + 1 end
+        end
+    end
+    parts[#parts + 1] = "bars shown and on screen: " .. count
+    return tconcat(parts, "; ")
+end
+
 Add({
     id = "bars.park", area = "Blizzard windows", label = "Park the main bar off screen, then press a spell button",
     short = "Park the main bar", kind = "guided", manual = true, risky = true, hold = "the main bar",
+    shots = true, big = "Main bar parked. Press a spell, then tap Probe.",
     ready = function()
         local ok, why = NotInCombat()
         if not ok then return false, why end
@@ -885,6 +984,7 @@ Add({
         if IsSecret(point) or IsSecret(rel) or IsSecret(relPoint) then return false, "bar position unreadable" end
         x, y = Num(x), Num(y)
         if type(point) ~= "string" or not x or not y then return false, "the top bar has no position" end
+        local before = BarsSnapshot()
         parked = { anchor = anchor, point = point, rel = rel, relPoint = relPoint, x = x, y = y, parkedX = x, parkedY = y + PARK_UP }
         anchor:ClearAllPoints()
         anchor:SetPoint(point, rel, relPoint, x, y + PARK_UP)
@@ -895,6 +995,7 @@ Add({
         local off = BarOffScreen()
         return true, "top bar anchor moved up " .. PARK_UP .. "; main bar off screen "
             .. (off == nil and "unknown" or (off and "yes" or "no"))
+            .. "; before: " .. before .. "; after: " .. BarsSnapshot()
     end,
     -- true when nothing is left to put back; false and why otherwise.
     restore = function()
@@ -923,6 +1024,73 @@ Add({
         end
         parked = nil
         return true, "left where the game had put it since"
+    end,
+})
+
+-- Probe 0.5.0: fading the main bar to nothing: a guided trial. After Start
+-- the bar's see-through is set to 0 (in a fight too: that is part of the
+-- question), the player presses a spell button and answers, and the old
+-- value is written back. The bar and its old value are kept here, never in
+-- the saved table. A put-back the game refuses in a fight is tried again
+-- when the fight ends; a reload puts the bar back in any case.
+local faded                      -- { bar, alpha } while faded
+
+local function Hundredths(v) return floor(v * 100 + 0.5) / 100 end
+
+Add({
+    id = "bars.fadecast", area = "Blizzard windows", label = "Fade the main bar to nothing, then press a spell button",
+    short = "Fade the main bar", kind = "guided", manual = true, risky = true, hold = "the main bar's see-through",
+    shots = true, big = "Main bar is invisible. Press a spell, then tap Probe.",
+    ready = function()
+        if EditModeOpen() then return false, "Edit Mode open" end
+        return true
+    end,
+    start = "Start",
+    ask = "The main bar is invisible now and this window has closed. Press a d-pad or face button that holds a "
+        .. "spell you can use here (a buff, a heal, or an attack with a target), then tap Probe and answer.",
+    closePanel = true,
+    answers = { "Spell cast", "Nothing happened" },
+    apply = function()
+        local bar = FrameAt(MAIN_BAR)
+        if not bar then return "missing", "the main bar" end
+        if type(bar.GetAlpha) ~= "function" or type(bar.SetAlpha) ~= "function" then return "missing", "frame alpha methods" end
+        local alpha = bar:GetAlpha()
+        if IsSecret(alpha) then return false, "see-through unreadable (secret)" end
+        alpha = Num(alpha)
+        if not alpha then return false, "see-through unreadable" end
+        faded = { bar = bar, alpha = alpha }
+        bar:SetAlpha(0)
+        local now = bar:GetAlpha()
+        if IsSecret(now) or not Num(now) then return false, "main bar see-through unreadable after setting it to 0" end
+        if now >= 0.001 then return false, "main bar see-through still " .. Hundredths(now) .. " after setting it to 0" end
+        return true, "main bar see-through " .. Hundredths(alpha) .. " -> 0"
+    end,
+    -- Read once more at the answer, before the put-back: the game may have set it itself.
+    atAnswer = function()
+        local f = faded
+        if not f then return nil end
+        local now = f.bar:GetAlpha()
+        if IsSecret(now) or not Num(now) then return "still invisible at the answer: unknown" end
+        return "still invisible at the answer: " .. (now < 0.001 and "yes" or "no")
+    end,
+    -- true when nothing is left to put back; false and why otherwise.
+    restore = function()
+        local f = faded
+        if not f then return true end
+        local now = f.bar:GetAlpha()
+        if not IsSecret(now) and Num(now) and abs(now - f.alpha) < 0.001 then
+            faded = nil
+            return true
+        end
+        f.bar:SetAlpha(f.alpha)
+        now = f.bar:GetAlpha()
+        if IsSecret(now) or not Num(now) then return false, "its see-through is unreadable; a reload puts it back" end
+        if abs(now - f.alpha) < 0.001 then
+            faded = nil
+            return true
+        end
+        if NotInCombat() then return false, "the game did not take the old value; a reload puts it back" end
+        return false, "in a fight: it goes back when the fight ends"
     end,
 })
 
@@ -976,6 +1144,190 @@ Add({
         parts[#parts + 1] = "the game's own lookup gives the same picture for " .. same .. " of " .. read
         if read == 0 then return "no pictures read", tconcat(parts, "; ") end
         return copied .. " of " .. read .. " copied" .. (set and (" · " .. set:sub(1, 20)) or ""), tconcat(parts, "; ")
+    end,
+})
+
+---------------------------------------------------------------------------
+-- Probe 0.5.0: can a square of ours show the game's cooldown sweep in a
+-- fight. Two 48 by 48 squares, made now and hidden, each with the spell's
+-- icon and a Cooldown frame (no countdown numbers), "1" and "2" under them.
+-- Square 1 is given the game's duration object, square 2 the start and
+-- duration numbers. Both calls are documented as protected, so a refusal is
+-- an answer too. No cooldown value is read into the saved table.
+---------------------------------------------------------------------------
+
+local SWEEP_SIZE, SWEEP_GAP = 48, 8
+local SWEEP_SHOW = 8             -- seconds the squares stay on screen after a sweep trial
+local SWEEP_SHOT = 1             -- seconds after they show before the one screenshot
+
+-- At the top of the screen, right of the Probe button and its status line.
+local sweep = CreateFrame("Frame", "PocketProbeSweep", UIParent)
+sweep:SetSize(SWEEP_SIZE * 2 + SWEEP_GAP, SWEEP_SIZE + 20)
+sweep:SetFrameStrata("HIGH")
+sweep:SetPoint("TOPLEFT", UIParent, "TOP", 230, -4)
+sweep:Hide()
+local sweepIcons, sweepCooldowns = {}, {}
+for i = 1, 2 do
+    local square = CreateFrame("Frame", nil, sweep)
+    square:SetSize(SWEEP_SIZE, SWEEP_SIZE)
+    square:SetPoint("TOPLEFT", sweep, "TOPLEFT", (i - 1) * (SWEEP_SIZE + SWEEP_GAP), 0)
+    local back = square:CreateTexture(nil, "BACKGROUND")
+    back:SetAllPoints(square)
+    back:SetColorTexture(0, 0, 0, 0.8)
+    local icon = square:CreateTexture(nil, "ARTWORK")
+    icon:SetAllPoints(square)
+    sweepIcons[i] = icon
+    -- A client without the frame type or its template: the trials answer "missing".
+    local ok, cd = pcall(CreateFrame, "Cooldown", nil, square, "CooldownFrameTemplate")
+    if ok and type(cd) == "table" then
+        if Has(cd, "SetAllPoints") then pcall(cd.SetAllPoints, cd, square) end
+        if Has(cd, "SetHideCountdownNumbers") then pcall(cd.SetHideCountdownNumbers, cd, true) end
+        sweepCooldowns[i] = cd
+    end
+    local number = sweep:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    number:SetPoint("TOP", square, "BOTTOM", 0, -2)
+    number:SetText(tostring(i))
+end
+
+local sweepToken = 0             -- changes with every show, so only the newest timer hides
+
+-- Shows the squares for SWEEP_SHOW seconds (a second run starts the time
+-- again) and takes one screenshot a second after they come up.
+local function ShowSweep()
+    local after = Find("C_Timer.After")
+    if type(after) ~= "function" then return end
+    local fresh = not Shown(sweep)
+    sweep:Show()
+    sweepToken = sweepToken + 1
+    local token = sweepToken
+    after(SWEEP_SHOW, P.Guard(function()
+        if token == sweepToken then sweep:Hide() end
+    end))
+    if fresh then
+        after(SWEEP_SHOT, P.Guard(function()
+            local shot = Find("Screenshot")
+            if type(shot) == "function" and Shown(sweep) then pcall(shot) end
+        end))
+    end
+end
+
+-- The main bar slot to try: one whose cooldown the game says is running,
+-- else the first that holds a spell. Returns the slot and "yes" / "no" /
+-- "unknown" (is it on cooldown), or nil.
+local function SweepSlot()
+    local has, cooldown = Find("C_ActionBar.HasAction"), Find("C_ActionBar.GetActionCooldown")
+    local first, firstState
+    for i = 1, 8 do
+        local b = MainButton(i)
+        local slot = b and Num(b.action)
+        if slot and slot >= 1 then
+            local ok, h = pcall(has, slot)
+            if ok and not IsSecret(h) and h then
+                local state = "unknown"
+                local okc, info = pcall(cooldown, slot)
+                if okc and not IsSecret(info) and type(info) == "table" then
+                    local active, enabled = info.isActive, info.isEnabled
+                    if not IsSecret(active) and active ~= nil then
+                        state = active and "yes" or "no"
+                    elseif not IsSecret(enabled) and enabled == false then
+                        state = "no"
+                    end
+                end
+                if state == "yes" then return slot, state end
+                if not first then first, firstState = slot, state end
+            end
+        end
+    end
+    return first, firstState
+end
+
+-- One sweep trial: square `index` gets the slot's icon, then `method` is
+-- called on its Cooldown frame with what values(slot) returns ({ n = count,
+-- ... }, or nil and why). The values go straight from the game to the frame.
+local function RunSweep(index, method, values)
+    local cd = sweepCooldowns[index]
+    if not cd then return "missing", "CooldownFrameTemplate" end
+    if not Has(cd, method) then return "missing", "Cooldown:" .. method end
+    local slot, running = SweepSlot()
+    if not slot then return false, "no main bar button holds a spell" end
+    local args, why = values(slot)
+    if not args then return false, why end
+    local texture = Find("C_ActionBar.GetActionTexture")
+    if type(texture) == "function" then
+        local ok, v = pcall(texture, slot)
+        if ok then pcall(sweepIcons[index].SetTexture, sweepIcons[index], v) end
+    end
+    ShowSweep()
+    cd:Hide()
+    local ok, err = pcall(cd[method], cd, unpack(args, 1, args.n))
+    -- Whether setting a cooldown shows the frame is one of the things asked.
+    local shown = Shown(cd)
+    local class = "missing"
+    if Has(cd, "GetCooldownDuration") then
+        local okd, v = pcall(cd.GetCooldownDuration, cd)
+        class = okd and P.Class(v) or "error"
+    end
+    -- Shown by us if it did not show itself, so a sweep can still be seen.
+    if not shown then cd:Show() end
+    local note = "slot on cooldown " .. running .. "; sweep frame shown by itself " .. (shown and "yes" or "no")
+        .. "; duration afterwards " .. class
+    if not ok then error(P.Plain(err, 200) .. " | " .. note, 0) end
+    return true, note
+end
+
+Add({
+    id = "cd.duration", area = "Our own windows", label = "Read the main bar's cooldown duration objects (run it in a fight too)",
+    kind = "value", fight = true,
+    needs = { "C_ActionBar.HasAction", "C_ActionBar.GetActionCooldownDuration" },
+    read = function(c)
+        local tally, take = Tally()
+        local has, duration = Find("C_ActionBar.HasAction"), Find("C_ActionBar.GetActionCooldownDuration")
+        local buttons, filled = 0, 0
+        for i = 1, 8 do
+            local b = MainButton(i)
+            if b then
+                buttons = buttons + 1
+                local slot = Num(b.action)
+                if slot and slot >= 1 then
+                    local ok, h = pcall(has, slot)
+                    if ok and not IsSecret(h) and h then
+                        filled = filled + 1
+                        take("duration", pcall(duration, slot))
+                    end
+                end
+            end
+        end
+        if buttons == 0 then
+            c:add("buttons", nil)
+            c:note("the main bar's buttons are not there")
+            return
+        end
+        c:note("buttons " .. buttons .. ", with a spell " .. filled)
+        if tally.duration then TallyNote(c, tally, "duration") else c:add("duration", nil) end
+    end,
+})
+
+Add({
+    id = "cd.sweep.object", area = "Our own windows", label = "Cooldown sweep on a square of ours, from the game's duration object",
+    kind = "action", fight = true,
+    needs = { "C_ActionBar.HasAction", "C_ActionBar.GetActionCooldown", "C_ActionBar.GetActionCooldownDuration" },
+    run = function()
+        return RunSweep(1, "SetCooldownFromDurationObject", function(slot)
+            return { n = 1, (Find("C_ActionBar.GetActionCooldownDuration")(slot)) }
+        end)
+    end,
+})
+
+Add({
+    id = "cd.sweep.numbers", area = "Our own windows", label = "Cooldown sweep on a square of ours, from the start and duration numbers",
+    kind = "action", fight = true,
+    needs = { "C_ActionBar.HasAction", "C_ActionBar.GetActionCooldown" },
+    run = function()
+        return RunSweep(2, "SetCooldown", function(slot)
+            local info = Find("C_ActionBar.GetActionCooldown")(slot)
+            if IsSecret(info) or type(info) ~= "table" then return nil, "the cooldown table is unreadable" end
+            return { n = 2, info.startTime, info.duration }
+        end)
     end,
 })
 

@@ -430,7 +430,7 @@ per objective". The owner has more Quest icons ideas to bring after testing.
 Spec `docs/superpowers/specs/2026-11-18-tidier-settings.md`; device steps
 `docs/TESTING.md` 14.
 
-**0.11.0 (2026-11-21, untested, unprobed):** Controller layout, piece 3 of
+**0.11.0 (2026-11-21, sizes updated 2026-11-22, untested):** Controller layout, piece 3 of
 the controller UI round, on a new Controller tab (experimental, off). One
 switch creates a "Pocket Essentials" Edit Mode layout and places the game's
 gamepad bars around the map; switching off returns to the old layout. Built
@@ -446,6 +446,17 @@ needs (spells read in a fight, fading a bar in a fight, a press with the main
 bar parked off screen, the controller-button pictures) and more sizes. It is
 released alone as the pre-release `probe-v0.4.0`; 0.11.0 waits for its
 results. Device steps `docs/TESTING.md` 22.
+**2026-11-22, after the probe ran on the device**
+(`docs/11-22-playsession/EVIDENCE.md`): moving, sizing and fading bars and
+saving layouts are allowed; a bar cannot be split; cooldown times are secret
+in a fight; the park test gave no answer. 0.11.0 now carries the measured map
+size and a Map size choice (spec
+`docs/superpowers/specs/2026-11-22-controller-layout-measured-sizes.md`), and
+Pocket Probe 0.5.0 (Fight tests button, clearer park test, fade tests,
+cooldown sweep; spec `2026-11-22-pocket-probe-0.5.0.md`) asks what is still
+open. Both are in the one pre-release `v0.11.0`, built while the owner was
+away; device steps `docs/TESTING.md` 23, then 21. The plan from here to
+1.0.0 is `docs/ui-review/2026-11-22-compact-ui-gameplan.md`.
 
 **0.10.0 (2026-11-20, untested):** "Catch all errors" (the owner: "we need
 another feature to make managing bugs easier ... almost working like how

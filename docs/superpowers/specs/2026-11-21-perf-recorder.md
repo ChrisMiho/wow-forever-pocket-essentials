@@ -1,6 +1,31 @@
-# Performance recorder (probe 0.5.0, Pocket Essentials measuring hook)
+# Performance recorder (probe 0.6.0, Pocket Essentials measuring hook)
 
-Status: draft for the owner's approval. Date: 2026-11-21.
+Status: approved. Drafted 2026-11-21. On 2026-11-22 the owner asked: "after finishing 0.5.0, can we move onto 0.6.0, so that
+the new probe code can run all the tests in one session instead of making me
+go through another install?" This spec is approved by that instruction. The
+"2026-11-22 rulings" below were made without the owner; check them first.
+
+## 2026-11-22 rulings
+
+1. **Probe 0.6.0, not 0.5.0.** 0.5.0 became the fight tests, park, fade
+   and sweep trials (`2026-11-22-pocket-probe-0.5.0.md`). 0.6.0 is 0.5.0
+   plus this recorder. Only 0.6.0 is released.
+2. **Pocket Essentials stays 0.11.0.** It is not released yet, so the hook
+   joins that version's CHANGELOG entry.
+3. **Trials are held back only while a recording is running**, not whenever
+   Pocket Essentials is loaded. The owner ran the 0.4.0 trials with Pocket
+   Essentials loaded and its features off, and the point of 0.6.0 is one
+   install and one sitting: tap Stop, run the trials, tap Start recording,
+   play. Starting a trial, a pass, a clean run or a guided trial while
+   recording is refused with "Recording: tap Stop first." Starting a
+   recording while a pass or a guided trial is under way is refused the
+   same way round.
+4. **The hook's counters**, so both halves can be built at once:
+   `counters[key] = { ms = n, calls = n, max = n, events = { [event] =
+   { ms = n, calls = n } } }` for each feature key, and
+   `counters["*"] = { ms = n, calls = n, max = n }` for outermost runs only
+   (the total with nothing counted twice). `events` is there only for keys
+   the dispatcher has timed.
 
 ## Why
 
@@ -73,7 +98,7 @@ That shows where the weight is, and gives before and after numbers for the plann
 - **Memory reads:** `UpdateAddOnMemoryUsage` is expensive. Blizzard calls it at most once per 15 s (AddonList.lua:775-785). Use the same limit.
 - **The game's profiler may be switched off** on the device. When `C_AddOnProfiler.IsEnabled()` is false, record memory, frame rate and our own per-feature timing, and say "profiler off" in the report.
 - **The probe is test-only.** It ships only in `dist/PocketProbe.zip`, never in the player zips. Its trials still expect Pocket Essentials off. Recording is the one probe mode meant to run with it on.
-- **Versions:** bump the probe to 0.5.0. Pocket Essentials gets a version bump and a CHANGELOG entry together (owner rule). The new section in `docs/TESTING.md` is the device test.
+- **Versions:** see the 2026-11-22 rulings. The new section in `docs/TESTING.md` is the device test.
 
 ## Approaches considered
 
@@ -109,7 +134,7 @@ That shows where the weight is, and gives before and after numbers for the plann
 - **Starting by itself:**
   - Once the player has logged in, if Pocket Essentials is loaded and the owner hasn't stopped recording this session, the probe starts recording and calls `PE:StartMeasure()`.
   - A recording that is on survives `/reload`: the same run carries on.
-  - If Pocket Essentials isn't loaded, nothing starts, and the probe behaves exactly as 0.4.0.
+  - If Pocket Essentials isn't loaded, nothing starts, and the probe behaves exactly as 0.5.0.
 - **Stopping:** Stop (either button) ends the run and calls `PE:StopMeasure()`. The stopped state lasts until Start recording or the next fresh login. Builder: a fresh login starts a new run by default; a reload keeps the stopped state.
 - **Sampling:**
   - A `C_Timer.NewTicker` every 15 s, only while recording.
@@ -155,7 +180,7 @@ Pocket Essentials' counters start from zero again after a reload. The recorder n
 ### Probe window and trials while recording (author's call after review)
 
 - **Recording line:** a line across the top of the window shows the recording state, elapsed time, Stop and Start recording. The window's existing Close button closes it while recording carries on.
-- **Trial buttons:** they stay where they are. While Pocket Essentials is loaded they are dimmed, with a note that trials need Pocket Essentials off.
+- **Trial buttons:** they stay where they are. While a recording is running they are dimmed, with the note "Recording: tap Stop first." (ruling 3).
 - **No overlap:** trials and recording never run together, so a Clean run's reloads don't have to keep a recording going.
 
 ### Reaching Stop with the d-pad (author's call after review)

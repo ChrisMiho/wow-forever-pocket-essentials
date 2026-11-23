@@ -4,16 +4,18 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## [0.11.0] - 2026-11-21
+## [0.11.0] - 2026-11-22
 
 Twenty-fifth test build. From the owner, for the controller UI round:
 "minimap in center middle, we could build out the buttons around the map and
-then stick the chat up where the map used to be". Built while the owner was
-away ("can we start getting things made and then when I return we can run
-the probe and adjust from there"), before the probe round that was meant to
-come first. Spec `docs/superpowers/specs/2026-11-21-controller-layout.md`.
-Not yet tested on a device: every position and size in it is a first guess.
-Your saved choices carry over.
+then stick the chat up where the map used to be". First built while the owner
+was away, before the probe round; the probe has since run on the device
+(`docs/11-22-playsession/EVIDENCE.md`) and its measurements are now in.
+Specs `docs/superpowers/specs/2026-11-21-controller-layout.md` and
+`2026-11-22-controller-layout-measured-sizes.md`. Released together with
+Pocket Probe 0.5.0 in one GitHub pre-release. Not yet tested on a device:
+the map's size is measured and the bar's size is Blizzard's own, but every
+spot and gap is still a first guess. Your saved choices carry over.
 
 ### Added
 
@@ -28,6 +30,9 @@ Your saved choices carry over.
   - The left-trigger bar sits left of the map and the right-trigger bar
     right of it. The main bar is above the map, or under it. The
     both-triggers bar is smaller, above them.
+  - **Map size**: 60%, 70% or 80% (starts at 80%). The probe measured the
+    map at 273 by 283, a third bigger than the mockup assumed, so the bars
+    now sit around the real map and the map can be made smaller.
   - Choices: where the main bar goes; where the player, pet and target
     frames go (corners, stacked, or side by side); one size for all spell
     buttons (starts at 100%) with three fine-tunes; where the swing timers go; and for each
@@ -35,6 +40,27 @@ Your saved choices carry over.
   - It is a starting point: what you then move in Edit Mode is kept.
     "Start over" rebuilds the layout from the template.
 - **Setup guide:** a Controller screen with the same switch.
+- **Pocket Probe 0.5.0** (testing tool, in the same GitHub pre-release as
+  this build, as its own `PocketProbe.zip`; never in the player zips). Spec
+  `docs/superpowers/specs/2026-11-22-pocket-probe-0.5.0.md`.
+  - **Fight tests** button: one tap in a fight runs what is worth running
+    there and leaves out what is known to be refused. It ends with "Fight
+    tests done: N run, A allowed or readable, B refused".
+  - **Park the main bar** is clearer: big letters on screen say what to do,
+    the probe records which bars were shown and where just before and just
+    after, and takes a screenshot at both moments.
+  - **Fade the main bar to nothing, then press a spell** (new, guided, also
+    in a fight): does an invisible bar still cast?
+  - **Fade the left bar to nothing and back** (new): a real see-through
+    change in a fight, not only "the value it already has".
+  - **Cooldown sweep** (three new trials): whether a square of our own can
+    show the game's cooldown sweep in a fight, from the game's duration
+    object or from the start and duration numbers. Two small squares show
+    for 8 seconds so the answer can be seen.
+  - Sizes: the map's inner container and the three other bars are measured
+    too.
+  - "Open and close the bags" moved to the Bags and vendor tab to make room.
+  - Device steps: `docs/TESTING.md` section 23.
 - **Pocket Probe 0.4.0** (testing tool, released on its own as the GitHub
   pre-release `probe-v0.4.0` before this build): ten new trials. They
   measure the real sizes of the map, frames, buff rows, quest tracker, XP

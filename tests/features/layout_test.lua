@@ -1,6 +1,7 @@
 -- Rules for "Controller layout" (ControllerLayout.lua), the pure half.
 -- Source: docs/superpowers/specs/2026-11-21-controller-layout.md ("The template",
--- "Frames", "Swing timers", "Bars"). Fresh client and addon per test.
+-- "Frames", "Swing timers", "Bars") and 2026-11-22-controller-layout-measured-sizes.md
+-- (the map's size). Fresh client and addon per test.
 local T = ...
 local test, eq, check = T.test, T.eq, T.check
 
@@ -102,17 +103,17 @@ test("layout: BarSpots for the defaults follow the spec's Bars table", function(
     local o = with(Plan.DEFAULTS)
     o.size = 85 -- the scaled arithmetic (the default is 100)
     local s = Plan.BarSpots(o)
-    near(s.left.x, -(82 + 14 + 208 * 0.85 / 2), "left.x")
+    near(s.left.x, -(218.4 / 2 + 14 + 208 * 0.85 / 2), "left.x")
     near(s.left.y, 8 + 68 * 0.85 / 2, "left.y")
     near(s.left.s, 0.85, "left.s")
     near(s.right.x, -s.left.x, "right.x")
     near(s.right.y, s.left.y, "right.y")
     near(s.top.x, 0, "top.x")
-    near(s.top.y, 44 + 176 + 12 + 68 * 0.85 / 2, "top.y")
+    near(s.top.y, 44 + 226.4 + 12 + 68 * 0.85 / 2, "top.y")
     near(s.top.s, 0.85, "top.s")
     eq(s.bottom.s, 1)
     near(s.bottom.x, 0, "bottom.x")
-    near(s.bottom.y, 44 + 176 * 0.62 + 50, "bottom.y")
+    near(s.bottom.y, 44 + 226.4 * 0.62 + 50, "bottom.y")
     near(s.both.x, 0, "both.x")
     near(s.both.y, s.top.y + 68 * 0.85 / 2 + 22 + 68 * 0.595 / 2, "both.y")
     near(s.both.s, 0.595, "both.s")
@@ -129,8 +130,8 @@ test("layout: BarSpots with the main bar under the map", function()
     near(s.left.x, -(208 * 0.85 / 2 + 12 + 208 * 0.85 / 2), "left.x")
     near(s.left.y, 8 + 68 * 0.85 / 2, "left.y")
     near(s.top.y, 8 + 68 * 0.85 / 2, "top.y")
-    near(s.both.y, 90 + 176 + 14 + 68 * 0.595 / 2, "both.y")
-    near(s.bottom.y, 90 + 176 * 0.5 + 50, "bottom.y")
+    near(s.both.y, 90 + 226.4 + 14 + 68 * 0.595 / 2, "both.y")
+    near(s.bottom.y, 90 + 226.4 * 0.5 + 50, "bottom.y")
     eq(s.bottom.s, 1)
 end)
 
@@ -338,6 +339,121 @@ test("layout: Apply drops a second anchor when it sets an anchor, and keeps it f
     local settingsOnly = { system = "ChatFrame", settings = { WidthHundreds = 4 } }
     Plan.Apply(layout, { settingsOnly }, e)
     eq(layout.systems[2].anchorInfo2, second, "a settings-only piece dropped the second anchor")
+end)
+
+---------------------------------------------------------------------------
+-- Map size (spec 2026-11-22-controller-layout-measured-sizes.md). The map is
+-- 273 by 283 at 100%: 163.8 by 169.8 at 60%, 191.1 by 198.1 at 70%, 218.4 by
+-- 226.4 at 80%. Every number below is worked out by hand from those.
+---------------------------------------------------------------------------
+
+local MAP_CASES = {
+    -- leftX: mapW/2 + 14 + 104. topY: 44 + mapH + 12 + 34. bothY: topY + 34 + 22 + 23.8.
+    -- bottomY: 44 + mapH * 0.62 + 50. aboveTop: the both-triggers bar's top with the map at 6.
+    { map = 60, stored = 1, leftX = 199.9, topY = 259.8, bothY = 339.6, bottomY = 199.276, aboveTop = 325.4,
+      underBothY = 297.6, underBottomY = 224.9 },
+    { map = 70, stored = 2, leftX = 213.55, topY = 288.1, bothY = 367.9, bottomY = 216.822, aboveTop = 353.7,
+      underBothY = 325.9, underBottomY = 239.05 },
+    { map = 80, stored = 3, leftX = 227.2, topY = 316.4, bothY = 396.2, bottomY = 234.368, aboveTop = 382,
+      underBothY = 354.2, underBottomY = 253.2 },
+}
+
+test("layout: the map option defaults to 80", function()
+    local Plan = plan()
+    eq(Plan.DEFAULTS.map, 80)
+end)
+
+test("layout: BarSpots follow the map's size at 60, 70 and 80 percent", function()
+    local Plan = plan()
+    for _, m in ipairs(MAP_CASES) do
+        local what = "map " .. m.map .. " "
+        local s = Plan.BarSpots(with({ map = m.map }))
+        near(s.left.x, -m.leftX, what .. "left.x")
+        near(s.right.x, m.leftX, what .. "right.x")
+        near(s.left.y, 42, what .. "left.y")
+        near(s.right.y, 42, what .. "right.y")
+        near(s.left.s, 1, what .. "left.s")
+        near(s.top.x, 0, what .. "top.x")
+        near(s.top.y, m.topY, what .. "top.y")
+        near(s.top.s, 1, what .. "top.s")
+        near(s.both.x, 0, what .. "both.x")
+        near(s.both.y, m.bothY, what .. "both.y")
+        near(s.both.s, 0.7, what .. "both.s")
+        near(s.bottom.y, m.bottomY, what .. "bottom.y")
+        eq(s.bottom.s, 1)
+        -- Main bar under the map: the side bars hug the main bar, so the map's width does not move them.
+        local u = Plan.BarSpots(with({ map = m.map, main = "under", timers = "above" }))
+        near(u.left.x, -220, what .. "under left.x")
+        near(u.top.y, 42, what .. "under top.y")
+        near(u.both.y, m.underBothY, what .. "under both.y")
+        near(u.bottom.y, m.underBottomY, what .. "under bottom.y")
+    end
+end)
+
+test("layout: the map's y does not depend on the map's size", function()
+    local Plan = plan()
+    for _, m in ipairs(MAP_CASES) do
+        eq(Plan.MapY(with({ map = m.map })), 44)
+        eq(Plan.MapY(with({ map = m.map, offHand = 0 })), 60)
+        eq(Plan.MapY(with({ map = m.map, timers = "above" })), 6)
+        eq(Plan.MapY(with({ map = m.map, timers = "bars" })), 6)
+        eq(Plan.MapY(with({ map = m.map, main = "under" })), 126)
+        eq(Plan.MapY(with({ map = m.map, main = "under", timers = "bars" })), 90)
+    end
+end)
+
+test("layout: the timer spots follow the map's size at 60, 70 and 80 percent", function()
+    local Plan = plan()
+    for _, m in ipairs(MAP_CASES) do
+        local what = "map " .. m.map .. " "
+        -- Under the map: the same spots at every size.
+        local under = Plan.Pieces(with({ map = m.map }))
+        eq(piece(under, "SwingTimer", "Ranged").anchor, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 0, y = 24 })
+        eq(piece(under, "SwingTimer", "MainHand").anchor.y, 8)
+        eq(piece(under, "SwingTimer", "OffHand").anchor.y, -8)
+        -- Above the bars: over the both-triggers bar's top, at any spell button size.
+        local above = Plan.Pieces(with({ map = m.map, timers = "above", size = 70, fineBoth = 0.85 }))
+        near(piece(above, "SwingTimer", "Ranged").anchor.y, m.aboveTop + 40, what .. "above ranged")
+        near(piece(above, "SwingTimer", "MainHand").anchor.y, m.aboveTop + 24, what .. "above main hand")
+        near(piece(above, "SwingTimer", "OffHand").anchor.y, m.aboveTop + 8, what .. "above off hand")
+        eq(piece(above, "SwingTimer", "Ranged").anchor.x, 0)
+        -- Under the LT and RT bars: on the side bars' centres.
+        local bars = Plan.Pieces(with({ map = m.map, timers = "bars" }))
+        near(piece(bars, "SwingTimer", "Ranged").anchor.x, -m.leftX, what .. "bars ranged x")
+        near(piece(bars, "SwingTimer", "MainHand").anchor.x, m.leftX, what .. "bars main hand x")
+        near(piece(bars, "SwingTimer", "OffHand").anchor.x, m.leftX, what .. "bars off hand x")
+        eq(piece(bars, "SwingTimer", "Ranged").anchor.y, 6)
+        eq(piece(bars, "SwingTimer", "MainHand").anchor.y, 6)
+        eq(piece(bars, "SwingTimer", "OffHand").anchor.y, 22)
+    end
+end)
+
+test("layout: the template's Minimap entry stores the map's size as (map - 50) / 10", function()
+    local Plan = plan()
+    local e = fakeEnums()
+    for _, m in ipairs(MAP_CASES) do
+        local map = piece(Plan.Pieces(with({ map = m.map })), "Minimap")
+        eq(map.settings, { Size = m.stored })
+        eq(map.anchor, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 0, y = 44 })
+        local layout = Plan.Build(baseLayout(e), with({ map = m.map }), e)
+        eq(settingValue(layout.systems[1], e.setting.Minimap.Size), m.stored)
+        eq(layout.systems[1].anchorInfo, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = 0, offsetY = 44 })
+    end
+end)
+
+test("layout: an unusable map value falls back to 80", function()
+    local Plan = plan()
+    local at80 = Plan.BarSpots(with({ map = 80 }))
+    for _, bad in ipairs({ 100, 50, 65, 0, -80, 60.5, "60", true }) do
+        local what = "map " .. tostring(bad)
+        local s = Plan.BarSpots(with({ map = bad }))
+        near(s.left.x, -227.2, what .. " left.x")
+        near(s.top.y, 316.4, what .. " top.y")
+        eq(s, at80, what)
+        eq(piece(Plan.Pieces(with({ map = bad })), "Minimap").settings.Size, 3, what .. " stored size")
+    end
+    eq(piece(Plan.Pieces(with({})), "Minimap").settings.Size, 3, "no map value")
+    near(Plan.BarSpots(nil).left.x, -227.2, "no options")
 end)
 
 ---------------------------------------------------------------------------
@@ -1035,13 +1151,13 @@ local function ours(c)
     return nil
 end
 
-test("layout: the card has eleven option rows with the spec's labels and choices", function()
+test("layout: the card has twelve option rows with the spec's labels and choices", function()
     local _, PE = layoutClient({}, 3)
     local list = PE:GetModule("ctrlLayout").options
-    eq(#list, 11)
+    eq(#list, 12)
     local labels = {}
     for i, o in ipairs(list) do labels[i] = o.label end
-    eq(labels, { "Main bar", "Player and target frames", "Spell button size", "Main bar size", "LT and RT bar size",
+    eq(labels, { "Main bar", "Map size", "Player and target frames", "Spell button size", "Main bar size", "LT and RT bar size",
         "Both-triggers bar size", "Swing timers", "Ranged timer", "Main Hand timer", "Off Hand timer", "Template" })
     local function choiceList(o)
         local out = {}
@@ -1050,24 +1166,108 @@ test("layout: the card has eleven option rows with the spec's labels and choices
     end
     eq(list[1].key, "main")
     eq(choiceList(list[1]), { { "above", "Above the map" }, { "under", "Under the map" } })
-    eq(list[2].key, "frames")
-    eq(choiceList(list[2]), { { "corner", "Corners" }, { "stacked", "Stacked" }, { "flat", "Side by side" } })
-    eq(list[3].key, "size")
-    eq({ list[3].number.min, list[3].number.max, list[3].number.step, list[3].number.default, list[3].number.suffix },
+    eq(list[2].key, "map")
+    eq(choiceList(list[2]), { { 60, "60%" }, { 70, "70%" }, { 80, "80%" } })
+    eq(list[3].key, "frames")
+    eq(choiceList(list[3]), { { "corner", "Corners" }, { "stacked", "Stacked" }, { "flat", "Side by side" } })
+    eq(list[4].key, "size")
+    eq({ list[4].number.min, list[4].number.max, list[4].number.step, list[4].number.default, list[4].number.suffix },
         { 70, 100, 5, 100, "%" })
-    eq(list[3].help, "Below 100%, a spell that opens its own wheel may open beside its button.")
+    eq(list[4].help, "Below 100%, a spell that opens its own wheel may open beside its button.")
     for i, key in ipairs({ "fineMain", "fineSide", "fineBoth" }) do
-        eq(list[3 + i].key, key)
-        eq(choiceList(list[3 + i]), { { 0.85, "Smaller" }, { 1, "Same" }, { 1.15, "Bigger" } })
+        eq(list[4 + i].key, key)
+        eq(choiceList(list[4 + i]), { { 0.85, "Smaller" }, { 1, "Same" }, { 1.15, "Bigger" } })
     end
-    eq(list[7].key, "timers")
-    eq(choiceList(list[7]), { { "under", "Under the map" }, { "above", "Above the bars" }, { "bars", "Under the LT and RT bars" } })
+    eq(list[8].key, "timers")
+    eq(choiceList(list[8]), { { "under", "Under the map" }, { "above", "Above the bars" }, { "bars", "Under the LT and RT bars" } })
     for i, key in ipairs({ "ranged", "mainHand", "offHand" }) do
-        eq(list[7 + i].key, key)
-        eq(choiceList(list[7 + i]), { { 0, "Always" }, { 1, "In combat" }, { 2, "Hidden" } })
+        eq(list[8 + i].key, key)
+        eq(choiceList(list[8 + i]), { { 0, "Always" }, { 1, "In combat" }, { 2, "Hidden" } })
     end
-    eq(list[11].button, "Start over")
-    eq(type(list[11].action), "function")
+    eq(list[12].button, "Start over")
+    eq(type(list[12].action), "function")
+end)
+
+local MAP_SIZE = 2 -- Enum.EditModeMinimapSetting.Size in the stand-in
+
+test("layout: Map size rewrites the map and the timers in our layout, re-places the bars and asks for a reload", function()
+    local c, PE = onClient()
+    local before = deepCopy(ours(c))
+    eq(settingValue(entryOf(before, SYS.Minimap), MAP_SIZE), 3, "the template's map size")
+    choose(c, PE, "map", 60)
+    eq(checkSaves(c), 2)
+    local after = ours(c)
+    local map = entryOf(after, SYS.Minimap)
+    eq(settingValue(map, MAP_SIZE), 1)
+    eq(map.anchorInfo, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = 0, offsetY = 44 })
+    eq(map.isInDefaultPosition, false)
+    eq(entryOf(after, SYS.UnitFrame, 8), entryOf(before, SYS.UnitFrame, 8), "the pet frame changed")
+    eq(entryOf(after, SYS.ChatFrame), entryOf(before, SYS.ChatFrame), "the chat entry changed")
+    local f = barFrames(c)
+    placedAt(c, f.left, { x = -199.9, y = 42, s = 1 }, "left")
+    placedAt(c, f.right, { x = 199.9, y = 42, s = 1 }, "right")
+    placedAt(c, f.top, { x = 0, y = 259.8, s = 1 }, "top")
+    placedAt(c, f.both, { x = 0, y = 339.6, s = 0.7 }, "both")
+    placedAt(c, f.bottom, { x = 0, y = 199.276, s = 1 }, "bottom")
+    eq(reloadReason(PE), RELOAD)
+    eq(statusText(PE), USING)
+    -- 70%, then back to 80%.
+    choose(c, PE, "map", 70)
+    eq(checkSaves(c), 3)
+    eq(settingValue(entryOf(ours(c), SYS.Minimap), MAP_SIZE), 2)
+    placedAt(c, f.left, { x = -213.55, y = 42, s = 1 }, "left at 70")
+    choose(c, PE, "map", 80)
+    eq(checkSaves(c), 4)
+    eq(settingValue(entryOf(ours(c), SYS.Minimap), MAP_SIZE), 3)
+    placedAt(c, f.left, { x = -227.2, y = 42, s = 1 }, "left at 80")
+    placedAt(c, f.top, { x = 0, y = 316.4, s = 1 }, "top at 80")
+    c:assertClean()
+end)
+
+test("layout: Map size moves the timers that hang on the bars", function()
+    local c, PE = onClient()
+    choose(c, PE, "timers", "bars")
+    near(entryOf(ours(c), SYS.SwingTimer, SWING.Ranged).anchorInfo.offsetX, -227.2, "ranged x at 80")
+    choose(c, PE, "map", 60)
+    eq(checkSaves(c), 3)
+    local after = ours(c)
+    near(entryOf(after, SYS.SwingTimer, SWING.Ranged).anchorInfo.offsetX, -199.9, "ranged x")
+    near(entryOf(after, SYS.SwingTimer, SWING.MainHand).anchorInfo.offsetX, 199.9, "main hand x")
+    eq(entryOf(after, SYS.Minimap).anchorInfo.offsetY, 6)
+    placedAt(c, barFrames(c).left, { x = -199.9, y = 42 + 22, s = 1 }, "left")
+    c:assertClean()
+end)
+
+test("layout: Map size is refused while Edit Mode is open and put back", function()
+    local c, PE = onClient()
+    c.world.editMode = true
+    choose(c, PE, "map", 60)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), 1)
+    eq(statusText(PE), "Close Edit Mode first.")
+    eq(opts(PE).map, 80)
+    placedAt(c, barFrames(c).left, { x = -227.2, y = 42, s = 1 }, "left")
+    eq(reloadReason(PE), nil)
+    c:assertClean()
+end)
+
+test("layout: when the Map size rewrite cannot be saved the option and the bars go back", function()
+    local c, PE = onClient()
+    c.world.layoutCallFails.SaveLayouts = true
+    choose(c, PE, "map", 60)
+    check(#PE.errors >= 1, "no error logged")
+    eq(opts(PE).map, 80)
+    placedAt(c, barFrames(c).left, { x = -227.2, y = 42, s = 1 }, "left")
+    eq(reloadReason(PE), nil)
+end)
+
+test("layout: a saved map value that is not 60, 70 or 80 places the bars as 80", function()
+    local c, PE = layoutClient({}, 3)
+    opts(PE).map = 100
+    switchOn(c, PE)
+    eq(settingValue(entryOf(ours(c), SYS.Minimap), MAP_SIZE), 3)
+    placedAt(c, barFrames(c).left, { x = -227.2, y = 42, s = 1 }, "left")
+    placedAt(c, barFrames(c).top, { x = 0, y = 316.4, s = 1 }, "top")
+    c:assertClean()
 end)
 
 test("layout: Player and target frames rewrites only the frames in our layout and asks for a reload", function()
@@ -1286,7 +1486,7 @@ test("layout: the settings window's Controller tab draws the rows while on, and 
             if rs.type == "FontString" and rs.text and r:IsVisible() then texts[rs.text] = true end
         end
     end)
-    for _, label in ipairs({ "Main bar", "Player and target frames", "Spell button size", "Swing timers", "Off Hand timer", "Template" }) do
+    for _, label in ipairs({ "Main bar", "Map size", "Player and target frames", "Spell button size", "Swing timers", "Off Hand timer", "Template" }) do
         check(texts[label], "no row " .. label)
     end
     check(buttons["Start over"], "no Start over button")

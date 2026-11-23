@@ -400,6 +400,61 @@ do
 end
 
 ---------------------------------------------------------------------------
+-- Probe 0.5.0: a saved file holding the new ids prints like any other
+---------------------------------------------------------------------------
+
+do
+    local FIGHT_PRESS = "gp=on fight=yes rest=c----- where=world trig=press"
+    local db = {
+        version = 1, game = "1.60.1 (71037)", probe = "0.5.0",
+        options = { vendor = true, risky = true, auto = false },
+        trials = {
+            { id = "cd.duration", area = "Our own windows", label = "Read the main bar's cooldown duration objects", kind = "value" },
+            { id = "cd.sweep.object", area = "Our own windows", label = "Cooldown sweep, duration object", kind = "action" },
+            { id = "cd.sweep.numbers", area = "Our own windows", label = "Cooldown sweep, numbers", kind = "action" },
+            { id = "bars.fade", area = "Blizzard windows", label = "Fade the left bar to nothing and back", kind = "action", risky = true },
+            { id = "bars.park", area = "Blizzard windows", label = "Park the main bar", kind = "guided", risky = true },
+            { id = "bars.fadecast", area = "Blizzard windows", label = "Fade the main bar", kind = "guided", risky = true },
+        },
+        situations = {},
+        results = {
+            ["cd.duration"] = { [FIGHT_PRESS] = "readable" }, ["cd.sweep.object"] = { [FIGHT_PRESS] = "allowed" },
+            ["cd.sweep.numbers"] = { [FIGHT_PRESS] = "blocked" }, ["bars.fade"] = { [FIGHT_PRESS] = "allowed" },
+            ["bars.park"] = { [TOWN_PRESS] = "spell cast" }, ["bars.fadecast"] = { [FIGHT_PRESS] = "nothing happened" },
+        },
+        details = {
+            { trial = "cd.duration", situation = FIGHT_PRESS, result = "readable", message = "buttons 8, with a spell 4; duration readable 4" },
+            { trial = "cd.sweep.numbers", situation = FIGHT_PRESS, result = "blocked", func = "SetCooldown()",
+                message = "slot on cooldown yes; sweep frame shown by itself no; duration afterwards readable", inPress = false },
+            { trial = "bars.park", situation = TOWN_PRESS, result = "spell cast",
+                message = "set: top bar anchor moved up 3000; main bar off screen yes; before: top shown 683,97 on screen; bars shown and on screen: 4; "
+                    .. "after: top shown 683,3097 off screen; bars shown and on screen: 3, screenshots: 2; started 2026-11-22 20:00:00; old values put back" },
+            { trial = "bars.fadecast", situation = FIGHT_PRESS, result = "nothing happened",
+                message = "set: main bar see-through 1 -> 0, screenshots: 2, still invisible at the answer: yes; started 2026-11-22 20:05:00; old values put back" },
+        },
+        guided = { ["bars.park"] = { stage = "prepare", started = "2026-11-22 20:10:00", old = {} } },
+        log = { "20:06:00 fight tests: bars.spells secret, cd.duration readable, cd.sweep.object allowed, cd.sweep.numbers blocked" },
+    }
+    local text = table.concat(R.format(db), "\n")
+    for _, part in ipairs({ "Our own windows", "Blizzard windows", "Cooldown sweep, numbers", "blocked", "spell cast", "nothing happened",
+        "function: SetCooldown()", "sweep frame shown by itself no", "bars shown and on screen: 3", "screenshots: 2",
+        "still invisible at the answer: yes", "duration readable 4", "bars.park: prepare, started 2026-11-22 20:10:00" }) do
+        check(text:find(part, 1, true), "0.5.0 file: the output lacks \"" .. part .. "\"")
+    end
+    local refusals = R.format(db, { detailsOnly = true })
+    eq(refusals[1], "Not allowed: 1 entry", "only the blocked sweep is a refusal; the answers and the reading are not")
+    local readings = R.formatReadings(db, select(2, R.situations(db)), R.areas(db))
+    eq(readings[1], "Readings and answers: 3 entries", "the reading and the two answers")
+    local log = R.format(db, { logOnly = true })
+    check(log[2] and log[2]:find("cd.sweep.numbers blocked", 1, true), "the fight tests' log line prints whole")
+    local path = tempFile("PocketProbeDB = { probe = \"0.5.0\", trials = { { id = \"cd.sweep.object\", area = \"Our own windows\", "
+        .. "label = \"Cooldown sweep\", kind = \"action\" } }, results = { [\"cd.sweep.object\"] = { [\"" .. FIGHT_PRESS .. "\"] = \"allowed\" } } }")
+    local status, out = R.main({ path })
+    eq(status, 0, "read-probe prints a 0.5.0 file")
+    check(type(out) == "table" and table.concat(out, "\n"):find("Cooldown sweep", 1, true), "its rows are in the output")
+end
+
+---------------------------------------------------------------------------
 -- Probe 0.3.0: the Errors and Graphics areas, readings, guided answers
 ---------------------------------------------------------------------------
 

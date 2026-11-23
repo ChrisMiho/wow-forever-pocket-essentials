@@ -33,6 +33,7 @@ local KEY_AUTO = "gp=on fight=no rest=------ where=world trig=auto"
 local KEY_FIGHT = "gp=on fight=yes rest=c----- where=world trig=auto"
 local KEY_PRESS = "gp=on fight=no rest=------ where=world trig=press"
 local KEY_CLEAN = "gp=on fight=no rest=------ where=world trig=clean"
+local KEY_FIGHT_PRESS = "gp=on fight=yes rest=c----- where=world trig=press"
 
 ---------------------------------------------------------------------------
 -- Helpers
@@ -208,6 +209,81 @@ local function install(c)
             { command = "lootUnderMouse", help = "" }, { command = "maxFPS", help = "" }, { command = "spellClutter", help = "" } }
     end)
 
+    -- Probe 0.5.0. Screenshot: ClientDocumentation.lua:95 (c.shots counts the pictures taken).
+    rawset(env, "Screenshot", function()
+        if world.shotFails then error("no screenshot now") end
+        c.shots = (c.shots or 0) + 1
+    end)
+    -- C_ActionBar.GetActionCooldownDuration (ActionBarFrameDocumentation.lua:181): a duration object.
+    c.durations = {}
+    rawset(env.C_ActionBar, "GetActionCooldownDuration", function(slot)
+        if type(slot) ~= "number" or slot < 1 then error("C_ActionBar: invalid action slot " .. tostring(slot), 2) end
+        if world.durationFails then error("no duration now") end
+        c.durations[slot] = c.durations[slot] or { durationObject = true }
+        return c.durations[slot]
+    end)
+    -- Cooldown frames (FrameAPICooldownDocumentation.lua; CooldownFrameTemplate starts hidden,
+    -- Blizzard_FrameXMLUtil/Mainline/Cooldown.xml:3). world.cooldownModes[method] = "blocked" |
+    -- "forbidden" | "error" makes that call be refused; world.noCooldown: no such frame type;
+    -- world.cooldownNoObject: no SetCooldownFromDurationObject; world.cooldownStaysHidden: setting
+    -- a cooldown does not show the frame.
+    world.cooldownModes = {}
+    c.cooldowns, c.cooldownCalls = {}, {}
+    local create = env.CreateFrame
+    local function Refused(method)
+        local mode = world.cooldownModes[method]
+        if mode == "blocked" then c:fire("ADDON_ACTION_BLOCKED", "PocketProbe", method .. "()") return true end
+        if mode == "forbidden" then c:fire("ADDON_ACTION_FORBIDDEN", "PocketProbe", method .. "()") return true end
+        if mode == "error" then error(method .. "(): secret values are not allowed here", 3) end
+        return false
+    end
+    rawset(env, "CreateFrame", function(kind, name, parent, template)
+        if kind ~= "Cooldown" then return create(kind, name, parent, template) end
+        if world.noCooldown or template ~= "CooldownFrameTemplate" then error("CreateFrame(): Unknown frame type 'Cooldown'", 2) end
+        local f = create("Frame", name, parent)
+        f:Hide()
+        local state = { frame = f }
+        c.cooldowns[#c.cooldowns + 1] = state
+        rawset(f, "SetHideCountdownNumbers", function(_, hide) state.hideNumbers = hide end)
+        rawset(f, "GetCooldownDuration", function() return (state.duration or 0) * 1000 end)
+        rawset(f, "SetCooldown", function(self, start, duration)
+            c.cooldownCalls[#c.cooldownCalls + 1] = { frame = self, method = "SetCooldown", args = { start, duration } }
+            if Refused("SetCooldown") then return end
+            state.duration = duration
+            if not world.cooldownStaysHidden then self:Show() end
+        end)
+        if not world.cooldownNoObject then
+            rawset(f, "SetCooldownFromDurationObject", function(self, object)
+                c.cooldownCalls[#c.cooldownCalls + 1] = { frame = self, method = "SetCooldownFromDurationObject", args = { object } }
+                if Refused("SetCooldownFromDurationObject") then return end
+                state.duration = 8
+                if not world.cooldownStaysHidden then self:Show() end
+            end)
+        end
+        return f
+    end)
+    -- The bars riding on the top anchor (PageUnit.lua:115-121): possess and stance on the anchor,
+    -- shortcuts on PageUnit, all hidden. The two targeting bars are left out here (the code says
+    -- they may not be there).
+    local gamepadBar = rawget(env, "GamepadMainActionBarFrame")
+    local pageUnit = gamepadBar and gamepadBar.PageUnit
+    if pageUnit then
+        local top = pageUnit.TopCenteredAnchor
+        for _, spec in ipairs({ { top, "PossessBar" }, { top, "StanceBar" }, { pageUnit, "ShortcutsActionBar" } }) do
+            local bar = create("Frame", nil, top)
+            bar:SetSize(208, 68)
+            bar:SetPoint("CENTER", top, "CENTER", 0, 0)
+            bar:Hide()
+            c.barParts[spec[1]][spec[2]] = bar
+        end
+    end
+    -- MinimapCluster.MinimapContainer (Minimap.xml:47); Edit Mode's map size is its scale.
+    local container = create("Frame", nil, env.MinimapCluster)
+    container:SetSize(200, 200)
+    container:SetPoint("CENTER", env.MinimapCluster, "CENTER", 0, 0)
+    container:SetScale(0.8)
+    rawset(env.MinimapCluster, "MinimapContainer", container)
+
     -- A small world with names in it.
     world.bags[0][1] = { itemID = 101, quality = 0, price = 50, count = 1, name = "Broken Fang" }
     world.bags[0][2] = { itemID = 102, quality = 0, price = 5, count = 1, name = "Wolf Pelt" }
@@ -359,7 +435,7 @@ test("saved table has the fixed shape", function()
     local c, P, db = new()
     eq(db.version, 1)
     eq(db.game, "1.16.0 (60000)")
-    eq(db.probe, "0.4.0")
+    eq(db.probe, "0.5.0")
     eq(db.options.vendor, true)
     eq(db.options.risky, false)
     eq(type(db.spoiled), "table")
@@ -375,7 +451,8 @@ test("saved table has the fixed shape", function()
     end
     for _, id in ipairs({ "err.handler", "err.box", "err.hook", "err.others", "err.hide", "err.chain", "err.blocked",
         "gfx.read", "gfx.write", "gfx.names", "gfx.outlines", "gfx.icons",
-        "bars.spells", "bars.alpha", "bars.park", "bars.prompts" }) do
+        "bars.spells", "bars.alpha", "bars.park", "bars.prompts",
+        "bars.fade", "bars.fadecast", "cd.duration", "cd.sweep.object", "cd.sweep.numbers" }) do
         check(seen[id], "new trial missing: " .. id)
     end
     for _, key in ipairs({ "situations", "results", "details", "log", "last", "guided" }) do eq(type(db[key]), "table", key) end
@@ -415,7 +492,7 @@ test("nothing runs by itself in 0.3.0: Auto starts off, the listeners still reco
 end)
 
 local RISKY = { "chat.open", "chat.openframe", "chat.focus", "chat.close", "bag.toggle", "layout.set",
-    "bars.move", "bars.scale", "layout.save", "bars.alpha", "bars.park" }
+    "bars.move", "bars.scale", "layout.save", "bars.alpha", "bars.park", "bars.fade", "bars.fadecast" }
 
 test("with the risky switch off (the default) a pass leaves the risky trials out", function()
     local c, P, db = new()
@@ -480,10 +557,10 @@ test("an automatic pass after login records every trial under trig=auto", functi
     for _, id in ipairs({ "chat.open", "chat.openframe", "chat.focus", "chat.type", "chat.close", "own.show", "own.escape",
         "own.create", "win.map.create", "win.map.attach", "win.bag.create", "win.chat.create", "bag.toggle", "bag.move",
         "bag.scale", "pad.bind", "pad.mark", "bags.sort", "cvar.write", "layout.set", "bars.move", "bars.scale",
-        "layout.save", "bars.alpha" }) do
+        "layout.save", "bars.alpha", "bars.fade", "cd.sweep.object", "cd.sweep.numbers" }) do
         eq(cell(db, id, KEY_AUTO), "allowed", id)
     end
-    for _, id in ipairs({ "layout.read", "layout.sizes", "bars.protected", "bars.settings", "bars.spells", "val.position", "val.facing", "val.map", "val.questlog", "val.objectives",
+    for _, id in ipairs({ "cd.duration", "layout.read", "layout.sizes", "bars.protected", "bars.settings", "bars.spells", "val.position", "val.facing", "val.map", "val.questlog", "val.objectives",
         "val.bagitem", "val.money", "val.repaircost", "val.name.player" }) do
         eq(cell(db, id, KEY_AUTO), "readable", id)
     end
@@ -705,6 +782,11 @@ test("layout.sizes notes each frame's width, height and scale; a missing frame s
     check(msg:find("LeftCenteredAnchor w=50", 1, true), "anchor: " .. msg)
     check(msg:find("TopCenteredAnchor.Bar w=208", 1, true), "bar: " .. msg)
     check(msg:find("UIParent w=", 1, true), "UIParent: " .. msg)
+    -- Probe 0.5.0: the map's container (its scale is the Edit Mode map size), the map, the other three bars.
+    for _, part in ipairs({ "MinimapCluster.MinimapContainer w=200 h=200 scale=0.8", "Minimap w=198 h=198 scale=1",
+        "LeftCenteredAnchor.Bar w=208 h=68", "RightCenteredAnchor.Bar w=208 h=68", "BottomCenteredAnchor.Bar w=208 h=68" }) do
+        check(msg:find(part, 1, true), part .. ": " .. msg)
+    end
     for _, part in ipairs({ "BuffFrame w=260 h=80", "DebuffFrame w=260", "ObjectiveTrackerFrame w=250 h=400",
         "MainStatusTrackingBarContainer w=800", "LeftClassAction w=40", "RightClassAction w=40",
         "GamepadPetActionFlyout w=160", "TopCenteredAnchor.Bar button 1 w=46 h=46" }) do
@@ -982,7 +1064,7 @@ test("results from another probe version are cleared at load", function()
     }
     local c, P, db = new({ saved = saved })
     eq(db, saved)
-    eq(db.probe, "0.4.0")
+    eq(db.probe, "0.5.0")
     eq(next(db.last), nil, "the panel's newest results are cleared too")
     eq(db.guided["gfx.icons"].stage, "ask", "a guided trial's old values are kept, to be put back")
     eq(next(db.results), nil); eq(#db.details, 0); eq(next(db.situations), nil); eq(next(db.spoiled), nil)
@@ -1211,12 +1293,21 @@ test("the probe's frames are made at load and nothing ticks", function()
     end
     local panel = button(c, "PocketProbePanel")
     eq(c._state(panel).strata, "DIALOG")
-    for _, name in ipairs({ "PocketProbeRunAllButton", "PocketProbeCleanButton", "PocketProbeRiskyButton",
+    for _, name in ipairs({ "PocketProbeRunAllButton", "PocketProbeFightButton", "PocketProbeCleanButton", "PocketProbeRiskyButton",
         "PocketProbeVendorButton", "PocketProbeAutoButton", "PocketProbeSaveButton", "PocketProbeCloseButton" }) do
         eq(c._state(button(c, name)).parent, panel, name .. " is on the panel")
         check(not button(c, name):IsProtected(), name .. " is a plain frame")
     end
     check(not button(c, "PocketProbeNextButton"):IsShown(), "Next is hidden")
+    -- Probe 0.5.0: the big message and the sweep squares are made at load too, hidden.
+    for _, name in ipairs({ "PocketProbeBigMessage", "PocketProbeSweep" }) do
+        local f = button(c, name)
+        check(not f:IsShown(), name .. " is hidden at load")
+        eq(c._state(f).type, "Frame", name .. " is a plain frame, not a button")
+        check(c._state(f).mouse ~= true, name .. " takes no clicks")
+        check(not c._state(f).bindings, name .. " takes no keys")
+    end
+    eq(#c.cooldowns, 2, "the two sweep frames are made at load")
     openPanel(c)
     c:advance(25)
     c:enterCombat(); c:advance(25)
@@ -1262,11 +1353,11 @@ test("the panel: Settings-sized, area tabs with counts, no scroll bar (big areas
     for _, rec in ipairs(c:frames()) do
         if rec.frame == panel then
             for _, region in ipairs(rec.regions or {}) do
-                if region.GetText and region:GetText() == "Pocket Probe 0.4.0" then titleText = true end
+                if region.GetText and region:GetText() == "Pocket Probe 0.5.0" then titleText = true end
             end
         end
     end
-    check(titleText, "titled Pocket Probe 0.4.0")
+    check(titleText, "titled Pocket Probe 0.5.0")
     local labels = tabLabels(P)
     eq(labels[1], "Errors"); eq(labels[2], "Graphics")
     local joined = table.concat(labels, "|")
@@ -1391,6 +1482,8 @@ test("the d-pad drives the panel; its keys are given back on close and in a figh
     -- Down along the rows, past the last one to the footer; Left / Right along it.
     for _ = 1, 10 do pad(c, "DOWN") end
     eq(P.Nav.zone, "footer")
+    pad(c, "RIGHT")
+    eq(P.Nav.Target(), button(c, "PocketProbeFightButton"), "Fight tests is the second footer button")
     pad(c, "RIGHT"); pad(c, "RIGHT")
     eq(P.Nav.Target(), button(c, "PocketProbeRiskyButton"))
     pad(c, "A")
@@ -1821,9 +1914,12 @@ test("bars.alpha sets the left bar's see-through to its own value, out of and in
     eq(cell(db, "bars.alpha", KEY_AUTO), "allowed")
     eq(cell(db, "bars.alpha", KEY_FIGHT), "allowed", "tried in a fight too")
     check(#c:callsTo("GamepadBar.LeftCenteredAnchor:SetAlpha") >= 2, "SetAlpha was called")
+    -- bars.alpha only ever writes the value the bar had; the one 0 per pass is bars.fade (0.5.0).
+    local zeros = 0
     for _, call in ipairs(c:callsTo("GamepadBar.LeftCenteredAnchor:SetAlpha")) do
-        eq(call.args[1], 1, "always the value it already had")
+        if call.args[1] == 0 then zeros = zeros + 1 else eq(call.args[1], 1, "always the value it already had") end
     end
+    eq(zeros, 2, "bars.fade set it to nothing once in each pass")
     local c2, P2, db2 = new({ saved = riskyOn(), setup = function(cl) cl.world.barAlphaBlocked = true end })
     c2:advance(30)
     c2:enterCombat(); c2:advance(30)
@@ -1856,8 +1952,9 @@ test("bars.park: refused with Risky off or in a fight; parks the main bar, asks,
     eq(saved.guided["bars.park"], nil, "not started in a fight")
     check(P.status:find("not started, in combat", 1, true), P.status)
     c:leaveCombat(); c:advance(2)
-    -- Start: parked far above the screen.
+    -- Start: parked far above the screen (after the timed steps, see the 0.5.0 tests below).
     c:click(showTrial(c, P, "bars.park").ppRun)
+    c:advance(1.7)
     local g = saved.guided["bars.park"]
     check(g and g.stage == "ask", "waiting for the answer")
     check(not rawget(c.env, "PocketProbePanel"):IsShown(), "the panel closed, so a press reaches the game")
@@ -1886,6 +1983,7 @@ test("bars.park: an answer in a fight leaves it parked until the fight ends; a r
     c:advance(5)
     local _, _, _, _, y1 = topPoint(c)
     c:click(showTrial(c, P, "bars.park").ppRun)
+    c:advance(1.7)
     c:enterCombat()
     local moves = #c:callsTo("GamepadBar.TopCenteredAnchor:SetPoint")
     c:click(showTrial(c, P, "bars.park").ppAnswer[2])
@@ -1905,6 +2003,7 @@ test("bars.park: an answer in a fight leaves it parked until the fight ends; a r
     local c2, P2 = new({ saved = saved })
     c2:advance(5)
     c2:click(showTrial(c2, P2, "bars.park").ppRun)
+    c2:advance(1.7)
     check(saved.guided["bars.park"], "waiting")
     c2:enterCombat()
     c2:fire("PLAYER_LOGOUT")
@@ -1921,6 +2020,7 @@ test("bars.park: two anchor points are left alone; a spot the game set meanwhile
     end })
     c:advance(5)
     c:click(showTrial(c, P, "bars.park").ppRun)
+    c:advance(1.7)
     eq(saved.guided["bars.park"], nil, "nothing to ask")
     eq(cell(saved, "bars.park", KEY_PRESS), "no effect")
     check(saved.last["bars.park"].message:find("more than one anchor point", 1, true), saved.last["bars.park"].message)
@@ -1930,6 +2030,7 @@ test("bars.park: two anchor points are left alone; a spot the game set meanwhile
     local c2, P2 = new({ saved = saved2 })
     c2:advance(5)
     c2:click(showTrial(c2, P2, "bars.park").ppRun)
+    c2:advance(1.7)
     local anchor = topAnchor(c2)
     local pageUnit = c2.env.GamepadMainActionBarFrame.PageUnit
     anchor:ClearAllPoints(); anchor:SetPoint("CENTER", pageUnit, "CENTER", 0, 99)
@@ -1944,6 +2045,7 @@ test("bars.park: two anchor points are left alone; a spot the game set meanwhile
     c3:advance(5)
     local _, _, _, _, y0 = topPoint(c3)
     c3:click(showTrial(c3, P3, "bars.park").ppRun)
+    c3:advance(1.7)
     topAnchor(c3):ClearAllPoints()
     c3:click(showTrial(c3, P3, "bars.park").ppRun)
     eq(saved3.guided["bars.park"], nil)
@@ -1979,6 +2081,647 @@ test("bars.prompts reads the 8 button pictures and shows them on a texture of ou
     eq(cell(db3, "bars.prompts", KEY_PRESS), "missing")
 end)
 
+
+---------------------------------------------------------------------------
+-- Probe 0.5.0: the Fight tests button, the big message, the clearer park
+-- test, the fade tests, the cooldown sweep
+---------------------------------------------------------------------------
+
+local PARK_BIG = "Main bar parked. Press a spell, then tap Probe."
+local FADE_BIG = "Main bar is invisible. Press a spell, then tap Probe."
+
+-- The text on one of our frames while it shows, or nil while it is hidden.
+local function shownText(c, name)
+    local f = button(c, name)
+    if not f:IsShown() then return nil end
+    local texts = {}
+    for _, rec in ipairs(c:frames()) do
+        if rec.frame == f then
+            for _, region in ipairs(rec.regions or {}) do
+                local t = region.GetText and region:GetText()
+                if type(t) == "string" and t ~= "" then texts[#texts + 1] = t end
+            end
+        end
+    end
+    return table.concat(texts, "|")
+end
+
+local function ids(list)
+    local out, at = {}, {}
+    for i, t in ipairs(list) do out[i], at[t.id] = t.id, i end
+    return out, at
+end
+
+local function riskySaved() return { options = { auto = false, risky = true } } end
+
+test("Fight tests: second in the footer; out of a fight it only says to start one", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    openPanel(c)
+    local b = button(c, "PocketProbeFightButton")
+    eq(b.ppLabel:GetText(), "Fight tests")
+    eq(P.panelFooter[1], button(c, "PocketProbeRunAllButton"))
+    eq(P.panelFooter[2], b, "placed second, after Run all safe")
+    eq(#P.panelFooter, 7)
+    local _, _, panelTop, panelBottom = c._rect(button(c, "PocketProbePanel"))
+    local left, right = c._rect(button(c, "PocketProbePanel"))
+    for _, f in ipairs(P.panelFooter) do
+        local l, r, top, bottom = c._rect(f)
+        check(l >= left and r <= right and top <= panelTop and bottom >= panelBottom, "a footer button is outside the panel")
+    end
+    c:click(b)
+    eq(P.status, "Fight tests: start a fight first, then tap this.")
+    c:advance(10)
+    eq(next(db.results), nil, "nothing ran")
+    eq(countLog(db, "pass started"), 0)
+    noErrors(c)
+end)
+
+test("Fight tests: the list has the fight trials first and nothing known to be refused in a fight", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    local list, at = ids(P.FightList())
+    eq(table.concat(list, " ", 1, 4), "bars.spells cd.duration cd.sweep.object cd.sweep.numbers", "the fight trials come first, in file order")
+    for _, t in ipairs(P.FightList()) do
+        check(not t.noFight, t.id .. " is marked noFight")
+        check(not t.last, t.id .. " raises a test error")
+        check(not t.manual or t.fight, t.id .. " is a manual trial")
+        check(not t.vendor, t.id .. " is a vendor trial")
+        check(not t.risky, t.id .. " is risky and Risky is off")
+        check(t.kind ~= "guided" and not t.event, t.id .. " cannot run in a pass")
+    end
+    for _, id in ipairs({ "pad.bind", "pad.mark", "err.hook", "err.hide", "err.handler", "gfx.read", "bars.prompts",
+        "vendor.sell1", "chat.open", "bag.toggle", "bars.alpha", "bars.fade", "bars.park", "bars.fadecast" }) do
+        check(not at[id], id .. " is in the fight list")
+    end
+    for _, id in ipairs({ "own.show", "chat.type", "cvar.write", "layout.read", "layout.sizes", "val.money" }) do
+        check(at[id] and at[id] > 4, id .. " is in the rest of the list")
+    end
+    local seen = {}
+    for _, id in ipairs(list) do
+        check(not seen[id], id .. " is in the list twice")
+        seen[id] = true
+    end
+    -- Run all safe is unchanged: it still runs the two controller trials.
+    local _, safe = ids(P.SafeList(false))
+    check(safe["pad.bind"] and safe["pad.mark"], "Run all safe lost the controller trials")
+    -- Risky on: the risky fight trials come last.
+    local c2, P2 = new({ saved = riskySaved() })
+    c2:advance(5)
+    local list2 = ids(P2.FightList())
+    eq(list2[#list2 - 1], "bars.alpha"); eq(list2[#list2], "bars.fade")
+    eq(#list2, #list + 2, "only the two risky fight trials are added")
+    noErrors(c); noErrors(c2)
+end)
+
+test("Fight tests in a fight: starts inside the tap, says what ran, and the summary counts right", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    openPanel(c)
+    c:enterCombat(); c:advance(2)
+    c:click(button(c, "PocketProbeFightButton"))
+    eq(cell(db, "bars.spells", KEY_FIGHT_PRESS), "readable", "the first trial ran inside the tap")
+    eq(countLog(db, "bars.spells: readable (straight from the press)"), 1)
+    check(P.status:find("^pass 1/%d+ bars.spells"), "status while running: " .. tostring(P.status))
+    check(not cell(db, "cd.duration", KEY_FIGHT_PRESS), "the rest waits for the timers")
+    c:advance(40)
+    noErrors(c)
+    eq(db.situations[KEY_FIGHT_PRESS].trigger, "press")
+    for _, id in ipairs({ "pad.bind", "pad.mark", "bars.alpha", "bars.fade", "err.hook" }) do
+        check(not db.results[id], id .. " ran in the fight tests")
+    end
+    eq(cell(db, "cd.sweep.object", KEY_FIGHT_PRESS), "allowed")
+    eq(cell(db, "own.show", KEY_FIGHT_PRESS), "allowed")
+    -- One log line with every trial and its result; the status counts them.
+    local line
+    for _, l in ipairs(db.log) do
+        if l:find("fight tests: ", 1, true) and not l:find("pass started", 1, true) then line = l end
+    end
+    check(line, "no log line with the results")
+    local run, good, refused = 0, 0, 0
+    for _, t in ipairs(P.FightList()) do
+        local result = line:match(" " .. t.id:gsub("%.", "%%.") .. " ([^,]+)")
+        check(result, t.id .. " is not in the log line: " .. line)
+        if result ~= "not tried" then
+            run = run + 1
+            eq(result, tostring(db.last[t.id].result), t.id)
+            if result == "allowed" or result == "readable" then good = good + 1 end
+            if result == "blocked" or result == "forbidden" or result == "error" then refused = refused + 1 end
+        end
+    end
+    check(run > 20 and good > 15, "run " .. run .. ", good " .. good)
+    eq(P.status, "Fight tests done: " .. run .. " run, " .. good .. " allowed or readable, " .. refused .. " refused")
+    -- A trial the game refuses is counted as refused.
+    local c2, P2, db2 = new({ auto = false, setup = function(cl) cl.world.cooldownModes.SetCooldown = "blocked" end })
+    c2:advance(5)
+    c2:enterCombat(); c2:advance(2)
+    P2.RunFightTests(); c2:advance(40)
+    noErrors(c2)
+    eq(cell(db2, "cd.sweep.numbers", KEY_FIGHT_PRESS), "blocked")
+    check(P2.status:find(", 1 refused$"), P2.status)
+    -- Risky on: the two fades run too, last.
+    local c3, P3, db3 = new({ saved = riskySaved() })
+    c3:advance(5)
+    c3:enterCombat(); c3:advance(2)
+    P3.RunFightTests(); c3:advance(40)
+    noErrors(c3)
+    eq(cell(db3, "bars.alpha", KEY_FIGHT_PRESS), "allowed")
+    eq(cell(db3, "bars.fade", KEY_FIGHT_PRESS), "allowed")
+    check(logAt(db3, "bars.fade: ") > logAt(db3, "val.name.target: "), "the risky fight trials run last")
+end)
+
+test("Fight tests: the fight ending part-way stops the pass and the status says how many ran", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    c:enterCombat(); c:advance(2)
+    P.RunFightTests()
+    c:advance(1)
+    c:leaveCombat(); c:advance(3)
+    noErrors(c)
+    local n = tonumber(P.status:match("^Fight tests stopped, the fight ended: (%d+) run, %d+ allowed or readable, %d+ refused$"))
+    check(n and n >= 2 and n <= 6, "status: " .. tostring(P.status))
+    eq(countLog(db, "fight tests stopped, the fight ended: "), 1)
+    local logged = countLog(db, ": ")
+    c:advance(20)
+    eq(countLog(db, ": "), logged, "nothing runs after the fight")
+end)
+
+test("bars.park 0.5.0: closes the panel, takes a picture, parks, takes a picture, then shows the big message", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    local _, _, _, _, y1 = topPoint(c)
+    eq(shownText(c, "PocketProbeBigMessage"), nil)
+    c:click(showTrial(c, P, "bars.park").ppRun)
+    check(not rawget(c.env, "PocketProbePanel"):IsShown(), "the panel closes at Start")
+    eq(saved.guided["bars.park"].stage, "prepare")
+    eq(c.shots, nil); eq(select(5, topPoint(c)), y1)
+    c:advance(0.6)
+    eq(c.shots, 1, "the first picture, before parking")
+    eq(select(5, topPoint(c)), y1, "not parked yet")
+    c:advance(0.5)
+    eq(select(5, topPoint(c)), y1 + 3000, "parked")
+    eq(c.shots, 1)
+    eq(shownText(c, "PocketProbeBigMessage"), nil, "the message waits for the second picture")
+    eq(saved.guided["bars.park"].stage, "prepare")
+    c:advance(0.5)
+    eq(c.shots, 2, "the second picture, parked")
+    eq(shownText(c, "PocketProbeBigMessage"), PARK_BIG)
+    local g = saved.guided["bars.park"]
+    eq(g.stage, "ask")
+    eq(P.status, "bars.park: started — Park the main bar is waiting: answer or Cancel")
+    -- The bars snapshot, before and after, and the pictures taken.
+    local before, after = g.notes:match("before: (.-); after: (.-), screenshots")
+    check(before and after, g.notes)
+    check(before:find("^top shown %d+,%d+ on screen; left shown %d+,%d+ on screen; right shown %d+,%d+ on screen; bottom shown"), before)
+    check(before:find("possess hidden %d+,%d+ on screen; stance hidden", 1) and before:find("shortcuts hidden", 1, true), before)
+    check(before:find("friendly missing; hostile missing", 1, true), before)
+    check(before:find("bars shown and on screen: 4", 1, true), before)
+    check(after:find("^top shown %d+,%d+ off screen; left shown %d+,%d+ on screen"), after)
+    check(after:find("possess hidden %d+,%d+ off screen", 1), after)
+    check(after:find("bars shown and on screen: 3", 1, true), after)
+    check(g.notes:find("screenshots: 2", 1, true), g.notes)
+    -- The answer keeps all of it; the message goes away and the bar goes back.
+    local row = showTrial(c, P, "bars.park")
+    eq(row.ppAnswer[1].ppLabel:GetText(), "Spell cast"); eq(row.ppAnswer[2].ppLabel:GetText(), "Nothing happened")
+    c:click(row.ppAnswer[2])
+    eq(cell(saved, "bars.park", KEY_PRESS), "nothing happened")
+    local msg = saved.last["bars.park"].message
+    for _, part in ipairs({ "before: top shown", "after: top shown", "bars shown and on screen: 3", "screenshots: 2", "old values put back" }) do
+        check(msg:find(part, 1, true), part .. ": " .. msg)
+    end
+    eq(shownText(c, "PocketProbeBigMessage"), nil, "hidden on the answer")
+    eq(select(5, topPoint(c)), y1)
+    noErrors(c)
+end)
+
+test("bars.park 0.5.0: a fight before the park moves nothing; Cancel and Stop in the first second call it off", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    local _, _, _, _, y1 = topPoint(c)
+    c:click(showTrial(c, P, "bars.park").ppRun)
+    c:advance(0.6)
+    c:enterCombat()
+    c:advance(2)
+    noErrors(c)
+    eq(#c:callsTo("GamepadBar.TopCenteredAnchor:SetPoint"), 0, "nothing moved")
+    eq(saved.guided["bars.park"], nil)
+    eq(saved.results["bars.park"], nil, "not tried: nothing saved")
+    eq(countLog(saved, "bars.park: not tried, in combat"), 1)
+    check(P.status:find("bars.park: not tried, in combat", 1, true), P.status)
+    eq(shownText(c, "PocketProbeBigMessage"), nil)
+    eq(c.shots, 1, "only the first picture")
+    c:leaveCombat(); c:advance(2)
+    -- Cancel before the park.
+    c:click(showTrial(c, P, "bars.park").ppRun)
+    c:advance(0.6)
+    local row = showTrial(c, P, "bars.park")
+    eq(row.ppRun.ppLabel:GetText(), "Cancel"); eq(row.ppChipText:GetText(), "Waiting")
+    check(not row.ppAnswer[1]:IsShown(), "no answers before the question")
+    c:click(row.ppRun)
+    eq(saved.guided["bars.park"], nil)
+    c:advance(3)
+    eq(#c:callsTo("GamepadBar.TopCenteredAnchor:SetPoint"), 0, "nothing moved after Cancel")
+    eq(shownText(c, "PocketProbeBigMessage"), nil)
+    -- Stop before the park.
+    P.StartGuided(P.trialById["bars.park"])
+    c:advance(0.6)
+    P.Stop()
+    c:advance(3)
+    eq(#c:callsTo("GamepadBar.TopCenteredAnchor:SetPoint"), 0, "nothing moved after Stop")
+    eq(select(5, topPoint(c)), y1)
+    noErrors(c)
+end)
+
+test("bars.park 0.5.0: the message hides on Cancel, Stop and logout; no Screenshot changes nothing else", function()
+    for _, way in ipairs({ "cancel", "stop", "logout" }) do
+        local saved = riskySaved()
+        local c, P = new({ saved = saved })
+        c:advance(5)
+        local _, _, _, _, y1 = topPoint(c)
+        P.StartGuided(P.trialById["bars.park"]); c:advance(1.7)
+        eq(shownText(c, "PocketProbeBigMessage"), PARK_BIG, way)
+        if way == "cancel" then P.CancelGuided(P.trialById["bars.park"])
+        elseif way == "stop" then P.Stop()
+        else c:fire("PLAYER_LOGOUT") end
+        eq(shownText(c, "PocketProbeBigMessage"), nil, "hidden on " .. way)
+        eq(saved.guided["bars.park"], nil, way)
+        eq(select(5, topPoint(c)), y1, "put back on " .. way)
+        noErrors(c, way)
+    end
+    -- No Screenshot on this client, or one that raises: the rest is the same.
+    for _, how in ipairs({ "missing", "raises" }) do
+        local saved = riskySaved()
+        local c, P = new({ saved = saved, setup = function(cl)
+            if how == "missing" then rawset(cl.env, "Screenshot", nil) else cl.world.shotFails = true end
+        end })
+        c:advance(5)
+        local _, _, _, _, y1 = topPoint(c)
+        P.StartGuided(P.trialById["bars.park"]); c:advance(1.7)
+        local g = saved.guided["bars.park"]
+        eq(g and g.stage, "ask", how)
+        eq(select(5, topPoint(c)), y1 + 3000, how)
+        eq(shownText(c, "PocketProbeBigMessage"), PARK_BIG, how)
+        check(g.notes:find(how == "missing" and "screenshots: none (not on this client)" or "screenshots: none (the call failed)", 1, true), g.notes)
+        P.AnswerGuided(P.trialById["bars.park"], 1)
+        eq(cell(saved, "bars.park", KEY_PRESS), "spell cast", how)
+        eq(select(5, topPoint(c)), y1, how)
+        noErrors(c, how)
+    end
+    -- An answer in a fight: the bar stays parked until the fight ends, but the message goes.
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.StartGuided(P.trialById["bars.park"]); c:advance(1.7)
+    c:enterCombat()
+    P.AnswerGuided(P.trialById["bars.park"], 1)
+    eq(saved.guided["bars.park"].stage, "putback")
+    eq(shownText(c, "PocketProbeBigMessage"), nil, "hidden once answered, though the bar is still held")
+    noErrors(c)
+end)
+
+local function mainBar(c) return topAnchor(c).Bar end
+
+test("bars.fadecast: fades the main bar to nothing, asks, notes 'still invisible', and puts the old value back", function()
+    local saved = { options = { auto = false } }
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    local row = showTrial(c, P, "bars.fadecast")
+    eq(row.ppLabel:GetText(), "Fade the main bar to nothing, then press a spell button (risky)")
+    eq(row.ppRun.ppLabel:GetText(), "Start")
+    check(row.ppRun.ppDisabled, "Start is dimmed while Risky is off")
+    c:click(button(c, "PocketProbeRiskyButton"))
+    c:click(showTrial(c, P, "bars.fadecast").ppRun)
+    check(not rawget(c.env, "PocketProbePanel"):IsShown(), "the panel closes at Start")
+    eq(mainBar(c):GetAlpha(), 1, "not faded yet")
+    c:advance(0.6); eq(c.shots, 1)
+    c:advance(0.5); eq(mainBar(c):GetAlpha(), 0, "faded")
+    eq(shownText(c, "PocketProbeBigMessage"), nil)
+    c:advance(0.5); eq(c.shots, 2)
+    eq(shownText(c, "PocketProbeBigMessage"), FADE_BIG)
+    local g = saved.guided["bars.fadecast"]
+    eq(g.stage, "ask")
+    check(g.notes:find("main bar see-through 1 -> 0", 1, true) and g.notes:find("screenshots: 2", 1, true), g.notes)
+    eq(P.status, "bars.fadecast: started — Fade the main bar is waiting: answer or Cancel")
+    for _, v in pairs(g) do check(type(v) ~= "table" or v == g.old, "no frame is kept in the saved table") end
+    row = showTrial(c, P, "bars.fadecast")
+    eq(row.ppAnswer[1].ppLabel:GetText(), "Spell cast"); eq(row.ppAnswer[2].ppLabel:GetText(), "Nothing happened")
+    c:click(row.ppAnswer[1])
+    eq(cell(saved, "bars.fadecast", KEY_PRESS), "spell cast")
+    local msg = saved.last["bars.fadecast"].message
+    check(msg:find("still invisible at the answer: yes", 1, true), msg)
+    check(msg:find("old values put back", 1, true), msg)
+    eq(mainBar(c):GetAlpha(), 1, "put back")
+    eq(saved.guided["bars.fadecast"], nil)
+    eq(shownText(c, "PocketProbeBigMessage"), nil)
+    -- The game showed the bar again by itself before the answer: noted, and the old value still goes back.
+    P.StartGuided(P.trialById["bars.fadecast"]); c:advance(1.7)
+    mainBar(c):SetAlpha(0.5)
+    P.AnswerGuided(P.trialById["bars.fadecast"], 2)
+    eq(saved.last["bars.fadecast"].result, "nothing happened")
+    check(saved.last["bars.fadecast"].message:find("still invisible at the answer: no", 1, true), saved.last["bars.fadecast"].message)
+    eq(mainBar(c):GetAlpha(), 1)
+    noErrors(c)
+end)
+
+test("bars.fadecast: Cancel, Stop and logout put the see-through back; a start in a fight is allowed", function()
+    for _, way in ipairs({ "cancel", "stop", "logout", "cancel early" }) do
+        local saved = riskySaved()
+        local c, P = new({ saved = saved })
+        c:advance(5)
+        P.StartGuided(P.trialById["bars.fadecast"])
+        c:advance(way == "cancel early" and 0.6 or 1.7)
+        if way ~= "cancel early" then
+            eq(mainBar(c):GetAlpha(), 0, way)
+            eq(shownText(c, "PocketProbeBigMessage"), FADE_BIG, way)
+        end
+        if way == "stop" then P.Stop()
+        elseif way == "logout" then c:fire("PLAYER_LOGOUT")
+        else P.CancelGuided(P.trialById["bars.fadecast"]) end
+        c:advance(3)
+        eq(mainBar(c):GetAlpha(), 1, "put back on " .. way)
+        eq(saved.guided["bars.fadecast"], nil, way)
+        eq(saved.results["bars.fadecast"], nil, way .. ": no answer")
+        eq(shownText(c, "PocketProbeBigMessage"), nil, way)
+        if way == "logout" then eq(countLog(saved, "bars.fadecast: put back at logout"), 1) end
+        noErrors(c, way)
+    end
+    -- In a fight: started, faded, answered and put back, all in the fight.
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    c:enterCombat(); c:advance(2)
+    P.StartGuided(P.trialById["bars.fadecast"]); c:advance(1.7)
+    eq(mainBar(c):GetAlpha(), 0, "faded in the fight")
+    P.AnswerGuided(P.trialById["bars.fadecast"], 1)
+    eq(cell(saved, "bars.fadecast", KEY_FIGHT_PRESS), "spell cast")
+    eq(mainBar(c):GetAlpha(), 1)
+    noErrors(c)
+    -- A reload while it waits: the trial is called off (the reload resets the bar).
+    local saved2 = riskySaved()
+    local c2, P2 = new({ saved = saved2 })
+    c2:advance(5)
+    P2.StartGuided(P2.trialById["bars.fadecast"]); c2:advance(1.7)
+    saved2.guided["bars.fadecast"].applied = true      -- as if the logout could not put it back
+    local c3 = new({ saved = saved2 })
+    eq(saved2.guided["bars.fadecast"], nil)
+    eq(countLog(saved2, "bars.fadecast: called off; the reload put the main bar's see-through back"), 1)
+    noErrors(c3)
+end)
+
+test("bars.fadecast: a refused fade is the result at once; a refused put-back is held until the fight ends", function()
+    -- The game refuses the fade in a fight: stored as the result, nothing asked, nothing left changed.
+    local saved = riskySaved()
+    local c, P = new({ saved = saved, setup = function(cl) cl.world.barAlphaBlocked = true end })
+    c:advance(5)
+    c:enterCombat(); c:advance(2)
+    P.StartGuided(P.trialById["bars.fadecast"]); c:advance(1.7)
+    noErrors(c)
+    eq(cell(saved, "bars.fadecast", KEY_FIGHT_PRESS), "blocked")
+    eq(detail(saved, "bars.fadecast").func, "SetAlpha()")
+    eq(saved.guided["bars.fadecast"], nil, "nothing to ask")
+    eq(mainBar(c):GetAlpha(), 1)
+    eq(shownText(c, "PocketProbeBigMessage"), nil)
+    check(P.status:find("bars.fadecast: blocked", 1, true), P.status)
+    -- The write does nothing and says nothing: "no effect".
+    local saved2 = riskySaved()
+    local c2, P2 = new({ saved = saved2, setup = function(cl)
+        rawset(cl.env.GamepadMainActionBarFrame.PageUnit.TopCenteredAnchor.Bar, "SetAlpha", function() end)
+    end })
+    c2:advance(5)
+    P2.StartGuided(P2.trialById["bars.fadecast"]); c2:advance(1.7)
+    eq(cell(saved2, "bars.fadecast", KEY_PRESS), "no effect")
+    check(saved2.last["bars.fadecast"].message:find("still 1 after setting it to 0", 1, true), saved2.last["bars.fadecast"].message)
+    eq(saved2.guided["bars.fadecast"], nil)
+    noErrors(c2)
+    -- Faded out of a fight; the put-back is refused in the fight and done when it ends.
+    local saved3 = riskySaved()
+    local c3, P3 = new({ saved = saved3 })
+    c3:advance(5)
+    P3.StartGuided(P3.trialById["bars.fadecast"]); c3:advance(1.7)
+    c3.world.barAlphaBlocked = true
+    c3:enterCombat()
+    P3.AnswerGuided(P3.trialById["bars.fadecast"], 1)
+    eq(cell(saved3, "bars.fadecast", KEY_FIGHT_PRESS), "spell cast", "the answer is kept")
+    local g = saved3.guided["bars.fadecast"]
+    eq(g and g.stage, "putback")
+    check(g.held:find("the main bar's see-through", 1, true), g.held)
+    eq(mainBar(c3):GetAlpha(), 0, "still faded in the fight")
+    eq(showTrial(c3, P3, "bars.fadecast").ppChipText:GetText(), "Not put back")
+    eq(shownText(c3, "PocketProbeBigMessage"), nil)
+    c3:leaveCombat(); c3:advance(2)
+    eq(saved3.guided["bars.fadecast"], nil, "put back after the fight")
+    eq(mainBar(c3):GetAlpha(), 1)
+    eq(countLog(saved3, "bars.fadecast: put back after the fight"), 1)
+    noErrors(c3)
+    -- No main bar on this client.
+    local saved4 = riskySaved()
+    local c4, P4 = new({ saved = saved4, setup = function(cl) rawset(cl.env, "GamepadMainActionBarFrame", nil) end })
+    c4:advance(5)
+    P4.StartGuided(P4.trialById["bars.fadecast"]); c4:advance(1.7)
+    eq(cell(saved4, "bars.fadecast", KEY_PRESS), "missing")
+    noErrors(c4)
+end)
+
+test("bars.fade: the left bar to nothing and back; no change is 'no effect'; a block is recorded; always undone", function()
+    local c, P, db = new({ saved = riskySaved() })
+    c:advance(5)
+    local row = showTrial(c, P, "bars.fade")
+    eq(row.ppLabel:GetText(), "Fade the left bar to nothing and back (run it in a fight) (risky)")
+    c:click(row.ppRun)
+    eq(cell(db, "bars.fade", KEY_PRESS), "allowed")
+    local calls = c:callsTo("GamepadBar.LeftCenteredAnchor:SetAlpha")
+    eq(#calls, 2); eq(calls[1].args[1], 0, "set to nothing"); eq(calls[2].args[1], 1, "and back")
+    local left = c.env.GamepadMainActionBarFrame.PageUnit.LeftCenteredAnchor
+    eq(left:GetAlpha(), 1)
+    -- In a fight too.
+    c:enterCombat(); c:advance(2)
+    c:click(showTrial(c, P, "bars.fade").ppRun)
+    eq(cell(db, "bars.fade", KEY_FIGHT_PRESS), "allowed")
+    eq(left:GetAlpha(), 1)
+    noErrors(c)
+    -- Refused in a fight: blocked, and the bar is as it was.
+    local c2, P2, db2 = new({ saved = riskySaved(), setup = function(cl) cl.world.barAlphaBlocked = true end })
+    c2:advance(5)
+    c2:enterCombat(); c2:advance(2)
+    P2.RunOne(P2.trialById["bars.fade"])
+    eq(cell(db2, "bars.fade", KEY_FIGHT_PRESS), "blocked")
+    eq(detail(db2, "bars.fade").func, "SetAlpha()")
+    eq(c2.env.GamepadMainActionBarFrame.PageUnit.LeftCenteredAnchor:GetAlpha(), 1)
+    noErrors(c2)
+    -- A write that changes nothing.
+    local c3, P3, db3 = new({ saved = riskySaved(), setup = function(cl)
+        rawset(cl.env.GamepadMainActionBarFrame.PageUnit.LeftCenteredAnchor, "SetAlpha", function() end)
+    end })
+    c3:advance(5)
+    P3.RunOne(P3.trialById["bars.fade"])
+    eq(cell(db3, "bars.fade", KEY_PRESS), "no effect")
+    noErrors(c3)
+    -- A half-faded bar goes back to its own value, not to 1.
+    local c4, P4, db4 = new({ saved = riskySaved(), setup = function(cl)
+        cl.env.GamepadMainActionBarFrame.PageUnit.LeftCenteredAnchor:SetAlpha(0.5)
+    end })
+    c4:advance(5)
+    P4.RunOne(P4.trialById["bars.fade"])
+    eq(cell(db4, "bars.fade", KEY_PRESS), "allowed")
+    eq(c4.env.GamepadMainActionBarFrame.PageUnit.LeftCenteredAnchor:GetAlpha(), 0.5)
+    noErrors(c4)
+end)
+
+test("cd.duration counts what can be read of the main bar's cooldown duration objects", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    P.RunOne(P.trialById["cd.duration"])
+    eq(cell(db, "cd.duration", KEY_PRESS), "readable")
+    local msg = db.last["cd.duration"].message
+    check(msg:find("buttons 8, with a spell 3", 1, true) and msg:find("duration readable 3", 1, true), msg)
+    local c2, P2, db2 = new({ auto = false, setup = function(cl) cl.world.durationFails = true end })
+    c2:advance(5)
+    P2.RunOne(P2.trialById["cd.duration"])
+    eq(cell(db2, "cd.duration", KEY_PRESS), "nil")
+    check(db2.last["cd.duration"].message:find("duration error 3", 1, true), db2.last["cd.duration"].message)
+    local c3, P3, db3 = new({ auto = false, setup = function(cl) rawset(cl.env.C_ActionBar, "GetActionCooldownDuration", nil) end })
+    c3:advance(5)
+    P3.RunOne(P3.trialById["cd.duration"])
+    P3.RunOne(P3.trialById["cd.sweep.object"])
+    eq(cell(db3, "cd.duration", KEY_PRESS), "missing")
+    eq(cell(db3, "cd.sweep.object", KEY_PRESS), "missing")
+    noErrors(c); noErrors(c2); noErrors(c3)
+end)
+
+test("the sweep trials: allowed, with the slot on cooldown preferred; the squares show for 8 seconds, one picture", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    local holder = button(c, "PocketProbeSweep")
+    eq(c.cooldowns[1].hideNumbers, true, "no countdown numbers on square 1")
+    eq(c.cooldowns[2].hideNumbers, true, "no countdown numbers on square 2")
+    local row = showTrial(c, P, "cd.sweep.object")
+    eq(row.ppLabel:GetText(), "Cooldown sweep on a square of ours, from the game's duration object")
+    eq(row.ppRun.ppDisabled, false, "not risky")
+    c:click(row.ppRun)
+    eq(cell(db, "cd.sweep.object", KEY_PRESS), "allowed")
+    local msg = db.last["cd.sweep.object"].message
+    for _, part in ipairs({ "slot on cooldown yes", "sweep frame shown by itself yes", "duration afterwards readable" }) do
+        check(msg:find(part, 1, true), part .. ": " .. msg)
+    end
+    eq(#c.cooldownCalls, 1)
+    eq(c.cooldownCalls[1].frame, c.cooldowns[1].frame, "square 1")
+    eq(c.cooldownCalls[1].args[1], c.durations[2], "the game's duration object of the slot on cooldown, passed straight in")
+    check(holder:IsShown(), "the squares show")
+    eq(c.shots, nil)
+    c:advance(1.1)
+    eq(c.shots, 1, "one picture a second later")
+    -- The numbers trial on square 2, five seconds on: the 8 seconds start again.
+    c:advance(4)
+    P.RunOne(P.trialById["cd.sweep.numbers"])
+    eq(cell(db, "cd.sweep.numbers", KEY_PRESS), "allowed")
+    eq(c.cooldownCalls[2].frame, c.cooldowns[2].frame, "square 2")
+    eq(c.cooldownCalls[2].method, "SetCooldown")
+    eq(c.cooldownCalls[2].args[1], 100); eq(c.cooldownCalls[2].args[2], 8)
+    c:advance(4)
+    check(holder:IsShown(), "a second run restarts the 8 seconds")
+    c:advance(4.5)
+    check(not holder:IsShown(), "hidden 8 seconds after the last run")
+    eq(c.shots, 1, "no second picture while it was already showing")
+    noErrors(c)
+    -- Nothing read from the game is stored: no texture, no start time.
+    local text = table.concat(dump(db), "\n")
+    for _, value in ipairs({ "135274", "136096", "135952" }) do
+        check(not text:find(value, 1, true), "a texture id was saved: " .. value)
+    end
+    check(not db.last["cd.sweep.numbers"].message:find("100", 1, true), "a start time was saved")
+    -- No slot on cooldown: the first with a spell; a frame that does not show itself is shown by us.
+    local c2, P2, db2 = new({ auto = false, setup = function(cl)
+        cl.world.actions[2].duration = 0
+        cl.world.cooldownStaysHidden = true
+    end })
+    c2:advance(5)
+    P2.RunOne(P2.trialById["cd.sweep.object"])
+    eq(cell(db2, "cd.sweep.object", KEY_PRESS), "allowed")
+    msg = db2.last["cd.sweep.object"].message
+    check(msg:find("slot on cooldown no", 1, true) and msg:find("sweep frame shown by itself no", 1, true), msg)
+    eq(c2.cooldownCalls[1].args[1], c2.durations[1], "the first slot with a spell")
+    check(c2.cooldowns[1].frame:IsShown(), "shown by the probe so a sweep could be seen")
+    noErrors(c2)
+    -- No spell on the main bar: nothing to try.
+    local c3, P3, db3 = new({ auto = false, setup = function(cl) cl.world.actions = {} end })
+    c3:advance(5)
+    P3.RunOne(P3.trialById["cd.sweep.object"]); P3.RunOne(P3.trialById["cd.sweep.numbers"])
+    eq(cell(db3, "cd.sweep.object", KEY_PRESS), "no effect")
+    eq(cell(db3, "cd.sweep.numbers", KEY_PRESS), "no effect")
+    eq(#c3.cooldownCalls, 0)
+    noErrors(c3)
+end)
+
+test("the sweep trials: blocked, forbidden and error are told apart; a missing method or frame is 'missing'", function()
+    for _, mode in ipairs({ "blocked", "forbidden", "error" }) do
+        local c, P, db = new({ auto = false, setup = function(cl)
+            cl.world.cooldownModes.SetCooldownFromDurationObject = mode
+            cl.world.cooldownModes.SetCooldown = mode
+        end })
+        c:advance(5)
+        c:enterCombat(); c:advance(2)
+        P.RunOne(P.trialById["cd.sweep.object"]); P.RunOne(P.trialById["cd.sweep.numbers"])
+        noErrors(c, mode)
+        eq(cell(db, "cd.sweep.object", KEY_FIGHT_PRESS), mode)
+        eq(cell(db, "cd.sweep.numbers", KEY_FIGHT_PRESS), mode)
+        local d = detail(db, "cd.sweep.object")
+        if mode ~= "error" then
+            eq(d.func, "SetCooldownFromDurationObject()", mode)
+            eq(detail(db, "cd.sweep.numbers").func, "SetCooldown()", mode)
+        else
+            check(d.message:find("secret values are not allowed here", 1, true), d.message)
+        end
+        check(d.message:find("slot on cooldown yes", 1, true), mode .. ": " .. tostring(d.message))
+        check(d.message:find("sweep frame shown by itself no", 1, true), mode .. ": " .. tostring(d.message))
+        check(button(c, "PocketProbeSweep"):IsShown(), "the squares still show, so the player sees no sweep came")
+    end
+    local c2, P2, db2 = new({ auto = false, setup = function(cl) cl.world.cooldownNoObject = true end })
+    c2:advance(5)
+    P2.RunOne(P2.trialById["cd.sweep.object"]); P2.RunOne(P2.trialById["cd.sweep.numbers"])
+    eq(cell(db2, "cd.sweep.object", KEY_PRESS), "missing")
+    eq(detail(db2, "cd.sweep.object").message, "Cooldown:SetCooldownFromDurationObject is not on this client")
+    eq(cell(db2, "cd.sweep.numbers", KEY_PRESS), "allowed")
+    noErrors(c2)
+    local c3, P3, db3 = new({ auto = false, setup = function(cl) cl.world.noCooldown = true end })
+    c3:advance(5)
+    P3.RunOne(P3.trialById["cd.sweep.object"]); P3.RunOne(P3.trialById["cd.sweep.numbers"])
+    eq(cell(db3, "cd.sweep.object", KEY_PRESS), "missing")
+    eq(cell(db3, "cd.sweep.numbers", KEY_PRESS), "missing")
+    eq(detail(db3, "cd.sweep.numbers").message, "CooldownFrameTemplate is not on this client")
+    check(not button(c3, "PocketProbeSweep"):IsShown(), "nothing to show")
+    noErrors(c3)
+    -- A secret cooldown table: the numbers trial has nothing it may pass on.
+    local c4, P4, db4 = new({ auto = false, setup = function(cl)
+        local get = cl.env.C_ActionBar.GetActionCooldown
+        rawset(cl.env.C_ActionBar, "GetActionCooldown", function(slot)
+            local info = get(slot)
+            cl.world.secrets[info] = true
+            return info
+        end)
+    end })
+    c4:advance(5)
+    P4.RunOne(P4.trialById["cd.sweep.numbers"])
+    eq(cell(db4, "cd.sweep.numbers", KEY_PRESS), "no effect")
+    eq(#c4.cooldownCalls, 0)
+    noErrors(c4)
+end)
+
+test("the new rows are on the tabs said, and every area still fits ten tabs", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    local area = {}
+    for _, t in ipairs(db.trials) do area[t.id] = t.area end
+    eq(area["bars.fadecast"], "Blizzard windows"); eq(area["bars.fade"], "Blizzard windows")
+    for _, id in ipairs({ "cd.duration", "cd.sweep.object", "cd.sweep.numbers" }) do eq(area[id], "Our own windows", id) end
+    eq(area["bag.toggle"], "Bags and vendor", "moved to make room on the Blizzard windows tabs")
+    openPanel(c)
+    local shown = 0
+    for _, t in ipairs(P.panelTabs) do if t:IsShown() then shown = shown + 1 end end
+    eq(shown, 10)
+    noErrors(c)
+end)
 
 ---------------------------------------------------------------------------
 -- Run

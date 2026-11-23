@@ -3,6 +3,8 @@
 Piece 3 of 3 from `docs/ui-review/2026-11-20-action-bars-gameplan.md`
 ("Controller layout, piece 3"). Planned version: 0.11.0.
 
+Updated by `2026-11-22-controller-layout-measured-sizes.md` (measured sizes and the Map size row).
+
 **Approval.** The owner was away and wrote on 2026-11-21: "Is it possible to
 build without the probe or the screenshots? ... I think the mock is a really
 good start, can we start getting things made and then when I return we can
@@ -215,9 +217,21 @@ value the game saves.
 `mapY` is 44 when the timers are under the map (60 with Off Hand shown),
 else 6.
 
-Assumed sizes, to be replaced by the probe's measurements: map cluster at
-80% is 164 wide and 176 tall; a bar is 208 by 68; a unit frame is 232 by
-100; the pet frame 120 by 49; a timer at 80% is 170 by 12.
+Sizes (updated 2026-11-22, see
+`2026-11-22-controller-layout-measured-sizes.md`):
+
+- Measured on the device (probe `layout.sizes`, UI scale 1): the map cluster
+  at 100% is 273 wide and 283 tall; a unit frame is 232 by 100; the pet
+  frame 120 by 49.
+- From Blizzard's source: a bar that does not grow is 208 by 68
+  (`Blizzard_GamepadActionBars/ActionBarStyles.lua:172`; the template
+  switches growing off with ShouldExpand 0).
+- Still guesses: the map below 100%, taken as the measured size times the
+  `map` percentage (218.4 by 226.4 at 80%, 191.1 by 198.1 at 70%, 163.8 by
+  169.8 at 60%; the real map may be a few units larger); a timer at 80% is
+  170 by 12; every spot and gap.
+
+The Minimap's stored Size is `(map - 50) / 10`: 3 at 80%, 2 at 70%, 1 at 60%.
 
 ShouldExpand 0 keeps every bar the same size whichever trigger is held, so
 the arrangement does not shift. ShowEmptyBars 0 hides a bar with no spells
@@ -272,8 +286,9 @@ Sizes: `size` (70 to 100%, step 5, default 100; see ruling 11) times the group's
 100%. The both-triggers bar is a further 0.7 of its group size.
 kM, kS, kB below are those three results.
 
-With H = 68 (bar height), W = 208 (bar width), mapW = 164, mapH = 176 and
-`lift` = 22 when `timers` is `bars`, else 0:
+With H = 68 (bar height), W = 208 (bar width), mapW = 273 * `map` / 100,
+mapH = 283 * `map` / 100 (`map` is 60, 70 or 80, default 80: 218.4 and 226.4)
+and `lift` = 22 when `timers` is `bars`, else 0:
 
 | Frame | `main = "above"` (default) | `main = "under"` |
 |---|---|---|
@@ -298,6 +313,7 @@ once, out of combat.
 | Row | Choices | Default | |
 |---|---|---|---|
 | Main bar | Above the map / Under the map | Above | (B)(L: the map's height) |
+| Map size | 60% / 70% / 80% (option `map`; a saved value that is none of these counts as 80) | 80% | (B)(L: the map's size, and the timers) |
 | Player and target frames | Corners / Stacked / Side by side | Corners | (L) |
 | Spell button size | 70 to 100%, step 5. Help line: "Below 100%, a spell that opens its own wheel may open beside its button." | 100% | (B) |
 | Main bar size | Smaller / Same / Bigger | Same | (B) |
@@ -329,7 +345,7 @@ frames in Edit Mode; it is kept." or the "another layout" line above.
 7. The quest tracker moves under the chat and buffs on the right.
 8. Version 0.11.0; the Quiet bars spec, which planned that number, is not
    touched.
-9. No fold rows; ten option rows on one card.
+9. No fold rows; the option rows sit on one card (eleven since the Map size row).
 11. Spell button size starts at 100%, not the mockup's 85%. A spell on a
     bar that opens its own wheel places that wheel at the button's centre in
     the button's own scaled units (`FlyoutRadial.lua:220`), so on a scaled
