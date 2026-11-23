@@ -3,3 +3,8 @@ vendor/
 .DS_Store
 CLAUDE.local.md
 .superpowers/
+
+# Raw device files (screenshots, saved files): kept locally while needed, never committed
+docs/**/*.png
+docs/**/*.jpg
+docs/**/*.lua
