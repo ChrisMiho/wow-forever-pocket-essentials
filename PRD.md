@@ -430,6 +430,20 @@ per objective". The owner has more Quest icons ideas to bring after testing.
 Spec `docs/superpowers/specs/2026-11-18-tidier-settings.md`; device steps
 `docs/TESTING.md` 14.
 
+**0.11.1 (2026-11-23, untested):** the clear Controller layout bugs from the
+owner's main (`docs/11-23-ui-debug/FINDINGS.md`): XP bar top middle at 100%,
+each character switches to our layout at login and remembers its own, the
+map's title under the map, buffs clear of the chat. Spec
+`docs/superpowers/specs/2026-11-23-controller-layout-0.11.1.md`. With it,
+Pocket Probe 0.7.0 (spec `2026-11-23-pocket-probe-0.7.0.md`): a floating
+Fight button, watchers armed by one tap, "Fade for next fight", "Wheels on a
+faded bar", "Clear saved results" and recorder report fixes, to answer the
+"face bars" questions (`docs/11-23-face-bars/EVIDENCE.md`). One pre-release
+`v0.11.1` with both zips; device steps `docs/TESTING.md` 25. Decided on
+2026-11-23: the face bars start as one setup (all four bars drawn around the
+map; mockup `docs/ui-review/mockup-0.8.1.html`, "Face bars (one setup)"), and
+every setting per character comes next after this test.
+
 **0.11.0 (2026-11-21, sizes updated 2026-11-22, untested):** Controller layout, piece 3 of
 the controller UI round, on a new Controller tab (experimental, off). One
 switch creates a "Pocket Essentials" Edit Mode layout and places the game's

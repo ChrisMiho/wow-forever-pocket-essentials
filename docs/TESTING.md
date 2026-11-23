@@ -1509,3 +1509,91 @@ feature, split by what you were doing. Nothing to type and nothing to watch.
 
 On a computer: `scripts/read-probe.sh <PocketProbe.lua> --perf` prints the
 report, and `--perf --diff <older file>` compares two recordings.
+
+### 25. Version 0.11.1 and Pocket Probe 0.7.0: the lunch test
+
+**What this is for.** Check the four layout fixes, and let the probe answer
+the face-bar questions while you play. Out of a fight first (about five
+minutes), then just play. The only thing to do in a fight is one tap on the
+round **Fight** button, once. Download: the GitHub pre-release **v0.11.1**,
+which holds both zips.
+
+**Install**
+
+1. In `AddOns`, delete the old `PocketProbe` and `PocketEssentials` folders
+   (keep `QuestieDB`). Unzip both new zips there.
+2. Close the game completely and open it again. **Log into your level 40
+   main first** (the first character in after the update takes over the
+   old "layout to go back to", which was your main's).
+3. The red dot and the round **Stop** show: the recorder started by itself.
+   Tap **Stop** for now (the two tests below cannot run while it records).
+
+**The layout fixes (on the main)**
+
+4. Open Pocket Essentials' settings, tab **Controller**. If **Controller
+   layout** is Off, switch it On and tap **Reload now**.
+5. On the row **Template** tap **Start over**, then tap it again to confirm.
+   Tap **Reload now**. (This rebuilds our layout from the new template; any
+   changes you made to it in Edit Mode are undone.)
+6. Look and tell me: is the XP bar at the very top, in the middle, clear of
+   the hints box and the chat? Is the zone name and clock under the map? Do
+   the buffs sit below the chat's last lines? Take a screenshot.
+
+**Probe set-up (out of a fight)**
+
+7. Tap **Probe**. On the bottom row tap **Risky** so it says **On**.
+8. Tab **Blizzard windows 2**, row **Watch my next fights**: tap **Arm**. It
+   reads "Watching, 0 min".
+
+**Wheels on a faded bar (out of a fight, on a character with a pet)**
+
+If your main has no pet, skip to step 13 and do steps 9 to 12 on your
+warlock later.
+
+9. Same tab, row "Fade the four bars, then open the pet wheel and a spell
+   wheel": tap **Start**. The window closes and big letters say what to do.
+10. Open the pet wheel (LB + LT). Is it on screen? Close it.
+11. Open a spell wheel (a spell button that opens a wheel). Is it on screen?
+    Close it.
+12. Tap **Probe**. On the same row tap **Wheel visible** or **Wheel hidden**.
+    The bars come back.
+
+**Fade for next fight**
+
+13. Same tab, row "Fade the main bar for your next fight, with nothing to do
+    in it": tap **Start**. Big letters: "Main bar will vanish in your next
+    fight. Just play."
+14. Fight one mob with your main bar as normal. The bar vanishes when the
+    fight starts and comes back when it ends.
+15. Big letters ask "Did your spells cast while the bar was invisible?" Tap
+    **Probe**, then on that row **Yes, they cast** or **No**.
+
+**Just play**
+
+16. Tap **Probe**. At the top of the window tap **Start recording**. Close
+    the window.
+17. Play as you normally would, as long as you like (15 minutes or more is
+    best): quests, a vendor, fights with LT and RT spells and a cooldown or
+    two. The watchers count by themselves.
+18. **Once, in a fight:** by touch, tap the round amber **Fight** button
+    beside Stop. A tick shows when the tests are done. That is all.
+19. If you see "Interface action failed because of an AddOn" or a "blocked"
+    pop-up at any time, note when.
+
+**Another character (last, it reloads)**
+
+20. Log out and into another character that used its own layout. Does it
+    switch to the Pocket Essentials layout by itself? Tell me what it said
+    and whether you had to reload.
+
+**Send it back**
+
+21. Tap **Stop**, then **Probe**, then **Save (reloads)**.
+22. Send me `SavedVariables/PocketProbe.lua`, `SavedVariables/PocketEssentials.lua`
+    and the screenshots from the game's `Screenshots` folder (the probe takes
+    one for the cooldown sweep and one for the wheels).
+
+To start again from empty later: Probe, tab **Controller and layout**, row
+**Clear saved results**, tap **Clear** twice.
+
+On a computer: `scripts/read-probe.sh <PocketProbe.lua> --details --perf`.

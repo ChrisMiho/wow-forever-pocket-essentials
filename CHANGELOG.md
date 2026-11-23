@@ -4,6 +4,64 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.11.1] - 2026-11-23
+
+Twenty-sixth test build. The clear bugs from the owner's level 40 main
+(`docs/11-23-ui-debug/FINDINGS.md`). Spec
+`docs/superpowers/specs/2026-11-23-controller-layout-0.11.1.md`. Released
+together with Pocket Probe 0.7.0 in one GitHub pre-release. Not yet tested on
+a device. Your saved choices carry over.
+
+### Fixed
+
+- **Controller layout, XP bar at the top:** the XP bar now sits at the very
+  top of the screen, centred, at 100% width, clear of the controller hints
+  and the chat. It stayed at the bottom in 0.11.0 (a miss in the spec).
+- **Controller layout, each character:** with the switch On, a character
+  that is still on its own layout switches to ours at login (out of a
+  fight, once the game has loaded its layouts) and remembers its own.
+  Switching off on that character brings its own back; another character
+  gets its own back at its next login. Before, it needed off, reload, on,
+  reload. If the switch at login fails, the switch stays on and the next
+  login tries again.
+- **Controller layout, map title under the map:** the zone name and clock
+  strip now sits under the map instead of on top of it (the game's own
+  "header underneath" setting).
+- **Controller layout, buffs clear of the chat:** the buffs, debuffs and the
+  quest tracker sit 30 lower, so they no longer cover the chat's last lines.
+  The chat keeps its size.
+- These template changes reach a layout that already exists only through
+  **Start over** on the Controller tab (which also undoes your own Edit
+  Mode changes to it).
+
+### Added
+
+- **Pocket Probe 0.7.0** (testing tool, in the same GitHub pre-release as
+  its own `PocketProbe.zip`; never in the player zips). Spec
+  `docs/superpowers/specs/2026-11-23-pocket-probe-0.7.0.md`. It answers the
+  questions for the "face bars" (our own pictures of the spells, over the
+  game's invisible real bars) with almost nothing to do in a fight.
+  - **Fight button:** a round amber button beside Stop, shown only in a
+    fight and only while the watchers are armed or a recording runs. One tap
+    runs Fight tests. A recording pauses for the pass and carries on by
+    itself.
+  - **Watch my next fights:** one tap out of a fight, then nothing to do
+    until a reload. It counts which bar is active as you hold the triggers,
+    your presses, and how often the bar events fire, in and out of fights;
+    the first time a main-bar spell goes on cooldown in a fight it tries the
+    cooldown sweep on a square of ours and takes a screenshot. Counts only.
+  - **Fade for next fight:** start it before a fight; the main bar vanishes
+    when the fight starts and comes back when it ends, then one question:
+    did your spells cast?
+  - **Wheels on a faded bar:** out of a fight, all four bars fade; open the
+    pet wheel and a spell wheel, then say whether they showed.
+  - **Clear saved results:** two taps empty the probe's results, watcher
+    counts and recordings. Its switches and Pocket Essentials are untouched.
+  - **Recorder report:** a memory reading of 0 counts as missing, reloads
+    are marked and the 30 seconds after each are left out of "In plain
+    words", and a run under 10 minutes says "too short to judge".
+  - The Probe button sits a little lower, out of the XP bar's way.
+
 ## [0.11.0] - 2026-11-22
 
 Twenty-fifth test build. From the owner, for the controller UI round:
