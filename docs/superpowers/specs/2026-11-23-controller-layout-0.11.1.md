@@ -200,3 +200,23 @@ File paths are under `Interface/AddOns/` on the forever branch.
   shows in the settings window and the setup guide only, as for a tap. The
   owner may not notice it until opening the settings; a chat line would be
   new scope, so it is left as a question.
+
+### Review fixes (2026-11-23)
+
+- **A failed automatic switch-on keeps the switch on.** When the login check's
+  switch-on fails or is refused (a game call raises, five account-wide
+  layouts, Edit Mode open), the error is logged and the reason shown in the
+  status line ("It tries again at the next login."), but the account-wide
+  switch stays on and no entry is written for this character, so its next
+  login tries again and other characters are left as they are. A failed tap
+  still switches the feature back off, as before.
+- **Gamepad UI reported late at login.** With the switch on and no entry for
+  this character, the feature is blocked when the game does not report its
+  Gamepad UI at `PLAYER_LOGIN`, and Core does not try again. The module's
+  `OnLoad` then looks once more at the next `PLAYER_ENTERING_WORLD` (one core
+  event, unregistered after) and starts the feature if the Gamepad UI reads
+  on by then. No Core change.
+- **A tap off before the character's name is known** waits for the name and
+  keeps the tap's reload request (it used to return as a login check and ask
+  none when nothing was changed; it also used to skip the switch-off
+  altogether while the name could not be read).

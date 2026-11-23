@@ -717,15 +717,32 @@ local function StartWaiting()
     for _, event in ipairs(WAIT_EVENTS) do PE:RegisterCoreEvent(event, WAIT_KEY, onWaitEvent) end
 end
 
+local pendingTap = false -- the Settle still to run was asked for by a tap on the switch
+local atLogin = true     -- the module is being switched on by the login, not by a tap
+local autoSwitch = false -- SwitchOn is running from a login check, not from a tap
+
 -- Asks for Settle: now if it can, else at the next of those events, out of combat.
-local function Begin()
+-- byTap: a tap on the switch asked for it (a refusal then switches the feature
+-- back off, and a switch-off always asks for the reload).
+local function Begin(byTap)
     pending = true
+    if byTap then pendingTap = true end
     StartWaiting()
     PE:RunOutOfCombat("ctrlLayout:settle", Settle)
 end
 
--- Switches the feature back off after a refusal, once OnEnable has returned.
+local TEXT_AUTO_FAILED = "This character could not be switched to the Pocket Essentials layout. It tries again at the next login."
+
+-- After a tap: switches the feature back off after a refusal, once OnEnable has
+-- returned. From a login check (autoSwitch) the switch is account-wide and other
+-- characters may use the layout, so it stays on: the reason goes to the status
+-- line and the next login tries again.
 local function Refuse(text)
+    if autoSwitch then
+        Say(text or TEXT_AUTO_FAILED)
+        if PE.debugOn then PE:Debug("ctrlLayout", "automatic switch-on refused; the switch stays on") end
+        return
+    end
     if text then Say(text) end
     if PE.debugOn then PE:Debug("ctrlLayout", "switch-on refused") end
     mod:After(0, function() PE:SetModuleEnabled("ctrlLayout", false) end)
@@ -1079,7 +1096,10 @@ local function SwitchOn()
             return
         end
         if not ok then
-            if not wrote then SetPrev(key, nil) end
+            -- After a tap the switch-off that follows the refusal undoes a half-done
+            -- change. From a login check the switch stays on: no entry, so the next
+            -- login tries again.
+            if not wrote or autoSwitch then SetPrev(key, nil) end
             return
         end
     end
@@ -1100,7 +1120,7 @@ local function SwitchOff(atLogin)
     if wanted then return end -- switched on again before this ran
     local key = CharKey()
     if not key then
-        Begin() -- tried again once the name can be read
+        Begin(not atLogin) -- tried again once the name can be read; a tap keeps its reload request
         return
     end
     Migrate(key)
@@ -1343,7 +1363,8 @@ Settle = function()
         if PE.debugOn then PE:Debug("ctrlLayout", "waiting for the character's name") end
         return
     end
-    pending = false
+    local byTap = pendingTap
+    pending, pendingTap = false, false
     StopWaiting()
     Migrate(key)
     if wanted then
@@ -1351,13 +1372,38 @@ Settle = function()
             SyncBars()
             mod:RefreshPanel()
         else
-            SwitchOn()
+            autoSwitch = not byTap
+            local ok, err = pcall(SwitchOn)
+            autoSwitch = false
+            if not ok then error(err, 0) end
         end
         -- Option changes not yet written when the feature went off (after SwitchOn, so ours exists).
         if #pendingRewrites > 0 then PE:RunOutOfCombat("ctrlLayout:rewrite", RunRewrites) end
     elseif PrevOf(key) then
-        SwitchOff(true)
+        SwitchOff(not byTap)
     end
+end
+
+-- The switch is on, but at PLAYER_LOGIN the game did not report its Gamepad UI yet,
+-- so Core found the feature blocked and did not start it (a character with no
+-- layout remembered is blocked without the Gamepad UI). One more look at the next
+-- PLAYER_ENTERING_WORLD, through the core's event list (an off module hears none
+-- of its own), then never again this session.
+local LATE_KEY = "ctrlLayout:gamepadUI"
+
+local function WatchLateGamepadUI()
+    PE:RegisterCoreEvent("PLAYER_ENTERING_WORLD", LATE_KEY, PE:Wrap("ctrlLayout", function()
+        PE:UnregisterCoreEvent("PLAYER_ENTERING_WORLD", LATE_KEY)
+        if mod:IsEnabled() or not PE:IsModuleSavedOn("ctrlLayout") then return end
+        if not PE:GamepadUI() then
+            if PE.debugOn then PE:Debug("ctrlLayout", "the Gamepad UI still reads off; not started") end
+            return
+        end
+        if PE.debugOn then PE:Debug("ctrlLayout", "the Gamepad UI reads on now; starting") end
+        atLogin = true -- a login, not a tap: a refused switch-on leaves the switch on
+        PE:SetModuleEnabled("ctrlLayout", true)
+        atLogin = false
+    end))
 end
 
 local defaults = DeepCopy(Plan.DEFAULTS)
@@ -1405,7 +1451,13 @@ mod = PE:RegisterModule({
     -- remembered for this character (it was switched off on another one), Settle puts it back.
     -- With the feature on, OnEnable (right after) does the same check.
     OnLoad = function(self)
-        if PE:IsModuleSavedOn("ctrlLayout") or type(self.opts) ~= "table" then return end
+        if type(self.opts) ~= "table" then return end
+        if PE:IsModuleSavedOn("ctrlLayout") then
+            -- Blocked at this login only because the game does not report its Gamepad UI
+            -- yet: one more try at the next PLAYER_ENTERING_WORLD.
+            if not HasLegacy() and not ThisPrev() and not PE:GamepadUI() then WatchLateGamepadUI() end
+            return
+        end
         if not HasLegacy() and next(Prevs()) == nil then return end -- nothing remembered for anyone
         local key = CharKey()
         if key and not PrevOf(key) and not HasLegacy() then return end -- nothing for this character
@@ -1430,7 +1482,7 @@ mod = PE:RegisterModule({
         else
             -- This character's login check, or a switch-on: Settle, once the character's
             -- name and Edit Mode's layouts are known.
-            Begin()
+            Begin(not atLogin)
         end
     end,
 
@@ -1438,7 +1490,12 @@ mod = PE:RegisterModule({
         wanted = false
         rowNote = nil
         RestoreBars() -- first: bars placed by any path are always put back
-        if not HasLegacy() and not ThisPrev() then return end -- no layout was changed for this character
+        -- Nothing to undo when nothing was changed for this character (a name that cannot
+        -- be read yet goes on to SwitchOff, which waits for it).
+        if not HasLegacy() and CharKey() and not ThisPrev() then return end
         PE:RunOutOfCombat("ctrlLayout:off", function() SwitchOff(false) end)
     end,
 })
+
+-- From here on a switch-on is a tap, except the late one below.
+PE:OnLogin(function() atLogin = false end)

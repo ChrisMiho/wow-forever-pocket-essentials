@@ -2053,4 +2053,110 @@ test("switch: off state registers no events after the login check", function()
     c2:assertClean()
 end)
 
+
+---------------------------------------------------------------------------
+-- Review of 0.11.1: automatic switch-on failures, a Gamepad UI reported late, a tap off
+-- before the character's name is known
+---------------------------------------------------------------------------
+
+test("switch: failed automatic switch-on keeps the switch on and other characters untouched", function()
+    local a = testerOn()
+    local list = a.world.layouts.layouts
+    list[#list + 1] = saved("Mine", 2)
+    -- Bee's login: the game refuses to activate our layout.
+    local c, PE = login(db(a), list, 5, { name = "Bee", setup = function(c) c.world.layoutCallFails.SetActiveLayout = true end })
+    c:advance(0.1)
+    check(PE:IsModuleEnabled("ctrlLayout"), "the feature switched itself off")
+    eq(PE:IsModuleSavedOn("ctrlLayout"), true)
+    eq(prev(PE, "Bee-Camelot"), nil, "an entry was written for a switch that did not happen")
+    eq(prev(PE), { name = "Gamepad", preset = 2 }, "Tester's entry changed")
+    check(#PE.errors >= 1, "no error logged")
+    check(statusText(PE):find("It tries again at the next login.", 1, true), "status: " .. tostring(statusText(PE)))
+    eq(reloadReason(PE), nil)
+    PE:ClearErrors() -- the saved error log would follow into the next logins
+    -- Tester's next login: still on, ours still active there, nothing put back.
+    local c2, PE2 = login(db(c), c.world.layouts.layouts, 4)
+    check(PE2:IsModuleEnabled("ctrlLayout"), "off on Tester")
+    eq(layoutCalls(c2), 0)
+    eq(c2.world.layouts.activeLayout, 4)
+    c2:assertClean()
+    -- Bee's next login, with the game taking the call: switched.
+    local c3, PE3 = login(db(c), c.world.layouts.layouts, 5, { name = "Bee" })
+    eq(c3.world.layouts.activeLayout, 4)
+    eq(prev(PE3, "Bee-Camelot"), { name = "Mine", layoutType = 2 })
+    c3:assertClean()
+    -- A refusal (five account-wide layouts, ours not saved yet) keeps the switch on too.
+    local file = { enabled = { ctrlLayout = true }, options = { ctrlLayout = { prevs = { ["Other-Camelot"] = { preset = 0 } } } } }
+    local c4, PE4 = login(file, { saved("A1"), saved("A2"), saved("A3"), saved("A4"), saved("A5"), saved("Mine", 2) }, 9)
+    c4:advance(0.1)
+    check(PE4:IsModuleEnabled("ctrlLayout"), "the feature switched itself off after the refusal")
+    eq(layoutCalls(c4), 0)
+    eq(prev(PE4), nil)
+    eq(prev(PE4, "Other-Camelot"), { preset = 0 })
+    check(statusText(PE4):find("You already have 5 account-wide layouts.", 1, true), "status: " .. tostring(statusText(PE4)))
+    c4:assertClean()
+    -- A tap that fails still switches back off, as before.
+    local c5, PE5 = layoutClient({}, 3, { setup = function(c5) c5.world.layoutCallFails.SaveLayouts = true end })
+    switchOn(c5, PE5)
+    check(not PE5:IsModuleEnabled("ctrlLayout"), "a failed tap stayed on")
+end)
+
+test("switch: Gamepad UI reported late at login still switches on", function()
+    local a = testerOn()
+    local list = a.world.layouts.layouts
+    list[#list + 1] = saved("Mine", 2)
+    local file = deepCopy(db(a))
+    local c, PE = login(db(a), list, 5, { name = "Bee", gamepadUI = false, setup = function(c)
+        -- The game reports its Gamepad UI once the character enters the world: just before the
+        -- addon hears that PLAYER_ENTERING_WORLD (this frame registered for it first).
+        local f = c.env.CreateFrame("Frame")
+        f:RegisterEvent("PLAYER_ENTERING_WORLD")
+        f:SetScript("OnEvent", function() c.world.gamepadUI = true end)
+    end })
+    check(PE:IsModuleEnabled("ctrlLayout"), "not started once the Gamepad UI read on")
+    eq(c.world.layouts.activeLayout, 4)
+    eq(prev(PE, "Bee-Camelot"), { name = "Mine", layoutType = 2 })
+    eq(reloadReason(PE), RELOAD)
+    eq(addonEvents(c).EDIT_MODE_LAYOUTS_UPDATED, true, "the feature's own events")
+    c:assertClean()
+    -- Still off at that PLAYER_ENTERING_WORLD: not started, and only that one look.
+    local c2, PE2 = login(file, list, 5, { name = "Bee", gamepadUI = false })
+    check(not PE2:IsModuleEnabled("ctrlLayout"), "started without the Gamepad UI")
+    eq(layoutCalls(c2), 0)
+    check(not addonEvents(c2).PLAYER_ENTERING_WORLD, "still listening after the one look")
+    c2.world.gamepadUI = true
+    c2:fire("PLAYER_ENTERING_WORLD", false, false)
+    check(not PE2:IsModuleEnabled("ctrlLayout"), "a second look")
+    c2:assertClean()
+end)
+
+test("switch: a tap off before the character's name is known keeps its reload request", function()
+    -- Another layout active: nothing to put back, but a tap always asks for the reload.
+    local c, PE = testerOn()
+    c.world.layouts.activeLayout = 1
+    PE:GetModule("ctrlLayout"):CancelReload()
+    c.world.playerName = nil
+    switchOff(c, PE)
+    eq(prev(PE), { name = "Gamepad", preset = 2 }, "forgotten before the name was known")
+    eq(reloadReason(PE), nil)
+    c.world.playerName = "Tester"
+    c:fire("PLAYER_ENTERING_WORLD", false, false)
+    eq(prev(PE), nil)
+    eq(#c:callsTo("C_EditMode.SetActiveLayout"), 0)
+    eq(reloadReason(PE), RELOAD)
+    c:assertClean()
+    -- Ours active: put back, with the reload request.
+    local c2, PE2 = testerOn()
+    PE2:GetModule("ctrlLayout"):CancelReload()
+    c2.world.playerName = nil
+    switchOff(c2, PE2)
+    eq(c2.world.layouts.activeLayout, 4)
+    c2.world.playerName = "Tester"
+    c2:fire("PLAYER_ENTERING_WORLD", false, false)
+    eq(c2.world.layouts.activeLayout, 3)
+    eq(prev(PE2), nil)
+    eq(reloadReason(PE2), RELOAD)
+    c2:assertClean()
+end)
+
 return { known = KNOWN_FAILURES }
