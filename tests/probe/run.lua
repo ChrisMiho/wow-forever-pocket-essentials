@@ -308,6 +308,45 @@ local function install(c)
             local b = self.barButtons[anchorKey][i]
             self._protect("press", function() b:ApplyPressedStyle(pressed) end)
         end
+        -- The wheels. A spell wheel on a bar button calls PageUnit:OnFlyoutOpened(button) with the
+        -- button's .popup (PageUnit.lua:719-726, ActionBarButton.lua:737-742); the popup is re-parented
+        -- to UIParent and centred on the button (FlyoutRadial.lua:200-224). The two sub-menu wheels
+        -- (LB+LT, RB+RT) are the frames GamepadPetActionFlyout and GamepadPetSpellFlyout
+        -- (Camelot/PetClassFlyouts.xml:18, 72); their buttons are not on a bar, so they never reach
+        -- PageUnit:OnFlyoutOpened (ActionBarButton.lua:738-742, set only at ActionBar.lua:34-35).
+        rawset(pageUnit, "OnFlyoutOpened", function() end)
+        local spellPopup = create("Frame", nil, env.UIParent)
+        spellPopup:SetSize(175, 175)
+        spellPopup:SetPoint("CENTER", env.UIParent, "BOTTOMLEFT", 683, 250)
+        spellPopup:Hide()
+        local flyoutButton = create("Button", nil, env.UIParent)
+        rawset(flyoutButton, "popup", spellPopup)
+        local petSpell = create("Frame", "GamepadPetSpellFlyout", env.UIParent)
+        petSpell:SetSize(175, 175)
+        petSpell:SetPoint("CENTER", env.UIParent, "BOTTOMLEFT", 820, 189)
+        petSpell:Hide()
+        rawset(env, "GamepadPetSpellFlyout", petSpell)
+        local petAction = env.GamepadPetActionFlyout
+        petAction:ClearAllPoints()
+        petAction:SetPoint("CENTER", env.UIParent, "BOTTOMLEFT", 544, 189)
+        c.wheels = { spell = spellPopup, pet = petAction, petspell = petSpell }
+        function c:openWheel(kind)
+            local popup = self.wheels[kind]
+            popup:Show()
+            if kind == "spell" then
+                self._protect("OnFlyoutOpened", function() pageUnit:OnFlyoutOpened(flyoutButton) end)
+            end
+        end
+        function c:closeWheel(kind) self.wheels[kind]:Hide() end
+    end
+    -- Region:GetEffectiveAlpha (SimpleFrameAPIDocumentation.lua:366): its own alpha times its parents'.
+    c.typeMethods.Frame.GetEffectiveAlpha = function(self)
+        local a, f = 1, self
+        while f do
+            a = a * (f:GetAlpha() or 1)
+            f = f:GetParent()
+        end
+        return a
     end
     -- MinimapCluster.MinimapContainer (Minimap.xml:47); Edit Mode's map size is its scale.
     local container = create("Frame", nil, env.MinimapCluster)
@@ -4044,6 +4083,361 @@ test("watch: screenshot missing changes nothing else", function()
     eq(cur.sweep.screenshot, "none")
     eq(c.shots, nil)
     noErrors(c)
+end)
+
+---------------------------------------------------------------------------
+-- Probe 0.7.0: the two guided bar trials
+---------------------------------------------------------------------------
+
+local NEXT_START = "Main bar will vanish in your next fight. Just play."
+local NEXT_BIG = "Did your spells cast while the bar was invisible?"
+local WHEELS_BIG = "Bars faded. Open the pet wheel (LB+LT), then a spell wheel. Then tap Probe."
+local FOUR = { "TopCenteredAnchor", "LeftCenteredAnchor", "RightCenteredAnchor", "BottomCenteredAnchor" }
+
+local function startFadeNext(c, P)
+    P.StartGuided(P.trialById["bars.fadenext"])
+    c:advance(0.5)
+end
+
+test("fadenext: refused in a fight", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    local t = P.trialById["bars.fadenext"]
+    eq(t.area, "Blizzard windows"); eq(t.kind, "guided"); check(t.manual and t.risky, "manual and risky")
+    eq(t.short, "Fade for next fight")
+    c:enterCombat(); c:advance(1)
+    P.StartGuided(t)
+    eq(saved.guided["bars.fadenext"], nil)
+    check(P.status:find("bars.fadenext: not started, in combat", 1, true), P.status)
+    eq(mainBar(c):GetAlpha(), 1)
+    noErrors(c)
+end)
+
+test("fadenext: fades on fight start, reads back, puts back on fight end, then asks", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    c:click(showTrial(c, P, "bars.fadenext").ppRun)
+    check(not rawget(c.env, "PocketProbePanel"):IsShown(), "the panel closes at Start")
+    local g = saved.guided["bars.fadenext"]
+    eq(g.stage, "waitfight")
+    eq(shownText(c, "PocketProbeBigMessage"), NEXT_START)
+    check(P.status:find("Fade for next fight is waiting for your next fight", 1, true), P.status)
+    c:advance(3.5)
+    eq(shownText(c, "PocketProbeBigMessage"), NEXT_START, "still up before 4 seconds")
+    c:advance(0.6)
+    eq(shownText(c, "PocketProbeBigMessage"), nil, "gone after 4 seconds")
+    eq(mainBar(c):GetAlpha(), 1, "nothing faded before the fight")
+    local row = showTrial(c, P, "bars.fadenext")
+    eq(row.ppRun.ppLabel:GetText(), "Cancel")
+    check(not row.ppAnswer[1]:IsShown(), "no answers while it waits")
+    c:click(button(c, "PocketProbeCloseButton"))
+    c:advance(30)
+    c:enterCombat()
+    eq(mainBar(c):GetAlpha(), 0, "faded as the fight starts")
+    eq(g.stage, "infight")
+    c:advance(8)
+    eq(mainBar(c):GetAlpha(), 0, "still faded in the fight")
+    c:leaveCombat()
+    eq(mainBar(c):GetAlpha(), 1, "put back as the fight ends")
+    eq(g.stage, "ask")
+    eq(shownText(c, "PocketProbeBigMessage"), NEXT_BIG)
+    row = showTrial(c, P, "bars.fadenext")
+    eq(row.ppAnswer[1].ppLabel:GetText(), "Yes, they cast"); eq(row.ppAnswer[2].ppLabel:GetText(), "No")
+    c:click(row.ppAnswer[1])
+    eq(cell(saved, "bars.fadenext", KEY_PRESS), "yes, they cast")
+    local msg = saved.last["bars.fadenext"].message
+    for _, part in ipairs({ "main bar see-through 1 -> 0", "still invisible at the end: yes", "main bar presses in the fight: 0",
+        "casts in the fight: 0", "old values put back" }) do
+        check(msg:find(part, 1, true), "message lacks " .. part .. ": " .. msg)
+    end
+    eq(saved.guided["bars.fadenext"], nil)
+    eq(shownText(c, "PocketProbeBigMessage"), nil)
+    -- The game showed the bar again by itself in the fight: noted.
+    startFadeNext(c, P)
+    c:enterCombat(); mainBar(c):SetAlpha(0.4); c:leaveCombat()
+    P.AnswerGuided(P.trialById["bars.fadenext"], 2)
+    eq(saved.last["bars.fadenext"].result, "no")
+    check(saved.last["bars.fadenext"].message:find("still invisible at the end: no", 1, true), saved.last["bars.fadenext"].message)
+    eq(mainBar(c):GetAlpha(), 1)
+    noErrors(c)
+end)
+
+test("fadenext: refused write stored at once and put back when the fight ends", function()
+    -- The game refuses the fade: the result at once, nothing asked, nothing left changed.
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    startFadeNext(c, P)
+    local bar = mainBar(c)
+    local set = bar.SetAlpha
+    rawset(bar, "SetAlpha", function(self, a)
+        if a == 0 then c:fire("ADDON_ACTION_BLOCKED", "PocketProbe", "SetAlpha()") return end
+        return set(self, a)
+    end)
+    c:enterCombat()
+    eq(saved.last["bars.fadenext"].result, "blocked")
+    eq(detail(saved, "bars.fadenext").func, "SetAlpha()")
+    eq(saved.guided["bars.fadenext"], nil, "nothing to ask")
+    eq(bar:GetAlpha(), 1)
+    c:leaveCombat(); c:advance(2)
+    eq(shownText(c, "PocketProbeBigMessage"), nil)
+    noErrors(c)
+    -- The write leaves it at 0.5: "no effect", and it goes back.
+    local saved2 = riskySaved()
+    local c2, P2 = new({ saved = saved2 })
+    c2:advance(5)
+    startFadeNext(c2, P2)
+    local bar2 = mainBar(c2)
+    local set2 = bar2.SetAlpha
+    rawset(bar2, "SetAlpha", function(self, a) return set2(self, a == 0 and 0.5 or a) end)
+    c2:enterCombat()
+    eq(saved2.last["bars.fadenext"].result, "no effect")
+    check(saved2.last["bars.fadenext"].message:find("still 0.5 after setting it to 0", 1, true), saved2.last["bars.fadenext"].message)
+    eq(bar2:GetAlpha(), 1, "put back")
+    eq(saved2.guided["bars.fadenext"], nil)
+    noErrors(c2)
+    -- Faded; a put-back the game refuses in the fight is held and done when the fight ends.
+    local saved3 = riskySaved()
+    local c3, P3 = new({ saved = saved3 })
+    c3:advance(5)
+    startFadeNext(c3, P3)
+    c3:enterCombat()
+    eq(mainBar(c3):GetAlpha(), 0)
+    c3.world.barAlphaBlocked = true
+    P3.CancelGuided(P3.trialById["bars.fadenext"])
+    eq(saved3.guided["bars.fadenext"].stage, "putback")
+    eq(mainBar(c3):GetAlpha(), 0, "held in the fight")
+    c3.world.barAlphaBlocked = false
+    c3:leaveCombat(); c3:advance(2)
+    eq(mainBar(c3):GetAlpha(), 1, "put back when the fight ends")
+    eq(saved3.guided["bars.fadenext"], nil)
+    noErrors(c3)
+end)
+
+test("fadenext: counts presses and casts", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    startFadeNext(c, P)
+    c:pressButton("TopCenteredAnchor", 5, true); c:pressButton("TopCenteredAnchor", 5, false)
+    c:fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-1", 133)
+    c:enterCombat()
+    c:pressButton("TopCenteredAnchor", 5, true); c:pressButton("TopCenteredAnchor", 5, false)
+    c:pressButton("TopCenteredAnchor", 6, true); c:pressButton("TopCenteredAnchor", 6, false)
+    c:pressButton("LeftCenteredAnchor", 1, true)
+    c:fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-2", 133)
+    c:fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-3", 133)
+    c:fire("UNIT_SPELLCAST_SUCCEEDED", "target", "Cast-4", 99)
+    local hidden = {}
+    c.world.secrets[hidden] = true
+    c:fire("UNIT_SPELLCAST_SUCCEEDED", hidden, "Cast-5", 1)
+    c:leaveCombat()
+    c:pressButton("TopCenteredAnchor", 5, true)
+    c:fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-6", 133)
+    P.AnswerGuided(P.trialById["bars.fadenext"], 1)
+    local msg = saved.last["bars.fadenext"].message
+    check(msg:find("main bar presses in the fight: 2", 1, true), msg)
+    check(msg:find("casts in the fight: 2", 1, true), msg)
+    check(msg:find("casts unreadable: 1", 1, true), msg)
+    check(not msg:find("Cast-", 1, true) and not msg:find("133", 1, true), "no cast or spell is stored: " .. msg)
+    local rec
+    for _, r in ipairs(c:frames()) do if r.events and r.events.UNIT_SPELLCAST_SUCCEEDED then rec = r end end
+    eq(rec, nil, "the cast event is only listened to during the fight")
+    noErrors(c)
+end)
+
+test("fadenext: Cancel, Stop, logout put back", function()
+    for _, way in ipairs({ "cancel", "stop", "logout" }) do
+        for _, when in ipairs({ "before", "in" }) do
+            local saved = riskySaved()
+            local c, P = new({ saved = saved })
+            c:advance(5)
+            startFadeNext(c, P)
+            if when == "in" then c:enterCombat(); eq(mainBar(c):GetAlpha(), 0) end
+            if way == "stop" then P.Stop()
+            elseif way == "logout" then c:fire("PLAYER_LOGOUT")
+            else P.CancelGuided(P.trialById["bars.fadenext"]) end
+            eq(mainBar(c):GetAlpha(), 1, way .. " " .. when)
+            eq(saved.guided["bars.fadenext"], nil, way .. " " .. when)
+            eq(saved.results["bars.fadenext"], nil, way .. ": no answer")
+            eq(shownText(c, "PocketProbeBigMessage"), nil, way .. " " .. when)
+            if when == "in" then c:leaveCombat() end
+            c:advance(2)
+            eq(mainBar(c):GetAlpha(), 1, way .. " " .. when .. ": nothing faded afterwards")
+            eq(shownText(c, "PocketProbeBigMessage"), nil, way .. " " .. when .. ": no question afterwards")
+            noErrors(c, way .. " " .. when)
+        end
+    end
+end)
+
+test("fadenext: reload during fight puts back on next login", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    startFadeNext(c, P)
+    c:enterCombat()
+    eq(mainBar(c):GetAlpha(), 0)
+    -- The reload: the logout could not put it back (the game went down); the next load calls it off.
+    local c2, P2 = new({ saved = saved })
+    eq(saved.guided["bars.fadenext"], nil)
+    eq(countLog(saved, "bars.fadenext: called off; the reload put the main bar's see-through back"), 1)
+    eq(mainBar(c2):GetAlpha(), 1)
+    c2:enterCombat(); c2:leaveCombat(); c2:advance(2)
+    eq(mainBar(c2):GetAlpha(), 1, "nothing waits for a fight after the reload")
+    eq(shownText(c2, "PocketProbeBigMessage"), nil)
+    noErrors(c2)
+    -- A reload before any fight: called off too ("until a reload").
+    local saved3 = riskySaved()
+    local c3, P3 = new({ saved = saved3 })
+    c3:advance(5)
+    startFadeNext(c3, P3)
+    local c4 = new({ saved = saved3 })
+    eq(saved3.guided["bars.fadenext"], nil)
+    eq(countLog(saved3, "bars.fadenext: called off by the reload"), 1)
+    noErrors(c4)
+end)
+
+test("fadenext: never touches PageUnit", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    startFadeNext(c, P)
+    c:enterCombat(); c:advance(3); c:leaveCombat()
+    P.AnswerGuided(P.trialById["bars.fadenext"], 1)
+    check(#c:callsTo("GamepadBar.TopCenteredAnchor.Bar:SetAlpha") >= 2, "the main bar was faded and put back")
+    eq(#c:callsTo("GamepadBar.PageUnit:SetAlpha"), 0, "PageUnit's alpha is never written")
+    eq(#c:callsTo("GamepadBar.TopCenteredAnchor:SetAlpha"), 0, "nor the anchor's")
+    noErrors(c)
+end)
+
+test("wheels: refused in a fight", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    local t = P.trialById["bars.wheels"]
+    eq(t.area, "Blizzard windows"); eq(t.short, "Wheels on a faded bar"); check(t.closePanel and t.risky and t.manual, "flags")
+    c:enterCombat(); c:advance(1)
+    P.StartGuided(t)
+    eq(saved.guided["bars.wheels"], nil)
+    for _, key in ipairs(FOUR) do eq(anchorBar(c, key):GetAlpha(), 1) end
+    noErrors(c)
+end)
+
+test("wheels: fades four and reads back", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    c:click(showTrial(c, P, "bars.wheels").ppRun)
+    check(not rawget(c.env, "PocketProbePanel"):IsShown(), "the panel closes at Start")
+    for _, key in ipairs(FOUR) do eq(anchorBar(c, key):GetAlpha(), 0, key) end
+    local g = saved.guided["bars.wheels"]
+    eq(g.stage, "ask")
+    check(g.notes:find("four bars' see-through 1, 1, 1, 1 -> 0", 1, true), g.notes)
+    eq(shownText(c, "PocketProbeBigMessage"), WHEELS_BIG)
+    local row = showTrial(c, P, "bars.wheels")
+    eq(row.ppAnswer[1].ppLabel:GetText(), "Wheel visible"); eq(row.ppAnswer[2].ppLabel:GetText(), "Wheel hidden")
+    eq(#c:callsTo("GamepadBar.PageUnit:SetAlpha"), 0, "PageUnit's alpha is never written")
+    noErrors(c)
+    -- One bar does not take the fade: "no effect", the others go back.
+    local saved2 = riskySaved()
+    local c2, P2 = new({ saved = saved2, setup = function(cl)
+        rawset(cl.env.GamepadMainActionBarFrame.PageUnit.RightCenteredAnchor.Bar, "SetAlpha", function() end)
+    end })
+    c2:advance(5)
+    P2.StartGuided(P2.trialById["bars.wheels"])
+    eq(saved2.last["bars.wheels"].result, "no effect")
+    check(saved2.last["bars.wheels"].message:find("right bar still 1", 1, true), saved2.last["bars.wheels"].message)
+    for _, key in ipairs(FOUR) do eq(anchorBar(c2, key):GetAlpha(), 1, key .. " put back") end
+    eq(saved2.guided["bars.wheels"], nil)
+    noErrors(c2)
+end)
+
+test("wheels: records up to two wheels (centre, size, effective alpha, shown) 0.2 s after open", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    c:openWheel("pet"); c:advance(1); c:closeWheel("pet")       -- before Start: not recorded
+    P.StartGuided(P.trialById["bars.wheels"])
+    c:openWheel("pet")
+    c:advance(0.3)
+    c:closeWheel("pet")
+    c:openWheel("spell")
+    c:advance(0.3)
+    c:openWheel("petspell")                                      -- a third: not recorded
+    c:advance(1)
+    P.AnswerGuided(P.trialById["bars.wheels"], 1)
+    eq(cell(saved, "bars.wheels", KEY_PRESS), "wheel visible")
+    local msg = saved.last["bars.wheels"].message
+    for _, part in ipairs({ "wheels seen: 2", "wheel 1 (pet wheel): centre 544,189, size 160 x 160, effective alpha 1, shown yes",
+        "wheel 2 (bar wheel): centre 683,250, size 175 x 175, effective alpha 1, shown yes", "screenshot: taken",
+        "bars still invisible at the answer: 4 of 4", "old values put back" }) do
+        check(msg:find(part, 1, true), "message lacks " .. part .. ": " .. msg)
+    end
+    check(not msg:find("wheel 3", 1, true), msg)
+    for _, key in ipairs(FOUR) do eq(anchorBar(c, key):GetAlpha(), 1, key .. " put back") end
+    -- After the answer the hooks do nothing.
+    c:openWheel("spell"); c:advance(1)
+    noErrors(c)
+    -- No wheel opened: said so.
+    P.StartGuided(P.trialById["bars.wheels"])
+    P.AnswerGuided(P.trialById["bars.wheels"], 2)
+    check(saved.last["bars.wheels"].message:find("wheels seen: 0", 1, true), saved.last["bars.wheels"].message)
+    noErrors(c)
+end)
+
+test("wheels: one screenshot 0.5 s after the first wheel", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.StartGuided(P.trialById["bars.wheels"])
+    eq(c.shots, nil, "no picture at Start")
+    c:openWheel("pet")
+    c:advance(0.3)
+    eq(c.shots, nil)
+    c:advance(0.3)
+    eq(c.shots, 1, "one picture half a second after the first wheel")
+    c:openWheel("spell"); c:advance(2)
+    eq(c.shots, 1, "none for the second wheel")
+    noErrors(c)
+    -- Without Screenshot nothing else changes.
+    local saved2 = riskySaved()
+    local c2, P2 = new({ saved = saved2, setup = function(cl) rawset(cl.env, "Screenshot", nil) end })
+    c2:advance(5)
+    P2.StartGuided(P2.trialById["bars.wheels"])
+    c2:openWheel("pet"); c2:advance(1)
+    P2.AnswerGuided(P2.trialById["bars.wheels"], 1)
+    local msg = saved2.last["bars.wheels"].message
+    check(msg:find("wheels seen: 1", 1, true) and msg:find("screenshot: none", 1, true), msg)
+    noErrors(c2)
+end)
+
+test("wheels: puts four back on answer, Cancel, Stop, logout", function()
+    for _, way in ipairs({ "answer", "cancel", "stop", "logout" }) do
+        local saved = riskySaved()
+        local c, P = new({ saved = saved })
+        c:advance(5)
+        P.StartGuided(P.trialById["bars.wheels"])
+        for _, key in ipairs(FOUR) do eq(anchorBar(c, key):GetAlpha(), 0) end
+        if way == "answer" then P.AnswerGuided(P.trialById["bars.wheels"], 2)
+        elseif way == "stop" then P.Stop()
+        elseif way == "logout" then c:fire("PLAYER_LOGOUT")
+        else P.CancelGuided(P.trialById["bars.wheels"]) end
+        for _, key in ipairs(FOUR) do eq(anchorBar(c, key):GetAlpha(), 1, way .. ": " .. key) end
+        eq(saved.guided["bars.wheels"], nil, way)
+        eq(shownText(c, "PocketProbeBigMessage"), nil, way)
+        noErrors(c, way)
+    end
+    -- A reload while it waits: called off (the reload resets the bars).
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.StartGuided(P.trialById["bars.wheels"])
+    local c2 = new({ saved = saved })
+    eq(saved.guided["bars.wheels"], nil)
+    eq(countLog(saved, "bars.wheels: called off; the reload put the four bars' see-through back"), 1)
+    noErrors(c2)
 end)
 
 ---------------------------------------------------------------------------

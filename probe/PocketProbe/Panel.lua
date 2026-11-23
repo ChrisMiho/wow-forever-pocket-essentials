@@ -444,6 +444,7 @@ local function DetailsFor(entry)
                 return "Could not put back " .. tconcat(names, ", ") .. ": tap Cancel to retry."
             end
             local step = (g.stage == "restart") and (def.steps or "Fully restart the game.") or (def.ask or "Answer with the two buttons.")
+            if (g.stage == "waitfight" or g.stage == "infight") and def.wait then step = def.wait end
             return step .. " Cancel puts the old values back. Set: " .. tostring(g.notes or "") .. "."
         end
     end

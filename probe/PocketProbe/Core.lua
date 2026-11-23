@@ -156,6 +156,25 @@ local ADDON_NAME, P = ...
 --   region :SetAllPoints                         Doc/SimpleScriptRegionResizingAPIDocumentation.lua:111
 --   texture :SetTexture                          Doc/SimpleTextureBaseAPIDocumentation.lua:604
 --
+-- Added in 0.7.0 for the two guided bar trials (Trials.lua; the watchers'
+-- names are at the top of Watch.lua, the Fight button's at the top of Perf.lua):
+--   UNIT_SPELLCAST_SUCCEEDED                     Doc/UnitDocumentation.lua:4847 (its unit may be secret
+--                                                in a fight: "SecretWhenUnitSpellCastRestricted")
+--   frame :RegisterUnitEvent(event, unit)        Doc/SimpleFrameAPIDocumentation.lua:1064
+--   frame :UnregisterAllEvents                   Doc/SimpleFrameAPIDocumentation.lua:1588
+--   PageUnit:OnFlyoutOpened(button)              Blizzard_GamepadActionBars/PageUnit.lua:719 (called for a
+--                                                spell wheel on a bar button: ActionBarButton.lua:737-742)
+--   the wheel button's .popup                    Blizzard_GamepadActionBars/PageUnit.lua:726
+--   GamepadPetSpellFlyout                        Blizzard_GamepadActionBars/Camelot/PetClassFlyouts.xml:72
+--   GamepadPetActionFlyout (above) and it: the two sub-menu wheels. Their
+--     buttons (LeftClassAction, RightClassAction) are on no bar, so they never
+--     reach PageUnit:OnFlyoutOpened (ActionBarButton.lua:738-742; a button's bar
+--     is set only at ActionBar.lua:34-35): their own OnShow is hooked instead.
+--   region :HookScript                           Doc/SimpleScriptRegionAPIDocumentation.lua:365
+--   frame :GetEffectiveAlpha                     Doc/SimpleFrameAPIDocumentation.lua:366
+--   a wheel re-parents itself to UIParent and is centred on its button
+--                                                Blizzard_GamepadActionBars/FlyoutRadial.lua:200-224
+--
 -- Not proven by the source, and guarded:
 --   debugstack(start, count1, count2)  only debugstack() and debugstack(level)
 --     appear in the source; if the long form fails the short one is used.
@@ -380,8 +399,11 @@ function P.InitDB()
         if not t or t.apply then
             local failed = P.PutBackSettings(type(g) == "table" and g.old or nil)
             saved.guided[id] = nil
+            -- One still waiting for its fight (probe 0.7.0) had changed nothing yet.
+            local waited = type(g) == "table" and g.stage == "waitfight"
             earlyLog[#earlyLog + 1] = Stamp("%H:%M:%S") .. " " .. P.Plain(id, 40)
-                .. (t and (": called off; the reload put " .. tostring(t.hold or "the frame") .. " back")
+                .. (t and (waited and ": called off by the reload"
+                    or (": called off; the reload put " .. tostring(t.hold or "the frame") .. " back"))
                     or ": no such trial any more; settings put back")
                 .. (#failed > 0 and (", except " .. tconcat(failed, ", ")) or "")
         end

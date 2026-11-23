@@ -17,6 +17,12 @@ local ADDON_NAME, P = ...
 --   shots = true            a guided trial that takes a screenshot before and
 --                           after its change (Run.lua, the timed steps)
 --   big = "..."             a guided trial's question in big letters on the screen
+--   fightNext = true        a guided trial that waits for the next fight (Run.lua):
+--                           startBig is shown at Start, prepare() runs then,
+--                           apply() at the fight's start, onFight(true / false)
+--                           as it starts and ends, atFightEnd() reads what it
+--                           wants before restore(), then the question; `wait`
+--                           is what Details says meanwhile
 --   needs = { "A.B", ... }  game names it calls; one missing -> "missing"
 --   gate()                  false: not this trial's moment (skipped silently)
 --   ready()                 false, reason: nothing to try right now (logged)
@@ -304,7 +310,8 @@ local WINDOWS = {
     { key = "bag", what = "the bag", find = function()
         return Find("ContainerFrameCombinedBags") or Find("ContainerFrame1"), "ContainerFrameCombinedBags"
     end },
-    { key = "chat", what = "the chat frame", find = function() return Find("ChatFrame1"), "ChatFrame1" end },
+    -- The chat frame's two are on the Chat box tab (probe 0.7.0, to make room).
+    { key = "chat", what = "the chat frame", area = "Chat box", find = function() return Find("ChatFrame1"), "ChatFrame1" end },
 }
 
 local function BagFrame()
@@ -316,7 +323,7 @@ for _, w in ipairs(WINDOWS) do
     local key, find = w.key, w.find
 
     Add({
-        id = "win." .. key .. ".create", area = "Blizzard windows", label = "Create a button under " .. w.what,
+        id = "win." .. key .. ".create", area = w.area or "Blizzard windows", label = "Create a button under " .. w.what,
         kind = "action", clean = true,
         ready = function()
             if children[key] then return false, "its one button for this session is already made" end
@@ -334,7 +341,7 @@ for _, w in ipairs(WINDOWS) do
     })
 
     Add({
-        id = "win." .. key .. ".attach", area = "Blizzard windows", label = "Put our existing button back under " .. w.what,
+        id = "win." .. key .. ".attach", area = w.area or "Blizzard windows", label = "Put our existing button back under " .. w.what,
         kind = "action",
         ready = function()
             if not children[key] then return false, "no button of ours was made under it this session" end
@@ -373,7 +380,7 @@ Add({
 })
 
 Add({
-    id = "bag.move", area = "Blizzard windows", label = "Move the bag", kind = "action",
+    id = "bag.move", area = "Bags and vendor", label = "Move the bag", kind = "action",
     run = function(state)
         local bag = BagFrame()
         if not bag then return "missing", "ContainerFrameCombinedBags" end
@@ -395,7 +402,7 @@ Add({
 })
 
 Add({
-    id = "bag.scale", area = "Blizzard windows", label = "Resize the bag", kind = "action",
+    id = "bag.scale", area = "Bags and vendor", label = "Resize the bag", kind = "action",
     run = function(state)
         local bag = BagFrame()
         if not bag then return "missing", "ContainerFrameCombinedBags" end
@@ -786,7 +793,7 @@ local function TallyNote(c, tally, field)
 end
 
 Add({
-    id = "bars.spells", area = "Controller and layout", label = "Read the main bar's 8 spells (run it in a fight too)",
+    id = "bars.spells", area = "Blizzard windows", label = "Read the main bar's 8 spells (run it in a fight too)",
     kind = "value", fight = true,
     needs = { "C_ActionBar.HasAction", "C_ActionBar.GetActionTexture", "C_ActionBar.GetActionCooldown",
         "C_ActionBar.GetActionDisplayCount", "C_ActionBar.IsUsableAction" },
@@ -1033,9 +1040,56 @@ Add({
 -- value is written back. The bar and its old value are kept here, never in
 -- the saved table. A put-back the game refuses in a fight is tried again
 -- when the fight ends; a reload puts the bar back in any case.
-local faded                      -- { bar, alpha } while faded
+local fadeCast = {}              -- .f = { bar, alpha } while faded (bars.fadecast)
 
 local function Hundredths(v) return floor(v * 100 + 0.5) / 100 end
+
+-- The main bar's see-through to 0, read back. `st` keeps the bar and its old
+-- value (st.f) until they are put back.
+local function FadeMain(st)
+    local bar = FrameAt(MAIN_BAR)
+    if not bar then return "missing", "the main bar" end
+    if type(bar.GetAlpha) ~= "function" or type(bar.SetAlpha) ~= "function" then return "missing", "frame alpha methods" end
+    local alpha = bar:GetAlpha()
+    if IsSecret(alpha) then return false, "see-through unreadable (secret)" end
+    alpha = Num(alpha)
+    if not alpha then return false, "see-through unreadable" end
+    st.f = { bar = bar, alpha = alpha }
+    bar:SetAlpha(0)
+    local now = bar:GetAlpha()
+    if IsSecret(now) or not Num(now) then return false, "main bar see-through unreadable after setting it to 0" end
+    if now >= 0.001 then return false, "main bar see-through still " .. Hundredths(now) .. " after setting it to 0" end
+    return true, "main bar see-through " .. Hundredths(alpha) .. " -> 0"
+end
+
+-- "<words>: yes" when the main bar is still at 0, "no" when not, or nil.
+local function StillFaded(st, words)
+    local f = st.f
+    if not f then return nil end
+    local now = f.bar:GetAlpha()
+    if IsSecret(now) or not Num(now) then return words .. ": unknown" end
+    return words .. ": " .. (now < 0.001 and "yes" or "no")
+end
+
+-- true when nothing is left to put back; false and why otherwise.
+local function UnfadeMain(st)
+    local f = st.f
+    if not f then return true end
+    local now = f.bar:GetAlpha()
+    if not IsSecret(now) and Num(now) and abs(now - f.alpha) < 0.001 then
+        st.f = nil
+        return true
+    end
+    f.bar:SetAlpha(f.alpha)
+    now = f.bar:GetAlpha()
+    if IsSecret(now) or not Num(now) then return false, "its see-through is unreadable; a reload puts it back" end
+    if abs(now - f.alpha) < 0.001 then
+        st.f = nil
+        return true
+    end
+    if NotInCombat() then return false, "the game did not take the old value; a reload puts it back" end
+    return false, "in a fight: it goes back when the fight ends"
+end
 
 Add({
     id = "bars.fadecast", area = "Blizzard windows", label = "Fade the main bar to nothing, then press a spell button",
@@ -1050,45 +1104,264 @@ Add({
         .. "spell you can use here (a buff, a heal, or an attack with a target), then tap Probe and answer.",
     closePanel = true,
     answers = { "Spell cast", "Nothing happened" },
-    apply = function()
-        local bar = FrameAt(MAIN_BAR)
-        if not bar then return "missing", "the main bar" end
-        if type(bar.GetAlpha) ~= "function" or type(bar.SetAlpha) ~= "function" then return "missing", "frame alpha methods" end
-        local alpha = bar:GetAlpha()
-        if IsSecret(alpha) then return false, "see-through unreadable (secret)" end
-        alpha = Num(alpha)
-        if not alpha then return false, "see-through unreadable" end
-        faded = { bar = bar, alpha = alpha }
-        bar:SetAlpha(0)
-        local now = bar:GetAlpha()
-        if IsSecret(now) or not Num(now) then return false, "main bar see-through unreadable after setting it to 0" end
-        if now >= 0.001 then return false, "main bar see-through still " .. Hundredths(now) .. " after setting it to 0" end
-        return true, "main bar see-through " .. Hundredths(alpha) .. " -> 0"
-    end,
+    apply = function() return FadeMain(fadeCast) end,
     -- Read once more at the answer, before the put-back: the game may have set it itself.
+    atAnswer = function() return StillFaded(fadeCast, "still invisible at the answer") end,
+    restore = function() return UnfadeMain(fadeCast) end,
+})
+
+-- Probe 0.7.0: the main bar invisible for the whole of the next fight, with
+-- nothing to do in it (fightNext: Run.lua). Start only says so; the fight's
+-- start fades the bar, its end reads it once more, puts it back and asks.
+-- Meanwhile the presses on the main bar (the press hooks of Watch.lua) and
+-- the player's casts are counted: counts only. Never PageUnit: a wheel puts
+-- its alpha back by itself.
+local fadeNext = {}              -- .f while faded (bars.fadenext)
+local nextCount = { on = false, presses = 0, casts = 0, unreadable = 0, hooks = 0 }
+local castsFiltered = false      -- the cast event was registered for the player only
+local castFrame = CreateFrame("Frame", nil, UIParent)
+
+castFrame:SetScript("OnEvent", P.Guard(function(_, _, unit)
+    if not nextCount.on then return end
+    if castsFiltered then
+        nextCount.casts = nextCount.casts + 1
+    elseif IsSecret(unit) then
+        nextCount.unreadable = nextCount.unreadable + 1
+    elseif unit == "player" then
+        nextCount.casts = nextCount.casts + 1
+    end
+end))
+
+-- The cast event, only while the fight is watched.
+local function CountCasts(on)
+    pcall(castFrame.UnregisterAllEvents, castFrame)
+    nextCount.on = on
+    if not on then return end
+    nextCount.presses, nextCount.casts, nextCount.unreadable, nextCount.noCasts = 0, 0, 0, nil
+    castsFiltered = false
+    if Has(castFrame, "RegisterUnitEvent") and pcall(castFrame.RegisterUnitEvent, castFrame, "UNIT_SPELLCAST_SUCCEEDED", "player") then
+        castsFiltered = true
+    elseif not pcall(castFrame.RegisterEvent, castFrame, "UNIT_SPELLCAST_SUCCEEDED") then
+        nextCount.noCasts = true
+    end
+end
+
+-- Called by the press hooks (Watch.lua) on every press the game shows.
+P.WatchOnPress = function(name, dir)
+    if nextCount.on and name == "main" and dir == "down" then nextCount.presses = nextCount.presses + 1 end
+end
+
+Add({
+    id = "bars.fadenext", area = "Blizzard windows", label = "Fade the main bar for your next fight, with nothing to do in it",
+    short = "Fade for next fight", kind = "guided", manual = true, risky = true, hold = "the main bar's see-through",
+    fightNext = true, closePanel = true,
+    startBig = "Main bar will vanish in your next fight. Just play.",
+    big = "Did your spells cast while the bar was invisible?",
+    ready = function()
+        local ok, why = NotInCombat()
+        if not ok then return false, why end
+        if EditModeOpen() then return false, "Edit Mode open" end
+        return true
+    end,
+    start = "Start",
+    wait = "Your next fight makes the main bar invisible from its start to its end. Just play; the question comes "
+        .. "when the fight is over.",
+    ask = "The fight is over and the main bar is back. Did your spells cast while it was invisible?",
+    answers = { "Yes, they cast", "No" },
+    -- At Start: the press hooks, so the fight's presses can be counted.
+    prepare = function()
+        nextCount.hooks = P.WatchInstallPressHooks and P.WatchInstallPressHooks() or 0
+        return nil
+    end,
+    apply = function() return FadeMain(fadeNext) end,
+    onFight = function(on) CountCasts(on) end,
+    atFightEnd = function()
+        local parts = { StillFaded(fadeNext, "still invisible at the end") or "still invisible at the end: unknown" }
+        parts[#parts + 1] = (nextCount.hooks > 0) and ("main bar presses in the fight: " .. nextCount.presses)
+            or "main bar presses: not counted (no hook)"
+        parts[#parts + 1] = nextCount.noCasts and "casts: not counted (no cast event)" or ("casts in the fight: " .. nextCount.casts)
+        if nextCount.unreadable > 0 then parts[#parts + 1] = "casts unreadable: " .. nextCount.unreadable end
+        return tconcat(parts, ", ")
+    end,
+    restore = function() return UnfadeMain(fadeNext) end,
+})
+
+-- Probe 0.7.0: are the wheels still seen when the four bars are faded. Start
+-- fades the four bars (each read back); the player opens the pet wheel and a
+-- spell wheel, then answers. The first two wheels that open are read 0.2
+-- seconds later (centre and size in screen units, effective alpha, shown),
+-- and one screenshot is taken half a second after the first. A spell wheel on
+-- a bar is seen through PageUnit:OnFlyoutOpened; the two sub-menu wheels never
+-- reach it (their buttons are on no bar), so their own frames are hooked when
+-- they show. The hooks are put on at the first Start and do nothing unless
+-- this trial waits. Never PageUnit's alpha: the game sets it for a wheel.
+local WHEEL_BARS = { { "TopCenteredAnchor", "main" }, { "LeftCenteredAnchor", "left" },
+    { "RightCenteredAnchor", "right" }, { "BottomCenteredAnchor", "both" } }
+local WHEEL_FRAMES = { { "GamepadPetActionFlyout", "pet wheel" }, { "GamepadPetSpellFlyout", "pet spell wheel" } }
+local WHEEL_READ, WHEEL_SHOT, WHEELS_MAX = 0.2, 0.5, 2
+local wheelFaded                 -- { { bar, alpha, name }, ... } while faded
+local wheels = { waiting = false, list = {} }
+local wheelHooks = {}            -- [what] = true once its hook is on
+
+local function After(seconds, fn)
+    local after = Find("C_Timer.After")
+    if type(after) ~= "function" then return false end
+    after(seconds, P.Guard(fn))
+    return true
+end
+
+local function WheelClock()
+    if type(GetTime) ~= "function" then return nil end
+    local ok, now = pcall(GetTime)
+    return ok and Num(now) or nil
+end
+
+-- One wheel as our own text: "wheel 1 (pet wheel): centre 544,189, size 175 x 175, effective alpha 1, shown yes".
+local function WheelText(popup, n, source)
+    local screen = FrameAt("UIParent")
+    local scale = (Dim(popup, "GetEffectiveScale") or 1) / ((screen and Dim(screen, "GetEffectiveScale")) or 1)
+    local x, y
+    if Has(popup, "GetCenter") then
+        local ok, cx, cy = pcall(popup.GetCenter, popup)
+        if ok then x, y = Num(cx), Num(cy) end
+    end
+    local w, h = Dim(popup, "GetWidth"), Dim(popup, "GetHeight")
+    local function round(v) return v and tostring(floor(v * scale + 0.5)) or "?" end
+    local alpha = "missing"
+    if Has(popup, "GetEffectiveAlpha") then
+        local a = Dim(popup, "GetEffectiveAlpha")
+        alpha = a and tostring(Hundredths(a)) or "unreadable"
+    end
+    local shown = "?"
+    if Has(popup, "IsShown") then
+        local ok, v = pcall(popup.IsShown, popup)
+        if ok and not IsSecret(v) then shown = v and "yes" or "no" end
+    end
+    return "wheel " .. n .. " (" .. source .. "): centre " .. ((x and y) and (round(x) .. "," .. round(y)) or "?")
+        .. ", size " .. round(w) .. " x " .. round(h) .. ", effective alpha " .. alpha .. ", shown " .. shown
+end
+
+local function OnWheel(popup, source)
+    if not wheels.waiting or #wheels.list >= WHEELS_MAX then return end
+    -- One opening seen by two hooks counts once.
+    local now = WheelClock()
+    if wheels.lastPopup == popup and now and wheels.lastAt and now - wheels.lastAt < 1 then return end
+    wheels.lastPopup, wheels.lastAt = popup, now
+    local n = #wheels.list + 1
+    local entry = { source = source }
+    wheels.list[n] = entry
+    After(WHEEL_READ, function() entry.text = WheelText(popup, n, source) end)
+    if n == 1 then
+        After(WHEEL_SHOT, function()
+            if not wheels.waiting then return end
+            local shot = Find("Screenshot")
+            if type(shot) ~= "function" then
+                wheels.shot = "none"
+            else
+                wheels.shot = pcall(shot) and "taken" or "none (the call failed)"
+            end
+        end)
+    end
+end
+
+local function HookWheels()
+    if type(hooksecurefunc) == "function" and not wheelHooks.page then
+        local pu = FrameAt(BAR .. ".PageUnit")
+        if pu and type(pu.OnFlyoutOpened) == "function" then
+            local hook = P.Guard(function(_, button)
+                if type(button) ~= "table" or IsSecret(button) then return end
+                local popup = button.popup
+                if type(popup) == "table" and not IsSecret(popup) then OnWheel(popup, "bar wheel") end
+            end)
+            if pcall(hooksecurefunc, pu, "OnFlyoutOpened", hook) then wheelHooks.page = true end
+        end
+    end
+    for _, w in ipairs(WHEEL_FRAMES) do
+        local f = FrameAt(w[1])
+        if not wheelHooks[w[1]] and f and Has(f, "HookScript") then
+            local source = w[2]
+            if pcall(f.HookScript, f, "OnShow", P.Guard(function(self) OnWheel(self, source) end)) then wheelHooks[w[1]] = true end
+        end
+    end
+end
+
+Add({
+    id = "bars.wheels", area = "Blizzard windows", label = "Fade the four bars, then open the pet wheel and a spell wheel",
+    short = "Wheels on a faded bar", kind = "guided", manual = true, risky = true, hold = "the four bars' see-through",
+    closePanel = true,
+    big = "Bars faded. Open the pet wheel (LB+LT), then a spell wheel. Then tap Probe.",
+    ready = function()
+        local ok, why = NotInCombat()
+        if not ok then return false, why end
+        if EditModeOpen() then return false, "Edit Mode open" end
+        return true
+    end,
+    start = "Start",
+    ask = "The four bars are invisible now. Open the pet wheel (LB+LT), then a spell wheel, then tap Probe and answer: "
+        .. "was the wheel visible?",
+    answers = { "Wheel visible", "Wheel hidden" },
+    apply = function()
+        local list = {}
+        for _, e in ipairs(WHEEL_BARS) do
+            local bar = FrameAt(BAR .. ".PageUnit." .. e[1] .. ".Bar")
+            if not bar then return "missing", "the " .. e[2] .. " bar" end
+            if type(bar.GetAlpha) ~= "function" or type(bar.SetAlpha) ~= "function" then return "missing", "frame alpha methods" end
+            local alpha = bar:GetAlpha()
+            if IsSecret(alpha) or not Num(alpha) then return false, "the " .. e[2] .. " bar's see-through is unreadable" end
+            list[#list + 1] = { bar = bar, alpha = alpha, name = e[2] }
+        end
+        HookWheels()
+        wheelFaded = list
+        for _, e in ipairs(list) do e.bar:SetAlpha(0) end
+        local stuck, olds = {}, {}
+        for _, e in ipairs(list) do
+            local now = e.bar:GetAlpha()
+            if IsSecret(now) or not Num(now) then
+                stuck[#stuck + 1] = e.name .. " bar unreadable"
+            elseif now >= 0.001 then
+                stuck[#stuck + 1] = e.name .. " bar still " .. Hundredths(now)
+            end
+            olds[#olds + 1] = tostring(Hundredths(e.alpha))
+        end
+        if #stuck > 0 then return false, tconcat(stuck, ", ") .. " after setting it to 0" end
+        wheels.list, wheels.shot, wheels.lastPopup, wheels.lastAt = {}, nil, nil, nil
+        wheels.waiting = true
+        return true, "four bars' see-through " .. tconcat(olds, ", ") .. " -> 0"
+    end,
     atAnswer = function()
-        local f = faded
-        if not f then return nil end
-        local now = f.bar:GetAlpha()
-        if IsSecret(now) or not Num(now) then return "still invisible at the answer: unknown" end
-        return "still invisible at the answer: " .. (now < 0.001 and "yes" or "no")
+        local parts = { "wheels seen: " .. #wheels.list }
+        for i, e in ipairs(wheels.list) do
+            parts[#parts + 1] = e.text or ("wheel " .. i .. " (" .. e.source .. "): not read yet")
+        end
+        if #wheels.list > 0 then parts[#parts + 1] = "screenshot: " .. (wheels.shot or "none") end
+        local still, total = 0, 0
+        for _, e in ipairs(wheelFaded or {}) do
+            total = total + 1
+            local now = e.bar:GetAlpha()
+            if not IsSecret(now) and Num(now) and now < 0.001 then still = still + 1 end
+        end
+        parts[#parts + 1] = "bars still invisible at the answer: " .. still .. " of " .. total
+        return tconcat(parts, "; ")
     end,
     -- true when nothing is left to put back; false and why otherwise.
     restore = function()
-        local f = faded
-        if not f then return true end
-        local now = f.bar:GetAlpha()
-        if not IsSecret(now) and Num(now) and abs(now - f.alpha) < 0.001 then
-            faded = nil
+        wheels.waiting = false
+        local list = wheelFaded
+        if not list then return true end
+        local left = {}
+        for _, e in ipairs(list) do
+            local now = e.bar:GetAlpha()
+            if IsSecret(now) or not Num(now) or abs(now - e.alpha) >= 0.001 then
+                pcall(e.bar.SetAlpha, e.bar, e.alpha)
+                now = e.bar:GetAlpha()
+                if IsSecret(now) or not Num(now) or abs(now - e.alpha) >= 0.001 then left[#left + 1] = e end
+            end
+        end
+        if #left == 0 then
+            wheelFaded = nil
             return true
         end
-        f.bar:SetAlpha(f.alpha)
-        now = f.bar:GetAlpha()
-        if IsSecret(now) or not Num(now) then return false, "its see-through is unreadable; a reload puts it back" end
-        if abs(now - f.alpha) < 0.001 then
-            faded = nil
-            return true
-        end
+        wheelFaded = left
         if NotInCombat() then return false, "the game did not take the old value; a reload puts it back" end
         return false, "in a fight: it goes back when the fight ends"
     end,
