@@ -540,9 +540,9 @@ const VIEWS=[
  ['While playing',[['hud','Whole screen'],['hub','Round button'],['arrow','Quest arrow'],['prompt','Press A to type']]],
  ['Windows',[['settings','Settings'],['setup','Setup guide'],['chat','Chat window'],['move','Move on screen']]],
  ['On game windows',[['icons','Quest icons and tap label'],['mapbutton','Round button on the map'],['bag','Bag Sort tab'],['menu','Menu background']]],
- ['New (draft)',[['layout','Controller layout'],['quietbars','Quiet bars in play'],['kit','Quick slots (round button window)'],['questitem','Quest item button'],['qbsettings','Controller tab'],['catcher','Error catcher'],['probe','Probe panel']]],
+ ['New (draft)',[['layout','Controller layout'],['facebars','Face bars (one setup)'],['quietbars','Quiet bars in play'],['kit','Quick slots (round button window)'],['questitem','Quest item button'],['qbsettings','Controller tab'],['catcher','Error catcher'],['probe','Probe panel']]],
 ];
-const NEW_VIEWS=['layout','catcher','probe','quietbars','qbsettings','kit','questitem'];
+const NEW_VIEWS=['layout','facebars','catcher','probe','quietbars','qbsettings','kit','questitem'];
 Object.assign(S,{errFilter:'all',errIdx:0,boxHide:true,otherCatcher:false,probeArea:'errors',probeSel:0,probeRisky:false,
   dotEx:'all', kitMoment:'out',kitHand:16,kitUsed:'',
   qbMoment:'out',compact:false,qbPressUntil:0,qbLast:null,qbTimer:null});
@@ -1445,6 +1445,197 @@ const NOTES_P={
  chat:{what:['The window has its own size control (70% to 150%), under Chat in the settings, the same kind as the quest arrow\'s. The slider above changes it here.','The window is only as big as its buttons, centred, 3 columns. "Three-finger tap for the keyboard" is gone.','Tapping a button picks the target and shows "Press A to type", as today.','Unanswered whispers keep the amber colour and get a round red dot, like the round button\'s badge.'],fix:[[3,'one round badge shape everywhere']]},
 };
 
+/* ---------- new (draft): Face bars, one setup (2026-11-23) ----------
+   Drawn as one SVG in the game's own units (1365 × 768 at UI scale 1, the device's 720p screen),
+   so the sizes measured on the device go in unchanged. Same 16:9 shape as the 1280 × 720 stage. */
+S.fbShow='face';
+const pFaceBars=(()=>{
+  const W=1365.33,H=768;
+  const OURS='#f1c232', REAL='#3fc6e0', WHEEL='#f2a33a', AIM='#ff7ab8', GAME='rgba(255,255,255,.5)', BAD='#e0443a';
+  const PAL={ // placeholder spell colours, one colour family per bar
+    none:['#c0562b','#d88f2c','#a83b35','#d9ac3a','#b8692f','#cc4a2a','#d6a050','#9c4a26'],
+    lt:  ['#2f6fb8','#3d8fd0','#2a5a9a','#4aa3c9','#3567c4','#5a8fd8','#2c7fa8','#4b6fb0'],
+    rt:  ['#2e8a4a','#4aa45a','#3a7a36','#6cae3e','#2f9a6e','#57a070','#3c8a2c','#7ab04a'],
+    both:['#7a3fb0','#9a4fc4','#6a3398','#b05ac0','#7f48c9','#9c3f9e','#5f3aa8','#a668d0']};
+  const SHORT={none:'main',lt:'LT',rt:'RT',both:'LT + RT'};
+  let P=[];
+  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const att=o=>Object.entries(o).filter(([,v])=>v!==undefined&&v!==null&&v!==false).map(([k,v])=>`${k}="${esc(v)}"`).join(' ');
+  const add=s=>P.push(s);
+  const R=(x,y,w,h,o={})=>add(`<rect ${att(Object.assign({x,y,width:w,height:h},o))}/>`);
+  const Ci=(cx,cy,r,o={})=>add(`<circle ${att(Object.assign({cx,cy,r},o))}/>`);
+  const L=(x1,y1,x2,y2,o={})=>add(`<line ${att(Object.assign({x1,y1,x2,y2},o))}/>`);
+  function T(x,y,str,o={}){ const lines=String(str).split('\n');
+    if(lines.length===1){ add(`<text ${att(Object.assign({x,y},o))}>${esc(str)}</text>`); return; }
+    add(`<text ${att(Object.assign({x,y},o))}>`+lines.map((l,i)=>`<tspan x="${x}" dy="${i?'1.15em':0}">${esc(l)}</tspan>`).join('')+`</text>`); }
+  const lab=(x,y,str,o={})=>T(x,y,str,Object.assign({'text-anchor':'middle',class:'fbtag'},o));
+  const gt=(x,y,str,o={})=>T(x,y,str,Object.assign({'text-anchor':'middle',class:'fbgt'},o));
+
+  /* button pictures: position glyphs, not letters */
+  function faceGlyph(gx,gy,r,pos){ const pts={up:[0,-r],left:[-r,0],right:[r,0],down:[0,r]}, dr=r*.46, sw=Math.max(.8,r*.2);
+    for(const k in pts){ const [dx,dy]=pts[k]; Ci(gx+dx,gy+dy,dr,{fill:k===pos?'#fff':'none',stroke:'#fff','stroke-width':sw,opacity:k===pos?1:.75}); } }
+  function dpadGlyph(gx,gy,r,pos){ const a=r*.78, Lr=r*1.3, sw=Math.max(.8,r*.18), h=a/2, len=Lr-h;
+    const arms={up:[gx-h,gy-Lr,a,len],down:[gx-h,gy+h,a,len],left:[gx-Lr,gy-h,len,a],right:[gx+h,gy-h,len,a]};
+    R(gx-h,gy-h,a,a,{fill:'rgba(255,255,255,.45)'});
+    for(const k in arms){ const [x,y,w,hh]=arms[k]; R(x,y,w,hh,{fill:k===pos?'#fff':'none',stroke:'#fff','stroke-width':sw,opacity:k===pos?1:.75}); } }
+  function spell(cx,cy,s,col,kind,pos){ const x=cx-s/2,y=cy-s/2, gs=Math.max(11,s*.46);
+    R(x,y,s,s,{rx:s*.13,fill:col,stroke:'#e2c97e','stroke-width':1.5});
+    R(x+3,y+3,s-6,(s-6)*.45,{rx:s*.08,fill:'rgba(255,255,255,.13)'});
+    Ci(x+gs/2+1.5,y+gs/2+1.5,gs/2,{fill:'rgba(0,0,0,.72)'});
+    (kind==='face'?faceGlyph:dpadGlyph)(x+gs/2+1.5,y+gs/2+1.5,gs*.3,pos); }
+  const DIAMOND=[['up',0,-1],['left',-1,0],['right',1,0],['down',0,1]];
+  const cluster=(cx,cy,kind,bar,s,hx,vy,base)=>DIAMOND.forEach(([pos,dx,dy],i)=>spell(cx+dx*hx,cy+dy*vy,s,PAL[bar][base+i],kind,pos));
+
+  /* scenery and the game's frames */
+  function scenery(noLabel){ add(`<defs><radialGradient id="fbsky" cx="50%" cy="62%" r="80%"><stop offset="0" stop-color="#5a3a22"/><stop offset=".55" stop-color="#32221a"/><stop offset="1" stop-color="#17110d"/></radialGradient></defs>`);
+    R(0,0,W,H,{fill:'url(#fbsky)'});
+    add(`<path d="M0 250 Q 200 200 380 240 T 760 220 T 1100 235 T 1366 215 L1366 0 L0 0Z" fill="rgba(255,190,120,.06)"/>`);
+    add(`<g opacity=".55"><ellipse cx="683" cy="470" rx="26" ry="8" fill="rgba(0,0,0,.5)"/><rect x="668" y="388" width="30" height="80" rx="12" fill="#2b241c" stroke="#6b5a40"/><circle cx="683" cy="378" r="13" fill="#2b241c" stroke="#6b5a40"/></g>`);
+    if(!noLabel) lab(706,420,'your character',{fill:'rgba(255,255,255,.45)','text-anchor':'start'}); }
+  function gframe(x,y,w,h,o={}){ R(x,y,w,h,{fill:o.fill===undefined?'rgba(0,0,0,.32)':o.fill,stroke:o.stroke||GAME,'stroke-width':1.2,'stroke-dasharray':o.dash||'5 4'}); }
+  function hints(){ gframe(8,10,312,121,{fill:'rgba(30,26,16,.75)',stroke:'#8a7a52',dash:'0'});
+    ['(Tap/Hold) Friendly Targeting','(Tap/Hold) Enemy Targeting','Ping, (Hold) Ping Menu','Auto-Run'].forEach((t,i)=>{ R(22,26+i*24,18,14,{rx:3,fill:'#333',stroke:'#999'}); gt(48,37+i*24,t,{fill:'#e6c35a','font-size':12,'text-anchor':'start'}); });
+    lab(164,146,"game's controller hints"); }
+  function probe(){ R(623,4,119,47,{fill:'#4b4a33',stroke:'#7a7650'}); gt(682,33,'Probe',{fill:'#e6dfc0','font-size':13});
+    R(467,54,430,18,{fill:'rgba(60,60,40,.85)'}); T(682,67,'idle (tap Probe)',{fill:'#ddd','font-size':11,'text-anchor':'middle'}); }
+  function questArrow(){ gt(252,178,'No quest focused',{fill:'#f0c23a','font-size':22}); gt(252,198,'Focus one in your quest log',{fill:'#eee','font-size':14}); lab(252,216,'Pocket Essentials quest arrow'); }
+  function hub(){ Ci(127,475,31,{fill:'#141414',stroke:OURS,'stroke-width':3.5}); gt(127,483,'PE',{fill:'#fff','font-size':22});
+    Ci(202,475,30,{fill:'#2a1414',stroke:'#e04a4a','stroke-width':3}); gt(202,481,'Stop',{fill:'#fff','font-size':16});
+    lab(127,522,'PE button'); lab(202,522,'Stop (Probe)'); }
+  function chat(x,y,w,h,label){ R(x+20,y,w-40,16,{fill:'rgba(0,0,0,.25)'}); ['General','Combat Log','Party','Guild','DMs'].forEach((t,i)=>{ R(x+22+i*80,y+1,74,14,{rx:3,fill:'rgba(80,80,80,.6)'}); T(x+59+i*80,y+12,t,{fill:'#ccc','font-size':9,'text-anchor':'middle'}); });
+    gframe(x,y+18,w,h-18,{fill:'rgba(40,40,48,.45)'});
+    for(let i=0;i<5;i++) R(x+8,y+h-80+i*14,w*(.45+.4*((i*37)%10)/10),6,{fill:'rgba(230,200,120,.28)'});
+    lab(x+w/2,y+40,label); }
+  function buffs(right,y,n,col){ for(let i=0;i<n;i++) R(right-(i+1)*33+3,y,30,30,{fill:col?col:PAL.both[(i*3)%8],stroke:col?'#e03a3a':'rgba(255,255,255,.5)'}); }
+  function tracker(x,y,w,h,label){ gframe(x,y,w,h,{fill:'rgba(0,0,0,.18)'}); gt(x+10,y+18,'All Objectives',{fill:'#f0c23a','font-size':13,'text-anchor':'start'});
+    for(let i=0;i<Math.floor((h-40)/26);i++){ R(x+16,y+34+i*26,w*.62,6,{fill:'rgba(240,194,58,.45)'}); R(x+24,y+44+i*26,w*.5,5,{fill:'rgba(255,255,255,.25)'}); }
+    lab(x+w/2,y+h+14,label); }
+  function mapCircle(cx,cy,r){ Ci(cx,cy,r,{fill:'#6b5434',stroke:'#cdb57d','stroke-width':3});
+    Ci(cx-r*.3,cy-r*.2,r*.12,{fill:'#4e3c24'}); Ci(cx+r*.25,cy+r*.3,r*.16,{fill:'#4e3c24'}); add(`<path d="M${cx-4} ${cy+4} L${cx} ${cy-8} L${cx+4} ${cy+4}Z" fill="#fff"/>`); }
+  function strip(cx,y,w,withEnds){ R(cx-w/2,y,w,19,{fill:'rgba(20,16,10,.88)',stroke:'#8a7a52'}); gt(cx,y+14,'Durotar   12:17',{fill:'#e6c35a','font-size':11});
+    if(withEnds){ magnifier(cx-w/2+10,y+9.5); calendar(cx+w/2-11,y+9.5); } }
+  function magnifier(x,y){ Ci(x-1,y-1,4.5,{fill:'none',stroke:'#ddd','stroke-width':1.6}); L(x+2,y+2,x+6,y+6,{stroke:'#ddd','stroke-width':2}); }
+  function calendar(x,y){ R(x-7,y-7,14,14,{rx:2,fill:'#d9c27a',stroke:'#6b5a40'}); R(x-7,y-7,14,4,{fill:'#a8452f'}); }
+  function mail(x,y){ R(x-10,y-7,20,14,{rx:2,fill:'#e9e2cf',stroke:'#6b5a40'}); add(`<path d="M${x-10} ${y-7} L${x} ${y+1} L${x+10} ${y-7}" fill="none" stroke="#a8452f" stroke-width="1.6"/>`); }
+  function badge2(x,y){ R(x-8,y-8,16,16,{rx:3,fill:'#2a241c',stroke:'#cdb57d'}); T(x,y+4.5,'2',{fill:'#fff','font-size':12,'text-anchor':'middle','font-weight':700}); }
+  function sun(x,y){ Ci(x,y,11,{fill:'#24406e',stroke:'#cdb57d','stroke-width':2}); Ci(x,y,5,{fill:'#f2c94c'}); for(let i=0;i<8;i++){ const a=i*Math.PI/4; L(x+Math.cos(a)*6.5,y+Math.sin(a)*6.5,x+Math.cos(a)*9,y+Math.sin(a)*9,{stroke:'#f2c94c','stroke-width':1.4}); } }
+  function unitFrame(x,y,w,h,name){ const pr=h*.5;
+    Ci(x+pr,y+h/2,pr,{fill:'#3a3028',stroke:'#c9b27a','stroke-width':2}); R(x+pr*2,y+3,w-pr*2,h*.30,{fill:'#5a3a1a'});
+    gt(x+pr*2+(w-pr*2)/2,y+3+h*.24,name,{fill:'#f0c23a','font-size':Math.min(12,h*.26)});
+    R(x+pr*2,y+h*.40,w-pr*2,h*.24,{fill:'#2f8a2f'}); R(x+pr*2,y+h*.68,w-pr*2,h*.24,{fill:'#2c4fb0'});
+    R(x-3,y-3,w+6,h+6,{fill:'none',stroke:GAME,'stroke-dasharray':'5 4'}); }
+  function swing(x,y,w,h,name,fill){ R(x,y,w,h,{fill:'rgba(0,0,0,.6)',stroke:'#8a7a52'}); R(x+1,y+1,(w-2)*fill,h-2,{fill:'#b8862f'});
+    T(x+5,y+h-2.5,name,{fill:'#fff','font-size':h-2.5}); }
+
+  /* things the game places: sub-menu buttons, their wheels, targeting circles */
+  const WR=87.5;
+  function wheelRoom(cx,cy,left){ Ci(cx,cy,WR,{fill:'rgba(242,163,58,.07)',stroke:WHEEL,'stroke-width':1.7,'stroke-dasharray':'4 4'});
+    lab(cx,cy-WR-6,left?'keep free: LB+LT wheel':'keep free: RB+RT wheel',{fill:WHEEL}); }
+  function subBtn(cx,cy,left){ Ci(cx,cy,17,{fill:left?'#4a3050':'#3a3a5a',stroke:'#cdb57d','stroke-width':2}); Ci(cx,cy-3,7,{fill:'rgba(255,255,255,.35)'});
+    add(`<path d="M${cx-7} ${cy-24} L${cx} ${cy-30} L${cx+7} ${cy-24}Z" fill="#e6c35a"/>`);
+    T(cx,cy+34,left?'LB + LT':'RB + RT',{fill:'#fff','font-size':11,'text-anchor':'middle','font-weight':600});
+    lab(cx,cy+47,"game's sub-menu"); }
+  function wheelOpen(cx,cy,label){ Ci(cx,cy,WR,{fill:'rgba(0,0,0,.72)',stroke:'#cdb57d','stroke-width':2.5});
+    for(let i=0;i<8;i++){ const a=i*Math.PI/4, x=cx+Math.sin(a)*60, y=cy-Math.cos(a)*60; Ci(x,y,15,{fill:i%3===2?'rgba(60,60,60,.6)':PAL.both[i],stroke:'#cdb57d','stroke-width':1.5}); }
+    Ci(cx,cy,17,{fill:'#3a3028',stroke:'#cdb57d','stroke-width':2}); lab(cx,cy-WR-6,label,{fill:WHEEL}); }
+  function aim(cx,cy,friendly){ const c=friendly?'#45d045':'#e03a3a'; R(cx-18,cy-16,36,32,{rx:7,fill:'#262422',stroke:'#777'}); Ci(cx,cy,9,{fill:'none',stroke:c,'stroke-width':2.5});
+    L(cx-12,cy,cx+12,cy,{stroke:c,'stroke-width':1.5}); L(cx,cy-12,cx,cy+12,{stroke:c,'stroke-width':1.5});
+    Ci(cx,cy,24,{fill:'none',stroke:AIM,'stroke-width':1.4,'stroke-dasharray':'2 3'});
+    lab(friendly?cx-27:cx+27,cy-3,friendly?'LB: friendly\ntargeting':'RB: enemy\ntargeting',{fill:AIM,'text-anchor':friendly?'end':'start'}); }
+  function gameSpots(btnY,aimY,dx){ const lx=683-dx, rx=683+dx, m=S.clMenu;
+    if(m==='petcmd') wheelOpen(lx,btnY,'pet commands wheel, open'); else { wheelRoom(lx,btnY,true); subBtn(lx,btnY,true); }
+    if(m==='petspell') wheelOpen(rx,btnY,'pet spells wheel, open'); else { wheelRoom(rx,btnY,false); subBtn(rx,btnY,false); }
+    aim(lx+3,aimY,true); aim(rx-3,aimY,false); }
+  function xpBar(x,y,w,h){ R(x,y,w,h,{fill:'#1b2347',stroke:'#4a5590'}); R(x+1,y+1,(w-2)*.62,h-2,{fill:'#3a5ad8'}); for(let i=1;i<20;i++) L(x+w*i/20,y,x+w*i/20,y+h,{stroke:'rgba(0,0,0,.5)'}); }
+  function heldBadge(y){ const t=S.clHold==='none'?'no trigger held: main bar in use':'holding '+SHORT[S.clHold]+': the '+SHORT[S.clHold]+' bar is in use';
+    T(683,y,t,{'text-anchor':'middle','font-size':12,'font-weight':600,fill:OURS,class:'fbtag'}); }
+  function mark(n,x,y){ Ci(x,y,10,{fill:BAD,stroke:'#fff','stroke-width':1.5}); T(x,y+4,String(n),{fill:'#fff','font-size':12,'font-weight':700,'text-anchor':'middle'}); }
+
+  /* the game's own bar as it looks today: d-pad diamond left, face-button diamond right, 208 × 68 */
+  function gameBar(x,y,k,bar){ const w=208*k,h=68*k, on=S.clHold===bar;
+    if(on) R(x-5,y-5,w+10,h+10,{rx:8,fill:'rgba(241,194,50,.14)',stroke:OURS,'stroke-width':2});
+    R(x,y,w,h,{fill:'none',stroke:GAME,'stroke-dasharray':'5 4'});
+    cluster(x+45*k,y+34*k,'dpad',bar,28*k,31*k,18*k,0); cluster(x+162*k,y+34*k,'face',bar,28*k,31*k,18*k,4); }
+  /* our face: one whole bar (8 buttons), drawn over the game's real bar (blue dashed, invisible) */
+  function faceBar(cx,cy,bar,name){ const on=S.clHold===bar;
+    R(cx-104,cy-34,208,68,{fill:'none',stroke:REAL,'stroke-width':1.3,'stroke-dasharray':'8 4',opacity:.8});
+    if(on) R(cx-108,cy-40,216,80,{rx:9,fill:'rgba(241,194,50,.13)',stroke:OURS,'stroke-width':2.2});
+    add(`<g opacity="${on?1:.6}">`); cluster(cx-52,cy,'dpad',bar,30,32,20,0); cluster(cx+52,cy,'face',bar,30,32,20,4); add('</g>');
+    T(cx,cy-44,name,{'text-anchor':'middle','font-size':12,'font-weight':600,fill:on?OURS:'rgba(255,255,255,.8)',class:'fbtag'}); }
+
+  /* ===== the one setup ===== */
+  function drawFace(){
+    scenery(); hints(); questArrow(); hub();
+    // top: XP bar at 100%, centred on the top edge
+    xpBar(388,2,590,17); lab(683,34,"game's XP bar: top edge, middle, 100% (about 590 wide)",{fill:'#b9c6ff'});
+    // top right: chat as today, buffs and debuffs about 30 lower, quest tracker under them
+    chat(905,40,430,210,"game's chat: same spot and size as today\nTOPRIGHT -30,-40, 430 × 210");
+    buffs(1335,296,5); buffs(1335,330,2,'#5a1a1a');
+    lab(1162,318,'buffs, about 30 lower:\nclear of the chat',{'text-anchor':'end'});
+    tracker(1127,374,218,372,"game's quest tracker");
+    // the map: bottom middle, 70%; name strip under it; swing timers under that
+    const mx=683, my=615, r=72;
+    mapCircle(mx,my,r); lab(mx,my+2,"game's minimap, 70%\nbottom middle (your 'centre'?)");
+    strip(mx,my+r+6,191,true);
+    const sx=mx-90, sy=my+r+30; [['Main Hand',.7],['Off Hand',.35],['Ranged',.9]].forEach(([n,f],i)=>swing(sx,sy+i*14,180,11,n,f));
+    // the map's little icons around the top of its rim (outside the wheel circles)
+    const rim=(deg,fn)=>{ const a=deg*Math.PI/180; fn(mx+Math.sin(a)*(r+12),my-Math.cos(a)*(r+12)); };
+    rim(-30,mail); rim(0,badge2); rim(30,sun);
+    lab(mx,my-r-40,'map icons on the rim: proposal, to check in game');
+    // the game's spots: sub-menu buttons and their wheels, targeting circles
+    gameSpots(580,661,138);
+    // frames: pet over player on the left, target of target over target on the right
+    unitFrame(335,474,112,34,'Pet'); unitFrame(255,516,192,60,'Player (you)');
+    unitFrame(919,474,112,34,'Target of target'); unitFrame(919,516,192,60,'Target');
+    // all four bars, our face, each over its own real bar
+    faceBar(348,635,'lt','LT bar (hold LT)'); faceBar(1018,635,'rt','RT bar (hold RT)');
+    faceBar(348,723,'none','main bar (no trigger)'); faceBar(1018,723,'both','LT + RT bar (hold both)');
+    lab(236,640,"blue dashed: the game's real bar\nunder each of ours, invisible;\nit still takes your presses",{fill:REAL,'text-anchor':'end'});
+    heldBadge(452);
+  }
+  /* ===== Today, 0.11.0 on your main (10:02 photo), for comparison ===== */
+  function drawToday(){
+    scenery(true); hints(); probe(); questArrow(); hub();
+    chat(903,37,447,261,"game's chat: TOPRIGHT -30,-40, set 430 × 210\nthe tinted box reaches about 300 down");
+    buffs(1335,262,5); lab(1240,312,"buffs, on the chat's last lines");
+    tracker(1080,348,260,382,"game's quest tracker");
+    mapCircle(692,552,72); strip(692,473,191,false); lab(692,467,'map name strip (above the map)'); lab(692,556,"game's minimap 70%");
+    unitFrame(380,507,115,38,'Pet'); unitFrame(305,575,192,65,'Player (you)');
+    gameSpots(543,662,139);
+    gameBar(352,690,1,'lt'); gameBar(575,690,1,'none'); gameBar(793,690,1,'rt'); gameBar(607,388,.7,'both');
+    lab(456,684,'LT bar'); lab(679,684,'main bar'); lab(897,684,'RT bar'); lab(680,380,'LT + RT bar, 70%, over your head');
+    xpBar(297,750,771,15); lab(1180,762,"game's XP bar: still at the bottom",{fill:'#b9c6ff','text-anchor':'start'});
+    heldBadge(128);
+    mark(1,760,396); mark(2,330,748); mark(3,1140,278); mark(4,580,483); mark(5,1072,176);
+  }
+  return scr=>{
+    P=[]; (S.fbShow==='today'?drawToday:drawFace)();
+    const box=el('div',scr,{left:0,top:0,width:'100%',height:'100%'});
+    box.innerHTML=`<svg class="fbsvg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="position:absolute;left:0;top:0;width:100%;height:100%">`
+      +`<style>.fbsvg text{font-family:var(--ui)}.fbsvg .fbgt{font-family:var(--game)}.fbsvg .fbtag{font-size:11px;fill:rgba(255,255,255,.8);paint-order:stroke;stroke:rgba(0,0,0,.8);stroke-width:3px;stroke-linejoin:round}</style>`
+      +P.join('')+'</svg>';
+  };
+})();
+PROPOSED.facebars=pFaceBars;
+Object.defineProperty(NOTES_P,'facebars',{enumerable:true,get:()=>S.fbShow==='today'?{what:[
+  'Today: Controller layout 0.11.0 on your main, drawn from the 10:02 photo, in the same units as the face bars picture.',
+  'Red numbers: 1 the LT + RT bar is lost over your head; 2 the bars touch the XP bar, which stayed at the bottom; 3 buffs sit on the chat\'s last lines; 4 the map\'s name strip sits on top of the map; 5 the chat is a big, mostly empty box.',
+  'Hold a trigger above: the game lights the bar in use; nothing moves.'],fix:[]}:{what:[
+  'One setup only, drawn to scale for your 720p screen in the game\'s own units (1365 × 768). Nothing is built yet. Pick "Today (0.11.0)" above to compare.',
+  'Map: bottom middle at 70%. You said "centre"; if you meant the middle of the screen, say so.',
+  'Under the map: its name strip (zone and clock, magnifier and calendar at its ends), then the three swing timers: main hand, off hand, ranged.',
+  'Mail, the "2" badge and the day/night picture sit on the top of the map\'s rim, where the sub-menu wheels don\'t reach (proposal; we still have to check the game lets us move them).',
+  'All four bars are our own pictures, each a whole bar: d-pad diamond left, face-button diamond right. LT bar left and RT bar right (the side of the trigger); main bar under LT, LT + RT bar under RT.',
+  'Under each picture sits the game\'s real bar (blue dashed), invisible. It still does the casting, so you press the same buttons as now. Hold a trigger above: the bar in use lights up, nothing moves.',
+  'Each square\'s corner picture shows where the button is: four dots for the face buttons, a plus for the d-pad, the pressed spot filled. Colours are placeholders: warm main, blue LT, green RT, purple LT + RT.',
+  'Frames: pet above your player frame on the left; target of target above the target frame on the right.',
+  'Keep free: the orange circles are where the game opens the sub-menu wheels (try "Sub-menu" above); pink are the game\'s targeting circles. The game puts these; the wheels still cover the map\'s sides, as today.',
+  'XP bar: top edge, middle, 100%. Chat: top right, same size as today. Buffs and debuffs about 30 lower, clear of the chat; quest tracker under them.',
+  'Guess: the sub-menu buttons and targeting circles stay where your 11:19 photo shows them (188 and about 106 up, 138 either side of the middle).',
+  'Guess: the XP bar is about 590 wide at 100%.',
+  'Guess: which bar goes in which corner, the button size (30, about the game\'s own), and the quest tracker\'s height.',
+  'Guess: that the game lets the map\'s little icons and the name strip move this way.'],fix:[]}});
+
 /* ---------- page chrome ---------- */
 const nav=document.getElementById('nav');
 VIEWS.forEach(([group,items])=>{ el('h2',nav).textContent=group; items.forEach(([k,l])=>{ const b=el('button',nav); b.textContent=l; b.dataset.v=k; b.onclick=()=>{S.view=k; if(k==='settings') S.settingsPage='main'; if(k==='qbsettings') S.ptab='controller'; save(); render();}; }); });
@@ -1474,6 +1665,7 @@ function subControls(){
     if(S.ver==='proposed'){ mk('Both-triggers bar',[['small','Small, above the pads'],['corner','Small, bottom corners'],['swap','Swaps with the main pads']],'clBoth');
       { const g=el('div',sub,null,'seg'); el('span',g).textContent='Spell button size'; [100,85,70].forEach(v=>{ const bb=el('button',g); bb.textContent=v+'%'; bb.setAttribute('aria-pressed',String(S.opt.layout.size===v)); bb.onclick=()=>{S.opt.layout.size=v;render();}; }); }
       [['Main pads','clKm'],['LT and RT bars','clKo'],['Both-triggers pads','clKb']].forEach(([l,key])=>mk('Fine-tune: '+l,[[.85,'Smaller'],[1,'Same'],[1.15,'Bigger']],key)); } }
+  if(S.view==='facebars'){ mk('Show',[['face','Face bars (one setup)'],['today','Today (0.11.0)']],'fbShow'); mk('You hold',[['none','Nothing'],['lt','Left trigger'],['rt','Right trigger'],['both','Both']],'clHold'); mk('Sub-menu',[['closed','Closed'],['petcmd','Pet commands'],['petspell','Pet spells']],'clMenu'); }
   if((S.view==='layout'&&S.ver==='today')||S.view==='quietbars'||S.view==='qbsettings') mk('Compact in Edit Mode',[[false,'Off'],[true,'On']],'compact');
   if(S.view==='kit'){
     mk('Moment',[['out','Out of combat'],['combat','In combat']],'kitMoment');
