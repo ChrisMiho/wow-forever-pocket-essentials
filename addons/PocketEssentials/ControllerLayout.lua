@@ -18,7 +18,9 @@ local ADDON_NAME, PE = ...
 --   * The module: the switch, and the bars. Nothing runs while it is off: its
 --     two events are registered only while it is on, it has no timers, and
 --     its one hook (installed the first time it is switched on) does nothing
---     while it is off.
+--     while it is off. The one exception is a check at login when a layout to
+--     go back to is remembered for this character (see Settle); it listens
+--     for two events until that check has run, then for nothing.
 --
 -- The map's size at 100% was measured on a device and the bar's size is
 -- Blizzard's own (see SIZE). Still first guesses: the map's size below 100%
@@ -351,9 +353,41 @@ end
 -- but its activeLayout counts the presets first (Modern 1, Classic 2,
 -- Gamepad 3; a preset's index is its Enum.EditModePresetLayouts value + 1).
 --
--- opts.prev is false until a switch-on has really happened, then the layout
--- to go back to: { name, layoutType, preset }. A login with the feature on
--- and opts.prev set changes nothing.
+-- The game remembers the active layout per character, so the layout to go back
+-- to is kept per character (0.11.1 spec, 2): opts.prevs[<name>-<realm>] =
+-- { name, layoutType, preset }, written when a switch-on has really happened
+-- on that character. opts.prev is the 0.11.0 file's single entry for the whole
+-- account, read once (Migrate) and then false.
+--
+-- The character's name and realm: UnitName("player")
+-- (Blizzard_APIDocumentationGenerated/UnitDocumentation.lua:2489-2503) and
+-- GetRealmName() (ConnectionDocumentation.lua:69-75). UnitName may answer
+-- UNKNOWNOBJECT ("Unknown", compared the same way in
+-- Blizzard_RaidUI/Mainline/Blizzard_RaidUI.lua:706) before the character is
+-- loaded; the key is then unknown and the check waits.
+--
+-- At each login, and at each switch-on, Settle runs once this character's key
+-- can be read and the game has handed Edit Mode its layouts
+-- (EditModeManagerFrameMixin:IsInitialized,
+-- Blizzard_EditMode/Shared/EditModeManager.lua:216-218, true once
+-- UpdateLayoutInfo, line 1012, ran on EDIT_MODE_LAYOUTS_UPDATED, line 193): a
+-- layout list read before that may be incomplete, and saving it could lose the
+-- player's own layouts. Until then it listens for the next
+-- PLAYER_ENTERING_WORLD and EDIT_MODE_LAYOUTS_UPDATED through the core's own
+-- event list (PE:RegisterCoreEvent), because a module that is off hears none
+-- of its own events; both are dropped as soon as Settle has run. While off,
+-- this happens only when a layout is remembered for this character (or the old
+-- single entry is still there), so a player who never used the feature has
+-- nothing registered at all.
+--
+-- Settle, with the feature on: an entry for this character means it was
+-- switched on here before: nothing changes, the bars are placed (or left, with
+-- the "another layout" status line, when another layout is active). No entry:
+-- the switch-on steps (remember this character's current layout, make ours
+-- active, ask for the reload). With the feature off: an entry while ours is
+-- active means it was switched off on another character: this character's own
+-- layout comes back and the reload is asked for; an entry while another layout
+-- is active is only forgotten.
 
 local tostring, pcall = tostring, pcall
 local tinsert = table.insert
@@ -594,6 +628,100 @@ end
 local function GamepadPresetIndex(state)
     local e = Enums()
     return e and (FindPreset(state, e.preset.Gamepad)) or nil
+end
+
+---------------------------------------------------------------------------
+-- Each character's own layout to go back to (see the notes above Say)
+---------------------------------------------------------------------------
+
+-- "<name>-<realm>" of the character playing, or nil while it cannot be read.
+local function CharKey()
+    if type(UnitName) ~= "function" or type(GetRealmName) ~= "function" then return nil end
+    local okName, name = pcall(UnitName, "player")
+    local okRealm, realm = pcall(GetRealmName)
+    if not okName or not okRealm then return nil end
+    if issecretvalue and (issecretvalue(name) or issecretvalue(realm)) then return nil end
+    if type(name) ~= "string" or type(realm) ~= "string" or name == "" or realm == "" then return nil end
+    if name == UNKNOWNOBJECT then return nil end
+    return name .. "-" .. realm
+end
+
+local function Prevs()
+    local opts = mod.opts
+    if type(opts.prevs) ~= "table" then opts.prevs = {} end
+    return opts.prevs
+end
+
+-- The entry of a character, or nil.
+local function PrevOf(key)
+    if not key then return nil end
+    local entry = Prevs()[key]
+    return type(entry) == "table" and entry or nil
+end
+
+local function ThisPrev()
+    return PrevOf(CharKey())
+end
+
+-- Writes (or, with nil, removes) a character's entry.
+local function SetPrev(key, entry)
+    Prevs()[key] = entry
+end
+
+local function HasLegacy()
+    return type(mod.opts) == "table" and type(mod.opts.prev) == "table"
+end
+
+-- The 0.11.0 file's single entry, read once: it becomes this character's entry
+-- if ours is active here, otherwise it is dropped.
+local function Migrate(key)
+    if not HasLegacy() then return end
+    local legacy = mod.opts.prev
+    mod.opts.prev = false
+    if PrevOf(key) then return end
+    local state = ReadState()
+    local index = state and OursIndex(state)
+    local kept = index ~= nil and state.active == index
+    if kept then SetPrev(key, legacy) end
+    if PE.debugOn then PE:Debug("ctrlLayout", "the 0.11.0 layout to go back to was " .. (kept and "kept for " .. key or "dropped")) end
+end
+
+-- See the notes above Say.
+local function EditModeReady()
+    local manager = EditModeManagerFrame
+    if type(manager) ~= "table" or type(manager.IsInitialized) ~= "function" then return true end -- cannot tell: go ahead, as 0.11.0
+    local ok, ready = pcall(manager.IsInitialized, manager)
+    if not ok then return true end
+    return ready and true or false
+end
+
+local pending = false   -- Settle is still to run (a login check, or a switch-on)
+local waiting = false   -- listening for the next PLAYER_ENTERING_WORLD or EDIT_MODE_LAYOUTS_UPDATED
+local Settle            -- set below the option rows, which it may run
+local onWaitEvent
+local WAIT_EVENTS = { "PLAYER_ENTERING_WORLD", "EDIT_MODE_LAYOUTS_UPDATED" }
+local WAIT_KEY = "ctrlLayout:wait"
+
+local function StopWaiting()
+    if not waiting then return end
+    waiting = false
+    for _, event in ipairs(WAIT_EVENTS) do PE:UnregisterCoreEvent(event, WAIT_KEY) end
+end
+
+local function StartWaiting()
+    if waiting then return end
+    waiting = true
+    onWaitEvent = onWaitEvent or PE:Wrap("ctrlLayout", function()
+        PE:RunOutOfCombat("ctrlLayout:settle", Settle)
+    end)
+    for _, event in ipairs(WAIT_EVENTS) do PE:RegisterCoreEvent(event, WAIT_KEY, onWaitEvent) end
+end
+
+-- Asks for Settle: now if it can, else at the next of those events, out of combat.
+local function Begin()
+    pending = true
+    StartWaiting()
+    PE:RunOutOfCombat("ctrlLayout:settle", Settle)
 end
 
 -- Switches the feature back off after a refusal, once OnEnable has returned.
@@ -909,18 +1037,22 @@ local function SwitchOn()
         Refuse(TEXT_EDIT_MODE)
         return
     end
+    local key = CharKey()
+    if not key then
+        Fail("The character's name could not be read")
+        return
+    end
     local e = Enums()
     local state, why = ReadState()
     if not e or not state then
         Fail("The layout list could not be read: " .. tostring(why or "the game's enums are missing"))
         return
     end
-    local opts = mod.opts
     local oursIndex = OursIndex(state)
     if oursIndex and state.active == oursIndex then
-        -- Already in use (picked in Edit Mode): nothing to change. Off goes
-        -- back to the Gamepad preset.
-        opts.prev = { preset = e.preset.Gamepad }
+        -- Already in use (picked in Edit Mode, or switched on for this character
+        -- elsewhere): nothing to change. Off goes back to the Gamepad preset.
+        if not PrevOf(key) then SetPrev(key, { preset = e.preset.Gamepad }) end
         SyncBars()
         mod:RefreshPanel()
         return
@@ -929,25 +1061,25 @@ local function SwitchOn()
     local prev = current and { name = current.name, layoutType = current.layoutType, preset = current.preset }
         or { preset = e.preset.Gamepad }
     if oursIndex then
-        opts.prev = prev
+        SetPrev(key, prev)
         local ok, err = pcall(state.api.SetActiveLayout, oursIndex)
         if not ok then
-            opts.prev = false
+            SetPrev(key, nil)
             Fail("C_EditMode.SetActiveLayout failed: " .. tostring(err))
             return
         end
     else
-        opts.prev = prev -- before the write: switching off must undo even a half-done change
+        SetPrev(key, prev) -- before the write: switching off must undo even a half-done change
         local called, ok, wrote = pcall(AddOurs, state, e)
         if not called then
             -- Every game call in AddOurs is protected, so an error here came
             -- before anything was written.
-            opts.prev = false
+            SetPrev(key, nil)
             Fail("Building the layout failed: " .. tostring(ok))
             return
         end
         if not ok then
-            if not wrote then opts.prev = false end
+            if not wrote then SetPrev(key, nil) end
             return
         end
     end
@@ -961,11 +1093,19 @@ local function SwitchOn()
     mod:RefreshPanel()
 end
 
-local function SwitchOff()
+-- Puts back this character's own layout, if ours is the active one, and forgets
+-- the entry. atLogin: Settle's check with the feature off, which asks for the
+-- reload only when it changed the layout (a tap on the switch always asks).
+local function SwitchOff(atLogin)
     if wanted then return end -- switched on again before this ran
-    local opts = mod.opts
-    local prev = opts.prev
-    if type(prev) ~= "table" then return end
+    local key = CharKey()
+    if not key then
+        Begin() -- tried again once the name can be read
+        return
+    end
+    Migrate(key)
+    local prev = PrevOf(key)
+    if not prev then return end
     local state, why = ReadState()
     if not state then
         -- Kept: the next switch-off tries again.
@@ -973,6 +1113,7 @@ local function SwitchOff()
         return
     end
     local oursIndex = OursIndex(state)
+    local changed = false
     if oursIndex and state.active == oursIndex then
         local target
         if prev.preset ~= nil then
@@ -987,10 +1128,12 @@ local function SwitchOff()
                 PE:LogError("ctrlLayout", "C_EditMode.SetActiveLayout failed: " .. tostring(err))
                 return -- kept: the next switch-off tries again
             end
+            changed = true
         end
     end
-    opts.prev = false
-    mod:RequestReload(RELOAD_REASON)
+    SetPrev(key, nil)
+    if PE.debugOn then PE:Debug("ctrlLayout", "switched off for " .. key .. (changed and ", its own layout put back" or "")) end
+    if changed or not atLogin then mod:RequestReload(RELOAD_REASON) end
 end
 
 ---------------------------------------------------------------------------
@@ -1182,8 +1325,44 @@ local OPTIONS = {
     { label = "Template", button = "Start over", action = function() StartOver() end },
 }
 
+-- This character's check (see the notes above Say). Runs out of combat; waits
+-- (and is called again by the next PLAYER_ENTERING_WORLD or
+-- EDIT_MODE_LAYOUTS_UPDATED) while the character's name or Edit Mode's layouts
+-- are not known yet.
+Settle = function()
+    if not pending then
+        StopWaiting()
+        return
+    end
+    if not EditModeReady() then
+        if PE.debugOn then PE:Debug("ctrlLayout", "waiting for Edit Mode's layouts") end
+        return
+    end
+    local key = CharKey()
+    if not key then
+        if PE.debugOn then PE:Debug("ctrlLayout", "waiting for the character's name") end
+        return
+    end
+    pending = false
+    StopWaiting()
+    Migrate(key)
+    if wanted then
+        if PrevOf(key) then
+            SyncBars()
+            mod:RefreshPanel()
+        else
+            SwitchOn()
+        end
+        -- Option changes not yet written when the feature went off (after SwitchOn, so ours exists).
+        if #pendingRewrites > 0 then PE:RunOutOfCombat("ctrlLayout:rewrite", RunRewrites) end
+    elseif PrevOf(key) then
+        SwitchOff(true)
+    end
+end
+
 local defaults = DeepCopy(Plan.DEFAULTS)
-defaults.prev = false -- the layout to go back to, set once a switch-on has happened
+defaults.prev = false -- the 0.11.0 file's single layout to go back to; read once, then false
+defaults.prevs = {}   -- each character's layout to go back to, by "<name>-<realm>"
 
 mod = PE:RegisterModule({
     key = "ctrlLayout",
@@ -1196,9 +1375,10 @@ mod = PE:RegisterModule({
     options = OPTIONS,
 
     blocked = function()
-        -- Once a switch-on has changed the layouts, never blocked: switching off must always
-        -- be possible, and a login where the Gamepad style is not reported yet must not stop it.
-        if mod and type(mod.opts) == "table" and type(mod.opts.prev) == "table" then return nil end
+        -- Once a switch-on has changed this character's layout, never blocked: switching off
+        -- must always be possible, and a login where the Gamepad style is not reported yet
+        -- must not stop it. The same while the 0.11.0 file's single entry is still unread.
+        if mod and type(mod.opts) == "table" and (HasLegacy() or ThisPrev()) then return nil end
         if not PE:GamepadUI() then return TEXT_NEEDS_GAMEPAD end
         if not Api() or not Presets() or not GamepadBar() then return TEXT_NO_LAYOUTS end
         return nil
@@ -1213,12 +1393,23 @@ mod = PE:RegisterModule({
         if note then return note end
         if rowNote then return rowNote end
         if startOverUntil > 0 and Now() <= startOverUntil then return TEXT_START_OVER end
-        if type(m.opts) ~= "table" or type(m.opts.prev) ~= "table" then return nil end -- still to be done
+        if type(m.opts) ~= "table" or not ThisPrev() then return nil end -- still to be done
         local state = ReadState()
         if not state then return nil end
         local index = OursIndex(state)
         if index and state.active == index then return TEXT_USING end
         return TEXT_ANOTHER
+    end,
+
+    -- At login, on or off. While off this is the module's one piece of work: when a layout is
+    -- remembered for this character (it was switched off on another one), Settle puts it back.
+    -- With the feature on, OnEnable (right after) does the same check.
+    OnLoad = function(self)
+        if PE:IsModuleSavedOn("ctrlLayout") or type(self.opts) ~= "table" then return end
+        if not HasLegacy() and next(Prevs()) == nil then return end -- nothing remembered for anyone
+        local key = CharKey()
+        if key and not PrevOf(key) and not HasLegacy() then return end -- nothing for this character
+        Begin()
     end,
 
     OnEnable = function(self)
@@ -1230,22 +1421,24 @@ mod = PE:RegisterModule({
         HookRefresh()
         self:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED", SyncBars)
         self:RegisterEvent("PLAYER_ENTERING_WORLD", SyncBars)
-        -- Switched on before (this is a login, or on again before the switch
-        -- off ran): the layouts are left as they are; only the bars are placed.
-        if type(self.opts.prev) == "table" then
+        if ThisPrev() then
+            -- Switched on before on this character (this is a login, or on again before the
+            -- switch-off ran): the layouts are left as they are; only the bars are placed.
             SyncBars()
+            -- Option changes not yet written when the feature went off.
+            if #pendingRewrites > 0 then PE:RunOutOfCombat("ctrlLayout:rewrite", RunRewrites) end
         else
-            PE:RunOutOfCombat("ctrlLayout:on", SwitchOn)
+            -- This character's login check, or a switch-on: Settle, once the character's
+            -- name and Edit Mode's layouts are known.
+            Begin()
         end
-        -- Option changes not yet written when the feature went off (after SwitchOn, so ours exists).
-        if #pendingRewrites > 0 then PE:RunOutOfCombat("ctrlLayout:rewrite", RunRewrites) end
     end,
 
     OnDisable = function(self)
         wanted = false
         rowNote = nil
         RestoreBars() -- first: bars placed by any path are always put back
-        if type(self.opts.prev) ~= "table" then return end -- no layout was changed
-        PE:RunOutOfCombat("ctrlLayout:off", SwitchOff)
+        if not HasLegacy() and not ThisPrev() then return end -- no layout was changed for this character
+        PE:RunOutOfCombat("ctrlLayout:off", function() SwitchOff(false) end)
     end,
 })

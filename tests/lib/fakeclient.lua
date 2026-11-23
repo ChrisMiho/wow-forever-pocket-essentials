@@ -217,7 +217,10 @@ function Client.new(opts)
         gamepadUI = opts.gamepadUI and true or false,
         instance = false, indoors = false,
         minimapZoom = 0,
-        realm = "Camelot",
+        realm = "Camelot",           -- GetRealmName()
+        playerName = "Tester",       -- UnitName("player"); nil: not readable yet (early in a login)
+        editModeReady = true,        -- false: EditModeManagerFrame:IsInitialized() is false (the game has
+                                     -- not handed Edit Mode its layouts yet)
         cursor = { SW / 2, SH / 2 },
         secrets = {},                -- [value] = true: issecretvalue(value) is true
         addons = { Blizzard_WorldMap = true },
@@ -1105,6 +1108,8 @@ function Client.new(opts)
     local editMode = Blizz("Frame", "EditModeManagerFrame", UIParent)
     W[editMode].shown = false
     BlizzMethod(editMode, "IsEditModeActive", function() return world.editMode and true or false end)
+    -- EditModeManager.lua:216-218: true once UpdateLayoutInfo ran (EDIT_MODE_LAYOUTS_UPDATED).
+    BlizzMethod(editMode, "IsInitialized", function() return world.editModeReady ~= false end)
     Blizz("Frame", "AddonCompartmentFrame", UIParent)
     -- Blizzard_GamepadActionBars/MainActionBarFrame.xml (that addon loads on this client whatever
     -- the input style: DefaultState enabled, AllowLoadGameType camelot).
@@ -1335,6 +1340,9 @@ function Client.new(opts)
     end
     rawset(env, "SlashCmdList", {})
     rawset(env, "UISpecialFrames", {})
+    -- The game's text for a name it does not know yet (GlobalStrings; compared with
+    -- UnitName's answer in Blizzard_RaidUI/Mainline/Blizzard_RaidUI.lua:706).
+    rawset(env, "UNKNOWNOBJECT", "Unknown")
     -- Enum and Constants values: only those the audit verified (`enum` rows) are
     -- visible to the addon; the full tables below are what this file itself uses.
     local function Gated(rootName, full)
@@ -1788,6 +1796,13 @@ function Client.new(opts)
         if short and (realm == world.realm or context == "short") then return short end
         return name
     end)
+    -- UnitDocumentation.lua:2489-2503 (the stand-in knows only the player's own name;
+    -- the realm is not returned for the player, as in the game) and ConnectionDocumentation.lua:69-75.
+    Global("UnitName", function(unit)
+        if unit == "player" then return world.playerName end
+        return nil
+    end)
+    Global("GetRealmName", function() return world.realm end)
     Global("CanMerchantRepair", function() return world.merchant.open and world.merchant.canRepair and true or false end)
     Global("GetRepairAllCost", function()
         local cost = world.merchant.repairCost or 0

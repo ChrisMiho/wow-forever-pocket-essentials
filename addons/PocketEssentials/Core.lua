@@ -587,7 +587,9 @@ DebugWatchFights = function()
     end
 end
 
--- For Core/UI/Hub/Settings only (modules use mod:RegisterEvent).
+-- For Core/UI/Hub/Settings only (modules use mod:RegisterEvent), and for a
+-- module's one check at login while it is off (Controller layout), which
+-- unregisters as soon as that check has run.
 -- fn(event, ...) runs inside xpcall whether or not any module is enabled.
 function PE:RegisterCoreEvent(event, key, fn)
     if type(event) ~= "string" or type(fn) ~= "function" then return false end

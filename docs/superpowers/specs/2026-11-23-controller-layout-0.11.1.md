@@ -123,3 +123,80 @@ characters.
 
 `PocketEssentials.toc` `## Version: 0.11.1`, CHANGELOG entry and a
 `docs/TESTING.md` section, together. Features still default off.
+
+## As built (2026-11-23)
+
+What the source showed, and where the build differs from the text above.
+File paths are under `Interface/AddOns/` on the forever branch.
+
+### 1. XP bars
+
+- A bar is 17 high (`STATUS_BAR_CONTAINER_HEIGHT`,
+  `Blizzard_StatusTrackingBar/Camelot/StatusTrackingBarConstants.lua:2`), so
+  bar 2 sits at `TOP`, 0, -19.
+- The Gamepad preset stacks bar 2 one bar height **above** bar 1 (offsetY 0
+  and 17 on `StatusTrackingBarManager`'s bottom,
+  `Blizzard_EditMode/Mainline/EditModePresetLayouts.lua:1441-1461`). At the
+  top edge there is no room above, so the build keeps the spec's "right
+  under". With a Gamepad layout the game places both bars by their saved spot
+  (`Blizzard_EditMode/Camelot/EditModeUtil.lua:5-9` returns no bottom bars).
+- Width: with the Gamepad UI a bar at 100% is 596 wide (half of 1192,
+  `StatusTrackingBarConstants.lua:1, 12` and
+  `Mainline/StatusTrackingManagerOverrides.lua:80-81`). That is close to
+  the 11-23 screenshots (about 590) and a little more than the "about 580"
+  between the hints box and the chat, so the bar may touch one of them by a
+  few units. To check on the device.
+
+### 3. Map title under the map
+
+- `HeaderUnderneath` confirmed (the enum at
+  `Blizzard_APIDocumentationGenerated/EditModeManagerConstantsDocumentation.lua:580`,
+  the cited display info and system template lines).
+- The Forever map code (`Blizzard_Minimap/Camelot/Minimap.lua:68-84`) puts
+  the title strip 8 up from the map frame's bottom and the map 30 up from
+  that bottom: the mirror of the title on top. The strip stays inside the
+  map frame, whose bottom is the spot the template writes, so nothing under
+  the map moves and the map is **not** lifted.
+
+### 2. Switch on per character
+
+- `UnitName` (`UnitDocumentation.lua:2489-2503`) and `GetRealmName`
+  (`ConnectionDocumentation.lua:69-75`) confirmed. The key is
+  `"<name>-<realm>"`. A name that reads as the game's `UNKNOWNOBJECT`
+  ("Unknown", early in a login) counts as not readable yet.
+- **Added: wait for Edit Mode's layouts.** The game hands Edit Mode its
+  layouts through `EDIT_MODE_LAYOUTS_UPDATED`
+  (`Blizzard_EditMode/Shared/EditModeManager.lua:193-197`);
+  `EditModeManagerFrame:IsInitialized()` (lines 216-218) is true after that.
+  A layout list read earlier may be incomplete, and a switch-on saves the
+  whole list, which could lose the player's own layouts. So the login check
+  runs once both the character's name and Edit Mode's layouts are known;
+  until then it waits for the next `PLAYER_ENTERING_WORLD` or
+  `EDIT_MODE_LAYOUTS_UPDATED`. If the game has no `IsInitialized`, it goes
+  ahead as 0.11.0 did. A tap on the switch goes through the same check (in
+  play both are known, so it runs at once).
+- **How a module that is off does its one login check.** Core already runs
+  every module's `OnLoad` at login, on or off, so no new Core hook was
+  needed. While off, `OnLoad` does nothing unless a layout is remembered
+  for this character (or the 0.11.0 single entry is still there). If one is,
+  it listens on the core's own event list (`PE:RegisterCoreEvent`, as the
+  setup guide does for its first `PLAYER_ENTERING_WORLD`), because an off
+  module hears none of its own events, and it unregisters as soon as the
+  check has run. `Core.lua` changed only in a comment saying modules may do
+  this. A player who never used the feature has nothing registered.
+- **Login On, ours active, no entry.** Nothing changes in the game, but the
+  character gets the entry "Gamepad preset" (as a 0.11.0 switch-on did when
+  ours was already active), so switching off there brings back the Gamepad
+  preset as the spec says.
+- **Login Off with an entry while another layout is active** (spec silent):
+  the entry is forgotten, with no reload asked.
+- **Reload at a login Off** is asked for only when the layout was changed. A
+  tap on the switch still always asks, as before.
+- **Old `opts.prev` dropped.** That character then follows the "no entry"
+  rule: with the switch on, its current layout is remembered and ours made
+  active (the spec's "goes back to the Gamepad preset" read as "the old
+  entry is not used for it").
+- **No chat line** for a login that switches the layout: the reload request
+  shows in the settings window and the setup guide only, as for a tap. The
+  owner may not notice it until opening the settings; a chat line would be
+  new scope, so it is left as a question.
