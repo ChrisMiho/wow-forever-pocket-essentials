@@ -1582,9 +1582,10 @@ warlock later.
 
 **Another character (last, it reloads)**
 
-20. Log out and into another character that used its own layout. Does it
-    switch to the Pocket Essentials layout by itself? Tell me what it said
-    and whether you had to reload.
+20. Log out and into another character that used its own layout. A chat
+    line should say "This character now uses the controller layout. Open the
+    settings and tap Reload now to finish." Do that. Does the screen then
+    look like your main's?
 
 **Send it back**
 

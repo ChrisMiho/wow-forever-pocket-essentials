@@ -400,6 +400,10 @@ local TEXT_NO_LAYOUTS = "This game version has no layouts an addon can change."
 local TEXT_EDIT_MODE = "Close Edit Mode first."
 local TEXT_NAME_REFUSED = "The game refused the layout name."
 local RELOAD_REASON = "Reload to finish changing the screen layout."
+-- Said in chat when a login, not a tap, changed this character's layout: the reload
+-- request itself only shows in the settings window, which is closed at login.
+local CHAT_SWITCHED_ON = "This character now uses the controller layout. Open the settings and tap Reload now to finish."
+local CHAT_SWITCHED_OFF = "This character's own screen layout is back. Open the settings and tap Reload now to finish."
 local MAX_LAYOUTS = 5 -- per type (EditModeManagerConstantsDocumentation.lua, EditModeMaxLayoutsPerType)
 
 local mod
@@ -1104,6 +1108,7 @@ local function SwitchOn()
         end
     end
     mod:RequestReload(RELOAD_REASON)
+    if autoSwitch then PE:Print(CHAT_SWITCHED_ON) end
     -- The game may report the change only after the reload, so a re-read that
     -- does not show ours as active yet is not a refusal: the feature stays on.
     if PE.debugOn and not IsOursActive() then
@@ -1154,6 +1159,7 @@ local function SwitchOff(atLogin)
     SetPrev(key, nil)
     if PE.debugOn then PE:Debug("ctrlLayout", "switched off for " .. key .. (changed and ", its own layout put back" or "")) end
     if changed or not atLogin then mod:RequestReload(RELOAD_REASON) end
+    if changed and atLogin then PE:Print(CHAT_SWITCHED_OFF) end
 end
 
 ---------------------------------------------------------------------------

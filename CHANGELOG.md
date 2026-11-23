@@ -22,8 +22,9 @@ a device. Your saved choices carry over.
   fight, once the game has loaded its layouts) and remembers its own.
   Switching off on that character brings its own back; another character
   gets its own back at its next login. Before, it needed off, reload, on,
-  reload. If the switch at login fails, the switch stays on and the next
-  login tries again.
+  reload. A chat line says when a login changed the layout and a reload
+  finishes it. If the switch at login fails, the switch stays on and the
+  next login tries again.
 - **Controller layout, map title under the map:** the zone name and clock
   strip now sits under the map instead of on top of it (the game's own
   "header underneath" setting).

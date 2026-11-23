@@ -2159,4 +2159,23 @@ test("switch: a tap off before the character's name is known keeps its reload re
     c2:assertClean()
 end)
 
+test("switch: a login that changes the layout says so in chat, a tap does not", function()
+    local function said(c, text)
+        for _, line in ipairs(c.chat) do if line:find(text, 1, true) then return true end end
+        return false
+    end
+    local a = testerOn()
+    check(not said(a, "now uses the controller layout"), "a tap said it in chat")
+    local list = a.world.layouts.layouts
+    list[#list + 1] = saved("Mine", 2)
+    local c = login(db(a), list, 5, { name = "Bee" })
+    check(said(c, "now uses the controller layout"), "no chat line after the login switch-on")
+    local a2, PEa2, b2 = testerAndBee()
+    switchOff(a2, PEa2)
+    local c2 = login(db(a2), b2.world.layouts.layouts, 4, { name = "Bee" })
+    check(said(c2, "own screen layout is back"), "no chat line after the login switch-off")
+    local c3 = login(db(c2), c2.world.layouts.layouts, 5, { name = "Bee" })
+    check(not said(c3, "Reload now"), "a login that changed nothing said it")
+end)
+
 return { known = KNOWN_FAILURES }
