@@ -1834,6 +1834,9 @@ function Client.new(opts)
         return world.player.facing
     end)
     Global("GetTime", function() return c.now end)
+    -- debugprofilestop(): milliseconds on a clock of its own. Here it reads c.profileMs
+    -- when a test has set it (and moves it on by hand), else the client's time.
+    Global("debugprofilestop", function() return c.profileMs or c.now * 1000 end)
     -- time() counts whole seconds on its own clock: c.wallOffset (default 0) shifts its
     -- second boundaries against GetTime(), as in the game where the two are not aligned.
     Global("time", function() return 1763200000 + floor(c.now + (c.wallOffset or 0)) end)

@@ -4,7 +4,7 @@
 - `scripts/audit-api.sh`: full API audit against Blizzard's source (clones it once); about 45 s; rewrites `tests/api/*.txt`. Run it after adding a game call.
 - `scripts/build.sh`: builds the release zips (GitHub bundle and CurseForge) into `dist/`, plus `dist/PocketProbe.zip` (the restriction probe, testing only, never in the player zips).
 - `scripts/read-log.sh <saved PocketEssentials.lua>`: prints the debug log and the Errors page from a device's saved file (`--grep`, `--errors`).
-- `scripts/read-probe.sh <saved PocketProbe.lua>`: prints the restriction probe's results as tables (`--markdown`, `--details`, `--log`, `--diff <other file>`).
+- `scripts/read-probe.sh <saved PocketProbe.lua>`: prints the restriction probe's results as tables (`--markdown`, `--details`, `--log`, `--diff <other file>`, `--perf` for the performance recording).
 - `python3 scripts/make_art.py`: regenerates the CurseForge art.
 - Both check and test exit 0 with a notice when luajit is missing (`brew install luajit`).
 

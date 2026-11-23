@@ -155,6 +155,35 @@ How the pieces protect each other:
    device test. Log any game function you could not verify under "Unverified
    API".
 
+## Measuring hook
+
+`Core.lua` ("Measuring") has a timing hook for the performance recorder in
+Pocket Probe (`docs/superpowers/specs/2026-11-21-perf-recorder.md`). It is
+asleep for players: nothing in Pocket Essentials calls it, and there is no
+setting, slash command, event, ticker or frame for it. While it is off, each
+run through `PE:Safe`, `PE:Wrap`, `mod:Safe`, `mod:After` and the event
+dispatcher tests one local boolean and then runs the same code as before.
+
+- `PE:StartMeasure()` switches it on and returns the counters. A second call
+  returns the same table and keeps its numbers. It returns nil, and changes
+  nothing, on a client without `debugprofilestop`.
+- `PE:StopMeasure()` switches it off. The counters are kept.
+- `PE:MeasureCounters()` returns the counters, or nil if measuring was never
+  started this session.
+- `counters[key] = { ms, calls, max, events = { [event] = { ms, calls } } }`
+  for each feature key (the same key the error log uses; `events` only for
+  keys the event dispatcher has timed), and `counters["*"] = { ms, calls, max }`
+  for outermost runs only. A run inside another run is counted under both
+  keys, so the per-key rows overlap; `"*"` is the total with nothing counted
+  twice.
+- Nothing is saved. After a reload measuring is off and the counters start
+  from zero.
+- An error goes through the same handler as with measuring off, and the time
+  up to the error is counted.
+- Not timed: a feature's `OnEnable`, `OnDisable` and `OnLoad`, `PE:OnLogin`
+  functions and `PE:RunOutOfCombat` functions when they are not inside a timed
+  run, and the `/pe` command.
+
 ## Unverified API
 
 Everything the code calls was looked up in Blizzard's interface source for

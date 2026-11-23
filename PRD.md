@@ -452,10 +452,14 @@ saving layouts are allowed; a bar cannot be split; cooldown times are secret
 in a fight; the park test gave no answer. 0.11.0 now carries the measured map
 size and a Map size choice (spec
 `docs/superpowers/specs/2026-11-22-controller-layout-measured-sizes.md`), and
-Pocket Probe 0.5.0 (Fight tests button, clearer park test, fade tests,
+Pocket Probe 0.6.0 (Fight tests button, clearer park test, fade tests,
 cooldown sweep; spec `2026-11-22-pocket-probe-0.5.0.md`) asks what is still
-open. Both are in the one pre-release `v0.11.0`, built while the owner was
-away; device steps `docs/TESTING.md` 23, then 21. The plan from here to
+open. It also carries the performance recorder (spec
+`2026-11-21-perf-recorder.md`), with a sleeping measuring hook in Pocket
+Essentials' core that only the probe wakes, so the pre-1.0.0 audit gets
+numbers from the device. Both zips are in the one pre-release `v0.11.0`,
+built while the owner was away; device steps `docs/TESTING.md` 23 (the UI
+tests), 24 (play with the recorder on) and 21 (the layout). The plan from here to
 1.0.0 is `docs/ui-review/2026-11-22-compact-ui-gameplan.md`.
 
 **0.10.0 (2026-11-20, untested):** "Catch all errors" (the owner: "we need

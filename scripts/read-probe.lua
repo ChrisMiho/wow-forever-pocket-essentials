@@ -1,6 +1,11 @@
 -- Reader for the restriction probe's saved file (scripts/read-probe.sh runs this).
 --
 --   luajit scripts/read-probe.lua <saved PocketProbe.lua> [--markdown | --details | --log | --diff <other PocketProbe.lua>]
+--   luajit scripts/read-probe.lua <saved PocketProbe.lua> --perf [--diff <other PocketProbe.lua>]
+--
+-- --perf prints the performance recordings (probe 0.6.0) instead of the
+-- trial results; with --diff it puts the newest recording of each file side
+-- by side.
 --
 -- The saved file is Lua that sets PocketProbeDB. It is run in an empty
 -- environment (no os, io, require or any other global), text only (compiled
@@ -594,13 +599,516 @@ function M.diff(a, b, nameA, nameB)
 end
 
 ---------------------------------------------------------------------------
+-- Performance recordings (probe 0.6.0, the saved "perf" table; its layout is
+-- at the top of probe/PocketProbe/Perf.lua)
+---------------------------------------------------------------------------
+
+local ADDON_ROWS = { "Pocket Essentials", "QuestieDB", "Pocket Probe" }
+-- The activity letters of a sample, in the order they are printed.
+local ACTIVITIES = {
+    { letter = "c", word = "in a fight" },
+    { letter = "d", word = "in a dungeon" },
+    { letter = "v", word = "at a vendor" },
+    { letter = "w", word = "world map open" },
+    { letter = "b", word = "bags open" },
+    { letter = "m", word = "moving" },
+    { letter = "s", word = "standing still" },
+}
+-- The rough marks of the plain-language lines.
+local LIGHT_MS, HEAVY_MS = 0.1, 1          -- ms per frame, on average
+local LIGHT_KB = 2048                      -- Pocket Essentials' own memory
+local GROWING_KB = 60                      -- KB per minute, over at least five minutes
+local FEW_HITCHES = 1                      -- frames over 5 ms, per minute
+
+local function num(v)
+    return type(v) == "number" and v == v and v or nil
+end
+
+-- "1,2,,4" as { 1, 2, nil, 4 }.
+local function numberList(text)
+    local out, i = {}, 0
+    if type(text) ~= "string" then return out end
+    for part in (text .. ","):gmatch("([^,]*),") do
+        i = i + 1
+        out[i] = tonumber(part)
+    end
+    return out
+end
+
+-- One sample line as a table, or nil when it is not a sample line.
+function M.perfSample(line)
+    if type(line) ~= "string" then return nil end
+    local f = {}
+    for name, value in line:gmatch("(%a+)=([^;]*)") do f[name] = value end
+    if not f.t and not f.dt then return nil end
+    local s = {
+        t = tonumber(f.t) or 0, dt = math.max(tonumber(f.dt) or 0, 0), tags = f.a or "",
+        fps = tonumber(f.fps), mem = numberList(f.mem), pe = numberList(f.pe),
+        p = numberList(f.p), all = numberList(f.all), app = tonumber(f.app), f = {},
+    }
+    for part in (f.f or ""):gmatch("[^,]+") do
+        local key, ms, calls, slowest = part:match("^(%d+):([%d%.]+):(%d+):([%d%.]+)$")
+        if key then
+            s.f[#s.f + 1] = { key = tonumber(key), ms = tonumber(ms) or 0, calls = tonumber(calls) or 0, slowest = tonumber(slowest) or 0 }
+        end
+    end
+    return s
+end
+
+-- The runs in the file that can be read, oldest first.
+function M.perfRuns(db)
+    local out = {}
+    for _, r in ipairs(tbl(tbl(tbl(db).perf).runs)) do
+        if type(r) == "table" then out[#out + 1] = r end
+    end
+    return out
+end
+
+local function newTally()
+    return { seconds = 0, ms = 0, calls = 0, slowest = 0, frames = 0, over = { 0, 0, 0 }, allOver = { 0, 0, 0 },
+        recent = 0, recentN = 0, allRecent = 0, shareN = 0, peShare = 0, fps = 0, fpsN = 0, feature = {} }
+end
+
+-- Adds one sample to a tally. frames: the frames in its time, estimated.
+local function tallyAdd(t, s, frames, keys)
+    t.seconds = t.seconds + s.dt
+    t.ms, t.calls = t.ms + (s.pe[1] or 0), t.calls + (s.pe[2] or 0)
+    if (s.pe[3] or 0) > t.slowest then t.slowest = s.pe[3] end
+    if frames then t.frames = t.frames + frames end
+    for i = 1, 3 do
+        t.over[i] = t.over[i] + (s.p[i + 1] or 0)
+        t.allOver[i] = t.allOver[i] + (s.all[i + 1] or 0)
+    end
+    if s.p[1] then
+        t.recent, t.recentN = t.recent + s.p[1], t.recentN + 1
+        if s.all[1] then t.peShare, t.allRecent, t.shareN = t.peShare + s.p[1], t.allRecent + s.all[1], t.shareN + 1 end
+    end
+    if s.fps then
+        t.fps, t.fpsN = t.fps + s.fps, t.fpsN + 1
+        if not t.low or s.fps < t.low then t.low = s.fps end
+    end
+    for _, e in ipairs(s.f) do
+        local name = keys[e.key]
+        if type(name) == "string" then t.feature[name] = (t.feature[name] or 0) + e.ms end
+    end
+end
+
+local function busiest(t)
+    local best, bestMs
+    for _, name in ipairs(sortedKeys(t.feature)) do
+        if not bestMs or t.feature[name] > bestMs then best, bestMs = name, t.feature[name] end
+    end
+    return best
+end
+
+-- Everything the report prints about one run, worked out from its samples.
+function M.perfSummary(run)
+    run = tbl(run)
+    local keys = tbl(run.keys)
+    local out = {
+        started = type(run.started) == "string" and clean(run.started) or nil,
+        ended = type(run.ended) == "string" and clean(run.ended) or nil,
+        why = type(run.why) == "string" and clean(run.why) or nil,
+        addon = type(run.addon) == "string" and clean(run.addon) or nil,
+        profiler = type(run.profiler) == "string" and clean(run.profiler) or "unknown",
+        features = run.features == true,
+        reloads = num(run.reloads) or 0,
+        interval = num(run.interval) or 15,
+        missing = {}, samples = 0, total = newTally(), byTag = {}, memory = {}, featureRows = {},
+    }
+    for _, name in ipairs(sortedKeys(tbl(run.missing))) do out.missing[#out.missing + 1] = clean(name) end
+    local lastFps
+    for _, line in ipairs(tbl(run.samples)) do
+        local s = M.perfSample(line)
+        if s then
+            out.samples = out.samples + 1
+            for i = 1, 3 do
+                local kb = s.mem[i]
+                if kb then
+                    local m = out.memory[i]
+                    if not m then
+                        m = { start = kb, min = kb, max = kb, startAt = s.t }
+                        out.memory[i] = m
+                    end
+                    m.min, m.max, m.finish, m.finishAt = math.min(m.min, kb), math.max(m.max, kb), kb, s.t
+                end
+            end
+            if s.dt > 0 then
+                local rate = s.fps and lastFps and (s.fps + lastFps) / 2 or s.fps or lastFps
+                local frames = rate and rate * s.dt or nil
+                if not frames then out.framesUnknown = true end
+                tallyAdd(out.total, s, frames, keys)
+                for _, a in ipairs(ACTIVITIES) do
+                    if s.tags:find(a.letter, 1, true) then
+                        out.byTag[a.letter] = out.byTag[a.letter] or newTally()
+                        tallyAdd(out.byTag[a.letter], s, frames, keys)
+                    end
+                end
+            end
+            lastFps = s.fps or lastFps
+        end
+    end
+    for _, m in ipairs({ 1, 2, 3 }) do
+        local mem = out.memory[m]
+        if mem then
+            local minutes = (mem.finishAt - mem.startAt) / 60
+            mem.growth = minutes > 0 and (mem.finish - mem.start) / minutes or nil
+        end
+    end
+    local t = out.total
+    out.seconds = t.seconds
+    if out.features and t.frames > 0 and not out.framesUnknown then out.msPerFrame = t.ms / t.frames end
+    if t.recentN > 0 then out.recent = t.recent / t.recentN end
+    if t.shareN > 0 and t.allRecent > 0 then out.share = 100 * t.peShare / t.allRecent end
+    local session = tbl(tbl(run.session).pe)
+    out.sessionAvg, out.sessionPeak = num(session.avg), num(session.peak)
+    -- The per-feature rows: the run's totals, the busiest first.
+    for _, key in ipairs(sortedKeys(tbl(run.feat))) do
+        local c = run.feat[key]
+        if key ~= "*" and type(c) == "table" then
+            local row = { key = clean(key), ms = num(c.ms) or 0, calls = num(c.calls) or 0, slowest = num(c.max) or 0 }
+            local events = {}
+            for _, event in ipairs(sortedKeys(tbl(c.events))) do
+                local e = c.events[event]
+                if type(e) == "table" then events[#events + 1] = { name = clean(event), ms = num(e.ms) or 0, calls = num(e.calls) or 0 } end
+            end
+            table.sort(events, function(a, b)
+                if a.ms ~= b.ms then return a.ms > b.ms end
+                return a.name < b.name
+            end)
+            row.events = events
+            out.featureRows[#out.featureRows + 1] = row
+        end
+    end
+    table.sort(out.featureRows, function(a, b)
+        if a.ms ~= b.ms then return a.ms > b.ms end
+        return a.key < b.key
+    end)
+    return out
+end
+
+-- A number for a table cell: up to `places` decimals, "-" when unknown.
+local function show(v, places)
+    if not num(v) then return "-" end
+    local text = string.format("%." .. (places or 1) .. "f", v)
+    if text:find(".", 1, true) then text = text:gsub("0+$", ""):gsub("%.$", "") end
+    if text == "-0" then text = "0" end
+    return text
+end
+
+local function duration(seconds)
+    seconds = math.floor((num(seconds) or 0) + 0.5)
+    if seconds >= 3600 then return string.format("%d h %02d min", math.floor(seconds / 3600), math.floor(seconds % 3600 / 60)) end
+    if seconds >= 60 then return string.format("%d min %d s", math.floor(seconds / 60), seconds % 60) end
+    return seconds .. " s"
+end
+
+local function perMinute(count, seconds)
+    if not num(count) or not num(seconds) or seconds <= 0 then return nil end
+    return count * 60 / seconds
+end
+
+-- Rows of cells as lines, the columns padded to line up.
+local function columns(rows, indent)
+    local widths = {}
+    for _, row in ipairs(rows) do
+        for i, cellText in ipairs(row) do
+            if #cellText > (widths[i] or 0) then widths[i] = #cellText end
+        end
+    end
+    local out = {}
+    for _, row in ipairs(rows) do
+        local cells = {}
+        for i, cellText in ipairs(row) do cells[i] = i < #row and pad(cellText, widths[i]) or cellText end
+        out[#out + 1] = indent .. table.concat(cells, "  ")
+    end
+    return out
+end
+
+local WHY_WORDS = { stopped = "stopped with Stop", full = "stopped by itself after 2 hours" }
+
+local function runTitle(sum)
+    local line = "started " .. (sum.started or "at an unknown time")
+    if sum.ended then
+        line = line .. ", ended " .. sum.ended
+    elseif not sum.why then
+        line = line .. ", still running when the file was written"
+    end
+    if sum.why then line = line .. " (" .. (WHY_WORDS[sum.why] or sum.why) .. ")" end
+    return line
+end
+
+-- The lines for one run.
+function M.formatPerfRun(run, heading)
+    local sum = M.perfSummary(run)
+    local t = sum.total
+    local out = { heading .. ": " .. runTitle(sum) }
+    local function add(lines) for _, line in ipairs(lines) do out[#out + 1] = line end end
+    out[#out + 1] = "  " .. duration(sum.seconds) .. " recorded, " .. plural(sum.samples, "sample", "samples") .. " (one every "
+        .. show(sum.interval, 0) .. " s)" .. (sum.addon and (", Pocket Essentials " .. sum.addon) or "")
+        .. (sum.reloads > 0 and (", carried on over " .. plural(sum.reloads, "reload", "reloads")) or "")
+    if #sum.missing > 0 then out[#out + 1] = "  Not on this client, so left out: " .. table.concat(sum.missing, ", ") end
+    if sum.seconds <= 0 then
+        out[#out + 1] = "  Too short: no full sample yet."
+        return out, sum
+    end
+    out[#out + 1] = ""
+    if sum.features then
+        out[#out + 1] = "  Time in Pocket Essentials' code (its own counters, nothing counted twice)"
+        add(columns({
+            { "per frame, average", sum.msPerFrame and (show(sum.msPerFrame, 4) .. " ms (frames estimated from the frame rate: about "
+                .. show(t.frames, 0) .. ")") or "unknown (no frame rate)" },
+            { "total", show(t.ms, 1) .. " ms in " .. plural(t.calls, "run", "runs") .. " (" .. show(perMinute(t.ms, sum.seconds), 1) .. " ms per minute)" },
+            { "slowest single run", show(t.slowest, 2) .. " ms" },
+        }, "    "))
+    else
+        out[#out + 1] = "  Time in Pocket Essentials' code: no per-feature numbers (this Pocket Essentials has no measuring hook)."
+    end
+    out[#out + 1] = ""
+    if sum.profiler == "on" then
+        out[#out + 1] = "  The game's profiler, for Pocket Essentials"
+        local rows = { { "recent average", show(sum.recent, 4) .. " ms per frame (the mean of " .. plural(t.recentN, "reading", "readings") .. ")" } }
+        for i, limit in ipairs({ 1, 5, 10 }) do
+            rows[#rows + 1] = { "frames over " .. limit .. " ms", show(t.over[i], 0) .. " (" .. show(perMinute(t.over[i], sum.seconds), 2) .. " per minute)" }
+        end
+        rows[#rows + 1] = { "share of all addons' time", sum.share and (show(sum.share, 1) .. " %") or "unknown" }
+        rows[#rows + 1] = { "since the game started", "average " .. show(sum.sessionAvg, 4) .. " ms per frame, peak " .. show(sum.sessionPeak, 2) .. " ms" }
+        add(columns(rows, "    "))
+    elseif sum.profiler == "off" then
+        out[#out + 1] = "  The game's profiler: profiler off on this device, so no numbers from the game."
+    else
+        out[#out + 1] = "  The game's profiler: not on this client, so no numbers from the game."
+    end
+    out[#out + 1] = ""
+    local rows = { { "Memory (KB)", "start", "least", "most", "end", "growth per minute" } }
+    for i, name in ipairs(ADDON_ROWS) do
+        local m = sum.memory[i]
+        if m then
+            rows[#rows + 1] = { name, show(m.start, 0), show(m.min, 0), show(m.max, 0), show(m.finish, 0),
+                m.growth and ((m.growth > 0 and "+" or "") .. show(m.growth, 1)) or "-" }
+        else
+            rows[#rows + 1] = { name, "-", "-", "-", "-", "not loaded or not read" }
+        end
+    end
+    add(columns(rows, "  "))
+    out[#out + 1] = "  Frame rate: " .. (t.fpsN > 0 and ("average " .. show(t.fps / t.fpsN, 1) .. ", lowest " .. show(t.low, 1)) or "not read")
+    if sum.features then
+        out[#out + 1] = ""
+        out[#out + 1] = "  Per feature, the busiest first (a run inside another counts in both, so the rows overlap)"
+        rows = { { "Feature", "Total ms", "Runs", "ms per run", "Slowest ms", "Busiest events (ms / runs)" } }
+        for _, row in ipairs(sum.featureRows) do
+            local events = {}
+            for i = 1, math.min(3, #row.events) do
+                local e = row.events[i]
+                events[i] = e.name .. " " .. show(e.ms, 1) .. " / " .. show(e.calls, 0)
+            end
+            rows[#rows + 1] = { row.key, show(row.ms, 1), show(row.calls, 0), row.calls > 0 and show(row.ms / row.calls, 3) or "-",
+                show(row.slowest, 2), #events > 0 and table.concat(events, ", ") or "-" }
+        end
+        if #rows == 1 then rows[#rows + 1] = { "(nothing ran)" } end
+        add(columns(rows, "    "))
+    end
+    out[#out + 1] = ""
+    out[#out + 1] = "  By activity (a sample counts under every activity seen in its " .. show(sum.interval, 0) .. " s, so the rows overlap)"
+    rows = { { "Activity", "Time", "ms per frame", "Slowest ms", "Over 5 ms per min", "Frame rate", "Busiest feature" } }
+    for _, a in ipairs(ACTIVITIES) do
+        local tag = sum.byTag[a.letter]
+        if tag then
+            rows[#rows + 1] = { a.word, duration(tag.seconds),
+                sum.features and tag.frames > 0 and show(tag.ms / tag.frames, 4) or "-",
+                sum.features and show(tag.slowest, 2) or "-",
+                sum.profiler == "on" and show(perMinute(tag.over[2], tag.seconds), 2) or "-",
+                tag.fpsN > 0 and show(tag.fps / tag.fpsN, 1) or "-",
+                busiest(tag) or "-" }
+        end
+    end
+    add(columns(rows, "    "))
+    return out, sum
+end
+
+-- The plain-language lines for one run, and the overall word.
+function M.perfVerdict(sum)
+    local out, words = {}, {}
+    local perFrame, from = sum.msPerFrame, "its own counters"
+    if not perFrame and sum.profiler == "on" then perFrame, from = sum.recent, "the game's profiler" end
+    if perFrame then
+        local word = perFrame < LIGHT_MS and "light" or perFrame >= HEAVY_MS and "heavy" or "in between"
+        words[#words + 1] = word
+        out[#out + 1] = "  Time: " .. word .. ". Pocket Essentials used about " .. show(perFrame, 4) .. " ms of each frame, by " .. from
+            .. " (light is under " .. LIGHT_MS .. " ms, heavy is " .. HEAVY_MS .. " ms or more)."
+    else
+        out[#out + 1] = "  Time: cannot tell. No per-feature numbers and no profiler numbers in this run."
+    end
+    local mem = sum.memory[1]
+    if mem then
+        local growing = sum.seconds >= 300 and mem.growth and mem.growth >= GROWING_KB
+        local word = growing and "heavy" or mem.max < LIGHT_KB and "light" or "in between"
+        words[#words + 1] = word
+        out[#out + 1] = "  Memory: " .. word .. ". Pocket Essentials held at most " .. show(mem.max / 1024, 2) .. " MB (light is under "
+            .. show(LIGHT_KB / 1024, 0) .. " MB) and " .. (growing and ("kept growing, by about " .. show(mem.growth, 0) .. " KB a minute")
+                or "did not keep growing") .. "."
+    else
+        out[#out + 1] = "  Memory: not read."
+    end
+    if sum.profiler == "on" then
+        local rate = perMinute(sum.total.over[2], sum.seconds) or 0
+        local few = rate < FEW_HITCHES
+        if not few then words[#words + 1] = "in between" end
+        out[#out + 1] = "  Hitches: " .. (few and "few" or "some") .. ". " .. plural(sum.total.over[2], "frame", "frames")
+            .. " spent over 5 ms in Pocket Essentials in " .. duration(sum.seconds) .. " (few is under " .. FEW_HITCHES .. " a minute)."
+    else
+        out[#out + 1] = "  Hitches: cannot tell (profiler " .. (sum.profiler == "off" and "off" or "not on this client") .. ")."
+    end
+    local overall = #words == 0 and "cannot tell" or "light"
+    for _, word in ipairs(words) do
+        if word == "heavy" then overall = "heavy" elseif word == "in between" and overall ~= "heavy" then overall = "in between" end
+    end
+    out[#out + 1] = "  Overall: " .. overall .. "."
+    return out, overall
+end
+
+-- Everything --perf prints for one file.
+function M.formatPerf(db)
+    db = tbl(db)
+    local runs = M.perfRuns(db)
+    local out = {
+        "Performance recording",
+        "Game " .. (db.game ~= nil and clean(db.game) or "unknown") .. ", probe " .. (db.probe ~= nil and clean(db.probe) or "unknown"),
+    }
+    if #runs == 0 then
+        out[#out + 1] = ""
+        out[#out + 1] = "No recording in this file. (Recording needs probe 0.6.0 or later with Pocket Essentials switched on.)"
+        return out
+    end
+    out[#out + 1] = plural(#runs, "run", "runs") .. " in this file, the newest last"
+    local newest
+    for i, run in ipairs(runs) do
+        out[#out + 1] = ""
+        local lines, sum = M.formatPerfRun(run, "Run " .. i .. " of " .. #runs)
+        for _, line in ipairs(lines) do out[#out + 1] = line end
+        newest = sum
+    end
+    out[#out + 1] = ""
+    out[#out + 1] = "In plain words (the newest run)"
+    if newest.seconds <= 0 then
+        out[#out + 1] = "  Too short to say anything."
+    else
+        for _, line in ipairs((M.perfVerdict(newest))) do out[#out + 1] = line end
+    end
+    return out
+end
+
+local function change(before, after)
+    if not num(before) or not num(after) then return "-" end
+    if before == after then return "same" end
+    if before == 0 then return "new" end
+    local pct = (after - before) / math.abs(before) * 100
+    return (pct > 0 and "+" or "") .. show(pct, 0) .. " %"
+end
+
+-- The newest run of two files side by side (`a` the earlier file, `b` the later one).
+function M.perfDiff(a, b, nameA, nameB)
+    a, b = tbl(a), tbl(b)
+    local runsA, runsB = M.perfRuns(a), M.perfRuns(b)
+    local out = { "Comparing performance recordings (the newest run of each file)" }
+    local sides = { { "before", nameA or "first file", runsA }, { "after", nameB or "second file", runsB } }
+    local sums = {}
+    for i, side in ipairs(sides) do
+        local run = side[3][#side[3]]
+        if not run then
+            out[#out + 1] = "  " .. side[1] .. ": " .. side[2] .. " has no recording."
+        else
+            sums[i] = M.perfSummary(run)
+            out[#out + 1] = "  " .. pad(side[1] .. ":", 8) .. side[2] .. " (" .. runTitle(sums[i]) .. ", " .. duration(sums[i].seconds)
+                .. (sums[i].addon and (", Pocket Essentials " .. sums[i].addon) or "") .. ")"
+        end
+    end
+    local x, y = sums[1], sums[2]
+    if not x or not y then
+        out[#out + 1] = ""
+        out[#out + 1] = "Nothing to compare."
+        return out
+    end
+    if x.seconds <= 0 or y.seconds <= 0 then
+        out[#out + 1] = ""
+        out[#out + 1] = "Nothing to compare: a run is too short."
+        return out
+    end
+    local function mem(sum, field) return sum.memory[1] and sum.memory[1][field] or nil end
+    local function fps(sum) return sum.total.fpsN > 0 and sum.total.fps / sum.total.fpsN or nil end
+    local function hook(sum, v) return sum.features and v or nil end
+    local function prof(sum, v) return sum.profiler == "on" and v or nil end
+    local rows = { { "Headline", "Before", "After", "Change" } }
+    local function row(name, before, after, places)
+        rows[#rows + 1] = { name, show(before, places), show(after, places), change(before, after) }
+    end
+    row("ms per frame, average", x.msPerFrame, y.msPerFrame, 4)
+    row("ms per minute", hook(x, perMinute(x.total.ms, x.seconds)), hook(y, perMinute(y.total.ms, y.seconds)), 1)
+    row("slowest single run, ms", hook(x, x.total.slowest), hook(y, y.total.slowest), 2)
+    row("profiler: recent ms per frame", x.recent, y.recent, 4)
+    for i, limit in ipairs({ 1, 5, 10 }) do
+        row("profiler: frames over " .. limit .. " ms per minute", prof(x, perMinute(x.total.over[i], x.seconds)),
+            prof(y, perMinute(y.total.over[i], y.seconds)), 2)
+    end
+    row("share of all addons' time, %", x.share, y.share, 1)
+    row("Pocket Essentials memory, most, KB", mem(x, "max"), mem(y, "max"), 0)
+    row("Pocket Essentials memory growth, KB per minute", mem(x, "growth"), mem(y, "growth"), 1)
+    row("frame rate, average", fps(x), fps(y), 1)
+    row("frame rate, lowest", x.total.low, y.total.low, 1)
+    out[#out + 1] = ""
+    for _, line in ipairs(columns(rows, "  ")) do out[#out + 1] = line end
+    out[#out + 1] = ""
+    if not x.features or not y.features then
+        out[#out + 1] = "Per feature: no per-feature numbers in " .. (not x.features and not y.features and "either file"
+            or not x.features and "the first file" or "the second file") .. "."
+    else
+        local byKey, order = {}, {}
+        for i, sum in ipairs({ x, y }) do
+            for _, f in ipairs(sum.featureRows) do
+                if not byKey[f.key] then
+                    byKey[f.key] = {}
+                    order[#order + 1] = f.key
+                end
+                byKey[f.key][i] = f
+            end
+        end
+        local function rate(f, sum) return f and perMinute(f.ms, sum.seconds) or nil end
+        table.sort(order, function(k1, k2)
+            local m1 = math.max(rate(byKey[k1][1], x) or 0, rate(byKey[k1][2], y) or 0)
+            local m2 = math.max(rate(byKey[k2][1], x) or 0, rate(byKey[k2][2], y) or 0)
+            if m1 ~= m2 then return m1 > m2 end
+            return k1 < k2
+        end)
+        out[#out + 1] = "Per feature (ms per minute, so runs of different lengths compare)"
+        rows = { { "Feature", "Before", "After", "Change", "ms per run before", "after", "Slowest ms before", "after" } }
+        for _, key in ipairs(order) do
+            local f, g = byKey[key][1], byKey[key][2]
+            local function perRun(v) return v and v.calls > 0 and v.ms / v.calls or nil end
+            rows[#rows + 1] = { key, show(rate(f, x), 1), show(rate(g, y), 1), change(rate(f, x), rate(g, y)),
+                show(perRun(f), 3), show(perRun(g), 3), show(f and f.slowest, 2), show(g and g.slowest, 2) }
+        end
+        if #order == 0 then rows[#rows + 1] = { "(nothing ran)" } end
+        for _, line in ipairs(columns(rows, "  ")) do out[#out + 1] = line end
+    end
+    out[#out + 1] = ""
+    out[#out + 1] = "In plain words"
+    for i, sum in ipairs({ x, y }) do
+        local lines, overall = M.perfVerdict(sum)
+        out[#out + 1] = "  " .. sides[i][1] .. ": " .. overall
+        for k = 1, #lines - 1 do out[#out + 1] = "  " .. lines[k] end
+    end
+    return out
+end
+
+---------------------------------------------------------------------------
 -- The command
 ---------------------------------------------------------------------------
 
-local USAGE = "usage: scripts/read-probe.sh <saved PocketProbe.lua> [--markdown | --details | --log | --diff <other PocketProbe.lua>]"
+local USAGE = "usage: scripts/read-probe.sh <saved PocketProbe.lua> [--markdown | --details | --log | --diff <other PocketProbe.lua>]\n"
+    .. "       scripts/read-probe.sh <saved PocketProbe.lua> --perf [--diff <other PocketProbe.lua>]"
 
 function M.main(args)
-    local path, other, opts, modes = nil, nil, {}, 0
+    local path, other, opts, modes, perf = nil, nil, {}, 0, false
     local i = 1
     while i <= #args do
         local a = args[i]
@@ -613,6 +1121,8 @@ function M.main(args)
         elseif a == "--log" then
             opts.logOnly = true
             modes = modes + 1
+        elseif a == "--perf" then
+            perf = true
         elseif a == "--diff" then
             i = i + 1
             other = args[i]
@@ -626,13 +1136,17 @@ function M.main(args)
         i = i + 1
     end
     if not path or modes > 1 then return 2, { USAGE } end
+    -- --perf goes alone or with --diff.
+    if perf and modes == 1 and not other then return 2, { USAGE } end
     local db, err = M.load(path)
     if not db then return 1, { "error: " .. err } end
     if other then
         local otherDb, otherErr = M.load(other)
         if not otherDb then return 1, { "error: " .. otherErr } end
+        if perf then return 0, M.perfDiff(db, otherDb, path, other) end
         return 0, M.diff(db, otherDb, path, other)
     end
+    if perf then return 0, M.formatPerf(db) end
     return 0, M.format(db, opts)
 end
 

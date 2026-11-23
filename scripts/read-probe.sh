@@ -9,6 +9,8 @@
 #     scripts/read-probe.sh path/to/PocketProbe.lua --details            # only what was not allowed, with function names and stack lines
 #     scripts/read-probe.sh path/to/PocketProbe.lua --log                # the probe's activity log
 #     scripts/read-probe.sh path/to/PocketProbe.lua --diff other.lua     # only the cells that differ between two files
+#     scripts/read-probe.sh path/to/PocketProbe.lua --perf               # the performance recordings (probe 0.6.0)
+#     scripts/read-probe.sh path/to/PocketProbe.lua --perf --diff other.lua   # the newest recording of each file, side by side
 #
 # The file is only read: it is run with no access to files, the system or
 # other code (scripts/read-probe.lua). Needs luajit (brew install luajit);

@@ -415,9 +415,10 @@ local function passTrials(db)
     local out = {}
     for _, t in ipairs(db.trials) do
         -- The Errors and Graphics areas only run from the panel.
-        -- Guided and "info" trials (bars.park, bars.prompts) only run from the panel too.
+        -- Guided and "info" trials (bars.park, bars.prompts) only run from the panel too,
+        -- and so do the three cooldown trials (probe 0.6.0).
         if not t.id:find("^vendor%.") and t.id ~= "val.whisper" and t.area ~= "Errors" and t.area ~= "Graphics"
-            and t.kind ~= "guided" and t.kind ~= "info" then
+            and t.kind ~= "guided" and t.kind ~= "info" and not t.id:find("^cd%.") then
             out[#out + 1] = t
         end
     end
@@ -435,7 +436,7 @@ test("saved table has the fixed shape", function()
     local c, P, db = new()
     eq(db.version, 1)
     eq(db.game, "1.16.0 (60000)")
-    eq(db.probe, "0.5.0")
+    eq(db.probe, "0.6.0")
     eq(db.options.vendor, true)
     eq(db.options.risky, false)
     eq(type(db.spoiled), "table")
@@ -557,10 +558,10 @@ test("an automatic pass after login records every trial under trig=auto", functi
     for _, id in ipairs({ "chat.open", "chat.openframe", "chat.focus", "chat.type", "chat.close", "own.show", "own.escape",
         "own.create", "win.map.create", "win.map.attach", "win.bag.create", "win.chat.create", "bag.toggle", "bag.move",
         "bag.scale", "pad.bind", "pad.mark", "bags.sort", "cvar.write", "layout.set", "bars.move", "bars.scale",
-        "layout.save", "bars.alpha", "bars.fade", "cd.sweep.object", "cd.sweep.numbers" }) do
+        "layout.save", "bars.alpha", "bars.fade" }) do
         eq(cell(db, id, KEY_AUTO), "allowed", id)
     end
-    for _, id in ipairs({ "cd.duration", "layout.read", "layout.sizes", "bars.protected", "bars.settings", "bars.spells", "val.position", "val.facing", "val.map", "val.questlog", "val.objectives",
+    for _, id in ipairs({ "layout.read", "layout.sizes", "bars.protected", "bars.settings", "bars.spells", "val.position", "val.facing", "val.map", "val.questlog", "val.objectives",
         "val.bagitem", "val.money", "val.repaircost", "val.name.player" }) do
         eq(cell(db, id, KEY_AUTO), "readable", id)
     end
@@ -1064,7 +1065,7 @@ test("results from another probe version are cleared at load", function()
     }
     local c, P, db = new({ saved = saved })
     eq(db, saved)
-    eq(db.probe, "0.5.0")
+    eq(db.probe, "0.6.0")
     eq(next(db.last), nil, "the panel's newest results are cleared too")
     eq(db.guided["gfx.icons"].stage, "ask", "a guided trial's old values are kept, to be put back")
     eq(next(db.results), nil); eq(#db.details, 0); eq(next(db.situations), nil); eq(next(db.spoiled), nil)
@@ -1353,11 +1354,11 @@ test("the panel: Settings-sized, area tabs with counts, no scroll bar (big areas
     for _, rec in ipairs(c:frames()) do
         if rec.frame == panel then
             for _, region in ipairs(rec.regions or {}) do
-                if region.GetText and region:GetText() == "Pocket Probe 0.5.0" then titleText = true end
+                if region.GetText and region:GetText() == "Pocket Probe 0.6.0" then titleText = true end
             end
         end
     end
-    check(titleText, "titled Pocket Probe 0.5.0")
+    check(titleText, "titled Pocket Probe 0.6.0")
     local labels = tabLabels(P)
     eq(labels[1], "Errors"); eq(labels[2], "Graphics")
     local joined = table.concat(labels, "|")
@@ -2721,6 +2722,855 @@ test("the new rows are on the tabs said, and every area still fits ten tabs", fu
     for _, t in ipairs(P.panelTabs) do if t:IsShown() then shown = shown + 1 end end
     eq(shown, 10)
     noErrors(c)
+end)
+
+---------------------------------------------------------------------------
+-- Probe 0.6.0: three fixes to 0.5.0
+---------------------------------------------------------------------------
+
+test("Fight tests: a change of place mid-pass does not stop them; the results stay under the key they started with", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    c:enterCombat(); c:advance(2)
+    P.RunFightTests()
+    c:advance(1)
+    c.world.instance = true                 -- where=world becomes where=party; the fight goes on
+    c:advance(40)
+    noErrors(c)
+    check(P.status:find("^Fight tests done: %d+ run, "), "status: " .. tostring(P.status))
+    eq(countLog(db, "pass stopped"), 0)
+    eq(countLog(db, "fight tests stopped"), 0)
+    for id, row in pairs(db.results) do
+        for key in pairs(row) do eq(key, KEY_FIGHT_PRESS, id .. " is filed under the key the pass started with") end
+    end
+    eq(cell(db, "val.money", KEY_FIGHT_PRESS), "readable", "the last trials of the list ran")
+    -- An ordinary pass still stops when the key changes.
+    local c2, P2, db2 = new()
+    c2:advance(3.5)
+    c2.world.instance = true
+    c2:advance(2)
+    eq(countLog(db2, "pass stopped: the situation changed"), 1)
+    noErrors(c2)
+end)
+
+test("the three cooldown trials are not in the automatic passes; Fight tests, Run all safe and Run still run them", function()
+    local c, P, db = new()
+    c:advance(30)
+    c:enterCombat(); c:advance(30)
+    noErrors(c)
+    eq(db.situations[KEY_AUTO].passes, 1); eq(db.situations[KEY_FIGHT].passes, 1)
+    for _, id in ipairs({ "cd.duration", "cd.sweep.object", "cd.sweep.numbers" }) do
+        check(not db.results[id], id .. " ran in an automatic pass")
+        check(P.trialById[id].manual, id .. " is marked manual")
+    end
+    eq(c.shots, nil, "no screenshot in an automatic pass")
+    check(not button(c, "PocketProbeSweep"):IsShown(), "no squares in an automatic pass")
+    eq(#c.cooldownCalls, 0)
+    local _, fight = ids(P.FightList())
+    local _, safe = ids(P.SafeList(false))
+    for _, id in ipairs({ "cd.duration", "cd.sweep.object", "cd.sweep.numbers" }) do
+        check(fight[id] and fight[id] <= 4, id .. " is still among the first of the fight tests")
+        check(safe[id], id .. " is still in Run all safe")
+    end
+    c:leaveCombat(); c:advance(30)
+    P.RunOne(P.trialById["cd.sweep.object"])
+    eq(cell(db, "cd.sweep.object", KEY_PRESS), "allowed", "its Run button still runs it")
+    noErrors(c)
+end)
+
+test("one big message: a second guided trial that has one is refused while another waits", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.StartGuided(P.trialById["bars.park"])
+    c:advance(0.6)
+    -- Refused while the first is still going through its timed steps ...
+    P.StartGuided(P.trialById["bars.fadecast"])
+    check(P.status:find("^Park the main bar is waiting: answer or Cancel it first"), "status: " .. tostring(P.status))
+    eq(saved.guided["bars.fadecast"], nil)
+    c:advance(1.1)
+    eq(shownText(c, "PocketProbeBigMessage"), PARK_BIG)
+    -- ... and while it shows its question.
+    P.StartGuided(P.trialById["bars.fadecast"])
+    check(P.status:find("^Park the main bar is waiting: answer or Cancel it first"), "status: " .. tostring(P.status))
+    eq(saved.guided["bars.fadecast"], nil, "the second trial did not start")
+    c:advance(3)
+    eq(mainBar(c):GetAlpha(), 1, "nothing was faded")
+    eq(shownText(c, "PocketProbeBigMessage"), PARK_BIG, "the first trial's message stays")
+    eq(c.shots, 2, "no pictures for the refused trial")
+    -- Once the first is answered the second starts.
+    P.AnswerGuided(P.trialById["bars.park"], 1)
+    P.StartGuided(P.trialById["bars.fadecast"]); c:advance(1.7)
+    eq(shownText(c, "PocketProbeBigMessage"), FADE_BIG)
+    -- The other way round too.
+    P.StartGuided(P.trialById["bars.park"])
+    check(P.status:find("^Fade the main bar is waiting: answer or Cancel it first"), "status: " .. tostring(P.status))
+    eq(saved.guided["bars.park"], nil)
+    P.CancelGuided(P.trialById["bars.fadecast"])
+    -- A waiting trial that has no big message is not in the way.
+    P.StartGuided(P.trialById["gfx.icons"])
+    check(saved.guided["gfx.icons"], "the trial without a big message waits")
+    P.StartGuided(P.trialById["bars.park"]); c:advance(1.7)
+    eq(shownText(c, "PocketProbeBigMessage"), PARK_BIG)
+    noErrors(c)
+end)
+
+---------------------------------------------------------------------------
+-- Probe 0.6.0: the performance recorder (Perf.lua)
+--
+-- Pocket Essentials is a stand-in here: a table with the measuring hook's
+-- three functions and counters in the agreed shape
+-- (docs/superpowers/specs/2026-11-21-perf-recorder.md, ruling 4), and a
+-- button named PocketEssentialsHubButton. This is also the "both addons
+-- loaded" check: the real Pocket Essentials is not loaded in this suite.
+---------------------------------------------------------------------------
+
+local Reader = dofile(root .. "/scripts/read-probe.lua")
+
+local METRIC = { SessionAverageTime = 0, RecentAverageTime = 1, EncounterAverageTime = 2, LastTime = 3, PeakTime = 4,
+    CountTimeOver1Ms = 5, CountTimeOver5Ms = 6, CountTimeOver10Ms = 7, CountTimeOver50Ms = 8, CountTimeOver100Ms = 9,
+    CountTimeOver500Ms = 10, CountTimeOver1000Ms = 11 }
+
+-- The game's performance calls, as the source describes them. world.perf holds what they answer.
+local function installPerf(c, opts)
+    local env, world = c.env, c.world
+    opts = opts or {}
+    c.snapshot.event.PLAYER_STARTED_MOVING = true           -- UnitDocumentation.lua:3946, 3964
+    c.snapshot.event.PLAYER_STOPPED_MOVING = true
+    world.perf = {
+        enabled = true, fps = 60, moving = false,
+        memory = { PocketEssentials = 800, QuestieDB = 10000, PocketProbe = 300 },
+        shown = { PocketEssentials = 800, QuestieDB = 10000, PocketProbe = 300 },   -- as of the last update
+        pe = { [0] = 0.05, [1] = 0.04, [4] = 3.5, [5] = 0, [6] = 0, [7] = 0, [8] = 0, [9] = 0, [10] = 0, [11] = 0 },
+        all = { [0] = 0.5, [1] = 0.4, [4] = 20, [5] = 0, [6] = 0, [7] = 0 },
+        app = { [0] = 16.6, [1] = 16.7, [4] = 250 },
+    }
+    c.memoryUpdates, c.tickers = {}, {}
+    if not opts.noProfiler then
+        rawset(env.Enum, "AddOnProfilerMetric", METRIC)      -- AddOnProfilerConstantsDocumentation.lua:19
+        rawset(env, "C_AddOnProfiler", {                     -- AddOnProfilerDocumentation.lua:45, 62, 78, 121
+            IsEnabled = function() return world.perf.enabled end,
+            GetAddOnMetric = function(name, metric)
+                if type(name) ~= "string" or type(metric) ~= "number" then error("bad argument", 2) end
+                return name == "PocketEssentials" and world.perf.pe[metric] or 0
+            end,
+            GetOverallMetric = function(metric) return world.perf.all[metric] or 0 end,
+            GetApplicationMetric = function(metric) return world.perf.app[metric] or 0 end,
+        })
+    end
+    -- PerformanceDocumentation.lua:94, 25: the memory numbers only change when the game is asked to count again.
+    rawset(env, "UpdateAddOnMemoryUsage", function()
+        c.memoryUpdates[#c.memoryUpdates + 1] = c.now
+        for name, kb in pairs(world.perf.memory) do world.perf.shown[name] = kb end
+    end)
+    rawset(env, "GetAddOnMemoryUsage", function(name) return world.perf.shown[name] or 0 end)
+    rawset(env, "GetFramerate", function() return world.perf.fps end)          -- ClientDocumentation.lua:44
+    rawset(env, "IsPlayerMoving", function() return world.perf.moving end)     -- PlayerScriptDocumentation.lua:1453
+    -- C_Timer.NewTicker (UITimerDocumentation.lua:22): calls back every `seconds` until cancelled.
+    rawset(env.C_Timer, "NewTicker", function(seconds, fn)
+        local t = { cancelled = false, seconds = seconds }
+        function t:Cancel() self.cancelled = true end
+        local function tick()
+            if t.cancelled then return end
+            fn(t)
+            if not t.cancelled then env.C_Timer.After(seconds, tick) end
+        end
+        env.C_Timer.After(seconds, tick)
+        c.tickers[#c.tickers + 1] = t
+        return t
+    end)
+    world.addons.PocketProbe = true
+    world.addons.QuestieDB = true
+end
+
+-- The stand-in Pocket Essentials. opts.old: one without the measuring hook.
+-- opts.noButton: no PE button. c.pe:work(key, event, ms, calls) is what its hook would count.
+local function installPE(c, opts)
+    opts = opts or {}
+    c.world.addons.PocketEssentials = true
+    local pe = { measuring = false, starts = 0, stops = 0, counters = {} }
+    if not opts.old then
+        function pe:StartMeasure()
+            self.starts = self.starts + 1
+            self.measuring = true
+            return self.counters
+        end
+        function pe:StopMeasure()
+            self.stops = self.stops + 1
+            self.measuring = false
+        end
+        function pe:MeasureCounters() return self.counters end
+    end
+    function pe:work(key, event, ms, calls, outer)
+        if not self.measuring then return end
+        calls = calls or 1
+        local function add(k)
+            local t = self.counters[k]
+            if not t then
+                t = { ms = 0, calls = 0, max = 0 }
+                self.counters[k] = t
+            end
+            t.ms, t.calls, t.max = t.ms + ms, t.calls + calls, math.max(t.max, ms / calls)
+            return t
+        end
+        local t = add(key)
+        if event then
+            t.events = t.events or {}
+            local e = t.events[event] or { ms = 0, calls = 0 }
+            t.events[event] = e
+            e.ms, e.calls = e.ms + ms, e.calls + calls
+        end
+        if outer ~= false then add("*") end
+    end
+    rawset(c.env, "PocketEssentials", pe)
+    c.pe = pe
+    if not opts.noButton then
+        local hub = c.env.CreateFrame("Button", "PocketEssentialsHubButton", c.env.UIParent)
+        hub:SetFrameStrata("HIGH")
+        hub:SetSize(70, 70)
+        hub:SetPoint("TOPRIGHT", c.env.UIParent, "TOPRIGHT", -20, -200)
+        c.hub = hub
+    end
+end
+
+-- A client with the probe and the stand-in Pocket Essentials. opts.reload: the
+-- game says this load is a reload (PLAYER_ENTERING_WORLD false, true).
+-- opts.pe = false: Pocket Essentials is not loaded.
+local function newPerf(opts)
+    opts = opts or {}
+    local inner = opts.setup
+    return new({ saved = opts.saved, auto = opts.auto == true, setup = function(c)
+        installPerf(c, opts)
+        if opts.pe ~= false then installPE(c, opts) end
+        if opts.reload then
+            local fire = c.fire
+            c.fire = function(self, event, ...)
+                if event == "PLAYER_ENTERING_WORLD" then return fire(self, event, false, true) end
+                return fire(self, event, ...)
+            end
+        end
+        if inner then inner(c) end
+    end })
+end
+
+-- One sample line as a table of its fields (text).
+local function fields(line)
+    local out = {}
+    for name, value in line:gmatch("(%a+)=([^;]*)") do out[name] = value end
+    return out
+end
+
+local function lastRun(db) return db.perf.runs[#db.perf.runs] end
+local function lastSample(db) local r = lastRun(db) return fields(r.samples[#r.samples]) end
+
+test("recorder: without Pocket Essentials nothing starts, shows or ticks, and the panel has no recording line", function()
+    local c, P, db = newPerf({ pe = false })
+    c:advance(60)
+    noErrors(c)
+    eq(P.Recording(), false)
+    eq(#db.perf.runs, 0); eq(db.perf.on, false)
+    eq(#c.tickers, 0, "no ticker")
+    eq(#c.memoryUpdates, 0, "the memory is never counted")
+    check(not button(c, "PocketProbeRecDot"):IsShown(), "no dot")
+    check(not button(c, "PocketProbeRecStopButton"):IsShown(), "no Stop button")
+    eq(countLog(db, "recording"), 0, "nothing about recording in the log")
+    openPanel(c)
+    check(not button(c, "PocketProbeRecordButton"):IsShown(), "no recording button on the panel")
+    check(not P.panelRecordText:IsShown(), "no recording text on the panel")
+    -- The panel is as wide for its status line as it was in 0.5.0, and trials run as before.
+    P.StartRecording()
+    eq(P.status, "Recording needs Pocket Essentials switched on.")
+    eq(P.Recording(), false)
+    P.RunOne(P.trialById["own.show"])
+    eq(cell(db, "own.show", KEY_PRESS), "allowed")
+    pad(c, "UP"); pad(c, "UP")
+    eq(P.Nav.zone, "tabs", "Up from the first tab wraps as in 0.5.0")
+    noErrors(c)
+end)
+
+test("recorder: starts by itself at login; the dot takes no touch; Stop sits beside the PE button; the hook is on", function()
+    local c, P, db = newPerf()
+    eq(P.Recording(), true, "recording from the first moment in the world")
+    eq(c.pe.starts, 1); eq(c.pe.measuring, true)
+    eq(db.perf.on, true); eq(db.perf.stopped, false)
+    eq(#db.perf.runs, 1)
+    local r = lastRun(db)
+    check(r.started:match("^%d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d$"), "started is a date and time")
+    eq(r.interval, 15); eq(r.profiler, "on"); eq(r.features, true); eq(r.reloads, 0); eq(r.ended, nil)
+    eq(#r.samples, 1, "one sample to start from")
+    eq(fields(r.samples[1]).dt, "0")
+    eq(#c.tickers, 1); eq(c.tickers[1].seconds, 15)
+    -- The dot: bottom-right corner, HIGH, no mouse.
+    local dot = button(c, "PocketProbeRecDot")
+    check(dot:IsShown(), "the dot shows")
+    local st = c._state(dot)
+    eq(st.type, "Frame"); eq(st.mouse, false, "the dot takes no mouse or touch"); eq(dot:GetFrameStrata(), "HIGH")
+    check(not st.bindings and not st.scripts.OnMouseDown and not st.scripts.OnClick, "the dot has no click script")
+    local sl, sr, stop_, sb = c._rect(c.env.UIParent)
+    local l, rgt, top, bottom = c._rect(dot)
+    check(sr - rgt > 0 and sr - rgt < 20 and bottom - sb > 0 and bottom - sb < 20, "the dot is in the bottom-right corner")
+    check(rgt - l > 10 and rgt - l < 30, "the dot is small: " .. (rgt - l))
+    -- Stop: round button as big as the PE button, on its side facing the middle of the screen.
+    local stopB = button(c, "PocketProbeRecStopButton")
+    check(stopB:IsShown(), "Stop shows")
+    eq(stopB:GetFrameStrata(), "HIGH")
+    eq(stopB:GetWidth(), 70); eq(stopB:GetHeight(), 70)
+    local hl, hr, ht, hb = c._rect(c.hub)
+    local bl, br, bt, bb = c._rect(stopB)
+    check(br < hl and hl - br < 20, "Stop is just left of the PE button (which is on the right of the screen)")
+    eq(bt, ht, "level with the PE button")
+    eq(shownText(c, "PocketProbeRecStopButton"), "Stop")
+    -- It follows the PE button: on the left half of the screen Stop goes to its right.
+    c.hub:ClearAllPoints()
+    c.hub:SetPoint("TOPLEFT", c.env.UIParent, "TOPLEFT", 30, -100)
+    c:advance(16)
+    hl, hr, ht = c._rect(c.hub)
+    bl, br, bt = c._rect(stopB)
+    check(bl > hr and bl - hr < 20, "Stop is just right of the PE button now")
+    eq(bt, ht)
+    -- Nothing in the way of the game: no keys taken while recording.
+    for _, rec in ipairs(c:frames()) do check(not rawget(rec, "bindings"), "a key is taken while recording") end
+    check(not rawget(c.env, "PocketProbePanel"):IsShown(), "the probe window stays closed")
+    noErrors(c)
+end)
+
+test("recorder: a sample every 15 seconds with time, frame rate, memory, the hook's change and the profiler's change", function()
+    local c, P, db = newPerf()
+    local r = lastRun(db)
+    eq(#c.memoryUpdates, 1, "memory counted once for the first sample")
+    eq(fields(r.samples[1]).mem, "800,10000,300")
+    eq(fields(r.samples[1]).fps, "60")
+    eq(fields(r.samples[1]).pe, nil, "the first sample only notes where the counters stand")
+    eq(fields(r.samples[1]).p, nil)
+    -- 15 seconds of work.
+    c.pe:work("questicons", "QUEST_LOG_UPDATE", 6, 3)
+    c.pe:work("questicons", "OnUpdate", 1.5, 100)
+    c.pe:work("core", "BAG_UPDATE", 0.25, 5)
+    c.pe:work("bags", nil, 2, 1, false)                 -- a nested run: not in the total
+    c.world.perf.memory.PocketEssentials = 850
+    c.world.perf.fps = 50
+    c.world.perf.pe[1] = 0.031
+    c.world.perf.pe[5], c.world.perf.pe[6] = 12, 2
+    c.world.perf.all[5] = 40
+    c:advance(15.3)
+    eq(#r.samples, 2)
+    local s = fields(r.samples[2])
+    eq(s.t, "15"); eq(s.dt, "15"); eq(s.fps, "50")
+    eq(s.mem, "850,10000,300")
+    eq(s.pe, "7.75,108,2", "the whole addon: ms, runs, slowest run")
+    eq(s.p, "0.031,12,2,0,0,0,0,0", "profiler: recent ms, then frames over 1, 5, 10, ... ms since the last sample")
+    eq(s.all, "0.4,40,0,0"); eq(s.app, "16.7")
+    -- Per feature: key number:ms:runs:slowest.
+    local byKey = {}
+    for part in s.f:gmatch("[^,]+") do
+        local k, ms, runs, slowest = part:match("^(%d+):([%d%.]+):(%d+):([%d%.]+)$")
+        check(k, "a feature entry reads key:ms:runs:slowest: " .. part)
+        byKey[r.keys[tonumber(k)]] = { ms = ms, runs = runs, slowest = slowest }
+    end
+    eq(byKey.questicons.ms, "7.5"); eq(byKey.questicons.runs, "103"); eq(byKey.questicons.slowest, "2")
+    eq(byKey.core.ms, "0.25"); eq(byKey.bags.runs, "1")
+    check(not byKey["*"], "the total is not listed as a feature")
+    -- The run's totals, with the events.
+    eq(r.feat["*"].ms, 7.75); eq(r.feat["*"].calls, 108); eq(r.feat["*"].max, 2)
+    eq(r.feat.questicons.events.QUEST_LOG_UPDATE.ms, 6); eq(r.feat.questicons.events.OnUpdate.calls, 100)
+    eq(r.feat.bags.events, nil, "no events for a key the dispatcher did not time")
+    eq(r.session.pe.avg, 0.05); eq(r.session.pe.peak, 3.5); eq(r.session.app.peak, 250)
+    -- A quiet 15 seconds: nothing ran, counts did not move.
+    c:advance(15)
+    eq(#r.samples, 3)
+    s = fields(r.samples[3])
+    eq(s.pe, nil); eq(s.f, nil)
+    eq(s.p, "0.031,0,0,0,0,0,0,0", "counts are the change, not the total")
+    -- More work: only the change is stored, and a slower run shows.
+    c.pe:work("questicons", "QUEST_LOG_UPDATE", 9, 1)
+    c:advance(15)
+    s = fields(r.samples[4])
+    eq(s.pe, "9,1,9")
+    eq(r.feat["*"].ms, 16.75); eq(r.feat["*"].max, 9); eq(r.feat.questicons.events.QUEST_LOG_UPDATE.calls, 4)
+    -- Memory: counted once per sample, never closer than 15 seconds.
+    eq(#c.memoryUpdates, 4)
+    for i = 2, #c.memoryUpdates do
+        check(c.memoryUpdates[i] - c.memoryUpdates[i - 1] >= 14.9, "memory counted twice within 15 seconds")
+    end
+    -- Stop and Start within the same 15 seconds do not count it again.
+    P.StopRecording(); P.StartRecording()
+    eq(#c.memoryUpdates, 4, "no extra memory count on Stop or a quick Start")
+    eq(#c.tickers, 2); eq(c.tickers[1].cancelled, true, "the first run's ticker is cancelled")
+    -- Every sample line is numbers and our own letters only.
+    for _, run in ipairs(db.perf.runs) do
+        for _, line in ipairs(run.samples) do
+            check(line:match("^[%a%d=;:,%.]+$"), "a sample line holds something else: " .. line)
+        end
+    end
+    local text = table.concat(dump(db), "\n")
+    for _, word in ipairs(WORLD_TEXT) do
+        check(not text:find(word, 1, true), "text from the world was saved: " .. word)
+    end
+    noErrors(c)
+end)
+
+test("recorder: activity tags come from events and show / hide hooks, and cover the whole stretch", function()
+    local c, P, db = newPerf()
+    local r = lastRun(db)
+    local function tagsAfter(seconds)
+        c:advance(seconds or 15.3)
+        return fields(r.samples[#r.samples]).a
+    end
+    eq(fields(r.samples[1]).a, "s", "standing still at the start")
+    eq(tagsAfter(), "s")
+    -- Moving for part of a stretch: both.
+    c:fire("PLAYER_STARTED_MOVING")
+    eq(tagsAfter(), "ms")
+    eq(tagsAfter(15), "m", "moving all the way through")
+    c:fire("PLAYER_STOPPED_MOVING")
+    eq(tagsAfter(15), "ms")
+    eq(tagsAfter(15), "s")
+    -- A fight that starts and ends inside one stretch is still seen.
+    c:enterCombat(); c:advance(3); c:leaveCombat()
+    eq(tagsAfter(12), "cs")
+    eq(tagsAfter(15), "s")
+    -- Vendor, world map, bags.
+    c:openMerchant(); c:advance(2); c:closeMerchant()
+    c:openWorldMap(1429); c:advance(2); c:closeWorldMap()
+    c:openBag()
+    eq(tagsAfter(11), "vwbs")
+    eq(tagsAfter(15), "bs", "the bag is still open")
+    c:closeBag()
+    eq(tagsAfter(15), "bs", "open for the first moment of this stretch")
+    eq(tagsAfter(15), "s")
+    -- A dungeon, entered through a loading screen.
+    c.world.instance = true
+    c:fire("PLAYER_ENTERING_WORLD", false, false)
+    eq(tagsAfter(15), "ds")
+    eq(#db.perf.runs, 1, "a loading screen is not a new run")
+    -- Nothing here ran every frame, and stopping takes the listeners off.
+    eq(c.stats.addonOnUpdate, 0, "no OnUpdate script of the probe ran")
+    P.StopRecording()
+    local n = #r.samples
+    c:fire("PLAYER_STARTED_MOVING"); c:enterCombat(); c:openBag(); c:advance(40)
+    eq(#r.samples, n, "nothing is recorded after Stop")
+    noErrors(c)
+    -- What is true when a recording starts is read once.
+    local c2, P2, db2 = newPerf({ setup = function(cl)
+        cl.world.perf.moving = true
+        cl.world.instance = true
+    end })
+    eq(fields(lastRun(db2).samples[1]).a, "dm")
+    noErrors(c2)
+end)
+
+test("recorder: Stop ends the run and stays stopped over a reload; Start recording and a fresh login record again", function()
+    local saved = {}
+    local c, P, db = newPerf({ saved = saved })
+    c.pe:work("core", "BAG_UPDATE", 1, 2)
+    c:advance(20)
+    c.pe:work("core", "BAG_UPDATE", 3, 1)
+    c:click(button(c, "PocketProbeRecStopButton"))
+    eq(P.Recording(), false)
+    eq(c.pe.stops, 1); eq(c.pe.measuring, false)
+    eq(db.perf.on, false); eq(db.perf.stopped, true)
+    local r = lastRun(db)
+    eq(r.why, "stopped")
+    check(r.ended:match("^%d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d$"), "ended is a date and time")
+    eq(r.prev, nil, "the working numbers are not kept")
+    eq(#r.samples, 3, "the last few seconds are a sample of their own")
+    eq(fields(r.samples[3]).dt, "5"); eq(fields(r.samples[3]).pe, "3,1,3")
+    eq(r.feat["*"].ms, 4)
+    check(not button(c, "PocketProbeRecDot"):IsShown(), "the dot is gone")
+    check(not button(c, "PocketProbeRecStopButton"):IsShown(), "Stop is gone")
+    eq(c.tickers[1].cancelled, true)
+    check(P.status:find("^Recording stopped"), P.status)
+    c:advance(60)
+    eq(#r.samples, 3)
+    noErrors(c)
+    -- A reload: still stopped.
+    local c2, P2 = newPerf({ saved = saved, reload = true })
+    check(math.abs(saved.perf.memAt - 1015) < 0.2, "the time of the last memory count is kept over the reload")
+    c2:advance(30)
+    eq(P2.Recording(), false); eq(#saved.perf.runs, 1); eq(c2.pe.starts, 0)
+    check(not button(c2, "PocketProbeRecDot"):IsShown(), "no dot after the reload")
+    eq(countLog(saved, "recording not started: it was stopped before the reload"), 1)
+    -- Start recording, in the probe window.
+    openPanel(c2)
+    local rec = button(c2, "PocketProbeRecordButton")
+    eq(rec.ppLabel:GetText(), "Start recording")
+    eq(P2.panelRecordText:GetText(), "Not recording")
+    c2:click(rec)
+    eq(P2.Recording(), true); eq(#saved.perf.runs, 2); eq(c2.pe.starts, 1)
+    eq(rec.ppLabel:GetText(), "Stop")
+    eq(P2.panelRecordText:GetText(), "Recording 0 min")
+    check(P2.status:find("^Recording started"), P2.status)
+    check(button(c2, "PocketProbeRecDot"):IsShown(), "the dot is back")
+    -- Close leaves it recording; the window's Stop ends it.
+    c2:click(button(c2, "PocketProbeCloseButton"))
+    eq(P2.Recording(), true, "Close does not stop the recording")
+    c2:advance(125)
+    openPanel(c2)
+    eq(P2.panelRecordText:GetText(), "Recording 2 min")
+    c2:click(rec)
+    eq(P2.Recording(), false); eq(saved.perf.runs[2].why, "stopped")
+    eq(rec.ppLabel:GetText(), "Start recording")
+    noErrors(c2)
+    -- A fresh login records again, though the last session ended stopped.
+    local c3, P3 = newPerf({ saved = saved })
+    eq(P3.Recording(), true); eq(#saved.perf.runs, 3); eq(saved.perf.stopped, false)
+    noErrors(c3)
+end)
+
+test("recorder: a recording carries on over a reload as the same run; counters that start again are not counted twice", function()
+    local saved = {}
+    local c, P = newPerf({ saved = saved })
+    c.pe:work("core", "BAG_UPDATE", 5, 10)
+    c.world.perf.pe[5] = 7
+    c:advance(15.3)
+    c.pe:work("core", "BAG_UPDATE", 2, 1)
+    c:advance(4)
+    c:fire("PLAYER_LOGOUT")
+    local r = saved.perf.runs[1]
+    eq(#r.samples, 3, "the stretch before the reload is kept")
+    eq(fields(r.samples[3]).pe, "2,1,2")
+    eq(saved.perf.on, true, "still recording when the game writes the file")
+    eq(r.ended, nil)
+    noErrors(c)
+    -- The reload: Pocket Essentials' counters start from zero, the profiler's go on.
+    local c2, P2 = newPerf({ saved = saved, reload = true, setup = function(cl)
+        cl.now = 1100
+        cl.world.perf.pe[5] = 9
+    end })
+    eq(P2.Recording(), true)
+    eq(#saved.perf.runs, 1, "the same run")
+    eq(r.reloads, 1)
+    eq(c2.pe.starts, 1, "the hook is switched on again")
+    eq(#r.samples, 4); eq(fields(r.samples[4]).dt, "0")
+    eq(#c2.memoryUpdates, 1, "100 seconds on: the memory is counted again")
+    eq(countLog(saved, "recording carries on after the reload"), 1)
+    c2.pe:work("core", "BAG_UPDATE", 1, 4)      -- 1 ms in all since the reload: less than before it
+    c2.world.perf.pe[5] = 12
+    c2:advance(15.3)
+    local s = fields(r.samples[5])
+    eq(s.pe, "1,4,0.25", "counted from zero, not as a negative change")
+    eq(s.p:match("^[^,]+,(%d+)"), "3", "the profiler's count goes on from where the reload left it")
+    eq(tonumber(s.t) > 100, true, "time runs on from the start of the run")
+    eq(r.feat["*"].ms, 8); eq(r.feat["*"].calls, 15)
+    eq(r.feat.core.events.BAG_UPDATE.ms, 8)
+    -- The hook starting again inside one session is handled the same way.
+    c2.pe.counters["*"].ms, c2.pe.counters["*"].calls, c2.pe.counters["*"].max = 0.5, 1, 0.5
+    c2.pe.counters.core = nil
+    c2:advance(15)
+    eq(fields(r.samples[6]).pe, "0.5,1,0.5")
+    eq(r.feat["*"].ms, 8.5)
+    noErrors(c2)
+    -- A fresh login after a logout while recording: the old run is closed, a new one starts.
+    c2:fire("PLAYER_LOGOUT")
+    local c3, P3 = newPerf({ saved = saved })
+    eq(#saved.perf.runs, 2)
+    eq(saved.perf.runs[1].why, "ended at a reload or a logout")
+    eq(saved.perf.runs[1].prev, nil)
+    eq(P3.Recording(), true)
+    noErrors(c3)
+end)
+
+test("recorder: 480 samples, then it stops by itself and says so; the last three runs are kept", function()
+    local samples = {}
+    for i = 1, 478 do samples[i] = "t=" .. (i * 15) .. ";dt=15;a=s;fps=60" end
+    local saved = { probe = "0.6.0", perf = { on = true, runs = {
+        { started = "2026-11-20 10:00:00", why = "stopped", samples = { "t=0;dt=0;a=s" }, keys = {}, feat = {} },
+        { started = "2026-11-21 10:00:00", why = "stopped", samples = { "t=0;dt=0;a=s" }, keys = {}, feat = {} },
+        { started = "2026-11-21 11:00:00", why = "stopped", samples = { "t=0;dt=0;a=s" }, keys = {}, feat = {} },
+        { started = "2026-11-22 10:00:00", t0 = 900, interval = 15, reloads = 0, samples = samples, keys = {}, feat = {} },
+    } } }
+    local c, P, db = newPerf({ saved = saved, reload = true })
+    eq(#db.perf.runs, 3, "the oldest run is removed at load")
+    eq(db.perf.runs[1].started, "2026-11-21 10:00:00")
+    local r = lastRun(db)
+    eq(P.Recording(), true); eq(#r.samples, 479)
+    c:advance(15.3)
+    eq(#r.samples, 480)
+    eq(P.Recording(), false, "it stops at 480 samples")
+    eq(r.why, "full")
+    eq(P.status:match("^[^—]+"), "Recording stopped by itself: 2 hours reached")
+    eq(countLog(db, "recording stopped by itself: 2 hours reached, 480 samples"), 1)
+    eq(c.pe.stops, 1)
+    check(not button(c, "PocketProbeRecDot"):IsShown(), "the dot is gone")
+    openPanel(c)
+    eq(P.panelRecordText:GetText(), "Stopped at 2 hours")
+    c:advance(60)
+    eq(#r.samples, 480)
+    noErrors(c)
+    -- It does not start again by itself at the next reload; a new run drops the oldest.
+    local c2, P2 = newPerf({ saved = saved, reload = true })
+    eq(P2.Recording(), false)
+    P2.StartRecording()
+    eq(#saved.perf.runs, 3)
+    eq(saved.perf.runs[1].started, "2026-11-21 11:00:00")
+    eq(saved.perf.runs[2], r)
+    noErrors(c2)
+    -- Recordings of another probe version go with its other results.
+    saved.probe = "0.5.9"
+    local c3 = newPerf({ saved = saved, pe = false })
+    eq(#saved.perf.runs, 0)
+    noErrors(c3)
+end)
+
+test("recorder: trials are refused while it records, and it is refused while a trial or a guided trial is under way", function()
+    local saved = { options = { auto = true, risky = true } }
+    local c, P, db = newPerf({ saved = saved, auto = true })
+    c:advance(30)
+    eq(P.Recording(), true)
+    eq(countLog(db, "pass started"), 0, "no automatic pass while recording")
+    c:enterCombat(); c:advance(5)
+    P.RunFightTests()
+    eq(P.status, "Recording: tap Stop first.")
+    c:leaveCombat(); c:advance(5)
+    c:openMerchant(); c:advance(5); c:closeMerchant()
+    P.RunAllSafe(); eq(P.status, "Recording: tap Stop first.")
+    P.status = nil
+    P.RunOne(P.trialById["own.show"]); eq(P.status, "Recording: tap Stop first.")
+    P.status = nil
+    P.StartGuided(P.trialById["bars.park"]); eq(P.status, "Recording: tap Stop first.")
+    P.status = nil
+    P.BeginClean(); eq(P.status, "Recording: tap Stop first.")
+    eq(c.reloads, 0, "no clean run, no reload")
+    eq(db.clean.running, false)
+    c:advance(30)
+    eq(next(db.results), nil, "no trial ran")
+    eq(next(db.guided), nil)
+    eq(countLog(db, "pass started"), 0)
+    -- The panel: the buttons that start trials are dim, with the reason.
+    local row = showTrial(c, P, "own.show")
+    eq(row.ppRun.ppDisabled, true, "Run is dim while recording")
+    c:click(row.ppRun)
+    eq(next(db.results), nil)
+    eq(showTrial(c, P, "bars.park").ppRun.ppDisabled, true, "Start is dim while recording")
+    for i, name in ipairs({ "PocketProbeRunAllButton", "PocketProbeFightButton", "PocketProbeCleanButton" }) do
+        eq(button(c, name).ppDisabled, true, name .. " is dim while recording")
+    end
+    for _, name in ipairs({ "PocketProbeRiskyButton", "PocketProbeVendorButton", "PocketProbeAutoButton", "PocketProbeSaveButton",
+        "PocketProbeCloseButton", "PocketProbeRecordButton" }) do
+        eq(button(c, name).ppDisabled, false, name .. " still works")
+    end
+    local note
+    for _, rec in ipairs(c:frames()) do
+        if rec.frame == rawget(c.env, "PocketProbePanel") then
+            for _, region in ipairs(rec.regions or {}) do
+                local t = region.GetText and region:GetText()
+                if type(t) == "string" and t:find("Recording: tap Stop first.", 1, true) then note = t end
+            end
+        end
+    end
+    check(note, "the panel says why the trial buttons are dim")
+    -- Stop: everything works again.
+    c:click(button(c, "PocketProbeRecordButton"))
+    eq(P.Recording(), false)
+    eq(showTrial(c, P, "own.show").ppRun.ppDisabled, false)
+    eq(button(c, "PocketProbeRunAllButton").ppDisabled, false)
+    c:click(showTrial(c, P, "own.show").ppRun)
+    eq(cell(db, "own.show", KEY_PRESS), "allowed")
+    -- The other way round: no recording while a pass runs ...
+    P.RunAllSafe()
+    P.StartRecording()
+    eq(P.status:match("^[^—]+"), "A trial is running: let it finish or tap Stop first.")
+    eq(P.Recording(), false); eq(c.pe.starts, 1)
+    P.Stop()
+    -- ... or while a guided trial waits.
+    P.StartGuided(P.trialById["bars.park"]); c:advance(1.7)
+    P.StartRecording()
+    check(P.status:find("^Park the main bar is waiting: answer or Cancel it first"), P.status)
+    eq(P.Recording(), false)
+    P.AnswerGuided(P.trialById["bars.park"], 1)
+    P.StartRecording()
+    eq(P.Recording(), true)
+    noErrors(c)
+    -- A clean run going at login keeps the recording off; so does a guided trial waiting for its answer.
+    local c2, P2, db2 = newPerf({ saved = { clean = { index = 0, running = true } }, reload = true })
+    eq(P2.Recording(), false)
+    eq(countLog(db2, "recording not started: A trial is running"), 1)
+    noErrors(c2)
+end)
+
+test("recorder: the probe window reaches Stop with the d-pad", function()
+    local c, P, db = newPerf()
+    c:advance(5)
+    openPanel(c)
+    local rec, close, panel = button(c, "PocketProbeRecordButton"), button(c, "PocketProbeCloseButton"), button(c, "PocketProbePanel")
+    check(rec:IsShown() and P.panelRecordText:IsShown(), "the recording line shows with Pocket Essentials loaded")
+    eq(rec.ppLabel:GetText(), "Stop")
+    -- In the title bar, left of Close, inside the panel, not over the text beside it.
+    local pl, pr, pt, pb = c._rect(panel)
+    local l, r, t, b = c._rect(rec)
+    local cl = c._rect(close)
+    local _, _, closeTop, closeBottom = c._rect(close)
+    check(l > pl and r < cl and t == closeTop and b == closeBottom, "the recording button is in the title bar, left of Close")
+    local tl, tr = c._rect(P.panelRecordText)
+    check(tr <= l and tl > pl, "the recording text is left of its button")
+    -- Ten tabs still: the line takes no room from the list.
+    local shown = 0
+    for _, tab in ipairs(P.panelTabs) do if tab:IsShown() then shown = shown + 1 end end
+    eq(shown, 10)
+    -- Up to the tabs, Up again from the first tab to the recording button, A stops.
+    pad(c, "UP")
+    eq(P.Nav.zone, "tabs")
+    pad(c, "UP")
+    eq(P.Nav.zone, "top"); eq(P.Nav.Target(), rec)
+    pad(c, "DOWN")
+    eq(P.Nav.zone, "tabs")
+    pad(c, "UP")
+    pad(c, "A")
+    eq(P.Recording(), false, "A on the recording button stops the recording")
+    eq(rec.ppLabel:GetText(), "Start recording")
+    check(panel:IsShown(), "the window stays open")
+    pad(c, "A")
+    eq(P.Recording(), true, "and A again starts one")
+    -- No key is taken outside the window.
+    c:click(close)
+    for _, frameRec in ipairs(c:frames()) do check(not rawget(frameRec, "bindings"), "a key is taken with the window closed") end
+    noErrors(c)
+end)
+
+test("recorder: profiler off or missing, an older Pocket Essentials, and missing game calls all record what they can", function()
+    -- The profiler is switched off: memory, frame rate and the hook's numbers only.
+    local c, P, db = newPerf({ setup = function(cl) cl.world.perf.enabled = false end })
+    c.pe:work("core", "BAG_UPDATE", 1, 1)
+    c:advance(15.3)
+    local r = lastRun(db)
+    eq(r.profiler, "off")
+    local s = fields(r.samples[2])
+    eq(s.p, nil); eq(s.all, nil); eq(s.app, nil); eq(r.session, nil)
+    eq(s.pe, "1,1,1"); eq(s.mem, "800,10000,300"); eq(s.fps, "60")
+    noErrors(c)
+    -- No profiler on this client at all.
+    local c2, P2, db2 = newPerf({ noProfiler = true })
+    c2:advance(15.3)
+    eq(lastRun(db2).profiler, "missing")
+    eq(fields(lastRun(db2).samples[2]).p, nil)
+    noErrors(c2)
+    -- An older Pocket Essentials, with no measuring hook: the game's numbers only.
+    local c3, P3, db3 = newPerf({ old = true })
+    eq(P3.Recording(), true)
+    c3:advance(15.3)
+    local r3 = lastRun(db3)
+    eq(r3.features, false)
+    local s3 = fields(r3.samples[2])
+    eq(s3.pe, nil); eq(s3.f, nil)
+    eq(s3.p, "0.04,0,0,0,0,0,0,0"); eq(s3.mem, "800,10000,300")
+    eq(next(r3.feat), nil)
+    P3.StopRecording()
+    noErrors(c3)
+    -- A hook that raises, or hands over something odd, is the same as none.
+    local c4, P4, db4 = newPerf({ setup = function(cl)
+        cl.pe.StartMeasure = function() error("not today") end
+        cl.pe.MeasureCounters = function() return "junk" end
+        cl.pe.StopMeasure = function() error("nor now") end
+    end })
+    c4:advance(15.3)
+    eq(lastRun(db4).features, false)
+    P4.StopRecording()
+    eq(P4.Recording(), false)
+    noErrors(c4)
+    -- Counters with odd things in them are left out, not saved.
+    local c5, P5, db5 = newPerf()
+    c5.pe.measuring = true
+    c5.pe.counters["core"] = { ms = "a lot", calls = 2, max = 1, events = { ["Zugzug says hi"] = { ms = 1, calls = 1 }, [5] = { ms = 1, calls = 1 }, EVENT = "x" } }
+    c5.pe.counters[7] = { ms = 1, calls = 1, max = 1 }
+    c5.pe.counters["Zugzug's key!"] = { ms = 1, calls = 1, max = 1 }
+    c5.pe.counters["junk"] = "text"
+    c5:advance(15.3)
+    local r5 = lastRun(db5)
+    eq(#r5.keys, 1); eq(r5.keys[1], "core")
+    eq(r5.feat.core.calls, 2); eq(r5.feat.core.ms, 0)
+    eq(r5.feat.core.events["Zugzug says hi"].calls, 1, "plain words are kept as an event name")
+    check(not table.concat(dump(db5), "\n"):find("Zugzug's key", 1, true), "a key that is not plain was saved")
+    noErrors(c5)
+    -- Game calls this client lacks: their numbers are left out and the run says which.
+    local c6, P6, db6 = newPerf({ setup = function(cl)
+        rawset(cl.env, "GetFramerate", nil)
+        rawset(cl.env, "UpdateAddOnMemoryUsage", nil)
+        rawset(cl.env, "IsPlayerMoving", nil)
+        rawset(cl.env.C_Timer, "NewTicker", nil)
+    end })
+    c6:advance(40)
+    local r6 = lastRun(db6)
+    eq(#r6.samples, 1, "no ticker: only the first sample until Stop")
+    check(r6.missing.GetFramerate and r6.missing.UpdateAddOnMemoryUsage and r6.missing["C_Timer.NewTicker"], "the run says what was missing")
+    eq(fields(r6.samples[1]).fps, nil)
+    P6.StopRecording()
+    eq(#r6.samples, 2); eq(fields(r6.samples[2]).dt, "40")
+    noErrors(c6)
+    local c7, P7, db7 = newPerf({ setup = function(cl) rawset(cl.env, "GetAddOnMemoryUsage", nil) end })
+    c7:advance(15.3)
+    eq(fields(lastRun(db7).samples[2]).mem, nil)
+    check(lastRun(db7).missing.GetAddOnMemoryUsage, "missing memory call noted")
+    noErrors(c7)
+end)
+
+test("recorder: with the PE button hidden or not there, Stop sits just above the red dot", function()
+    local c, P, db = newPerf({ noButton = true })
+    local dot, stopB = button(c, "PocketProbeRecDot"), button(c, "PocketProbeRecStopButton")
+    check(stopB:IsShown(), "Stop shows without a PE button")
+    local dl, dr, dt, db_ = c._rect(dot)
+    local l, r, t, b = c._rect(stopB)
+    check(b > dt and b - dt < 20, "Stop is just above the dot")
+    eq(r, dr, "in the same corner")
+    check(r - l > 40, "big enough to tap: " .. (r - l))
+    noErrors(c)
+    -- The PE button made a moment after login is found.
+    local hub = c.env.CreateFrame("Button", "PocketEssentialsHubButton", c.env.UIParent)
+    hub:SetSize(64, 64)
+    hub:SetPoint("TOPRIGHT", c.env.UIParent, "TOPRIGHT", -20, -200)
+    c:advance(1.2)
+    local hl = c._rect(hub)
+    l, r = c._rect(stopB)
+    check(r < hl and hl - r < 20, "Stop moved beside the PE button")
+    eq(stopB:GetWidth(), 64)
+    -- Hidden: back above the dot at once; shown: beside it again.
+    hub:Hide()
+    l, r, t, b = c._rect(stopB)
+    check(b > dt and b - dt < 20 and r == dr, "Stop is above the dot while the PE button is hidden")
+    hub:Show()
+    l, r = c._rect(stopB)
+    check(r < hl, "and beside it again")
+    -- The round picture is Pocket Essentials' own file; the frames are made at load.
+    noErrors(c)
+    local c2, P2 = newPerf({ pe = false })
+    check(rawget(c2.env, "PocketProbeRecDot") and rawget(c2.env, "PocketProbeRecStopButton"), "the frames are made at load, not when a recording starts")
+    noErrors(c2)
+end)
+
+test("recorder with Pocket Essentials loaded: a play session records and stops cleanly, and the report reads it", function()
+    local c, P, db = newPerf()
+    c.world.perf.memory.PocketEssentials = 1200
+    local minute = 0
+    for step = 1, 40 do
+        c.pe:work("questicons", "QUEST_LOG_UPDATE", 0.6, 3)
+        c.pe:work("core", "BAG_UPDATE", 0.2, 4)
+        if step == 5 then c:fire("PLAYER_STARTED_MOVING") end
+        if step == 10 then c:enterCombat() end
+        if step == 14 then c:leaveCombat() end
+        if step == 20 then c:openMerchant() end
+        if step == 22 then c:closeMerchant() end
+        if step == 30 then c:openWorldMap(1429) end
+        if step == 31 then c:closeWorldMap() end
+        c.world.perf.pe[5] = c.world.perf.pe[5] + 2
+        c:advance(15)
+    end
+    c:click(button(c, "PocketProbeRecStopButton"))
+    noErrors(c)
+    eq(P.Recording(), false); eq(c.pe.measuring, false)
+    local r = lastRun(db)
+    check(#r.samples >= 40 and #r.samples <= 42, "samples: " .. #r.samples)
+    -- The reader takes the saved table as the device would write it.
+    local out = table.concat(Reader.formatPerf(db), "\n")
+    for _, part in ipairs({ "Performance recording", "Run 1 of 1", "10 min", "questicons", "QUEST_LOG_UPDATE", "in a fight", "at a vendor",
+        "world map open", "moving", "In plain words" }) do
+        check(out:find(part, 1, true), "the report lacks \"" .. part .. "\":\n" .. out)
+    end
+    check(not out:find("no per-feature numbers", 1, true), "the report has the per-feature numbers")
+    -- An older Pocket Essentials: the report says the per-feature numbers are not there.
+    local c2, P2, db2 = newPerf({ old = true })
+    c2:advance(60)
+    P2.StopRecording()
+    noErrors(c2)
+    check(table.concat(Reader.formatPerf(db2), "\n"):find("no per-feature numbers", 1, true), "the report says there are no per-feature numbers")
 end)
 
 ---------------------------------------------------------------------------

@@ -339,9 +339,99 @@ PE.ErrorHandlerFor = ErrorHandlerFor
 
 local coreHandler = ErrorHandlerFor("core")
 
+---------------------------------------------------------------------------
+-- Measuring (a testing aid, asleep unless another addon starts it)
+--
+-- Nothing in this addon calls PE:StartMeasure, so for a player `measuring`
+-- stays false and each protected run below costs one test of it. While it is
+-- on, every run through PE:Safe, PE:Wrap, mod:Safe, mod:After and the event
+-- dispatcher is timed with debugprofilestop and added up by feature key:
+--   counters[key] = { ms =, calls =, max =, events = { [event] = { ms =, calls = } } }
+--   counters["*"] = { ms =, calls =, max = }   outermost runs only
+-- `events` is there only for keys the event dispatcher has timed. A run inside
+-- another run is counted under both keys, and once in "*". Nothing is saved:
+-- after a reload measuring is off and the counters start from zero.
+---------------------------------------------------------------------------
+
+local measuring = false
+local measureClock, measureCounters, measureTotal
+local measureDepth = 0
+
+-- Ends a timed run and passes on what xpcall returned.
+local function MeasureEnd(key, event, startedAt, ...)
+    local ms = measureClock() - startedAt
+    measureDepth = measureDepth - 1
+    local entry = measureCounters[key]
+    if not entry then
+        entry = { ms = 0, calls = 0, max = 0 }
+        measureCounters[key] = entry
+    end
+    entry.ms = entry.ms + ms
+    entry.calls = entry.calls + 1
+    if ms > entry.max then entry.max = ms end
+    if event then
+        local events = entry.events
+        if not events then
+            events = {}
+            entry.events = events
+        end
+        local byEvent = events[event]
+        if not byEvent then
+            byEvent = { ms = 0, calls = 0 }
+            events[event] = byEvent
+        end
+        byEvent.ms = byEvent.ms + ms
+        byEvent.calls = byEvent.calls + 1
+    end
+    if measureDepth == 0 then
+        measureTotal.ms = measureTotal.ms + ms
+        measureTotal.calls = measureTotal.calls + 1
+        if ms > measureTotal.max then measureTotal.max = ms end
+    end
+    return ...
+end
+
+-- xpcall(fn, handler, ...) with the run timed; only called while measuring.
+-- xpcall always returns, so the depth goes back down after an error too.
+local function MeasuredCall(key, event, fn, handler, ...)
+    measureDepth = measureDepth + 1
+    return MeasureEnd(key, event, measureClock(), xpcall(fn, handler, ...))
+end
+
+-- Returns the counters, or nil if this client has no debugprofilestop.
+-- Calling it again returns the same table with its numbers kept.
+function PE:StartMeasure()
+    if not measuring then
+        local clock = debugprofilestop
+        if type(clock) ~= "function" then return nil end
+        measureClock = clock
+        if not measureCounters then
+            measureTotal = { ms = 0, calls = 0, max = 0 }
+            measureCounters = { ["*"] = measureTotal }
+        end
+        measuring = true
+    end
+    return measureCounters
+end
+
+function PE:StopMeasure()
+    measuring = false
+end
+
+-- The counters, or nil if measuring was never started this session.
+function PE:MeasureCounters()
+    return measureCounters
+end
+
+local function MeasureKey(key)
+    if type(key) ~= "string" or key == "" then return "core" end
+    return key
+end
+
 -- PE:Safe(moduleKey, fn, ...) -> ok, results...
 function PE:Safe(key, fn, ...)
     if type(fn) ~= "function" then return false end
+    if measuring then return MeasuredCall(MeasureKey(key), nil, fn, ErrorHandlerFor(key), ...) end
     return xpcall(fn, ErrorHandlerFor(key), ...)
 end
 
@@ -353,7 +443,9 @@ end
 function PE:Wrap(key, fn)
     if type(fn) ~= "function" then return function() end end
     local handler = ErrorHandlerFor(key)
+    key = MeasureKey(key)
     return function(...)
+        if measuring then return PassResults(MeasuredCall(key, nil, fn, handler, ...)) end
         return PassResults(xpcall(fn, handler, ...))
     end
 end
@@ -767,6 +859,9 @@ end
 function Methods:Safe(fn, ...)
     local st = S[self]
     if type(fn) ~= "function" then return false end
+    if measuring then
+        return MeasuredCall(st and st.key or "core", nil, fn, st and st.handler or coreHandler, ...)
+    end
     return xpcall(fn, st and st.handler or coreHandler, ...)
 end
 
@@ -778,6 +873,10 @@ function Methods:After(seconds, fn)
     local ok, err = pcall(C_Timer.After, tonumber(seconds) or 0, function()
         -- Skipped if the module was switched off (or off and on again) meanwhile.
         if st and st.offCount ~= offCount then return end
+        if measuring then
+            MeasuredCall(st and st.key or "core", nil, fn, handler)
+            return
+        end
         xpcall(fn, handler)
     end)
     if not ok then PE:LogError(st and st.key or "core", err) end
@@ -1165,15 +1264,27 @@ local function OnEvent(_, event, ...)
             -- If something needed settings before the saved ones were loaded,
             -- PE.db is a stand-in: drop it and start from the real table.
             if PE.db ~= _G.PocketEssentialsDB then PE.db = nil end
-            xpcall(InitDB, coreHandler)
+            if measuring then
+                MeasuredCall("core", event, InitDB, coreHandler)
+            else
+                xpcall(InitDB, coreHandler)
+            end
             coreOwn.ADDON_LOADED = nil
             FrameUnregisterIfUnused("ADDON_LOADED")
         end
     elseif event == "PLAYER_LOGIN" then
-        xpcall(Login, coreHandler)
+        if measuring then
+            MeasuredCall("core", event, Login, coreHandler)
+        else
+            xpcall(Login, coreHandler)
+        end
     elseif event == "PLAYER_REGEN_ENABLED" then
         if PE.debugOn then PE:Debug("core", "fight ended") end
-        xpcall(FlushCombatQueue, coreHandler)
+        if measuring then
+            MeasuredCall("core", event, FlushCombatQueue, coreHandler)
+        else
+            xpcall(FlushCombatQueue, coreHandler)
+        end
     elseif event == "PLAYER_REGEN_DISABLED" then
         if PE.debugOn then PE:Debug("core", "fight started") end
     elseif event == "ADDON_RESTRICTION_STATE_CHANGED" then
@@ -1187,14 +1298,24 @@ local function OnEvent(_, event, ...)
             PE:Debug("core", "addon restriction " .. PE.Plain(kind) .. " is now " .. PE.Plain(state) .. legend)
         end
     elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
-        xpcall(OnActionBlocked, coreHandler, event, ...)
+        if measuring then
+            MeasuredCall("core", event, OnActionBlocked, coreHandler, event, ...)
+        else
+            xpcall(OnActionBlocked, coreHandler, event, ...)
+        end
     end
 
     local list = coreHandlers[event]
     if list then
         for i = 1, #list do
             local entry = list[i]
-            if entry and entry.fn then xpcall(entry.fn, coreHandler, event, ...) end
+            if entry and entry.fn then
+                if measuring then
+                    MeasuredCall("core", event, entry.fn, coreHandler, event, ...)
+                else
+                    xpcall(entry.fn, coreHandler, event, ...)
+                end
+            end
         end
     end
 
@@ -1208,7 +1329,13 @@ local function OnEvent(_, event, ...)
                 local st = S[mod]
                 if st and st.active then
                     if type(handler) == "string" then handler = mod[handler] end
-                    if type(handler) == "function" then xpcall(handler, st.handler, mod, event, ...) end
+                    if type(handler) == "function" then
+                        if measuring then
+                            MeasuredCall(st.key, event, handler, st.handler, mod, event, ...)
+                        else
+                            xpcall(handler, st.handler, mod, event, ...)
+                        end
+                    end
                 end
             end
         end

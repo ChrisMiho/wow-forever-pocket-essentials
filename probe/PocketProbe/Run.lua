@@ -5,7 +5,8 @@ local ADDON_NAME, P = ...
 --
 -- Nothing runs by itself: a pass starts from the panel (Run, Run all safe,
 -- Fight tests), the clean series from Clean run, and the automatic passes of 0.2.0 only
--- with the Auto switch on. Nothing here runs every frame. A pass is a chain
+-- with the Auto switch on. While a performance recording runs (Perf.lua)
+-- none of them starts. Nothing here runs every frame. A pass is a chain
 -- of short timers (C_Timer.After), one trial about every 0.3 seconds.
 
 local type, ipairs, pcall, xpcall = type, ipairs, pcall, xpcall
@@ -505,6 +506,13 @@ local watchToken = 0        -- changes when a clean trial's watch for after-effe
 
 local TryFull, TryVendor    -- below
 
+-- A performance recording is running (Perf.lua, probe 0.6.0). Trials and a
+-- recording never run together: each is refused while the other is going.
+local RECORDING = "Recording: tap Stop first."
+local function Recording()
+    return P.Recording ~= nil and P.Recording() == true
+end
+
 local function VendorOn()
     return P.vendorOpen == true and db.options.vendor == true
 end
@@ -657,7 +665,12 @@ NextStep = function(p)
     if pass ~= p then return end
     -- A fight starting or ending mid-pass: the trial just run is kept, the
     -- pass stops and (with Auto on) the new situation gets its own pass.
-    if P.Situation(p.trigger) ~= p.key then
+    -- The fight tests only stop when the fight is over: another change (the
+    -- place, the input style) leaves them running, filed under their first key.
+    local key, facts = P.Situation(p.trigger)
+    local changed = key ~= p.key
+    if p.ran then changed = not facts.lockdown end
+    if changed then
         pass = nil
         Log("pass stopped: the situation changed")
         if p.ran then
@@ -702,7 +715,7 @@ end
 -- An automatic pass (Auto on only), unless this situation already had one
 -- this session.
 TryFull = function()
-    if not db or cleanHold or not AutoOn() then return end
+    if not db or cleanHold or not AutoOn() or Recording() then return end
     if pass then
         pendingFull = true
         return
@@ -713,7 +726,7 @@ end
 
 -- The vendor trials by themselves, when a vendor window opens (Auto on only).
 TryVendor = function()
-    if not db or cleanHold or not AutoOn() then return end
+    if not db or cleanHold or not AutoOn() or Recording() then return end
     if pass then
         pendingVendor = true
         return
@@ -725,6 +738,7 @@ end
 -- Says why nothing can start now, or returns nil.
 local function Refusal()
     if not db then return "loading" end
+    if Recording() then return RECORDING end
     if cleanHold then return "the clean run is going: tap Next, or Stop" end
     if current then return "wait: " .. tostring(current.id) .. " is still running" end
     return nil
@@ -875,6 +889,7 @@ end
 
 local function BeginClean()
     if not db then return end
+    if Recording() then return SetStatus(RECORDING) end
     pass = nil
     pendingFull, pendingVendor = false, false
     db.clean.index = 0
@@ -1062,11 +1077,31 @@ local function StartInSteps(trial, g, notes)
     if not After(SHOT_GAP, first) then change() end
 end
 
+-- The name of another guided trial that is waiting and has a big message, or
+-- nil. One whose answer is in (it only has something left to put back) no
+-- longer shows its message.
+local function BigWaiting(exceptId)
+    local names = {}
+    for id, g in pairs(db.guided) do
+        local t = type(id) == "string" and P.trialById[id] or nil
+        if id ~= exceptId and t and t.big and type(g) == "table" and g.stage ~= "putback" then
+            names[#names + 1] = t.short or t.label or id
+        end
+    end
+    table.sort(names)
+    return names[1]
+end
+
 local function StartGuided(trial)
     if type(trial) ~= "table" or trial.kind ~= "guided" then return end
     local why = Refusal()
     if why then return SetStatus(why) end
     if db.guided[trial.id] then return SetStatus(trial.id .. " is already waiting for an answer") end
+    -- There is one big message: two trials cannot both show their question in it.
+    if trial.big then
+        local other = BigWaiting(trial.id)
+        if other then return SetStatus(other .. " is waiting: answer or Cancel it first") end
+    end
     if trial.risky and not RiskyOn() then return SetStatus("risky trials are off: switch Risky on first") end
     local missing = MissingNeed(trial)
     if missing then
@@ -1404,3 +1439,15 @@ P.RunAllSafe, P.RunOne, P.Stop, P.BeginClean, P.Reload = RunAllSafe, RunOne, Sto
 P.ToggleOption, P.StartGuided, P.AnswerGuided = ToggleOption, StartGuided, AnswerGuided
 P.CancelGuided = CancelGuided
 P.RunFightTests = RunFightTests
+
+-- For the recorder (Perf.lua): the name of a guided trial that is waiting, or nil.
+function P.GuidedWaiting()
+    if not db then return nil end
+    local names = {}
+    for id in pairs(db.guided) do
+        local t = P.trialById[id]
+        names[#names + 1] = tostring((t and (t.short or t.label)) or id)
+    end
+    table.sort(names)
+    return names[1]
+end

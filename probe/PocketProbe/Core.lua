@@ -9,9 +9,13 @@ local ADDON_NAME, P = ...
 --   Errors.lua  the Errors and Graphics trials, and the error box listener
 --   Run.lua     noticing blocks, passes, the clean series, guided trials
 --   Panel.lua   the window that drives it all (touch and d-pad)
+--   Perf.lua    the performance recorder (probe 0.6.0; its game names and
+--               their proof are listed at its top)
 --
 -- Nothing runs by itself: the automatic passes of 0.2.0 only run with the
 -- "Auto" switch on (off by default). The listeners that only record stay.
+-- The one exception is the performance recorder, which starts at login when
+-- Pocket Essentials is loaded too (Perf.lua).
 --
 -- Every game name used, and where Blizzard's source for build 1.60.1 (70938)
 -- proves it (paths under Interface/AddOns; "Doc/" is
@@ -170,13 +174,14 @@ local type, tostring, pairs, ipairs, pcall, select = type, tostring, pairs, ipai
 local tconcat, tremove = table.concat, table.remove
 
 P.name = ADDON_NAME or "PocketProbe"
-P.VERSION = "0.5.0"          -- used when the game cannot read the TOC's version line
+P.VERSION = "0.6.0"          -- used when the game cannot read the TOC's version line
 -- An action trial returns this when nothing refused it but it could not see
 -- whether it worked; it is stored as it is (never as "allowed").
 P.CANT_TELL = "can't tell"
 
 local LOG_MAX, LOG_DROP = 2000, 200   -- the activity log drops its oldest lines in blocks
 local DETAILS_MAX = 400
+P.PERF_RUNS = 3                        -- performance recordings kept (Perf.lua)
 local MESSAGE_MAX = 1500               -- a detail's message, at most
 P.MESSAGE_MAX = MESSAGE_MAX
 
@@ -324,6 +329,7 @@ function P.InitDB()
         -- "guided" is kept: it holds settings a guided trial still has to put back.
         for _, key in ipairs({ "results", "details", "situations", "spoiled", "log", "last" }) do saved[key] = {} end
         saved.clean, saved.pressIndex = nil, nil
+        saved.perf = nil               -- recordings too: their sample lines may differ
     end
     saved.version = 1
     saved.game = GameVersion()
@@ -339,6 +345,11 @@ function P.InitDB()
     for _, key in ipairs({ "situations", "results", "details", "log", "spoiled", "last", "guided" }) do
         if type(saved[key]) ~= "table" then saved[key] = {} end
     end
+    -- Performance recordings (Perf.lua): the last few runs are kept.
+    if type(saved.perf) ~= "table" then saved.perf = {} end
+    if type(saved.perf.runs) ~= "table" then saved.perf.runs = {} end
+    while #saved.perf.runs > P.PERF_RUNS do tremove(saved.perf.runs, 1) end
+    saved.perf.on, saved.perf.stopped = saved.perf.on == true, saved.perf.stopped == true
     -- The trial list is written fresh; the "afterwards" entries earlier
     -- sessions added (see P.AddTrial) are kept at its end.
     local old = type(saved.trials) == "table" and saved.trials or {}

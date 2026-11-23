@@ -45,9 +45,10 @@ The map was the wrong guess: it is 273 by 283 at full size, so about 218 by
 
 ## Order to 1.0.0
 
-1. **Now (this build):** Pocket Probe 0.5.0 and Pocket Essentials 0.11.0
+1. **Now (this build):** Pocket Probe 0.6.0 and Pocket Essentials 0.11.0
    with the measured map size, in one pre-release. Device test: the probe's
-   short fight test first (section 23), then the layout (section 21).
+   short UI tests first (section 23), then normal play with the probe's
+   performance recorder on (section 24) and the layout (section 21).
 2. **Then:** fix what the layout test shows (spots, gaps, default sizes).
 3. **Then:** Quiet bars, if the real fade in a fight is allowed.
 4. **Then:** the flat strip gets its own brainstorm, mockup and spec, with

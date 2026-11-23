@@ -1,7 +1,11 @@
 local ADDON_NAME, P = ...
 
--- The panel that drives the probe: "Pocket Probe 0.5.0".
+-- The panel that drives the probe: "Pocket Probe 0.6.0".
 --
+--   top     the title, the status line, and (only with Pocket Essentials
+--           loaded) the recording line: "Recording 12 min" and Stop, or
+--           "Not recording" and Start recording (Perf.lua, probe 0.6.0).
+--           The minutes are as of the last redraw: nothing ticks for them.
 --   left    one tab per area, each with "N / M run"
 --   right   one row per trial: its label, a result chip and Run (or, for a
 --           guided trial, Start and then its two answer buttons)
@@ -55,6 +59,13 @@ local function Factor()
 end
 
 local function Px(n) return n * factor end
+
+-- For the recorder's dot and Stop button (Perf.lua): n 720p pixels in UI
+-- units, at the screen's size right now.
+function P.Units(n)
+    factor = Factor()
+    return n * factor
+end
 
 local STYLE = {
     normal   = { fill = { 0.15, 0.16, 0.19 }, border = { 0.52, 0.52, 0.57 }, text = { 1, 1, 1 } },
@@ -159,6 +170,8 @@ local function NewText(parent, key, layer)
     return text
 end
 
+P.NewText = NewText
+
 local function Color(text, c) text:SetTextColor(c[1], c[2], c[3], 1) end
 
 ---------------------------------------------------------------------------
@@ -243,6 +256,19 @@ local statusLine = NewText(panel, "small")
 Color(statusLine, STATUS_BLUE)
 
 local closeButton = NewButton(panel, "PocketProbeCloseButton", function() panel:Hide() end)
+
+-- The recording line (probe 0.6.0), in the title bar left of Close. Hidden
+-- when Pocket Essentials is not loaded: the panel is then as it was in 0.5.0.
+local function Recording() return P.Recording ~= nil and P.Recording() == true end
+local function RecordingOffered() return P.RecordingOffered ~= nil and P.RecordingOffered() == true end
+local RECORDING_NOTE = "Recording: tap Stop first."
+local recordText = NewText(panel, "small")
+recordText:SetJustifyH("RIGHT")
+recordText:Hide()
+local recordButton = NewButton(panel, "PocketProbeRecordButton", function()
+    if Recording() then P.StopRecording() else P.StartRecording() end
+end)
+recordButton:Hide()
 
 local tabs = {}
 local selectedPage, selectedRow = 1, 1
@@ -445,6 +471,7 @@ end
 local function RunDisabled(def)
     local db = P.db
     if not def or def.event then return true end
+    if Recording() then return true end
     if def.risky and not (db and db.options.risky) then return true end
     if def.vendor and not (db and db.options.vendor) then return true end
     return false
@@ -529,7 +556,22 @@ local function Layout()
     title:SetWidth(m.w * 0.32)
     statusLine:ClearAllPoints()
     statusLine:SetPoint("LEFT", panel, "TOPLEFT", m.pad + m.w * 0.32 + m.gap, -(border + bar / 2))
-    statusLine:SetWidth(max(closeX - m.gap - (m.pad + m.w * 0.32 + m.gap), 10))
+    local statusEnd = closeX
+    if RecordingOffered() then
+        local recordW, textW = m.button * 3.6, m.button * 3.4
+        Place(recordButton, panel, closeX - m.gap - recordW, border + m.gap * 0.5, recordW, m.button)
+        recordText:ClearAllPoints()
+        recordText:SetPoint("RIGHT", recordButton, "LEFT", -m.gap, 0)
+        recordText:SetWidth(textW)
+        statusEnd = closeX - m.gap - recordW - m.gap - textW
+        m.recordW = recordW
+        recordButton:Show()
+        recordText:Show()
+    else
+        recordButton:Hide()
+        recordText:Hide()
+    end
+    statusLine:SetWidth(max(statusEnd - m.gap - (m.pad + m.w * 0.32 + m.gap), 10))
     -- The content area under the title bar.
     m.cx, m.cy = m.pad, border + bar + m.gap
     m.cw, m.ch = m.w - 2 * m.pad, m.h - m.cy - m.pad
@@ -668,7 +710,7 @@ local function ShowRows()
                     if type(g) == "table" then
                         SetButton(r.ppRun, "Cancel", "normal")
                     else
-                        SetButton(r.ppRun, def.start or "Start", "normal", def.risky and not risky)
+                        SetButton(r.ppRun, def.start or "Start", "normal", (def.risky and not risky) or Recording())
                     end
                 else
                     SetButton(r.ppRun, "Run", "normal", RunDisabled(def))
@@ -681,7 +723,18 @@ local function ShowRows()
         end
     end
     local sel = entries[selectedRow]
-    details:SetText("|cffffd100Details:|r " .. DetailsFor(sel))
+    -- While a recording runs the trial buttons are dim: the reason comes first.
+    details:SetText((Recording() and ("|cffffd100" .. RECORDING_NOTE .. "|r ") or "")
+        .. "|cffffd100Details:|r " .. DetailsFor(sel))
+end
+
+local function ShowRecording()
+    if not recordButton:IsShown() then return end
+    local on = Recording()
+    SetButton(recordButton, on and "Stop" or "Start recording", "normal")
+    FitLabel(recordButton, m.recordW - m.gap * 0.5)
+    recordText:SetText(P.RecordingText and P.RecordingText() or "")
+    Color(recordText, on and { 1, 0.35, 0.3 } or DIM)
 end
 
 local function ShowFooter()
@@ -697,8 +750,10 @@ local function ShowFooter()
         { onOff("Auto", o.auto) },
         { "Save (reloads)", "normal" },
     }
+    -- The three that start trials are dim while a recording runs.
+    local recording = Recording()
     for i, b in ipairs(footer) do
-        SetButton(b, labels[i][1], labels[i][2])
+        SetButton(b, labels[i][1], labels[i][2], recording and i <= 3)
         FitLabel(b, m.footerW - m.gap * 0.5)
     end
 end
@@ -721,6 +776,7 @@ Refresh = function()
     ShowTabs()
     ShowRows()
     ShowFooter()
+    ShowRecording()
     if Nav then Nav.Draw() end
 end
 P.RefreshPanel = Refresh
@@ -735,6 +791,8 @@ end
 ---------------------------------------------------------------------------
 -- D-pad: Up / Down move along the tabs or the rows, Left / Right go between
 -- the tabs, a row and its buttons, and along the footer; A presses, B closes.
+-- Up from the first tab goes to the recording line's button when it shows
+-- (that is how a recording is stopped with a controller); Down comes back.
 ---------------------------------------------------------------------------
 
 local NAV_NAME = "PocketProbeNavButton"
@@ -766,6 +824,7 @@ end
 
 -- The frame in focus, or nil.
 function Nav.Target()
+    if Nav.zone == "top" then return recordButton end
     if Nav.zone == "tabs" then return tabs[selectedPage] end
     if Nav.zone == "rows" then
         local stops = RowStops(selectedRow)
@@ -805,11 +864,17 @@ local function Move(key)
                 Nav.zone = "footer"
                 return
             end
+            if key == "UP" and selectedPage == 1 and recordButton:IsShown() then
+                Nav.zone = "top"
+                return
+            end
             selectedPage = (selectedPage - 1 + (key == "UP" and -1 or 1)) % n + 1
             selectedRow = 1
         elseif key == "RIGHT" and nRows > 0 then
             Nav.zone, Nav.sub = "rows", 1
         end
+    elseif zone == "top" then
+        if key == "DOWN" or not recordButton:IsShown() then Nav.zone = "tabs" end
     elseif zone == "rows" then
         if key == "UP" then
             if selectedRow > 1 then selectedRow = selectedRow - 1 end
@@ -924,6 +989,7 @@ end))
 
 -- For the offline tests.
 P.panelTabs, P.panelRows, P.panelFooter, P.panelSizes = tabs, rows, footer, m
+P.panelRecordText = recordText
 
 function P.TogglePanel()
     if panel:IsShown() then panel:Hide() else panel:Show() end

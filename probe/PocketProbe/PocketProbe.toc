@@ -2,8 +2,8 @@
 ## Title: Pocket Probe
 ## Author: ChrisMiho
 ## X-License: GPL-3.0
-## Notes: Test tool, not for play. Tap Probe (or type /probe) to open its panel, run the trials you choose, and it saves what the game allowed. Run it with Pocket Essentials switched off.
-## Version: 0.5.0
+## Notes: Test tool, not for play. Tap Probe (or type /probe) to open its panel, run the trials you choose, and it saves what the game allowed. Run its trials with Pocket Essentials' features off. With Pocket Essentials on it also records performance until you tap Stop.
+## Version: 0.6.0
 ## SavedVariables: PocketProbeDB
 
 Core.lua
@@ -11,3 +11,4 @@ Trials.lua
 Errors.lua
 Run.lua
 Panel.lua
+Perf.lua

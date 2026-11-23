@@ -1255,14 +1255,13 @@ errors; this build relies on that.
 
 ### 21. Version 0.11.0: Controller layout (experimental)
 
-Do section 23 (Pocket Probe 0.5.0) first, in the same sitting. Both zips are
+Do section 23 (Pocket Probe 0.6.0, part 1) first. Both zips are
 in the one pre-release **v0.11.0**. This build now has the map's measured
 size in it; the spots and gaps between pieces are still my first guesses,
 so expect to tell me what overlaps.
 
-Install: delete the old `PocketEssentials` folder (keep `QuestieDB`), unzip
-`wow-forever-pocket-essentials.zip` into `AddOns`, fully restart the game.
-Turn the probe off on the character-select AddOns screen for this part.
+Nothing more to install: both zips went in at section 23. The probe may
+stay on and recording (section 24) while you do this.
 
 1. to 3. **Done in section 23.** Send the probe file before going on.
 4. **Switch it on.** Settings, **Controller** tab, turn **Controller layout**
@@ -1397,21 +1396,26 @@ file `PocketProbe.zip`.
 | Sizes of the map, frames, buff rows, quest tracker, XP bar, the two sub-menu buttons, the pet wheel and one spell button (step 5) | They replace my guessed sizes in the layout, so pieces stop overlapping or sitting off centre | (Always measured) |
 | Moving, resizing and saving layouts (step 8) and no "Interface action failed" afterwards (step 11) | Controller layout 0.11.0 can place the bars and make its own Edit Mode layout as built | The layout is redesigned around what the game allows; whatever was blamed is left out |
 
-### 23. Pocket Probe 0.5.0 (testing tool): does a hidden bar still cast?
+### 23. Pocket Probe 0.6.0 (testing tool), part 1: does a hidden bar still cast?
 
 **What this is for.** Three answers decide how compact the controller screen
 can get: does your main bar still cast when it is moved off screen or made
 invisible, can a bar really be faded during a fight, and can a button of our
 own show a cooldown sweep. About ten minutes. Download: the GitHub
-pre-release **v0.11.0**, file `PocketProbe.zip`.
+pre-release **v0.11.0**, which holds both zips: `PocketProbe.zip` and
+`wow-forever-pocket-essentials.zip`. Install both now; that is the only
+install for sections 23, 24 and 21.
 
 **Before you start**
 
-1. In `AddOns`, delete the old `PocketProbe` folder and unzip the new
-   `PocketProbe.zip` there.
-2. Turn every Pocket Essentials feature Off for this part (or untick Pocket
-   Essentials on the character-select AddOns screen).
-3. Close the game completely and open it again. Log in somewhere quiet.
+1. In `AddOns`, delete the old `PocketProbe` and `PocketEssentials`
+   folders (keep `QuestieDB`). Unzip both new zips there.
+2. Close the game completely and open it again. Log in somewhere quiet.
+   Turn every Pocket Essentials feature Off for this part, as last time
+   (round button, every switch Off).
+3. A small red dot shows bottom right and a round **Stop** button sits
+   beside the PE button: the probe has started recording by itself. Tap
+   **Stop**. (The tests below are refused while it records.)
 
 **Park the main bar (out of a fight)**
 
@@ -1460,12 +1464,12 @@ and so does a reload.
 
 **Send it back**
 
-20. Tap **Probe**, then **Save (reloads)**.
+20. Tap **Risky** back to Off. Tap **Save (reloads)**.
 21. Send me `WTF/Account/<account>/SavedVariables/PocketProbe.lua`. The
     probe also took a few screenshots (before and after parking and fading,
     and of the two squares); send those too if you can find the game's
     `Screenshots` folder.
-22. Tap **Risky** back to Off, then go on to section 21.
+22. Go on to section 24 and just play. I work through this file meanwhile.
 
 **What each answer decides**
 
@@ -1474,3 +1478,34 @@ and so does a reload.
 | A parked or invisible main bar still casts (steps 9 and 12) | A flat strip of our own can take the main bar's place on screen while the game's real bar does the casting out of sight | The game's main bar stays visible; we only shrink and arrange it |
 | A real fade in a fight (step 16, the blink) | Quiet bars can fade the LT, RT and both-triggers bars until their trigger is held, in a fight too | Bars fade only out of a fight |
 | A cooldown sweep on our own square (step 16) | The strip can show the game's own cooldown sweep | The strip dims an icon while it is on cooldown instead (already proven readable) |
+
+### 24. Pocket Probe 0.6.0, part 2: play as normal with the recorder on
+
+**What this is for.** Real numbers from the handheld for how heavy Pocket
+Essentials is: time per frame, memory, frame rate, and the cost of each
+feature, split by what you were doing. Nothing to type and nothing to watch.
+
+1. Switch your Pocket Essentials features back on, the way you normally
+   play. Optional, and what I would do: also switch **Controller layout**
+   On now (Settings, **Controller** tab) and tap **Reload now**. Then this play
+   session is also the layout's test: section 21 from step 5, whenever you
+   feel like it.
+2. Tap **Probe**. At the top of the window tap **Start recording**. It
+   should read "Recording 0 min" in red. Close the window. The red dot and
+   the round **Stop** button are back.
+3. Play as you normally would for at least 15 minutes: a town, some
+   quests, a vendor, a few fights. Longer is better. It stops by itself
+   after 2 hours.
+4. A reload keeps the same recording going. A full restart of the game
+   starts a new one (the last three are kept).
+5. When you are done: tap the round **Stop**, then **Probe**, then
+   **Save (reloads)**.
+6. Send me `SavedVariables/PocketProbe.lua` again (it still holds part 1's
+   answers too) and `SavedVariables/PocketEssentials.lua`.
+7. If the dot or the Stop button is ever in the way, or anything feels
+   slower with the recorder on, tell me. Stopping the recording puts
+   everything back; unticking Pocket Probe on the character-select AddOns
+   screen removes it altogether.
+
+On a computer: `scripts/read-probe.sh <PocketProbe.lua> --perf` prints the
+report, and `--perf --diff <older file>` compares two recordings.

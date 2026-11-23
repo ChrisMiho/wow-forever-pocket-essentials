@@ -1154,6 +1154,8 @@ Add({
 -- Square 1 is given the game's duration object, square 2 the start and
 -- duration numbers. Both calls are documented as protected, so a refusal is
 -- an answer too. No cooldown value is read into the saved table.
+-- The three trials are marked manual: the squares and the screenshot have no
+-- place in an automatic pass. Fight tests, Run all safe and Run still run them.
 ---------------------------------------------------------------------------
 
 local SWEEP_SIZE, SWEEP_GAP = 48, 8
@@ -1277,7 +1279,7 @@ end
 
 Add({
     id = "cd.duration", area = "Our own windows", label = "Read the main bar's cooldown duration objects (run it in a fight too)",
-    kind = "value", fight = true,
+    kind = "value", fight = true, manual = true,
     needs = { "C_ActionBar.HasAction", "C_ActionBar.GetActionCooldownDuration" },
     read = function(c)
         local tally, take = Tally()
@@ -1309,7 +1311,7 @@ Add({
 
 Add({
     id = "cd.sweep.object", area = "Our own windows", label = "Cooldown sweep on a square of ours, from the game's duration object",
-    kind = "action", fight = true,
+    kind = "action", fight = true, manual = true,
     needs = { "C_ActionBar.HasAction", "C_ActionBar.GetActionCooldown", "C_ActionBar.GetActionCooldownDuration" },
     run = function()
         return RunSweep(1, "SetCooldownFromDurationObject", function(slot)
@@ -1320,7 +1322,7 @@ Add({
 
 Add({
     id = "cd.sweep.numbers", area = "Our own windows", label = "Cooldown sweep on a square of ours, from the start and duration numbers",
-    kind = "action", fight = true,
+    kind = "action", fight = true, manual = true,
     needs = { "C_ActionBar.HasAction", "C_ActionBar.GetActionCooldown" },
     run = function()
         return RunSweep(2, "SetCooldown", function(slot)

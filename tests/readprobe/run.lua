@@ -400,6 +400,260 @@ do
 end
 
 ---------------------------------------------------------------------------
+-- Probe 0.6.0: the performance report (--perf, --perf --diff)
+-- Source: docs/superpowers/specs/2026-11-21-perf-recorder.md, section C. The
+-- sample lines are written by hand in the layout at the top of
+-- probe/PocketProbe/Perf.lua; the numbers are chosen so the sums are round.
+---------------------------------------------------------------------------
+
+local function perfRun()
+    return {
+        started = "2026-11-22 14:00:00", ended = "2026-11-22 14:00:45", why = "stopped", t0 = 500, interval = 15,
+        addon = "0.11.0", profiler = "on", features = true, reloads = 1,
+        keys = { "questicons", "core" },
+        feat = {
+            ["*"] = { ms = 24, calls = 800, max = 6.5 },
+            questicons = { ms = 19, calls = 600, max = 6.5, events = {
+                QUEST_LOG_UPDATE = { ms = 12, calls = 20 }, OnUpdate = { ms = 5, calls = 570 },
+                BAG_UPDATE = { ms = 1.5, calls = 8 }, SMALLEST = { ms = 0.5, calls = 2 }, junk = "x" } },
+            core = { ms = 5, calls = 200, max = 0.2, events = { BAG_UPDATE = { ms = 5, calls = 200 } } },
+            broken = "junk",
+        },
+        session = { pe = { avg = 0.05, peak = 3.5 }, all = { avg = 0.5, peak = 20 } },
+        samples = {
+            "t=0;dt=0;a=s;fps=60;mem=800,10000,300",
+            "t=15;dt=15;a=ms;fps=60;mem=820,10000,300;pe=6,300,1.5;f=1:4:200:1.5,2:2:100:0.2;p=0.03,4,1,0,0,0,0,0;all=0.3,20,2,0;app=16.6",
+            "t=30;dt=15;a=cm;fps=40;mem=860,10000,310;pe=18,500,6.5;f=1:15:400:6.5,2:3:100:0.2;p=0.05,10,2,1,0,0,0,0;all=0.5,30,4,1;app=20",
+            7, "not a sample",
+            "t=45;dt=15;a=s;fps=60;mem=830,10000,310;p=0.01,0,0,0,0,0,0,0;all=0.2,5,0,0;app=16.6",
+        },
+    }
+end
+
+local function perfFile(runs)
+    return { version = 1, game = "1.60.1 (71037)", probe = "0.6.0", perf = { on = false, stopped = true, runs = runs } }
+end
+
+local function has(lines, part)
+    return table.concat(lines, "\n"):find(part, 1, true) ~= nil
+end
+
+do
+    local s = R.perfSample("t=30;dt=15;a=cm;fps=40;mem=860,,310;pe=18,500,6.5;f=1:15:400:6.5,2:3:100:0.2;p=0.05,10,2,1;all=0.5,30,4,1;app=20")
+    eq({ s.t, s.dt, s.tags, s.fps, s.app }, { 30, 15, "cm", 40, 20 }, "a sample line's plain fields")
+    eq({ s.mem[1], s.mem[2] == nil, s.mem[3] }, { 860, true, 310 }, "an addon that was not read leaves a gap in the memory list")
+    eq({ s.pe[1], s.pe[2], s.pe[3], s.p[2], s.all[3] }, { 18, 500, 6.5, 10, 4 }, "a sample line's number lists")
+    eq({ #s.f, s.f[1].key, s.f[1].ms, s.f[2].calls, s.f[2].slowest }, { 2, 1, 15, 100, 0.2 }, "a sample line's per-feature entries")
+    eq(R.perfSample(7), nil, "a sample that is not text is left out")
+    eq(R.perfSample("hello"), nil, "text that is not a sample is left out")
+end
+
+do
+    local sum = R.perfSummary(perfRun())
+    eq({ sum.samples, sum.seconds, sum.total.ms, sum.total.calls, sum.total.slowest }, { 4, 45, 24, 800, 6.5 }, "a run's totals")
+    eq(sum.total.frames, 2400, "frames estimated from the frame rate at both ends of each sample")
+    eq(string.format("%.4f", sum.msPerFrame), "0.0100", "ms per frame is the total over the estimated frames")
+    eq({ sum.total.over[1], sum.total.over[2], sum.total.over[3] }, { 14, 3, 1 }, "frames over 1, 5 and 10 ms")
+    eq({ string.format("%.3f", sum.recent), string.format("%.1f", sum.share) }, { "0.030", "9.0" }, "recent average and share of all addons")
+    local m = sum.memory[1]
+    eq({ m.start, m.min, m.max, m.finish, m.growth }, { 800, 800, 860, 830, 40 }, "Pocket Essentials' memory: start, least, most, end, growth per minute")
+    eq({ sum.featureRows[1].key, sum.featureRows[2].key, #sum.featureRows }, { "questicons", "core", 2 }, "features sorted by total time; junk left out")
+    eq({ sum.featureRows[1].events[1].name, sum.featureRows[1].events[2].name, sum.featureRows[1].events[3].name },
+        { "QUEST_LOG_UPDATE", "OnUpdate", "BAG_UPDATE" }, "a feature's events, the busiest first")
+    eq({ sum.byTag.c.seconds, sum.byTag.c.ms, sum.byTag.c.frames }, { 15, 18, 750 }, "the fight's share of the run")
+    eq({ sum.byTag.m.seconds, sum.byTag.s.seconds, sum.byTag.s.ms }, { 30, 30, 6 }, "a sample counts under every activity seen in it")
+    eq(sum.byTag.w, nil, "an activity never seen has no row")
+end
+
+do
+    local out = R.formatPerf(perfFile({ perfRun() }))
+    eq({ out[1], out[2], out[3] }, { "Performance recording", "Game 1.60.1 (71037), probe 0.6.0", "1 run in this file, the newest last" }, "the report's heading")
+    for _, part in ipairs({
+        "Run 1 of 1: started 2026-11-22 14:00:00, ended 2026-11-22 14:00:45 (stopped with Stop)",
+        "45 s recorded, 4 samples (one every 15 s), Pocket Essentials 0.11.0, carried on over 1 reload",
+        "per frame, average  0.01 ms (frames estimated from the frame rate: about 2400)",
+        "total               24 ms in 800 runs (32 ms per minute)",
+        "slowest single run  6.5 ms",
+        "recent average             0.03 ms per frame (the mean of 3 readings)",
+        "frames over 1 ms           14 (18.67 per minute)",
+        "frames over 5 ms           3 (4 per minute)",
+        "frames over 10 ms          1 (1.33 per minute)",
+        "share of all addons' time  9 %",
+        "since the game started     average 0.05 ms per frame, peak 3.5 ms",
+        "Memory (KB)        start  least  most   end    growth per minute",
+        "Pocket Essentials  800    800    860    830    +40",
+        "QuestieDB          10000  10000  10000  10000  0",
+        "Frame rate: average 53.3, lowest 40",
+        "Feature     Total ms  Runs  ms per run  Slowest ms  Busiest events (ms / runs)",
+        "questicons  19        600   0.032       6.5         QUEST_LOG_UPDATE 12 / 20, OnUpdate 5 / 570, BAG_UPDATE 1.5 / 8",
+        "core        5         200   0.025       0.2         BAG_UPDATE 5 / 200",
+        "Activity        Time  ms per frame  Slowest ms  Over 5 ms per min  Frame rate  Busiest feature",
+        "in a fight      15 s  0.024         6.5         8                  40          questicons",
+        "moving          30 s  0.0145        6.5         6                  50          questicons",
+        "standing still  30 s  0.0036        1.5         2                  60          questicons",
+        "In plain words (the newest run)",
+        "Time: light. Pocket Essentials used about 0.01 ms of each frame, by its own counters (light is under 0.1 ms, heavy is 1 ms or more).",
+        "Memory: light. Pocket Essentials held at most 0.84 MB (light is under 2 MB) and did not keep growing.",
+        "Hitches: some. 3 frames spent over 5 ms in Pocket Essentials in 45 s (few is under 1 a minute).",
+        "Overall: in between.",
+    }) do
+        check(has(out, part), "--perf: the report lacks \"" .. part .. "\"\n" .. table.concat(out, "\n"))
+    end
+    check(not has(out, "SMALLEST"), "--perf: only the three busiest events are printed")
+    check(not has(out, "in a dungeon"), "--perf: an activity that was never seen has no row")
+end
+
+do
+    -- Profiler off: the hook's numbers, memory and frame rate still print.
+    local off = perfRun()
+    off.profiler, off.session = "off", nil
+    for i, line in ipairs(off.samples) do
+        if type(line) == "string" then off.samples[i] = line:gsub(";p=.*$", "") end
+    end
+    local out = R.formatPerf(perfFile({ off }))
+    check(has(out, "profiler off"), "profiler off: the report says so")
+    check(has(out, "per frame, average  0.01 ms"), "profiler off: the hook's numbers are still there")
+    check(has(out, "Hitches: cannot tell (profiler off)."), "profiler off: no word on hitches")
+    check(has(out, "Overall: light."), "profiler off: the verdict uses what there is")
+    check(not has(out, "frames over 5 ms"), "profiler off: no profiler rows")
+    -- No profiler on the client.
+    off.profiler = "missing"
+    check(has(R.formatPerf(perfFile({ off })), "The game's profiler: not on this client"), "a client without the profiler: the report says so")
+
+    -- An older Pocket Essentials: no per-feature numbers; the time comes from the profiler.
+    local old = perfRun()
+    old.features, old.feat, old.keys = false, {}, {}
+    for i, line in ipairs(old.samples) do
+        if type(line) == "string" then old.samples[i] = line:gsub(";pe=[^;]*", ""):gsub(";f=[^;]*", "") end
+    end
+    out = R.formatPerf(perfFile({ old }))
+    check(has(out, "no per-feature numbers"), "no hook: the report says there are no per-feature numbers")
+    check(not has(out, "Per feature, the busiest first"), "no hook: no per-feature table")
+    check(has(out, "Time: light. Pocket Essentials used about 0.03 ms of each frame, by the game's profiler"), "no hook: the time comes from the profiler")
+    check(has(out, "frames over 5 ms           3 (4 per minute)"), "no hook: the profiler rows still print")
+
+    -- Heavy: a millisecond a frame, or memory that keeps growing.
+    local heavy = perfRun()
+    heavy.samples[2] = heavy.samples[2]:gsub("pe=6,", "pe=6000,")
+    out = R.formatPerf(perfFile({ heavy }))
+    check(has(out, "Time: heavy.") and has(out, "Overall: heavy."), "a millisecond a frame is heavy")
+    local growing = perfRun()
+    growing.samples = { "t=0;dt=0;a=s;fps=60;mem=800,,", "t=300;dt=300;a=s;fps=60;mem=1100,,", "t=600;dt=300;a=s;fps=60;mem=1500,,;pe=1,1,1" }
+    out = R.formatPerf(perfFile({ growing }))
+    check(has(out, "Memory: heavy. Pocket Essentials held at most 1.46 MB (light is under 2 MB) and kept growing, by about 70 KB a minute."),
+        "memory that keeps growing is heavy\n" .. table.concat(out, "\n"))
+    check(has(out, "QuestieDB          -      -      -     -     not loaded or not read"), "an addon that is not loaded has an empty memory row")
+    check(has(out, "10 min 0 s recorded"), "minutes and seconds")
+
+    -- What the client lacked, a run that filled up, a run still going, a run too short.
+    local odd = perfRun()
+    odd.missing = { GetFramerate = true, ["C_Timer.NewTicker"] = true }
+    odd.why, odd.ended = "full", "2026-11-22 16:00:00"
+    out = R.formatPerf(perfFile({ odd }))
+    check(has(out, "Not on this client, so left out: C_Timer.NewTicker, GetFramerate"), "the names the client lacked are listed")
+    check(has(out, "(stopped by itself after 2 hours)"), "a run that filled up says so")
+    local going = perfRun()
+    going.why, going.ended = nil, nil
+    check(has(R.formatPerf(perfFile({ going })), "still running when the file was written"), "a run with no end says so")
+    local short = { started = "2026-11-22 15:00:00", samples = { "t=0;dt=0;a=s" } }
+    out = R.formatPerf(perfFile({ perfRun(), "junk", short }))
+    check(has(out, "2 runs in this file") and has(out, "Run 2 of 2: started 2026-11-22 15:00:00"), "runs that are not tables are left out")
+    check(has(out, "Too short: no full sample yet.") and has(out, "Too short to say anything."), "a run with one sample is too short")
+
+    -- Files without recordings, and odd types, print and do not raise.
+    for name, db in pairs({
+        ["an empty file"] = {}, ["a 0.5.0 file"] = { probe = "0.5.0", results = {} },
+        ["perf of the wrong type"] = { perf = "x" }, ["runs of the wrong type"] = { perf = { runs = 5 } },
+    }) do
+        local ok, lines = pcall(R.formatPerf, db)
+        check(ok and has(lines, "No recording in this file."), name .. ": --perf says there is no recording")
+    end
+    local ok, lines = pcall(R.formatPerf, perfFile({ { started = 5, samples = "x", feat = "y", keys = 3, missing = "z", session = 1, reloads = "a" },
+        { samples = { "t=x;dt=y;a=;fps=;mem=a,b;pe=;f=junk;p=,,", "t=15;dt=15;a=zz;f=9:1:1:1" }, features = true, feat = { k = { ms = "a", events = { e = 1 } } } } }))
+    check(ok, "--perf: odd types do not raise: " .. tostring(lines))
+    -- The ordinary report of a file that also holds recordings is unchanged by them.
+    local both = fixture()
+    local before = table.concat(R.format(both), "\n")
+    both.perf = perfFile({ perfRun() }).perf
+    eq(table.concat(R.format(both), "\n"), before, "the trial tables do not change when the file also holds recordings")
+end
+
+do
+    -- --perf --diff: the newest run of each file, side by side.
+    local after = perfRun()
+    after.started, after.addon = "2026-11-23 09:00:00", "0.11.1"
+    after.samples[2] = after.samples[2]:gsub("pe=6,300,1.5", "pe=3,300,1.5")
+    after.samples[3] = "t=30;dt=15;a=cm;fps=40;mem=840,10000,310;pe=9,500,2;f=1:7:400:2,2:2:100:0.2;p=0.02,5,0,0,0,0,0,0;all=0.5,30,4,1;app=20"
+    after.feat.questicons.ms, after.feat.questicons.max = 9.5, 2
+    after.feat.core = nil
+    after.feat.bags = { ms = 1.5, calls = 3, max = 0.9 }
+    local out = R.perfDiff(perfFile({ { started = "old", samples = {} }, perfRun() }), perfFile({ after }), "before.lua", "after.lua")
+    for _, part in ipairs({
+        "Comparing performance recordings (the newest run of each file)",
+        "before: before.lua (started 2026-11-22 14:00:00, ended 2026-11-22 14:00:45 (stopped with Stop), 45 s, Pocket Essentials 0.11.0)",
+        "after:  after.lua (started 2026-11-23 09:00:00,",
+        "Headline                                        Before  After  Change",
+        "ms per frame, average                           0.01    0.005  -50 %",
+        "ms per minute                                   32      16     -50 %",
+        "slowest single run, ms                          6.5     2      -69 %",
+        "profiler: frames over 5 ms per minute           4       1.33   -67 %",
+        "profiler: frames over 10 ms per minute          1.33    0      -100 %",
+        "Pocket Essentials memory, most, KB              860     840    -2 %",
+        "frame rate, lowest                              40      40     same",
+        "Feature     Before  After  Change  ms per run before  after  Slowest ms before  after",
+        "questicons  25.3    12.7   -50 %   0.032              0.016  6.5                2",
+        "core        6.7     -      -       0.025              -      0.2                -",
+        "bags        -       2      -       -                  0.5    -                  0.9",
+        "before: in between",
+        "after: in between",
+    }) do
+        check(has(out, part), "--perf --diff: the comparison lacks \"" .. part .. "\"\n" .. table.concat(out, "\n"))
+    end
+    out = R.perfDiff(perfFile({ perfRun() }), {}, "a.lua", "b.lua")
+    check(has(out, "after: b.lua has no recording.") and has(out, "Nothing to compare."), "--perf --diff: a file with no recording")
+    local old = perfRun()
+    old.features = false
+    check(has(R.perfDiff(perfFile({ old }), perfFile({ perfRun() })), "Per feature: no per-feature numbers in the first file."),
+        "--perf --diff: one side without per-feature numbers")
+end
+
+do
+    -- The command: --perf alone or with --diff; an old file still prints both ways.
+    local function lua(v, indent)
+        if type(v) == "string" then return string.format("%q", v) end
+        if type(v) ~= "table" then return tostring(v) end
+        local parts = {}
+        for k, x in pairs(v) do
+            parts[#parts + 1] = "[" .. (type(k) == "string" and string.format("%q", k) or tostring(k)) .. "] = " .. lua(x)
+        end
+        return "{ " .. table.concat(parts, ", ") .. " }"
+    end
+    local clean = perfRun()
+    clean.samples = { clean.samples[1], clean.samples[2], clean.samples[3], clean.samples[6] }
+    clean.feat.broken, clean.feat.questicons.events.junk = nil, nil
+    local path = tempFile("PocketProbeDB = " .. lua(perfFile({ clean })))
+    local status, out = R.main({ path, "--perf" })
+    eq(status, 0, "read-probe --perf prints a 0.6.0 file")
+    check(has(out, "Run 1 of 1") and has(out, "Overall: in between."), "read-probe --perf prints the run and the plain words")
+    status, out = R.main({ path, "--perf", "--diff", path })
+    eq(status, 0, "read-probe --perf --diff compares two files")
+    check(has(out, "ms per frame, average") and has(out, "same"), "read-probe --perf --diff prints the comparison")
+    status, out = R.main({ path })
+    eq(status, 0, "a 0.6.0 file prints without --perf too")
+    check(has(out, "Restriction probe") and not has(out, "Performance recording"), "without --perf the trial results print")
+    eq((R.main({ path, "--perf", "--log" })), 2, "--perf does not go with --log")
+    eq((R.main({ path, "--perf", "--markdown" })), 2, "--perf does not go with --markdown")
+    eq((R.main({ "--perf" })), 2, "--perf needs a file")
+    local oldFile = tempFile("PocketProbeDB = { probe = \"0.5.0\", trials = { { id = \"cd.sweep.object\", area = \"Our own windows\", label = \"Sweep\", kind = \"action\" } }, "
+        .. "results = { [\"cd.sweep.object\"] = { [\"gp=on fight=no rest=------ where=world trig=press\"] = \"allowed\" } } }")
+    status, out = R.main({ oldFile, "--perf" })
+    eq(status, 0, "--perf on a 0.5.0 file is not an error")
+    check(has(out, "No recording in this file."), "--perf on a 0.5.0 file says there is no recording")
+    status, out = R.main({ oldFile })
+    check(status == 0 and has(out, "allowed"), "a 0.5.0 file still prints its results")
+end
+
+---------------------------------------------------------------------------
 -- Probe 0.5.0: a saved file holding the new ids prints like any other
 ---------------------------------------------------------------------------
 

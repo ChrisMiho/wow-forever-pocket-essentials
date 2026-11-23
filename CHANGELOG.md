@@ -13,7 +13,7 @@ was away, before the probe round; the probe has since run on the device
 (`docs/11-22-playsession/EVIDENCE.md`) and its measurements are now in.
 Specs `docs/superpowers/specs/2026-11-21-controller-layout.md` and
 `2026-11-22-controller-layout-measured-sizes.md`. Released together with
-Pocket Probe 0.5.0 in one GitHub pre-release. Not yet tested on a device:
+Pocket Probe 0.6.0 in one GitHub pre-release. Not yet tested on a device:
 the map's size is measured and the bar's size is Blizzard's own, but every
 spot and gap is still a first guess. Your saved choices carry over.
 
@@ -40,9 +40,26 @@ spot and gap is still a first guess. Your saved choices carry over.
   - It is a starting point: what you then move in Edit Mode is kept.
     "Start over" rebuilds the layout from the template.
 - **Setup guide:** a Controller screen with the same switch.
-- **Pocket Probe 0.5.0** (testing tool, in the same GitHub pre-release as
-  this build, as its own `PocketProbe.zip`; never in the player zips). Spec
-  `docs/superpowers/specs/2026-11-22-pocket-probe-0.5.0.md`.
+- **A sleeping measuring hook** in the addon's core, for testing only.
+  Nothing in Pocket Essentials switches it on and there is no setting for
+  it; only Pocket Probe's recorder does. Asleep, it costs one yes-or-no
+  check each time a feature's code runs. Awake, it times each run and adds
+  it up per feature. Nothing is saved; a reload puts it back to sleep.
+  Spec `docs/superpowers/specs/2026-11-21-perf-recorder.md`.
+- **Pocket Probe 0.6.0** (testing tool, in the same GitHub pre-release as
+  this build, as its own `PocketProbe.zip`; never in the player zips). Specs
+  `docs/superpowers/specs/2026-11-22-pocket-probe-0.5.0.md` (0.5.0 was not
+  released by itself) and `2026-11-21-perf-recorder.md`.
+  - **Performance recorder**: with Pocket Essentials loaded it records
+    while you play. A red dot shows bottom right and a round Stop button
+    sits beside the PE button; the Probe window's title bar has Stop and
+    Start recording. Every 15 seconds it notes time per frame, memory for
+    Pocket Essentials, QuestieDB and the probe, the frame rate, the cost of
+    each feature, and what you were doing (fighting, in a dungeon, at a
+    vendor, map open, bags open, moving). Two hours at most; the last three
+    recordings are kept. `scripts/read-probe.sh <file> --perf` prints the
+    report, `--perf --diff <other file>` compares two. Tests and recording
+    never run together: "Recording: tap Stop first."
   - **Fight tests** button: one tap in a fight runs what is worth running
     there and leaves out what is known to be refused. It ends with "Fight
     tests done: N run, A allowed or readable, B refused".
@@ -60,7 +77,7 @@ spot and gap is still a first guess. Your saved choices carry over.
   - Sizes: the map's inner container and the three other bars are measured
     too.
   - "Open and close the bags" moved to the Bags and vendor tab to make room.
-  - Device steps: `docs/TESTING.md` section 23.
+  - Device steps: `docs/TESTING.md` sections 23 and 24.
 - **Pocket Probe 0.4.0** (testing tool, released on its own as the GitHub
   pre-release `probe-v0.4.0` before this build): ten new trials. They
   measure the real sizes of the map, frames, buff rows, quest tracker, XP
