@@ -1589,8 +1589,10 @@ warlock later.
 
 **Send it back**
 
-21. Tap **Stop**, then **Probe**, then **Save (reloads)**.
-22. Send me `SavedVariables/PocketProbe.lua`, `SavedVariables/PocketEssentials.lua`
+21. Open Pocket Essentials' settings, tab **Errors**. Take a screenshot of
+    it, even if it is empty.
+22. Tap **Stop**, then **Probe**, then **Save (reloads)**.
+23. Send me `SavedVariables/PocketProbe.lua`, `SavedVariables/PocketEssentials.lua`
     and the screenshots from the game's `Screenshots` folder (the probe takes
     one for the cooldown sweep and one for the wheels).
 
