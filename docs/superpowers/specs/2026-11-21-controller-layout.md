@@ -31,7 +31,9 @@ so the addon gives "a new default template to work from".
 ## Not goals
 
 - Touch players, and play without the game's Gamepad UI.
-- Bars or buttons of our own. Every button stays Blizzard's.
+- Bars or buttons of our own, in this build. (Lifted by the owner on
+  2026-11-23 for later work: "completely remove the rule if its blocking this
+  work". See `docs/ui-review/2026-11-22-compact-ui-gameplan.md`.)
 - Fading bars (Quiet bars, and the "Swap" idea below). Waits for the probe.
 - Changing the sub-menu wheels' size or look.
 - A flashing border for low health (parked in PRD.md).

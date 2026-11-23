@@ -63,6 +63,19 @@ The map was the wrong guess: it is 273 by 283 at full size, so about 218 by
 - The map's default size in the layout: 80% (as in the 0.11.0 spec) or
   60% (what the approved mockup actually drew). This build keeps 80% and
   adds the choice.
-- Whether the flat strip is in 1.0.0. It shows spells with frames of our
-  own, which touches the PRD non-goal on replacing Blizzard's gamepad
-  support; the owner must lift that first.
+- Whether the flat strip is in 1.0.0.
+
+## Decided 2026-11-23 (after the device session)
+
+- **The rule "no bars or buttons of our own" is gone.** The owner: "completely
+  remove the rule if its blocking this work".
+- **Direction: a "face" of our own over the game's bars.** Our frames draw the
+  spells wherever we like; the game's real bars stay whole, faded to
+  invisible, and still take the presses (proven 2026-11-23,
+  `docs/11-23-playsession/EVIDENCE.md`). The owner: "the buttons are mapped
+  in a different way thats hidden from the user".
+- **The split idea is back** as a picture, not a real split: our face can put
+  the d-pad half of a bar on one side of the map and the face-button half on
+  the other, while the real bar stays whole underneath.
+- Real bars of our own (secure buttons bound to the pad, the Bartender way)
+  stay a later option, probe first.
