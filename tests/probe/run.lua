@@ -276,6 +276,38 @@ local function install(c)
             bar:Hide()
             c.barParts[spec[1]][spec[2]] = bar
         end
+        -- Probe 0.7.0. PageUnit's active bar: SetActiveActionBar keeps it and fires the callback
+        -- registered with RegisterActiveActionBarUpdatedCallback, which calls func(owner)
+        -- (PageUnit.lua:527-542, 705; CallbackRegistry.lua:112, 184). c:setActiveBar(bar) is a
+        -- trigger pressed or let go; world.activeBarError makes GetActiveBar raise.
+        local callbacks = {}
+        c.barCallbacks = callbacks
+        world.activeBar = top.Bar
+        rawset(pageUnit, "RegisterActiveActionBarUpdatedCallback", function(_, fn, owner)
+            if type(fn) ~= "function" then error("CallbackRegistryMixin::RegisterCallback 'func' requires function type.") end
+            if type(owner) == "number" then error("'owner' as number is reserved internally.") end
+            callbacks[#callbacks + 1] = { fn = fn, owner = owner }
+        end)
+        rawset(pageUnit, "GetActiveBar", function()
+            if world.activeBarError then error("GetActiveBar failed") end
+            return world.activeBar
+        end)
+        function c:setActiveBar(bar)
+            world.activeBar = bar
+            for _, cb in ipairs(callbacks) do self._protect("active bar callback", cb.fn, cb.owner) end
+        end
+        -- Each spell button carries the mixin's ApplyPressedStyle (ActionBarButton.lua:421, mixed in at
+        -- creation: ActionBarButton.xml:4); the game calls it on a press and a release (:1111-1114).
+        c.pressedStyles = 0
+        for _, list in pairs(c.barButtons) do
+            for _, b in ipairs(list) do
+                rawset(b, "ApplyPressedStyle", function() c.pressedStyles = c.pressedStyles + 1 end)
+            end
+        end
+        function c:pressButton(anchorKey, i, pressed)
+            local b = self.barButtons[anchorKey][i]
+            self._protect("press", function() b:ApplyPressedStyle(pressed) end)
+        end
     end
     -- MinimapCluster.MinimapContainer (Minimap.xml:47); Edit Mode's map size is its scale.
     local container = create("Frame", nil, env.MinimapCluster)
@@ -3795,6 +3827,223 @@ test("clear: stops recording and watchers first", function()
     eq(mainBar(c2):GetAlpha(), 1, "put back first")
     eq(next(saved.guided), nil)
     noErrors(c); noErrors(c2)
+end)
+
+local function anchorBar(c, key) return c.env.GamepadMainActionBarFrame.PageUnit[key].Bar end
+
+test("watch: bar callback names each anchor's bar", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    eq(#c.barCallbacks, 0, "no callback before Arm")
+    P.WatchArm()
+    eq(#c.barCallbacks, 1, "the callback is set on the first Arm")
+    check(type(c.barCallbacks[1].owner) == "table", "the owner is a table of ours")
+    local pageUnit = c.env.GamepadMainActionBarFrame.PageUnit
+    c:setActiveBar(anchorBar(c, "LeftCenteredAnchor")); c:advance(1)
+    c:setActiveBar(anchorBar(c, "RightCenteredAnchor"))
+    c:setActiveBar(anchorBar(c, "BottomCenteredAnchor"))
+    c:setActiveBar(pageUnit.TopCenteredAnchor.PossessBar)
+    c:setActiveBar(anchorBar(c, "TopCenteredAnchor"))
+    c:enterCombat()
+    c:setActiveBar(anchorBar(c, "LeftCenteredAnchor"))
+    c:setActiveBar(anchorBar(c, "TopCenteredAnchor"))
+    c:leaveCombat()
+    local cur = P.WatchCurrent()
+    eq(cur.bar.left.o, 1); eq(cur.bar.left.c, 1)
+    eq(cur.bar.right.o, 1); eq(cur.bar.both.o, 1); eq(cur.bar.other.o, 1)
+    eq(cur.bar.main.o, 1); eq(cur.bar.main.c, 1)
+    eq(#cur.bar.first, 7)
+    eq(cur.bar.first[1], "t=0;left;o")
+    eq(cur.bar.first[2], "t=1;right;o")
+    eq(cur.bar.first[6], "t=1;left;c")
+    -- At most 20 kept in order; the counts go on.
+    for _ = 1, 30 do c:setActiveBar(anchorBar(c, "RightCenteredAnchor")) end
+    eq(#cur.bar.first, 20)
+    eq(cur.bar.right.o, 31)
+    -- A second arming in the same session: the callback is not set twice, and counts go to the new one.
+    P.WatchDisarm()
+    c:setActiveBar(anchorBar(c, "LeftCenteredAnchor"))
+    eq(cur.bar.left.o, 1, "nothing counted while not armed")
+    P.WatchArm()
+    eq(#c.barCallbacks, 1)
+    c:setActiveBar(anchorBar(c, "LeftCenteredAnchor"))
+    eq(P.WatchCurrent().bar.left.o, 1)
+    eq(cur.bar.left.o, 1)
+    for _, v in ipairs(dump(saved.watch)) do check(not v:find("table: ", 1, true), "no frame stored: " .. v) end
+    eq(c:callsTo("GamepadBar.PageUnit:SetAlpha")[1], nil, "PageUnit's alpha is never written")
+    noErrors(c)
+end)
+
+test("watch: GetActiveBar secret and error told apart", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.WatchArm()
+    local hidden = {}
+    c.world.secrets[hidden] = true
+    c:setActiveBar(hidden)
+    c.world.activeBarError = true
+    c:setActiveBar(anchorBar(c, "LeftCenteredAnchor"))
+    c.world.activeBarError = false
+    c:setActiveBar(nil)
+    local cur = P.WatchCurrent()
+    eq(cur.bar.secret.o, 1)
+    eq(cur.bar.error.o, 1)
+    eq(cur.bar.other.o, 1, "no bar at all is 'other'")
+    eq(cur.bar.left, nil)
+    noErrors(c)
+end)
+
+test("watch: no PageUnit", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved, setup = function(cl) rawset(cl.env, "GamepadMainActionBarFrame", nil) end })
+    c:advance(5)
+    eq(P.WatchArm(), true, "Arm still works")
+    local cur = P.WatchCurrent()
+    eq(cur.bar.missing, "PageUnit")
+    eq(cur.press.missing, "the bars' buttons")
+    eq(cur.sweep.missing, "the main bar")
+    c:enterCombat()
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    c:advance(2)
+    eq(cur.events.ACTIONBAR_UPDATE_COOLDOWN.c, 1, "the events are still counted")
+    eq(cur.sweep.result, nil)
+    c:leaveCombat()
+    P.WatchDisarm()
+    noErrors(c)
+    -- PageUnit there, without the callback method.
+    local saved2 = watchSaved()
+    local c2, P2 = new({ saved = saved2, setup = function(cl)
+        rawset(cl.env.GamepadMainActionBarFrame.PageUnit, "RegisterActiveActionBarUpdatedCallback", nil)
+    end })
+    c2:advance(5)
+    P2.WatchArm()
+    eq(P2.WatchCurrent().bar.missing, "RegisterActiveActionBarUpdatedCallback")
+    eq(P2.WatchCurrent().press.missing, nil)
+    noErrors(c2)
+end)
+
+test("watch: press hook counts down and up per bar, in and out of a fight", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    c:pressButton("TopCenteredAnchor", 5, true)
+    P.WatchArm()
+    local cur = P.WatchCurrent()
+    eq(cur.press.hooked, 32, "the eight buttons of each of the four bars")
+    c:pressButton("TopCenteredAnchor", 5, true); c:pressButton("TopCenteredAnchor", 5, false)
+    c:pressButton("BottomCenteredAnchor", 1, true)
+    c:enterCombat()
+    c:pressButton("LeftCenteredAnchor", 8, true); c:pressButton("LeftCenteredAnchor", 8, false)
+    c:pressButton("TopCenteredAnchor", 2, true)
+    c:leaveCombat()
+    eq(cur.press.main.down.o, 1); eq(cur.press.main.up.o, 1); eq(cur.press.main.down.c, 1)
+    eq(cur.press.both.down.o, 1)
+    eq(cur.press.left.down.c, 1); eq(cur.press.left.up.c, 1)
+    eq(cur.press.right, nil)
+    eq(cur.press.kind, "boolean")
+    eq(c.pressedStyles, 7, "the game's own style still runs")
+    -- A secret or other value is counted apart, never compared.
+    local hidden = {}
+    c.world.secrets[hidden] = true
+    c:pressButton("RightCenteredAnchor", 1, hidden)
+    c:pressButton("RightCenteredAnchor", 1, 1)
+    eq(cur.press.right.other.o, 2)
+    eq(cur.press.kind, "boolean / secret / other")
+    noErrors(c)
+end)
+
+test("watch: press hooks installed once", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    eq(P.WatchInstallPressHooks(), 32)
+    eq(P.WatchInstallPressHooks(), 32, "a second call hooks nothing more")
+    P.WatchArm(); P.WatchDisarm(); P.WatchArm()
+    c:pressButton("TopCenteredAnchor", 1, true)
+    eq(P.WatchCurrent().press.main.down.o, 1, "one press counts once")
+    -- A button without the method is left alone.
+    local saved2 = watchSaved()
+    local c2, P2 = new({ saved = saved2, setup = function(cl)
+        rawset(cl.barButtons.TopCenteredAnchor[1], "ApplyPressedStyle", nil)
+    end })
+    c2:advance(5)
+    eq(P2.WatchInstallPressHooks(), 31)
+    noErrors(c); noErrors(c2)
+end)
+
+test("watch: sweep runs once per arming, only in a fight, at most one check per second, stores no value", function()
+    local saved = watchSaved()
+    local checks = 0
+    local c, P = new({ saved = saved, setup = function(cl)
+        local get = cl.env.C_ActionBar.GetActionCooldown
+        rawset(cl.env.C_ActionBar, "GetActionCooldown", function(...) checks = checks + 1 return get(...) end)
+    end })
+    c:advance(5)
+    P.WatchArm()
+    local cur = P.WatchCurrent()
+    -- Out of a fight: nothing.
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    eq(checks, 0, "no check out of a fight")
+    eq(#c.cooldownCalls, 0)
+    -- In a fight, nothing on cooldown: checked, nothing done.
+    c.world.actions[2].duration = 0
+    c:enterCombat()
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    check(checks > 0, "checked in a fight")
+    eq(#c.cooldownCalls, 0)
+    local after = checks
+    c.world.actions[2].duration = 8
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    eq(checks, after, "a second event within a second is not checked")
+    c:advance(1.1)
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    eq(#c.cooldownCalls, 1, "the sweep ran")
+    eq(c.cooldownCalls[1].method, "SetCooldownFromDurationObject")
+    eq(c.cooldownCalls[1].frame, c.cooldowns[1].frame, "on square 1")
+    check(button(c, "PocketProbeSweep"):IsShown(), "the squares show")
+    eq(cur.sweep.result, "allowed")
+    eq(cur.sweep.shownByItself, "yes")
+    eq(cur.sweep.durClass, "readable")
+    eq(cur.sweep.screenshot, "none", "not yet")
+    c:advance(1.2)
+    eq(c.shots, 1)
+    eq(cur.sweep.screenshot, "taken")
+    c:advance(8)
+    check(not button(c, "PocketProbeSweep"):IsShown(), "hidden after 8 seconds")
+    after = checks
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN"); c:advance(1.5); c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    eq(#c.cooldownCalls, 1, "once per arming")
+    eq(checks, after, "done until the next Arm")
+    for k, v in pairs(cur.sweep) do check(type(v) == "string" or k == "t", "only words are stored: " .. k) end
+    c:leaveCombat()
+    -- The next arming runs it again; a refusal is the result.
+    P.WatchDisarm()
+    c.world.cooldownModes.SetCooldownFromDurationObject = "blocked"
+    P.WatchArm()
+    c:enterCombat()
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    eq(#c.cooldownCalls, 2)
+    eq(P.WatchCurrent().sweep.result, "blocked")
+    eq(cell(saved, "after.SetCooldownFromDurationObject", KEY_FIGHT), nil, "not counted as an afterwards refusal")
+    noErrors(c)
+end)
+
+test("watch: screenshot missing changes nothing else", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved, setup = function(cl) rawset(cl.env, "Screenshot", nil) end })
+    c:advance(5)
+    P.WatchArm()
+    c:enterCombat()
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    c:advance(2)
+    local cur = P.WatchCurrent()
+    eq(cur.sweep.result, "allowed")
+    eq(cur.sweep.shownByItself, "yes")
+    eq(cur.sweep.screenshot, "none")
+    eq(c.shots, nil)
+    noErrors(c)
 end)
 
 ---------------------------------------------------------------------------

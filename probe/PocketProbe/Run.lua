@@ -1439,6 +1439,7 @@ P.RunAllSafe, P.RunOne, P.Stop, P.BeginClean, P.Reload = RunAllSafe, RunOne, Sto
 P.ToggleOption, P.StartGuided, P.AnswerGuided = ToggleOption, StartGuided, AnswerGuided
 P.CancelGuided = CancelGuided
 P.RunFightTests = RunFightTests
+P.Watched = Watched          -- for the watchers (Watch.lua): a block in their call is pinned on them
 
 -- For the recorder (Perf.lua): the name of a guided trial that is waiting, or nil.
 function P.GuidedWaiting()

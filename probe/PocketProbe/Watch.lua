@@ -3,12 +3,20 @@ local ADDON_NAME, P = ...
 -- The watchers (probe 0.7.0), and "Clear saved results".
 --
 -- One tap on Arm, out of a fight, and every fight after it is counted until
--- Disarm or a reload: how often the action bar events fire, in and out of a
--- fight, and the time spent in each. Only counts and our own short tags are
--- kept: no spell, no slot action, no cooldown value, no chat.
+-- Disarm or a reload:
+--   * which bar the triggers bring up (the game's own callback);
+--   * the presses the game shows on its buttons (a hook on each button);
+--   * how often the action bar events fire, in and out of a fight, and the
+--     time spent in each;
+--   * once per arming, the first spell on cooldown in a fight gets the
+--     cooldown sweep on square 1 of ours, with one screenshot.
+-- Only counts and our own short tags are kept: no spell, no slot action, no
+-- cooldown value, no chat.
 --
 -- Nothing ticks. The counts come from events, registered only while armed,
--- on one frame of ours made now, at load.
+-- on one frame of ours made now, at load, and from a callback and hooks that
+-- are put on once (the first Arm) and do nothing while not armed: neither
+-- can be taken off again.
 --
 -- The saved data, PocketProbeDB.watch: the last three armings, oldest first.
 -- One arming:
@@ -18,7 +26,20 @@ local ADDON_NAME, P = ...
 --   events           [event] = { c = in a fight, o = out of one }
 --                    _secs = { c = seconds in fights, o = seconds out of them }
 --                    missing = "<event>, ..." for events this client lacks
---   bar, press, sweep   (the other watchers)
+--   bar              [main | left | right | both | other | secret | error] = { c, o }:
+--                    the bar the game made active ("both" is the both-triggers bar,
+--                    "other" any other bar or none; "secret" or "error" when it
+--                    could not be read)
+--                    first = { "t=<seconds since Arm>;<bar>;<c or o>", ... } (the first 20)
+--                    missing = "<game name>" when the callback could not be set
+--   press            [main | left | right | both] = { down = { c, o }, up = { c, o },
+--                    other = { c, o } } (other: "pressed" was secret or not true / false)
+--                    kind = how "pressed" read: "boolean", "secret", "other" (all seen)
+--                    hooked = buttons with the hook; missing = "<what>" when none
+--   sweep            result ("allowed", "blocked", "forbidden", "error", "missing"),
+--                    shownByItself ("yes" / "no"), durClass (the class of
+--                    GetCooldownDuration afterwards), screenshot ("taken" / "none"),
+--                    t (seconds since Arm); missing = "<game name>"
 --
 -- Clear saved results: the first tap only arms it ("Tap again to clear" for
 -- 5 seconds); a second tap in that time stops a recording, the watchers and
@@ -38,6 +59,29 @@ local ADDON_NAME, P = ...
 --   SPELL_UPDATE_COOLDOWN                        Doc/SpellBookDocumentation.lua:927
 --   PLAYER_LOGOUT                                Doc/SystemDocumentation.lua:159
 --   frame :UnregisterAllEvents                   Doc/SimpleFrameAPIDocumentation.lua:1588
+--   PageUnit:RegisterActiveActionBarUpdatedCallback(callback, owner)
+--                                                Blizzard_GamepadActionBars/PageUnit.lua:705 (fired with
+--                                                no payload from SetActiveActionBar, :527-539, when a
+--                                                trigger is pressed or let go: :546-599; the callback is
+--                                                called with that table: Blizzard_SharedXMLBase/
+--                                                CallbackRegistry.lua:112, 184-208; it may not be a number)
+--   PageUnit:GetActiveBar                        Blizzard_GamepadActionBars/PageUnit.lua:542
+--   PageUnit.actionBars: topBar, leftBar, rightBar, bottomBar are the four anchors' .Bar
+--                                                Blizzard_GamepadActionBars/PageUnit.lua:111-114 (the
+--                                                both-triggers bar is bottomBar: :582-584)
+--   button :ApplyPressedStyle(pressed)           Blizzard_GamepadActionBars/ActionBarButton.lua:421, called
+--                                                on a press and a release from TriggerSecureClick (:1111-1114)
+--                                                and the pet buttons' OnClick (:1182). Each button instance
+--                                                carries it: the template's mixin (ActionBarButton.xml:4,
+--                                                GamepadActionBarStandardButtonMixin, built from
+--                                                GamepadActionBarButtonMixin at ActionBarButton.lua:1053) is
+--                                                mixed into the frame when it is made, and the game calls the
+--                                                mixin's methods on the instances (ActionBar.lua:34-35).
+--   hooksecurefunc(table, name, fn)              Blizzard_GamepadSmartNavigation/SmartNavigation.lua:260
+--   P.SweepOnSlot (Trials.lua) uses the names of the sweep trials, listed in Core.lua.
+--
+-- Not proven by the source, and guarded: whether "pressed" reaches an addon's
+-- hook as a plain true / false in a fight. Its class is what is recorded.
 
 local type, pairs, ipairs, pcall, tostring = type, pairs, ipairs, pcall, tostring
 local floor, max = math.floor, math.max
@@ -160,6 +204,204 @@ local function Listen(on)
     end
     table.sort(missing)
     return #missing > 0 and tconcat(missing, ", ") or nil
+end
+
+---------------------------------------------------------------------------
+-- The active bar: the game's callback, set once
+---------------------------------------------------------------------------
+
+local PAGE_UNIT = "GamepadMainActionBarFrame.PageUnit"
+local BARS = { { "TopCenteredAnchor", "main" }, { "LeftCenteredAnchor", "left" },
+    { "RightCenteredAnchor", "right" }, { "BottomCenteredAnchor", "both" } }
+local FIRST_MAX = 20        -- bar changes kept in order, per arming
+
+local function PageUnit()
+    local pu = Find(PAGE_UNIT)
+    if type(pu) == "table" and not IsSecret(pu) then return pu end
+    return nil
+end
+
+-- One anchor's bar, or nil.
+local function AnchorBar(key)
+    local pu = PageUnit()
+    local anchor = pu and pu[key]
+    if type(anchor) ~= "table" or IsSecret(anchor) then return nil end
+    local bar = anchor.Bar
+    if type(bar) ~= "table" or IsSecret(bar) then return nil end
+    return bar
+end
+P.WatchAnchorBar = AnchorBar
+
+-- "main", "left", "right", "both" or "other" for a bar the game names.
+function P.WatchBarName(bar)
+    if type(bar) ~= "table" or IsSecret(bar) then return "other" end
+    for _, entry in ipairs(BARS) do
+        if rawequal(AnchorBar(entry[1]), bar) then return entry[2] end
+    end
+    return "other"
+end
+
+local barKey = {}           -- the table our callback is registered under
+local barHooked = false
+
+local function OnActiveBar()
+    local cur = current
+    if not cur then return end
+    local pu = PageUnit()
+    local name
+    if not pu or type(pu.GetActiveBar) ~= "function" then
+        name = "error"
+    else
+        local ok, bar = pcall(pu.GetActiveBar, pu)
+        if not ok then name = "error"
+        elseif IsSecret(bar) then name = "secret"
+        else name = P.WatchBarName(bar) end
+    end
+    local side = Side()
+    Bump(cur.bar, name, side)
+    if type(cur.bar.first) ~= "table" then cur.bar.first = {} end
+    local first = cur.bar.first
+    if #first < FIRST_MAX then
+        first[#first + 1] = "t=" .. (P.WatchSeconds() or 0) .. ";" .. name .. ";" .. side
+    end
+end
+
+local function SetBarCallback(cur)
+    if barHooked then return end
+    local pu = PageUnit()
+    if not pu then
+        cur.bar.missing = "PageUnit"
+        return
+    end
+    if type(pu.RegisterActiveActionBarUpdatedCallback) ~= "function" then
+        cur.bar.missing = "RegisterActiveActionBarUpdatedCallback"
+        return
+    end
+    if type(pu.GetActiveBar) ~= "function" then cur.bar.missing = "GetActiveBar" end
+    if pcall(pu.RegisterActiveActionBarUpdatedCallback, pu, Guard(OnActiveBar), barKey) then
+        barHooked = true
+    else
+        cur.bar.missing = "RegisterActiveActionBarUpdatedCallback (it raised an error)"
+    end
+end
+
+---------------------------------------------------------------------------
+-- Presses: a hook on each spell button of the four bars, put on once
+---------------------------------------------------------------------------
+
+local pressHooked = {}      -- [button] = true
+local pressCount = 0
+
+local function OnPress(name, pressed)
+    local kind = IsSecret(pressed) and "secret" or (type(pressed) == "boolean" and "boolean" or "other")
+    local dir = (kind == "boolean") and (pressed and "down" or "up") or "other"
+    -- The fade-for-next-fight trial counts main bar presses too (Trials.lua).
+    if P.WatchOnPress then pcall(P.WatchOnPress, name, dir) end
+    local cur = current
+    if not cur then return end
+    cur.press.kind = P.Merge(cur.press.kind, kind)
+    local per = cur.press[name]
+    if type(per) ~= "table" then
+        per = {}
+        cur.press[name] = per
+    end
+    Bump(per, dir, Side())
+end
+
+-- Puts the hook on every button that does not have it yet. Returns how many
+-- buttons have it.
+function P.WatchInstallPressHooks()
+    if type(hooksecurefunc) ~= "function" then return pressCount end
+    for _, entry in ipairs(BARS) do
+        local bar, name = AnchorBar(entry[1]), entry[2]
+        local list = bar and bar.actionButtons
+        if type(list) == "table" and not IsSecret(list) then
+            for i = 1, 8 do
+                local b = list[i]
+                if type(b) == "table" and not IsSecret(b) and not pressHooked[b] and type(b.ApplyPressedStyle) == "function" then
+                    local hook = Guard(function(_, pressed) OnPress(name, pressed) end)
+                    if pcall(hooksecurefunc, b, "ApplyPressedStyle", hook) then
+                        pressHooked[b] = true
+                        pressCount = pressCount + 1
+                    end
+                end
+            end
+        end
+    end
+    return pressCount
+end
+
+---------------------------------------------------------------------------
+-- The cooldown sweep, once per arming
+---------------------------------------------------------------------------
+
+local SWEEP_NEEDS = { "C_ActionBar.HasAction", "C_ActionBar.GetActionCooldown", "C_ActionBar.GetActionCooldownDuration" }
+local sweepDone = false     -- this arming's sweep ran (or cannot run)
+local sweepCheckAt          -- the game's clock at the last look for a spell on cooldown
+
+local function SweepNow(cur, slot)
+    local sw = cur.sweep
+    sw.t = P.WatchSeconds() or 0
+    sw.screenshot = "none"
+    if not P.SweepOnSlot or not P.Watched then
+        sw.result = "missing"
+        return
+    end
+    local function onShot(taken)
+        if taken then sw.screenshot = "taken" end
+    end
+    local out, missing, sig = P.Watched("watch.sweep", function() return P.SweepOnSlot(slot, onShot) end)
+    if sig then
+        sw.result = (sig.kind == "forbidden" or sig.kind == "blocked") and sig.kind or "error"
+    elseif out == "missing" then
+        sw.result, sw.missing = "missing", tostring(missing)
+    elseif type(out) == "table" then
+        sw.result = out.ok and "allowed" or "error"
+    else
+        sw.result = "error"
+    end
+    if type(out) == "table" then
+        sw.shownByItself = out.shown and "yes" or "no"
+        sw.durClass = type(out.durClass) == "string" and out.durClass or nil
+    end
+    Log("watch: cooldown sweep " .. sw.result)
+end
+
+local function OnCooldownEvent(cur)
+    if sweepDone or not fighting then return end
+    local now = Clock()
+    if sweepCheckAt and now and now - sweepCheckAt < 1 then return end
+    sweepCheckAt = now
+    local slot, state
+    if P.SweepSlot then slot, state = P.SweepSlot() end
+    if not slot or state ~= "yes" then return end
+    sweepDone = true
+    SweepNow(cur, slot)
+end
+
+P.WatchOnEvent = function(event, cur)
+    if event == "ACTIONBAR_UPDATE_COOLDOWN" then OnCooldownEvent(cur) end
+end
+
+local function SetSweep(cur)
+    sweepDone, sweepCheckAt = false, nil
+    for _, name in ipairs(SWEEP_NEEDS) do
+        if Find(name) == nil then
+            cur.sweep.missing, sweepDone = name, true
+            return
+        end
+    end
+    if not AnchorBar("TopCenteredAnchor") then cur.sweep.missing, sweepDone = "the main bar", true end
+end
+
+-- At every Arm: the callback and the hooks (once each), the sweep made ready.
+P.WatchOnArm = function(cur)
+    SetBarCallback(cur)
+    cur.press.hooked = P.WatchInstallPressHooks()
+    if cur.press.hooked == 0 then
+        cur.press.missing = (type(hooksecurefunc) ~= "function") and "hooksecurefunc" or "the bars' buttons"
+    end
+    SetSweep(cur)
 end
 
 ---------------------------------------------------------------------------

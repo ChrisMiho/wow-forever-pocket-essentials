@@ -1194,10 +1194,14 @@ end
 local sweepToken = 0             -- changes with every show, so only the newest timer hides
 
 -- Shows the squares for SWEEP_SHOW seconds (a second run starts the time
--- again) and takes one screenshot a second after they come up.
-local function ShowSweep()
+-- again) and takes one screenshot a second after they come up. onShot (if
+-- given) is told whether that picture was taken.
+local function ShowSweep(onShot)
     local after = Find("C_Timer.After")
-    if type(after) ~= "function" then return end
+    if type(after) ~= "function" then
+        if onShot then onShot(false) end
+        return
+    end
     local fresh = not Shown(sweep)
     sweep:Show()
     sweepToken = sweepToken + 1
@@ -1208,8 +1212,12 @@ local function ShowSweep()
     if fresh then
         after(SWEEP_SHOT, P.Guard(function()
             local shot = Find("Screenshot")
-            if type(shot) == "function" and Shown(sweep) then pcall(shot) end
+            local taken = false
+            if type(shot) == "function" and Shown(sweep) then taken = pcall(shot) and true or false end
+            if onShot then onShot(taken) end
         end))
+    elseif onShot then
+        onShot(false)
     end
 end
 
@@ -1243,23 +1251,21 @@ local function SweepSlot()
     return first, firstState
 end
 
--- One sweep trial: square `index` gets the slot's icon, then `method` is
--- called on its Cooldown frame with what values(slot) returns ({ n = count,
--- ... }, or nil and why). The values go straight from the game to the frame.
-local function RunSweep(index, method, values)
+P.SweepSlot = SweepSlot
+
+-- Square `index` gets the slot's icon and shows (ShowSweep), then `method` is
+-- called on its Cooldown frame with args ({ n = count, ... }). The values go
+-- straight from the game to the frame. Returns whether the call went through
+-- (and its error), whether the frame showed by itself, and the class of
+-- GetCooldownDuration afterwards.
+local function SweepSquare(index, method, slot, args, onShot)
     local cd = sweepCooldowns[index]
-    if not cd then return "missing", "CooldownFrameTemplate" end
-    if not Has(cd, method) then return "missing", "Cooldown:" .. method end
-    local slot, running = SweepSlot()
-    if not slot then return false, "no main bar button holds a spell" end
-    local args, why = values(slot)
-    if not args then return false, why end
     local texture = Find("C_ActionBar.GetActionTexture")
     if type(texture) == "function" then
         local ok, v = pcall(texture, slot)
         if ok then pcall(sweepIcons[index].SetTexture, sweepIcons[index], v) end
     end
-    ShowSweep()
+    ShowSweep(onShot)
     cd:Hide()
     local ok, err = pcall(cd[method], cd, unpack(args, 1, args.n))
     -- Whether setting a cooldown shows the frame is one of the things asked.
@@ -1271,10 +1277,41 @@ local function RunSweep(index, method, values)
     end
     -- Shown by us if it did not show itself, so a sweep can still be seen.
     if not shown then cd:Show() end
+    return ok, err, shown, class
+end
+
+-- One sweep trial: square `index`, `method`, with what values(slot) returns
+-- ({ n = count, ... }, or nil and why).
+local function RunSweep(index, method, values)
+    local cd = sweepCooldowns[index]
+    if not cd then return "missing", "CooldownFrameTemplate" end
+    if not Has(cd, method) then return "missing", "Cooldown:" .. method end
+    local slot, running = SweepSlot()
+    if not slot then return false, "no main bar button holds a spell" end
+    local args, why = values(slot)
+    if not args then return false, why end
+    local ok, err, shown, class = SweepSquare(index, method, slot, args)
     local note = "slot on cooldown " .. running .. "; sweep frame shown by itself " .. (shown and "yes" or "no")
         .. "; duration afterwards " .. class
     if not ok then error(P.Plain(err, 200) .. " | " .. note, 0) end
     return true, note
+end
+
+-- Probe 0.7.0, the sweep watcher (Watch.lua): the steps of cd.sweep.object
+-- on square 1 for this slot. Returns "missing" and a name, or a table:
+-- { ok = the call went through, shown = the frame showed by itself,
+-- durClass = the class of GetCooldownDuration afterwards }. onShot is told
+-- whether the screenshot a second later was taken.
+function P.SweepOnSlot(slot, onShot)
+    local cd = sweepCooldowns[1]
+    if not cd then return "missing", "CooldownFrameTemplate" end
+    if not Has(cd, "SetCooldownFromDurationObject") then return "missing", "Cooldown:SetCooldownFromDurationObject" end
+    local get = Find("C_ActionBar.GetActionCooldownDuration")
+    if type(get) ~= "function" then return "missing", "C_ActionBar.GetActionCooldownDuration" end
+    local okd, object = pcall(get, slot)
+    if not okd then return { ok = false } end
+    local ok, _, shown, class = SweepSquare(1, "SetCooldownFromDurationObject", slot, { n = 1, object }, onShot)
+    return { ok = ok and true or false, shown = shown and true or false, durClass = class }
 end
 
 Add({
