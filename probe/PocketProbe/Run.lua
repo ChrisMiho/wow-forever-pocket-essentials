@@ -1569,6 +1569,12 @@ P.CancelGuided = CancelGuided
 P.RunFightTests = RunFightTests
 P.Watched = Watched          -- for the watchers (Watch.lua): a block in their call is pinned on them
 
+-- For Clear saved results (Watch.lua): the situations counted as covered by
+-- an automatic pass this session are forgotten with the results.
+function P.ResetCovered()
+    for key in pairs(completed) do completed[key] = nil end
+end
+
 -- For the recorder (Perf.lua): the name of a guided trial that is waiting, or nil.
 function P.GuidedWaiting()
     if not db then return nil end

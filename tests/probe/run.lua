@@ -4812,6 +4812,143 @@ test("probe button at TOP 0,-28; big message and sweep squares follow it", funct
 end)
 
 ---------------------------------------------------------------------------
+-- Probe 0.7.0, review fixes: the recording never stays paused, the Fight
+-- button after a reload in a fight, Clear forgets the covered situations
+---------------------------------------------------------------------------
+
+-- The recording takes samples again: one more sample with dt > 0 within 16 s.
+local function recordsAgain(c, r, where)
+    local n = #r.samples
+    c:advance(16)
+    check(#r.samples > n, where .. ": no sample after the pause")
+    local s = fields(r.samples[#r.samples])
+    check(tonumber(s.dt) > 0, where .. ": the new sample covers time (" .. s.dt .. ")")
+end
+
+test("fight button: the recording resumes when RunFightTests raises", function()
+    local c, P, db = newPerf({ saved = { options = { auto = false } } })
+    c:advance(5)
+    c:enterCombat(); c:advance(1)
+    local real = P.RunFightTests
+    P.RunFightTests = function() error("broken on purpose") end
+    c:click(floatFight(c))
+    check(countLog(db, "error in the probe: ") >= 1, "the error is logged")
+    eq(P.floatFight.label:GetText(), "Fight", "the button is usable again")
+    recordsAgain(c, lastRun(db), "raised")
+    P.RunFightTests = real
+    c:click(floatFight(c))
+    eq(countLog(db, "pass started"), 1, "the next tap runs the pass")
+    untilIdle(c, P)
+    -- Remove the logged error so noErrors does not count it.
+    for i = #db.log, 1, -1 do if db.log[i]:find("broken on purpose", 1, true) then table.remove(db.log, i) end end
+    noErrors(c)
+end)
+
+test("fight button: the recording resumes when the fight ends mid-pass", function()
+    local c, P, db = newPerf({ saved = { options = { auto = false } } })
+    c:advance(5)
+    c:enterCombat(); c:advance(1)
+    local r = lastRun(db)
+    c:click(floatFight(c))
+    c:advance(2)
+    c:leaveCombat()
+    untilIdle(c, P)
+    check(fields(r.samples[#r.samples]).a:find("p", 1, true), "the sample after the pause")
+    recordsAgain(c, r, "fight ended")
+    noErrors(c)
+    -- A pass that never calls back (stand-in): the fight's end ends the pause.
+    local c2, P2, db2 = newPerf({ saved = { options = { auto = false } } })
+    c2:advance(5)
+    c2:enterCombat(); c2:advance(1)
+    P2.RunFightTests = function() return true end
+    c2:click(floatFight(c2))
+    local r2 = lastRun(db2)
+    local n = #r2.samples
+    c2:advance(16)
+    eq(#r2.samples, n, "paused while it thinks the pass runs")
+    c2:leaveCombat()
+    recordsAgain(c2, r2, "no call back")
+    noErrors(c2)
+end)
+
+test("fight button: the recording resumes when Stop is tapped during the pass", function()
+    local c, P, db = newPerf({ saved = { options = { auto = false } } })
+    c:advance(5)
+    c:enterCombat(); c:advance(1)
+    local r = lastRun(db)
+    c:click(floatFight(c))
+    c:advance(1)
+    c:click(button(c, "PocketProbeStopButton"))
+    eq(P.Busy(), false)
+    check(fields(r.samples[#r.samples]).a:find("p", 1, true), "the sample after the pause")
+    recordsAgain(c, r, "probe Stop")
+    c:advance(3)
+    c:click(floatFight(c))
+    eq(countLog(db, "pass started"), 2, "the button works again")
+    untilIdle(c, P)
+    noErrors(c)
+end)
+
+test("fight button: the recorder's Stop during the pause ends cleanly", function()
+    local c, P, db = newPerf({ saved = { options = { auto = false } } })
+    c:advance(5)
+    c:enterCombat(); c:advance(1)
+    local r = lastRun(db)
+    c:click(floatFight(c))
+    local n = #r.samples
+    c:click(button(c, "PocketProbeRecStopButton"))
+    eq(P.Recording(), false)
+    eq(#r.samples, n, "no last sample for the pause")
+    eq(r.why, "stopped")
+    untilIdle(c, P)
+    eq(#r.samples, n, "nothing written when the pass ends")
+    check(not floatFight(c):IsShown(), "hidden: neither recording nor armed")
+    -- A new recording records normally.
+    P.StartRecording()
+    recordsAgain(c, lastRun(db), "new recording")
+    noErrors(c)
+end)
+
+test("fight button: a reload during the pass, in a fight, records and shows the button again", function()
+    local saved = { options = { auto = false } }
+    local c, P = newPerf({ saved = saved })
+    c:advance(5)
+    c:enterCombat(); c:advance(1)
+    c:click(floatFight(c))
+    c:advance(1)
+    local r = saved.perf.runs[1]
+    local n = #r.samples
+    c:fire("PLAYER_LOGOUT")
+    eq(#r.samples, n, "no last sample for the pause at the logout")
+    local c2, P2 = newPerf({ saved = saved, reload = true, setup = function(cl)
+        cl.now = 1100
+        cl.world.inCombat = true
+    end })
+    eq(P2.Recording(), true, "the run carries on")
+    check(fields(r.samples[#r.samples]).a:find("r", 1, true), "marked as after a reload")
+    check(floatFight(c2):IsShown(), "the button shows: the fight goes on after the reload")
+    recordsAgain(c2, r, "after the reload")
+    c2:click(floatFight(c2))
+    eq(countLog(saved, "pass started"), 2, "it runs the pass")
+    untilIdle(c2, P2)
+    c2:leaveCombat()
+    check(not floatFight(c2):IsShown())
+    noErrors(c2)
+end)
+
+test("clear: the automatic passes run again after Clear", function()
+    local saved = { options = { auto = true } }
+    local c, P = new({ saved = saved })
+    c:advance(25)
+    eq(saved.situations[KEY_AUTO].passes, 1)
+    P.ClearSaved(); c:advance(1); P.ClearSaved()
+    eq(next(saved.situations), nil)
+    c:enterCombat(); c:advance(0.5); c:leaveCombat(); c:advance(30)
+    eq(saved.situations[KEY_AUTO] and saved.situations[KEY_AUTO].passes, 1, "the situation is covered again")
+    noErrors(c)
+end)
+
+---------------------------------------------------------------------------
 -- Run
 ---------------------------------------------------------------------------
 

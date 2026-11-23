@@ -321,6 +321,25 @@ an eleventh tab, as before.
     `P.SweepOnSlot` / `P.SweepSlot` (Trials.lua); `cd.sweep.object` behaves
     as before.
 
+### Review fixes (one commit after the review)
+
+- The recording can no longer stay paused for good: the Fight button calls
+  the fight tests in a pcall and resumes at once if they raise; and when the
+  fight ends while it still counts its pass as running but no pass runs, the
+  pass is taken as over (resume, tick, button usable). Tested: an error, the
+  fight ending mid-pass (and a pass that never calls back), the probe's Stop,
+  the recorder's Stop during the pause, a reload during the pass.
+- After a reload in a fight the Fight button knows the fight is on: it reads
+  `InCombatLockdown()` at every `PLAYER_ENTERING_WORLD`.
+- `read-probe` takes a `dt=0` sample after the first as a reload only in
+  files from a probe older than 0.7.0 (or that do not say); 0.7.0 files are
+  read by their `r` marks alone, so no reload is counted that was not one.
+- The press hook builds the "pressed read as" text only when a new kind
+  shows up in an arming; PageUnit and the four bars are looked up once at
+  each Arm, not on every trigger press.
+- Clear saved results also forgets which situations an automatic pass
+  covered this session (`P.ResetCovered`, Run.lua), so they get a pass again.
+
 ### Not proven off the device
 
 - Whether `pressed` reaches the press hook as a plain true / false in a fight

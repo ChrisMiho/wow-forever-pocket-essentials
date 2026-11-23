@@ -229,11 +229,21 @@ local function AnchorBar(key)
     return bar
 end
 
+-- PageUnit and the four bars, looked up once at each Arm (no lookups on
+-- every trigger press): cache.pu, cache[1..4] (in the order of BARS).
+local cache = {}
+
+local function FillCache()
+    cache.pu = PageUnit()
+    for i, entry in ipairs(BARS) do cache[i] = AnchorBar(entry[1]) or false end
+end
+
 -- "main", "left", "right", "both" or "other" for a bar the game names.
 function P.WatchBarName(bar)
     if type(bar) ~= "table" or IsSecret(bar) then return "other" end
-    for _, entry in ipairs(BARS) do
-        if rawequal(AnchorBar(entry[1]), bar) then return entry[2] end
+    if cache[1] == nil then FillCache() end
+    for i, entry in ipairs(BARS) do
+        if rawequal(cache[i], bar) then return entry[2] end
     end
     return "other"
 end
@@ -244,7 +254,7 @@ local barHooked = false
 local function OnActiveBar()
     local cur = current
     if not cur then return end
-    local pu = PageUnit()
+    local pu = cache.pu
     local name
     if not pu or type(pu.GetActiveBar) ~= "function" then
         name = "error"
@@ -288,6 +298,7 @@ end
 
 local pressHooked = {}      -- [button] = true
 local pressCount = 0
+local kindsSeen = {}        -- [kind] = true this arming, so the text is only built for a new one
 
 local function OnPress(name, pressed)
     local kind = IsSecret(pressed) and "secret" or (type(pressed) == "boolean" and "boolean" or "other")
@@ -296,7 +307,10 @@ local function OnPress(name, pressed)
     if P.WatchOnPress then pcall(P.WatchOnPress, name, dir) end
     local cur = current
     if not cur then return end
-    cur.press.kind = P.Merge(cur.press.kind, kind)
+    if not kindsSeen[kind] then
+        kindsSeen[kind] = true
+        cur.press.kind = P.Merge(cur.press.kind, kind)
+    end
     local per = cur.press[name]
     if type(per) ~= "table" then
         per = {}
@@ -393,6 +407,8 @@ end
 
 -- At every Arm: the callback and the hooks (once each), the sweep made ready.
 P.WatchOnArm = function(cur)
+    FillCache()
+    for kind in pairs(kindsSeen) do kindsSeen[kind] = nil end
     SetBarCallback(cur)
     cur.press.hooked = P.WatchInstallPressHooks()
     if cur.press.hooked == 0 then
@@ -486,6 +502,8 @@ local function Empty()
     local waiting = P.GuidedWaiting and P.GuidedWaiting()
     if (busy or waiting) and P.Stop then P.Stop() end
     for _, key in ipairs({ "results", "last", "details", "situations", "spoiled" }) do db[key] = {} end
+    -- The automatic passes' "already covered this session" goes too (Run.lua).
+    if P.ResetCovered then P.ResetCovered() end
     db.watch = {}
     if type(db.perf) == "table" then
         db.perf.runs = {}

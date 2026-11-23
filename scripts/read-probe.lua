@@ -719,16 +719,25 @@ end
 local RELOAD_GAP = 30                      -- seconds after a reload left out of the plain words
 local PLAIN_MIN = 600                      -- seconds of samples the plain words need
 
+-- True when the file comes from a probe older than 0.7.0 (which did not mark
+-- reloads), or does not say which probe wrote it.
+function M.beforeMarks(db)
+    local v = type(db) == "table" and db.probe or nil
+    local major, minor = (type(v) == "string" and v or ""):match("^(%d+)%.(%d+)")
+    if not major then return true end
+    return tonumber(major) == 0 and tonumber(minor) < 7
+end
+
 -- The reloads in a run's samples, in seconds since its start: a sample
--- marked r (probe 0.7.0), or (older files) any sample after the first with
--- dt=0 that is not marked p. Also how many pauses (p) there were.
-local function reloadsOf(samples)
+-- marked r (probe 0.7.0). In older files (old = true) any sample after the
+-- first with dt=0 is taken as one too. Also how many pauses (p) there were.
+local function reloadsOf(samples, old)
     local at, pauses, n = {}, 0, 0
     for _, s in ipairs(samples) do
         n = n + 1
         if s.tags:find("p", 1, true) then
             pauses = pauses + 1
-        elseif s.tags:find("r", 1, true) or (n > 1 and s.dt == 0) then
+        elseif s.tags:find("r", 1, true) or (old and n > 1 and s.dt == 0) then
             at[#at + 1] = s.t
         end
     end
@@ -748,9 +757,12 @@ end
 -- Everything the report prints about one run, worked out from its samples.
 -- opts.plain (probe 0.7.0): only what the plain words go on, leaving out the
 -- pauses for the fight tests and the 30 seconds after each reload.
+-- opts.marked: the file is from probe 0.7.0 or later, which marks its reloads
+-- (otherwise a sample with dt=0 after the first counts as one).
 function M.perfSummary(run, opts)
     run = tbl(run)
-    local plain = type(opts) == "table" and opts.plain == true
+    opts = type(opts) == "table" and opts or {}
+    local plain = opts.plain == true
     local keys = tbl(run.keys)
     local out = {
         started = type(run.started) == "string" and clean(run.started) or nil,
@@ -769,7 +781,7 @@ function M.perfSummary(run, opts)
         local s = M.perfSample(line)
         if s then parsed[#parsed + 1] = s end
     end
-    out.reloadsAt, out.pauses = reloadsOf(parsed)
+    out.reloadsAt, out.pauses = reloadsOf(parsed, opts.marked ~= true)
     local lastFps
     for _, s in ipairs(parsed) do
         if plain and leftOut(s, out.reloadsAt) then
@@ -893,9 +905,9 @@ local function runTitle(sum)
     return line
 end
 
--- The lines for one run.
-function M.formatPerfRun(run, heading)
-    local sum = M.perfSummary(run)
+-- The lines for one run. marked: the file marks its reloads (perfSummary).
+function M.formatPerfRun(run, heading, marked)
+    local sum = M.perfSummary(run, { marked = marked })
     local t = sum.total
     local out = { heading .. ": " .. runTitle(sum) }
     local function add(lines) for _, line in ipairs(lines) do out[#out + 1] = line end end
@@ -1041,10 +1053,11 @@ function M.formatPerf(db)
         return out
     end
     out[#out + 1] = plural(#runs, "run", "runs") .. " in this file, the newest last"
+    local marked = not M.beforeMarks(db)
     local newest
     for i, run in ipairs(runs) do
         out[#out + 1] = ""
-        local lines, sum = M.formatPerfRun(run, "Run " .. i .. " of " .. #runs)
+        local lines, sum = M.formatPerfRun(run, "Run " .. i .. " of " .. #runs, marked)
         for _, line in ipairs(lines) do out[#out + 1] = line end
         newest = sum
     end
@@ -1053,7 +1066,7 @@ function M.formatPerf(db)
     if newest.seconds <= 0 then
         out[#out + 1] = "  Too short to say anything."
     else
-        for _, line in ipairs(M.perfPlain(runs[#runs])) do out[#out + 1] = line end
+        for _, line in ipairs(M.perfPlain(runs[#runs], marked)) do out[#out + 1] = line end
     end
     return out
 end
@@ -1070,9 +1083,10 @@ end
 -- The plain words for one run (probe 0.7.0): they leave out the pauses for
 -- the fight tests and the 30 seconds after each reload, and give no verdict
 -- on less than 10 minutes of samples. Returns the lines, then the overall
--- word ("too short to judge" when there is none) and the reason.
-function M.perfPlain(run)
-    local sum = M.perfSummary(run, { plain = true })
+-- word ("too short to judge" when there is none) and the reason. marked:
+-- the file marks its reloads (perfSummary).
+function M.perfPlain(run, marked)
+    local sum = M.perfSummary(run, { plain = true, marked = marked })
     local left = leftOutText(sum)
     if sum.seconds < PLAIN_MIN then
         local have, need = duration(sum.seconds) .. " of samples to go on", (duration(PLAIN_MIN):gsub(" 0 s$", "")) .. " needed"
@@ -1097,14 +1111,15 @@ function M.perfDiff(a, b, nameA, nameB)
     a, b = tbl(a), tbl(b)
     local runsA, runsB = M.perfRuns(a), M.perfRuns(b)
     local out = { "Comparing performance recordings (the newest run of each file)" }
-    local sides = { { "before", nameA or "first file", runsA }, { "after", nameB or "second file", runsB } }
+    local sides = { { "before", nameA or "first file", runsA, not M.beforeMarks(a) },
+        { "after", nameB or "second file", runsB, not M.beforeMarks(b) } }
     local sums = {}
     for i, side in ipairs(sides) do
         local run = side[3][#side[3]]
         if not run then
             out[#out + 1] = "  " .. side[1] .. ": " .. side[2] .. " has no recording."
         else
-            sums[i] = M.perfSummary(run)
+            sums[i] = M.perfSummary(run, { marked = side[4] })
             out[#out + 1] = "  " .. pad(side[1] .. ":", 8) .. side[2] .. " (" .. runTitle(sums[i]) .. ", " .. duration(sums[i].seconds)
                 .. (sums[i].addon and (", Pocket Essentials " .. sums[i].addon) or "") .. ")"
         end
@@ -1180,7 +1195,7 @@ function M.perfDiff(a, b, nameA, nameB)
     out[#out + 1] = "In plain words"
     for i = 1, 2 do
         local side = sides[i]
-        local lines, overall, why = M.perfPlain(side[3][#side[3]])
+        local lines, overall, why = M.perfPlain(side[3][#side[3]], side[4])
         if why then
             out[#out + 1] = "  " .. side[1] .. ": " .. overall .. " (" .. why .. ")"
         else

@@ -911,12 +911,18 @@ function P.UpdateFightButton()
     end
 end
 
+local PassDone             -- below
+
+-- From Run.lua at PLAYER_REGEN_DISABLED / _ENABLED. When the fight ends and
+-- no pass runs any more but ours never said it was over, it is over now: the
+-- recording goes on and the button works again.
 function P.FightButtonCombat(on)
     fighting = on and true or false
+    if not fighting and fightBusy and not (P.Busy and P.Busy()) then PassDone() end
     P.UpdateFightButton()
 end
 
-local function PassDone()
+PassDone = function()
     fightBusy = false
     P.PerfResume()
     ticking = true
@@ -953,7 +959,15 @@ fight:SetScript("OnClick", Guard(function()
     local pausing = P.PerfPause()
     fightBusy = true
     FightLook()
-    local started = P.RunFightTests and P.RunFightTests({ duringRecording = true, onDone = PassDone })
+    local ok, started = false, false
+    if P.RunFightTests then
+        ok, started = pcall(P.RunFightTests, { duringRecording = true, onDone = PassDone })
+        if not ok then
+            Log("error in the probe: " .. P.Plain(started))
+            -- A pass that did get going still ends through PassDone (its end, Stop or the fight's end).
+            started = P.Busy and P.Busy() or false
+        end
+    end
     if not started and fightBusy then
         fightBusy = false
         if pausing then P.PerfResume() end
@@ -968,6 +982,10 @@ end))
 local entered = false       -- this session's first PLAYER_ENTERING_WORLD has come
 
 local function OnEnteringWorld(isInitialLogin, isReloadingUi)
+    -- A reload in a fight: no PLAYER_REGEN_DISABLED comes for this fight, so
+    -- the Fight button learns it here.
+    fighting = Truth(InCombatLockdown)
+    P.UpdateFightButton()
     local perf = Saved()
     if not perf then return end
     if entered then

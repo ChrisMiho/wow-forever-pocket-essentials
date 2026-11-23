@@ -718,6 +718,25 @@ do
 end
 
 do
+    -- A file from probe 0.7.0 marks its reloads: a sample with dt=0 and no r is not one.
+    local run = quietRun(750, { [300] = "t=300;dt=0;a=s;fps=60;mem=800,," })
+    local file = perfFile({ run })
+    file.probe = "0.7.0"
+    local out = R.formatPerf(file)
+    check(not has(out, "Reloads at"), "no phantom reload in a 0.7.0 file\n" .. table.concat(out, "\n"))
+    check(not has(out, "Left out of these words"), "nothing left out of the words")
+    run.samples[21] = "t=300;dt=0;a=sr;fps=60;mem=800,,"
+    check(has(R.formatPerf(file), "Reloads at: 5 min"), "a marked reload in a 0.7.0 file is listed")
+    -- Later versions mark them too; a file that does not say its version is read the old way.
+    eq({ R.beforeMarks({ probe = "0.6.0" }), R.beforeMarks({ probe = "0.7.0" }), R.beforeMarks({ probe = "0.10.2" }),
+        R.beforeMarks({ probe = "1.0.0" }), R.beforeMarks({}), R.beforeMarks({ probe = 7 }) },
+        { true, false, false, false, true, true }, "which files mark their reloads")
+    local diffA, diffB = perfFile({ quietRun(750, { [300] = "t=300;dt=0;a=s;fps=60;mem=800,," }) }), perfFile({ quietRun(750, {}) })
+    diffA.probe = "0.7.0"
+    check(not has(R.perfDiff(diffA, diffB), "Left out"), "--perf --diff reads a 0.7.0 file's reloads the same way")
+end
+
+do
     -- Under 10 minutes left: too short to judge.
     local out = R.formatPerf(perfFile({ quietRun(300, {}) }))
     check(has(out, "Too short to judge: 5 min 0 s of samples to go on (10 min needed)."), "a 5 minute run\n" .. table.concat(out, "\n"))
