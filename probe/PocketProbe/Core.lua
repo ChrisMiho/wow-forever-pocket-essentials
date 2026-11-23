@@ -8,6 +8,8 @@ local ADDON_NAME, P = ...
 --   Trials.lua  the list of trials (one small function each, plus an undo)
 --   Errors.lua  the Errors and Graphics trials, and the error box listener
 --   Run.lua     noticing blocks, passes, the clean series, guided trials
+--   Watch.lua   the watchers armed for the next fights, and Clear saved
+--               results (probe 0.7.0; its game names are listed at its top)
 --   Panel.lua   the window that drives it all (touch and d-pad)
 --   Perf.lua    the performance recorder (probe 0.6.0; its game names and
 --               their proof are listed at its top)
@@ -174,7 +176,7 @@ local type, tostring, pairs, ipairs, pcall, select = type, tostring, pairs, ipai
 local tconcat, tremove = table.concat, table.remove
 
 P.name = ADDON_NAME or "PocketProbe"
-P.VERSION = "0.6.0"          -- used when the game cannot read the TOC's version line
+P.VERSION = "0.7.0"          -- used when the game cannot read the TOC's version line
 -- An action trial returns this when nothing refused it but it could not see
 -- whether it worked; it is stored as it is (never as "allowed").
 P.CANT_TELL = "can't tell"
@@ -182,6 +184,7 @@ P.CANT_TELL = "can't tell"
 local LOG_MAX, LOG_DROP = 2000, 200   -- the activity log drops its oldest lines in blocks
 local DETAILS_MAX = 400
 P.PERF_RUNS = 3                        -- performance recordings kept (Perf.lua)
+P.WATCH_KEEP = 3                       -- armings of the watchers kept (Watch.lua)
 local MESSAGE_MAX = 1500               -- a detail's message, at most
 P.MESSAGE_MAX = MESSAGE_MAX
 
@@ -350,6 +353,16 @@ function P.InitDB()
     if type(saved.perf.runs) ~= "table" then saved.perf.runs = {} end
     while #saved.perf.runs > P.PERF_RUNS do tremove(saved.perf.runs, 1) end
     saved.perf.on, saved.perf.stopped = saved.perf.on == true, saved.perf.stopped == true
+    -- The watchers' armings (Watch.lua): the last few are kept. A reload ends
+    -- an arming; one the logout did not close (the game stopped) is closed now.
+    if type(saved.watch) ~= "table" then saved.watch = {} end
+    for i = #saved.watch, 1, -1 do
+        if type(saved.watch[i]) ~= "table" then tremove(saved.watch, i) end
+    end
+    while #saved.watch > P.WATCH_KEEP do tremove(saved.watch, 1) end
+    for _, w in ipairs(saved.watch) do
+        if w.ended == nil and w.why == nil then w.why = "reload" end
+    end
     -- The trial list is written fresh; the "afterwards" entries earlier
     -- sessions added (see P.AddTrial) are kept at its end.
     local old = type(saved.trials) == "table" and saved.trials or {}

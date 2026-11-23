@@ -284,6 +284,13 @@ local function install(c)
     container:SetScale(0.8)
     rawset(env.MinimapCluster, "MinimapContainer", container)
 
+    -- Probe 0.7.0, the watchers: the six action bar events (ActionBarFrameDocumentation.lua:1085-1119,
+    -- SpellBookDocumentation.lua:927) and the cast event (UnitDocumentation.lua:4847).
+    for _, event in ipairs({ "ACTIONBAR_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_USABLE", "ACTIONBAR_UPDATE_STATE",
+        "ACTIONBAR_SLOT_CHANGED", "SPELL_UPDATE_COOLDOWN", "UPDATE_BONUS_ACTIONBAR", "UNIT_SPELLCAST_SUCCEEDED" }) do
+        c.snapshot.event[event] = true
+    end
+
     -- A small world with names in it.
     world.bags[0][1] = { itemID = 101, quality = 0, price = 50, count = 1, name = "Broken Fang" }
     world.bags[0][2] = { itemID = 102, quality = 0, price = 5, count = 1, name = "Wolf Pelt" }
@@ -436,7 +443,7 @@ test("saved table has the fixed shape", function()
     local c, P, db = new()
     eq(db.version, 1)
     eq(db.game, "1.16.0 (60000)")
-    eq(db.probe, "0.6.0")
+    eq(db.probe, "0.7.0")
     eq(db.options.vendor, true)
     eq(db.options.risky, false)
     eq(type(db.spoiled), "table")
@@ -1065,7 +1072,7 @@ test("results from another probe version are cleared at load", function()
     }
     local c, P, db = new({ saved = saved })
     eq(db, saved)
-    eq(db.probe, "0.6.0")
+    eq(db.probe, "0.7.0")
     eq(next(db.last), nil, "the panel's newest results are cleared too")
     eq(db.guided["gfx.icons"].stage, "ask", "a guided trial's old values are kept, to be put back")
     eq(next(db.results), nil); eq(#db.details, 0); eq(next(db.situations), nil); eq(next(db.spoiled), nil)
@@ -1354,11 +1361,11 @@ test("the panel: Settings-sized, area tabs with counts, no scroll bar (big areas
     for _, rec in ipairs(c:frames()) do
         if rec.frame == panel then
             for _, region in ipairs(rec.regions or {}) do
-                if region.GetText and region:GetText() == "Pocket Probe 0.6.0" then titleText = true end
+                if region.GetText and region:GetText() == "Pocket Probe 0.7.0" then titleText = true end
             end
         end
     end
-    check(titleText, "titled Pocket Probe 0.6.0")
+    check(titleText, "titled Pocket Probe 0.7.0")
     local labels = tabLabels(P)
     eq(labels[1], "Errors"); eq(labels[2], "Graphics")
     local joined = table.concat(labels, "|")
@@ -3273,7 +3280,7 @@ end)
 test("recorder: 480 samples, then it stops by itself and says so; the last three runs are kept", function()
     local samples = {}
     for i = 1, 478 do samples[i] = "t=" .. (i * 15) .. ";dt=15;a=s;fps=60" end
-    local saved = { probe = "0.6.0", perf = { on = true, runs = {
+    local saved = { probe = "0.7.0", perf = { on = true, runs = {
         { started = "2026-11-20 10:00:00", why = "stopped", samples = { "t=0;dt=0;a=s" }, keys = {}, feat = {} },
         { started = "2026-11-21 10:00:00", why = "stopped", samples = { "t=0;dt=0;a=s" }, keys = {}, feat = {} },
         { started = "2026-11-21 11:00:00", why = "stopped", samples = { "t=0;dt=0;a=s" }, keys = {}, feat = {} },
@@ -3571,6 +3578,223 @@ test("recorder with Pocket Essentials loaded: a play session records and stops c
     P2.StopRecording()
     noErrors(c2)
     check(table.concat(Reader.formatPerf(db2), "\n"):find("no per-feature numbers", 1, true), "the report says there are no per-feature numbers")
+end)
+
+---------------------------------------------------------------------------
+-- Probe 0.7.0: the watchers (Watch.lua) and Clear saved results
+---------------------------------------------------------------------------
+
+local WATCH_EVENTS = { "ACTIONBAR_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_USABLE", "ACTIONBAR_UPDATE_STATE",
+    "ACTIONBAR_SLOT_CHANGED", "SPELL_UPDATE_COOLDOWN", "UPDATE_BONUS_ACTIONBAR" }
+
+-- The frame of Watch.lua that listens for the action bar events, or nil.
+local function watchFrame(c)
+    for _, rec in ipairs(c:frames()) do
+        if rec.addonFile and rec.addonFile:find("Watch.lua", 1, true) and rec.scripts.OnEvent then return rec end
+    end
+end
+
+local function watchSaved() return { options = { auto = false } } end
+
+test("watch: arm refused in a fight", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    c:enterCombat(); c:advance(1)
+    local ok = P.WatchArm()
+    eq(ok, false)
+    eq(P.WatchArmed(), false)
+    eq(P.WatchCurrent(), nil)
+    eq(#saved.watch, 0, "nothing stored")
+    check(P.status:find("out of a fight", 1, true), P.status)
+    local rec = watchFrame(c)
+    check(rec, "the watch frame is made at load")
+    eq(next(rec.events), nil, "no event registered")
+    noErrors(c)
+end)
+
+test("watch: arm and disarm", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    local rec = watchFrame(c)
+    eq(next(rec.events), nil, "nothing is registered before Arm")
+    local changed = 0
+    P.OnWatchChanged = function() changed = changed + 1 end
+    eq(P.WatchArm(), true)
+    eq(P.WatchArmed(), true)
+    local cur = P.WatchCurrent()
+    eq(cur, saved.watch[1])
+    eq(#saved.watch, 1)
+    check(type(cur.started) == "string" and cur.started ~= "", "started is stored")
+    eq(cur.ended, nil)
+    for _, key in ipairs({ "bar", "press", "events", "sweep" }) do eq(type(cur[key]), "table", key) end
+    for _, event in ipairs(WATCH_EVENTS) do check(rec.events[event], event .. " registered while armed") end
+    check(changed >= 1, "the panel is told")
+    eq(P.WatchArm(), true, "a second Arm changes nothing")
+    eq(#saved.watch, 1)
+    c:fire("ACTIONBAR_UPDATE_USABLE")
+    P.WatchDisarm()
+    eq(P.WatchArmed(), false)
+    eq(P.WatchCurrent(), nil)
+    eq(cur.why, "disarmed")
+    check(type(cur.ended) == "string" and cur.ended ~= "", "ended is stored")
+    eq(next(rec.events), nil, "every event unregistered on Disarm")
+    eq(cur.events.ACTIONBAR_UPDATE_USABLE.o, 1)
+    c:fire("PLAYER_REGEN_DISABLED")
+    eq(cur.events.ACTIONBAR_UPDATE_USABLE.o, 1, "nothing counted after Disarm")
+    noErrors(c)
+end)
+
+test("watch: events counted in and out of a fight", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.WatchArm()
+    for _, event in ipairs(WATCH_EVENTS) do c:fire(event); c:fire(event) end
+    c:advance(10)
+    c:enterCombat()
+    for _, event in ipairs(WATCH_EVENTS) do c:fire(event); c:fire(event); c:fire(event) end
+    c:advance(20)
+    c:leaveCombat()
+    c:advance(5)
+    local cur = P.WatchCurrent()
+    P.WatchDisarm()
+    for _, event in ipairs(WATCH_EVENTS) do
+        eq(cur.events[event].o, 2, event .. " out of a fight")
+        eq(cur.events[event].c, 3, event .. " in a fight")
+    end
+    check(math.abs(cur.events._secs.c - 20) < 0.3, "seconds in a fight: " .. tostring(cur.events._secs.c))
+    check(math.abs(cur.events._secs.o - 15) < 0.3, "seconds out of a fight: " .. tostring(cur.events._secs.o))
+    noErrors(c)
+end)
+
+test("watch: reload ends it", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.WatchArm()
+    c:advance(3)
+    c:fire("PLAYER_LOGOUT")
+    eq(saved.watch[1].why, "reload")
+    check(saved.watch[1].ended, "ended at the logout")
+    local c2, P2 = new({ saved = saved })
+    c2:advance(5)
+    eq(P2.WatchArmed(), false, "not armed again after the reload")
+    eq(next(watchFrame(c2).events), nil)
+    eq(#saved.watch, 1)
+    -- An arming the logout never closed (the game stopped): closed at the next load.
+    saved.watch[2] = { started = "2026-11-23 12:00:00", bar = {}, press = {}, events = {}, sweep = {} }
+    local c3 = new({ saved = saved })
+    eq(saved.watch[2].why, "reload")
+    noErrors(c); noErrors(c2); noErrors(c3)
+end)
+
+test("watch: old file and trim to 3", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    eq(type(saved.watch), "table", "an old file gets an empty watch table")
+    eq(#saved.watch, 0)
+    noErrors(c)
+    local list = {}
+    for i = 1, 5 do list[i] = { started = "arming " .. i, ended = "x", why = "disarmed", bar = {}, press = {}, events = {}, sweep = {} } end
+    local saved2 = { options = { auto = false }, watch = list }
+    local c2, P2 = new({ saved = saved2 })
+    eq(#saved2.watch, 3, "trimmed to 3")
+    eq(saved2.watch[1].started, "arming 3", "the oldest are dropped")
+    c2:advance(5)
+    P2.WatchArm()
+    eq(#saved2.watch, 3, "still 3 after a new arming")
+    eq(saved2.watch[1].started, "arming 4")
+    eq(saved2.watch[3], P2.WatchCurrent())
+    noErrors(c2)
+    local saved3 = { options = { auto = false }, watch = "broken" }
+    local c3 = new({ saved = saved3 })
+    eq(type(saved3.watch), "table")
+    noErrors(c3)
+end)
+
+test("clear: refused in a fight", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.RunOne(P.trialById["own.show"])
+    eq(cell(saved, "own.show", KEY_PRESS), "allowed")
+    c:enterCombat(); c:advance(1)
+    eq(P.ClearSaved(), false)
+    eq(P.ClearSaved(), false, "a second tap in a fight is refused too")
+    eq(cell(saved, "own.show", KEY_PRESS), "allowed", "nothing cleared")
+    check(P.status:find("out of a fight", 1, true), P.status)
+    noErrors(c)
+end)
+
+test("clear: first tap only arms, second within 5 s clears, after 5 s starts over", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.RunOne(P.trialById["own.show"])
+    local changed = 0
+    P.OnWatchChanged = function() changed = changed + 1 end
+    eq(P.ClearSaved(), false, "the first tap only arms")
+    eq(P.ClearPending(), true)
+    eq(cell(saved, "own.show", KEY_PRESS), "allowed", "nothing cleared yet")
+    c:advance(5.5)
+    eq(P.ClearPending(), false, "after 5 seconds it starts over")
+    check(changed >= 2, "the panel is told when it starts over")
+    eq(P.ClearSaved(), false, "a tap after the 5 seconds arms again")
+    c:advance(3)
+    local ok = P.ClearSaved()
+    eq(ok, true, "the second tap within 5 seconds clears")
+    eq(P.ClearPending(), false)
+    eq(next(saved.results), nil, "results emptied")
+    eq(next(saved.last), nil)
+    eq(next(saved.details), nil)
+    eq(next(saved.situations), nil)
+    eq(#saved.watch, 0)
+    eq(#saved.perf.runs, 0)
+    check(#saved.trials >= 40, "the trial list stays")
+    eq(countLog(saved, "saved results cleared"), 1)
+    noErrors(c)
+end)
+
+test("clear: options kept", function()
+    local saved = { options = { auto = false, risky = true, vendor = false } }
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.RunOne(P.trialById["own.show"])
+    P.ClearSaved(); c:advance(1); P.ClearSaved()
+    eq(next(saved.results), nil)
+    eq(saved.options.risky, true); eq(saved.options.vendor, false); eq(saved.options.auto, false)
+    noErrors(c)
+end)
+
+test("clear: stops recording and watchers first", function()
+    local c, P, db = newPerf()
+    c:advance(20)
+    eq(P.Recording(), true)
+    P.WatchArm()
+    local cur = P.WatchCurrent()
+    eq(#db.perf.runs, 1)
+    P.ClearSaved(); c:advance(1); P.ClearSaved()
+    eq(P.Recording(), false, "the recording stopped first")
+    eq(P.WatchArmed(), false, "the watchers stopped first")
+    eq(cur.why, "cleared")
+    eq(#db.perf.runs, 0)
+    eq(#db.watch, 0)
+    c:advance(60)
+    eq(#db.perf.runs, 0, "no sample writes into the cleared table")
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    eq(#db.watch, 0)
+    -- A guided trial waiting: called off and its frame put back before the clear.
+    local saved = riskySaved()
+    local c2, P2 = new({ saved = saved })
+    c2:advance(5)
+    P2.StartGuided(P2.trialById["bars.fadecast"]); c2:advance(1.7)
+    eq(mainBar(c2):GetAlpha(), 0)
+    P2.ClearSaved(); c2:advance(1); P2.ClearSaved()
+    eq(mainBar(c2):GetAlpha(), 1, "put back first")
+    eq(next(saved.guided), nil)
+    noErrors(c); noErrors(c2)
 end)
 
 ---------------------------------------------------------------------------
