@@ -204,6 +204,11 @@ local LOG_MAX, LOG_DROP = 2000, 200   -- the activity log drops its oldest lines
 local DETAILS_MAX = 400
 P.PERF_RUNS = 3                        -- performance recordings kept (Perf.lua)
 P.WATCH_KEEP = 3                       -- armings of the watchers kept (Watch.lua)
+-- How far down from the top of the screen the Probe button sits, and with it
+-- the sweep squares (Trials.lua) and the big message (Panel.lua). Probe 0.7.0
+-- moved them 24 lower, out of the way of the XP bar at the top middle
+-- (Pocket Essentials 0.11.1).
+P.TOP_Y = -28
 local MESSAGE_MAX = 1500               -- a detail's message, at most
 P.MESSAGE_MAX = MESSAGE_MAX
 

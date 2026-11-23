@@ -236,3 +236,100 @@ in the file headers.
 
 Probe TOC `## Version: 0.7.0`, the panel title and the probe's CHANGELOG
 entry together. `dist/PocketProbe.zip` only.
+
+## As built (2026-11-23)
+
+Built as specified, in six commits (plan `2026-11-23-pocket-probe-0.7.0.md`).
+New file `probe/PocketProbe/Watch.lua` (after `Run.lua`, before `Panel.lua`);
+the CHANGELOG entry is left to the lead.
+
+### Where things sit in the panel (1365 by 768, still ten tabs)
+
+| Tab | Rows |
+|---|---|
+| Blizzard windows 1 | the map and bag buttons (4), Set the left bar's place, its size, **Read the main bar's 8 spells** (moved from Controller and layout) |
+| Blizzard windows 2 | left bar see-through, left bar fade, Park, Fade the main bar, **Fade for next fight** (`bars.fadenext`), **Wheels on a faded bar** (`bars.wheels`), **Watch my next fights** (the row; with the bar trials it watches) |
+| Chat box | the five chat trials, and the chat frame's two button trials (moved from Blizzard windows) |
+| Bags and vendor | Open and close the bags, Sort, the three vendor trials, **Move the bag** and **Resize the bag** (moved from Blizzard windows) |
+| Controller and layout | the six controller and layout trials, **Clear saved results** (the row) |
+
+The two rows are not trials: they are not in the saved trial list, and the
+tab counts ("N / M run") leave them out. The "Afterwards" tab, which appears
+only after the game refuses its own actions in the probe's name, still makes
+an eleventh tab, as before.
+
+### Departures from the spec, and why
+
+1. **The two sub-menu wheels never reach `PageUnit:OnFlyoutOpened`.** The
+   source calls it only from a bar button's flyout
+   (`ActionBarButton.lua:737-742`, through the button's bar, which is set
+   only at `ActionBar.lua:34-35`); the LB+LT and RB+RT wheels belong to
+   `LeftClassAction` / `RightClassAction`, which are on no bar. So
+   `bars.wheels` also hooks `OnShow` of the wheels' own frames,
+   `GamepadPetActionFlyout` (`Camelot/PetClassFlyouts.xml:18`) and
+   `GamepadPetSpellFlyout` (`:72`), besides `OnFlyoutOpened` for a spell wheel
+   on a bar. Each wheel is named in the answer ("pet wheel", "pet spell
+   wheel", "bar wheel"); one opening seen by two hooks counts once.
+2. **`GetEffectiveAlpha` is a Frame method** (`SimpleFrameAPIDocumentation.lua:366`),
+   not a Region one. The wheels are frames, so nothing changes.
+3. **The big message and the sweep squares were not anchored to the Probe
+   button** (both sat on `UIParent`'s top). They are moved by the same 24
+   units through one shared offset (`P.TOP_Y = -28`, `Core.lua`): the Probe
+   button at `TOP, UIParent, TOP, 0, -28`, the squares at
+   `TOPLEFT, UIParent, TOP, 230, -28`, the big message 24 lower than before.
+4. **Panel room.** The new trials made Blizzard windows three pages, so four
+   older rows moved (table above) to keep ten tabs.
+5. **Clear saved results.** Guided answers are stored with the other results
+   (`results`, `last`, `details`); `db.guided` holds only trials still
+   waiting, with values to put back. So Clear empties `results`, `last`,
+   `details`, `situations`, `spoiled`, `watch` and `perf.runs`, and before
+   that stops a recording, disarms the watchers and, when a pass, the clean
+   run or a guided trial is under way, calls Stop (which puts every frame and
+   setting back). The switches and the activity log are kept.
+6. **`bars.fadenext`, a refused fade.** It is stored at once, as specified;
+   anything that changed goes back at once when the game takes it, and is
+   held until the fight ends only when the game refuses the put-back (the way
+   the fade test does). Its situation key reads `fight=no`: the fade is made
+   in the `PLAYER_REGEN_DISABLED` handler, and lockdown starts after it.
+7. **`bars.fadenext` closes the panel at Start**, so the 4-second message can
+   be seen. Like every trial with a big message, while it waits (until its
+   answer, Cancel or a reload) another big-message trial (Park, Fade the main
+   bar, Wheels) cannot start: there is one big message.
+8. **Casts.** `UNIT_SPELLCAST_SUCCEEDED` is registered for the player only
+   (`RegisterUnitEvent`, `SimpleFrameAPIDocumentation.lua:1064`) when the
+   client has it; otherwise for everyone, counting a unit that reads
+   "player". Its unit can be secret in a fight
+   (`SecretWhenUnitSpellCastRestricted`): such a cast is counted apart as
+   "casts unreadable".
+9. **The Fight button** ignores a tap while its own pass runs, while its tick
+   shows (3 seconds), while another pass runs (it never takes one over), and
+   during a guided trial's timed screenshot steps. A guided trial waiting for
+   its answer does not stop it. The tick is the atlas
+   `common-icon-checkmark` (`Blizzard_CharacterCreate/Camelot/Blizzard_CharacterCreate.lua:2986`)
+   on a texture of ours; if the client lacks it, the label reads "Done".
+10. **Disarm works in a fight**; only Arm is out of a fight only.
+11. **The report.** The plain words of `--perf --diff` follow the same rules
+    (pauses and the 30 s after each reload left out, "too short to judge"
+    under 10 minutes). For files from probe 0.6.0, a sample after the first
+    with `dt=0` counts as a reload, and a memory reading of 0 counts as
+    missing. The tables still show every sample. The watch table prints with
+    `--details` and in the full report.
+12. **Names.** The plan's `P.PerfStop` is the existing `P.StopRecording`.
+    `P.ClearSaved()` does the two taps itself (`P.ClearPending()` tells the
+    panel). `P.Watched` (Run.lua) is exposed so the sweep watcher's call is
+    noticed like a trial's. The sweep steps are shared through
+    `P.SweepOnSlot` / `P.SweepSlot` (Trials.lua); `cd.sweep.object` behaves
+    as before.
+
+### Not proven off the device
+
+- Whether `pressed` reaches the press hook as a plain true / false in a fight
+  (its class is what is recorded).
+- Whether the game's callback, the button hooks and the `PageUnit` hook leave
+  the game's own controller actions working (the source's taint barrier and
+  `hooksecurefunc` say they should).
+- Whether a fade made in the `PLAYER_REGEN_DISABLED` handler stays for the
+  whole fight on the device (it did in 0.6.0's in-fight fade).
+- Whether the wheel frames' `OnShow` comes before they are placed: they are
+  read 0.2 seconds later in any case.
+- Whether the tick atlas exists in the game (not only at character creation).

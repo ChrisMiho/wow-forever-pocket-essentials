@@ -413,7 +413,7 @@ end
 
 local GAP = 6
 local probeButton = MakeButton("PocketProbeButton", "Probe", 120, 48)
-probeButton:SetPoint("TOP", UIParent, "TOP", 0, -4)
+probeButton:SetPoint("TOP", UIParent, "TOP", 0, P.TOP_Y)   -- under the XP bar (Core.lua)
 
 local statusFrame = CreateFrame("Frame", "PocketProbeStatus", UIParent)
 statusFrame:SetSize(430, 20)

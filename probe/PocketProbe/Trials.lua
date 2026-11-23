@@ -1439,7 +1439,7 @@ local SWEEP_SHOT = 1             -- seconds after they show before the one scree
 local sweep = CreateFrame("Frame", "PocketProbeSweep", UIParent)
 sweep:SetSize(SWEEP_SIZE * 2 + SWEEP_GAP, SWEEP_SIZE + 20)
 sweep:SetFrameStrata("HIGH")
-sweep:SetPoint("TOPLEFT", UIParent, "TOP", 230, -4)
+sweep:SetPoint("TOPLEFT", UIParent, "TOP", 230, P.TOP_Y)    -- level with the Probe button (Core.lua)
 sweep:Hide()
 local sweepIcons, sweepCooldowns = {}, {}
 for i = 1, 2 do

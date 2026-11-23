@@ -1453,7 +1453,8 @@ test("the panel: Settings-sized, area tabs with counts, no scroll bar (big areas
         check(#page.entries <= m.rowsFit, page.label .. " has more rows than fit")
         total = total + #page.entries
     end
-    eq(total, #db.trials, "every trial is on a tab")
+    -- Every trial, and the two rows of probe 0.7.0 (Watch my next fights, Clear saved results).
+    eq(total, #db.trials + 2, "every trial is on a tab")
     for _, rec in ipairs(c:frames()) do
         check(rec.type ~= "ScrollFrame" or not rec.addonFile or not rec.addonFile:find("Panel", 1, true), "the panel made a scroll frame")
     end
@@ -4619,6 +4620,22 @@ test("fight button: second tap during a pass is ignored", function()
     eq(countLog(db2, "pass started"), 1, "the running pass is left alone")
     eq(countLog(db2, "pass stopped"), 0)
     noErrors(c2)
+    -- A guided trial in its timed steps (screenshots): not cut into.
+    local saved3 = riskySaved()
+    local c3, P3 = new({ saved = saved3 })
+    c3:advance(5)
+    P3.WatchArm()
+    c3:enterCombat(); c3:advance(1)
+    P3.StartGuided(P3.trialById["bars.fadecast"])
+    eq(saved3.guided["bars.fadecast"].stage, "prepare")
+    c3:click(floatFight(c3))
+    eq(countLog(saved3, "pass started"), 0, "no pass during the timed steps")
+    c3:advance(2)
+    eq(saved3.guided["bars.fadecast"].stage, "ask")
+    c3:click(floatFight(c3))
+    eq(countLog(saved3, "pass started"), 1, "a guided trial waiting for its answer does not stop it")
+    untilIdle(c3, P3)
+    noErrors(c3)
 end)
 
 test("fight button: tick shown 3 s then usable again", function()
@@ -4677,6 +4694,121 @@ test("perf: first sample after a reload has r", function()
     local c3, P3, db3 = newPerf()
     check(not fields(lastRun(db3).samples[1]).a:find("r", 1, true), "a new run's first sample has no r")
     noErrors(c); noErrors(c2); noErrors(c3)
+end)
+
+---------------------------------------------------------------------------
+-- Probe 0.7.0: the panel's new rows, the Probe button out of the XP bar's way
+---------------------------------------------------------------------------
+
+test("panel: watch row arms and shows Watching", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    local row = showTrial(c, P, "ctl.watch")
+    eq(row.ppLabel:GetText(), "Watch my next fights")
+    eq(row.ppChipText:GetText(), "Not watching")
+    eq(row.ppRun.ppLabel:GetText(), "Arm")
+    eq(row.ppRun.ppDisabled, false)
+    c:click(row.ppRun)
+    eq(P.WatchArmed(), true)
+    eq(row.ppChipText:GetText(), "Watching, 0 min")
+    eq(row.ppRun.ppLabel:GetText(), "Disarm")
+    c:advance(125)
+    c:click(button(c, "PocketProbeCloseButton"))
+    row = showTrial(c, P, "ctl.watch")
+    eq(row.ppChipText:GetText(), "Watching, 2 min", "the minutes as of the redraw")
+    c:click(row)
+    local detailsText
+    for _, rec in ipairs(c:frames()) do
+        if rec.frame == rawget(c.env, "PocketProbePanel") then
+            for _, region in ipairs(rec.regions or {}) do
+                local t = region.GetText and region:GetText()
+                if type(t) == "string" and t:find("Details:", 1, true) then detailsText = t end
+            end
+        end
+    end
+    check(detailsText and detailsText:find("until Disarm or a reload", 1, true), "details: " .. tostring(detailsText))
+    c:click(row.ppRun)
+    eq(P.WatchArmed(), false)
+    eq(row.ppRun.ppLabel:GetText(), "Arm")
+    -- In a fight Arm is dim (it is refused there); a tab's count leaves the row out.
+    c:enterCombat()
+    eq(showTrial(c, P, "ctl.watch").ppRun.ppDisabled, true)
+    noErrors(c)
+end)
+
+test("panel: clear row two taps", function()
+    local saved = watchSaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    P.RunOne(P.trialById["own.show"])
+    local row = showTrial(c, P, "ctl.clear")
+    eq(row.ppLabel:GetText(), "Clear saved results")
+    eq(row.ppRun.ppLabel:GetText(), "Clear")
+    eq(row.ppChipText:GetText(), "1 result saved")
+    c:click(row.ppRun)
+    eq(row.ppRun.ppLabel:GetText(), "Tap again to clear")
+    check(saved.results["own.show"], "not cleared by one tap")
+    c:advance(5.5)
+    eq(row.ppRun.ppLabel:GetText(), "Clear", "back after 5 seconds")
+    c:click(row.ppRun)
+    c:advance(1)
+    c:click(row.ppRun)
+    eq(next(saved.results), nil, "two taps clear")
+    eq(row.ppRun.ppLabel:GetText(), "Clear")
+    eq(row.ppChipText:GetText(), "Nothing saved")
+    -- With the d-pad: A on the row's button.
+    P.RunOne(P.trialById["own.show"])
+    c:enterCombat()
+    eq(showTrial(c, P, "ctl.clear").ppRun.ppDisabled, true, "dim in a fight")
+    noErrors(c)
+end)
+
+test("panel: still fits ten tabs at 1365 by 768 with the new rows and trials", function()
+    local c, P, db = new({ auto = false })
+    c:advance(5)
+    local area = {}
+    for _, t in ipairs(db.trials) do area[t.id] = t.area end
+    eq(area["bars.fadenext"], "Blizzard windows"); eq(area["bars.wheels"], "Blizzard windows")
+    eq(area["bars.spells"], "Blizzard windows", "moved to make room")
+    eq(area["win.chat.create"], "Chat box", "moved to make room"); eq(area["win.chat.attach"], "Chat box")
+    eq(area["bag.move"], "Bags and vendor", "moved to make room"); eq(area["bag.scale"], "Bags and vendor")
+    openPanel(c)
+    eq(math.floor(c.UIParent:GetWidth() + 0.5), 1365); eq(c.UIParent:GetHeight(), 768)
+    eq(table.concat(tabLabels(P), "|"), "Errors|Graphics|Our own windows|Blizzard windows 1|Blizzard windows 2|Chat box|"
+        .. "Bags and vendor|Controller and layout|Values 1|Values 2")
+    local m = P.panelSizes
+    local where = {}
+    for _, page in ipairs(P.BuildPages(m.rowsFit)) do
+        check(#page.entries <= m.rowsFit, page.label .. " has more rows than fit")
+        for _, e in ipairs(page.entries) do where[e.id] = page.label end
+    end
+    eq(where["ctl.watch"], "Blizzard windows 2", "the watch row sits with the bar trials")
+    eq(where["ctl.clear"], "Controller and layout")
+    eq(where["bars.fadenext"], "Blizzard windows 2"); eq(where["bars.wheels"], "Blizzard windows 2")
+    -- The tab counts leave the two rows out: they are not trials.
+    for _, t in ipairs(P.panelTabs) do
+        if t:IsShown() and t.ppName:GetText() == "Controller and layout" then eq(t.ppCount:GetText(), "0 / 6 run") end
+    end
+    noErrors(c)
+end)
+
+test("probe button at TOP 0,-28; big message and sweep squares follow it", function()
+    local saved = riskySaved()
+    local c, P = new({ saved = saved })
+    c:advance(5)
+    local point, rel, relPoint, x, y = button(c, "PocketProbeButton"):GetPoint(1)
+    eq(point, "TOP"); eq(rel, c.UIParent); eq(relPoint, "TOP"); eq(x, 0); eq(y, -28)
+    local _, _, statusTop = c._rect(button(c, "PocketProbeStatus"))
+    local _, _, buttonTop, buttonBottom = c._rect(button(c, "PocketProbeButton"))
+    eq(math.floor(768 - buttonTop + 0.5), 28, "24 lower than before")
+    check(statusTop <= buttonBottom + 0.01, "the status line still sits under the button")
+    local sp, srel, srelPoint, sx, sy = button(c, "PocketProbeSweep"):GetPoint(1)
+    eq(sp, "TOPLEFT"); eq(srel, c.UIParent); eq(srelPoint, "TOP"); eq(sx, 230); eq(sy, -28)
+    P.StartGuided(P.trialById["bars.wheels"])
+    local _, _, bigTop = c._rect(button(c, "PocketProbeBigMessage"))
+    eq(math.floor(768 - bigTop + 0.5), math.floor(768 * 0.19 + 24 + 0.5), "the big message 24 lower too")
+    noErrors(c)
 end)
 
 ---------------------------------------------------------------------------

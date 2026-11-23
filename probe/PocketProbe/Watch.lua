@@ -93,7 +93,6 @@ local CLEAR_WINDOW = 5      -- seconds the second tap of Clear has
 -- The six events a face bar would need (counted in and out of a fight).
 local EVENTS = { "ACTIONBAR_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_USABLE", "ACTIONBAR_UPDATE_STATE",
     "ACTIONBAR_SLOT_CHANGED", "SPELL_UPDATE_COOLDOWN", "UPDATE_BONUS_ACTIONBAR" }
-P.WATCH_EVENTS = EVENTS
 
 local armed = false
 local current               -- the arming being written, while armed
@@ -105,7 +104,6 @@ local function Clock()
     local ok, now = pcall(GetTime)
     return ok and Num(now) or nil
 end
-P.WatchClock = Clock
 
 local function InFight()
     if type(InCombatLockdown) ~= "function" then return false end
@@ -134,7 +132,6 @@ end
 local function Side()
     return fighting and "c" or "o"
 end
-P.WatchSide = Side
 
 -- Adds one to count[side], making the pair when it is not there.
 local function Bump(list, name, side)
@@ -145,7 +142,6 @@ local function Bump(list, name, side)
     end
     pair[side] = (pair[side] or 0) + 1
 end
-P.WatchBump = Bump
 
 -- Adds the time since the stretch began to "in a fight" or "out of one".
 local function Flush()
@@ -232,7 +228,6 @@ local function AnchorBar(key)
     if type(bar) ~= "table" or IsSecret(bar) then return nil end
     return bar
 end
-P.WatchAnchorBar = AnchorBar
 
 -- "main", "left", "right", "both" or "other" for a bar the game names.
 function P.WatchBarName(bar)
@@ -500,14 +495,14 @@ local function Empty()
 end
 
 -- The first tap only arms it; a second one within 5 seconds clears.
--- Returns true when the results were cleared.
+-- Returns true when the results were cleared, and a short word on what happened.
 function P.ClearSaved()
-    if not P.db then return false end
+    if not P.db then return false, "loading" end
     if InFight() then
         clearAt = nil
         Status("Clear saved results: out of a fight only.")
         Changed()
-        return false
+        return false, "in a fight"
     end
     local now = Clock()
     if not clearAt or not now or now - clearAt > CLEAR_WINDOW then
@@ -521,7 +516,7 @@ function P.ClearSaved()
         end)
         Status("Tap Clear again within " .. CLEAR_WINDOW .. " seconds to clear the saved results.")
         Changed()
-        return false
+        return false, "tap again"
     end
     clearAt = nil
     clearToken = clearToken + 1
@@ -529,5 +524,5 @@ function P.ClearSaved()
     Status("Saved results cleared")
     Changed()
     if P.RefreshPanel then pcall(P.RefreshPanel) end
-    return true
+    return true, "cleared"
 end

@@ -24,7 +24,8 @@ local ADDON_NAME, P = ...
 --   * One ticker, only while recording. The activity tags come from events
 --     and from show / hide hooks, never from a check every frame. Every frame
 --     is made now, at load, so nothing is created in a fight.
---   * Without Pocket Essentials nothing here starts or shows.
+--   * Without Pocket Essentials nothing here starts or shows (the Fight
+--     button aside, in a fight while the watchers are armed).
 --   * Only numbers and our own short tags are saved: no names, no chat.
 --
 -- The saved data (PocketProbeDB.perf):
@@ -941,6 +942,13 @@ fight:SetScript("OnClick", Guard(function()
     if P.Busy and P.Busy() then
         P.SetStatus("A pass is already running: let it finish.")
         return
+    end
+    -- A guided trial in its timed steps (screenshots) is not cut into either.
+    for _, g in pairs(type(P.db) == "table" and type(P.db.guided) == "table" and P.db.guided or {}) do
+        if type(g) == "table" and g.stage == "prepare" then
+            P.SetStatus("A guided trial is starting: wait a moment.")
+            return
+        end
     end
     local pausing = P.PerfPause()
     fightBusy = true
