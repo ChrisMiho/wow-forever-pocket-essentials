@@ -492,15 +492,24 @@ do
         "moving          30 s  0.0145        6.5         6                  50          questicons",
         "standing still  30 s  0.0036        1.5         2                  60          questicons",
         "In plain words (the newest run)",
+        -- Probe 0.7.0: a run under 10 minutes gets no verdict.
+        "Too short to judge: 45 s of samples to go on (10 min needed).",
+    }) do
+        check(has(out, part), "--perf: the report lacks \"" .. part .. "\"\n" .. table.concat(out, "\n"))
+    end
+    check(not has(out, "Overall:"), "--perf: no verdict for a run this short")
+    check(not has(out, "SMALLEST"), "--perf: only the three busiest events are printed")
+    check(not has(out, "in a dungeon"), "--perf: an activity that was never seen has no row")
+    -- The words themselves, for this run's numbers.
+    local words = R.perfVerdict(R.perfSummary(perfRun()))
+    for _, part in ipairs({
         "Time: light. Pocket Essentials used about 0.01 ms of each frame, by its own counters (light is under 0.1 ms, heavy is 1 ms or more).",
         "Memory: light. Pocket Essentials held at most 0.84 MB (light is under 2 MB) and did not keep growing.",
         "Hitches: some. 3 frames spent over 5 ms in Pocket Essentials in 45 s (few is under 1 a minute).",
         "Overall: in between.",
     }) do
-        check(has(out, part), "--perf: the report lacks \"" .. part .. "\"\n" .. table.concat(out, "\n"))
+        check(has(words, part), "the plain words lack \"" .. part .. "\"\n" .. table.concat(words, "\n"))
     end
-    check(not has(out, "SMALLEST"), "--perf: only the three busiest events are printed")
-    check(not has(out, "in a dungeon"), "--perf: an activity that was never seen has no row")
 end
 
 do
@@ -513,8 +522,9 @@ do
     local out = R.formatPerf(perfFile({ off }))
     check(has(out, "profiler off"), "profiler off: the report says so")
     check(has(out, "per frame, average  0.01 ms"), "profiler off: the hook's numbers are still there")
-    check(has(out, "Hitches: cannot tell (profiler off)."), "profiler off: no word on hitches")
-    check(has(out, "Overall: light."), "profiler off: the verdict uses what there is")
+    local words = R.perfVerdict(R.perfSummary(off))
+    check(has(words, "Hitches: cannot tell (profiler off)."), "profiler off: no word on hitches")
+    check(has(words, "Overall: light."), "profiler off: the verdict uses what there is")
     check(not has(out, "frames over 5 ms"), "profiler off: no profiler rows")
     -- No profiler on the client.
     off.profiler = "missing"
@@ -529,14 +539,15 @@ do
     out = R.formatPerf(perfFile({ old }))
     check(has(out, "no per-feature numbers"), "no hook: the report says there are no per-feature numbers")
     check(not has(out, "Per feature, the busiest first"), "no hook: no per-feature table")
-    check(has(out, "Time: light. Pocket Essentials used about 0.03 ms of each frame, by the game's profiler"), "no hook: the time comes from the profiler")
+    check(has(R.perfVerdict(R.perfSummary(old)), "Time: light. Pocket Essentials used about 0.03 ms of each frame, by the game's profiler"),
+        "no hook: the time comes from the profiler")
     check(has(out, "frames over 5 ms           3 (4 per minute)"), "no hook: the profiler rows still print")
 
     -- Heavy: a millisecond a frame, or memory that keeps growing.
     local heavy = perfRun()
     heavy.samples[2] = heavy.samples[2]:gsub("pe=6,", "pe=6000,")
-    out = R.formatPerf(perfFile({ heavy }))
-    check(has(out, "Time: heavy.") and has(out, "Overall: heavy."), "a millisecond a frame is heavy")
+    words = R.perfVerdict(R.perfSummary(heavy))
+    check(has(words, "Time: heavy.") and has(words, "Overall: heavy."), "a millisecond a frame is heavy")
     local growing = perfRun()
     growing.samples = { "t=0;dt=0;a=s;fps=60;mem=800,,", "t=300;dt=300;a=s;fps=60;mem=1100,,", "t=600;dt=300;a=s;fps=60;mem=1500,,;pe=1,1,1" }
     out = R.formatPerf(perfFile({ growing }))
@@ -604,8 +615,9 @@ do
         "questicons  25.3    12.7   -50 %   0.032              0.016  6.5                2",
         "core        6.7     -      -       0.025              -      0.2                -",
         "bags        -       2      -       -                  0.5    -                  0.9",
-        "before: in between",
-        "after: in between",
+        -- Probe 0.7.0: both runs are under 10 minutes.
+        "before: too short to judge (45 s of samples to go on, 10 min needed)",
+        "after: too short to judge (45 s of samples to go on, 10 min needed)",
     }) do
         check(has(out, part), "--perf --diff: the comparison lacks \"" .. part .. "\"\n" .. table.concat(out, "\n"))
     end
@@ -634,7 +646,8 @@ do
     local path = tempFile("PocketProbeDB = " .. lua(perfFile({ clean })))
     local status, out = R.main({ path, "--perf" })
     eq(status, 0, "read-probe --perf prints a 0.6.0 file")
-    check(has(out, "Run 1 of 1") and has(out, "Overall: in between."), "read-probe --perf prints the run and the plain words")
+    check(has(out, "Run 1 of 1") and has(out, "In plain words") and has(out, "Too short to judge"),
+        "read-probe --perf prints the run and the plain words")
     status, out = R.main({ path, "--perf", "--diff", path })
     eq(status, 0, "read-probe --perf --diff compares two files")
     check(has(out, "ms per frame, average") and has(out, "same"), "read-probe --perf --diff prints the comparison")
@@ -651,6 +664,140 @@ do
     check(has(out, "No recording in this file."), "--perf on a 0.5.0 file says there is no recording")
     status, out = R.main({ oldFile })
     check(status == 0 and has(out, "allowed"), "a 0.5.0 file still prints its results")
+end
+
+---------------------------------------------------------------------------
+-- Probe 0.7.0: the report's fixes (spec 2026-11-23-pocket-probe-0.7.0.md,
+-- section 5) and the watchers' table (--details)
+---------------------------------------------------------------------------
+
+-- A quiet run: one sample every 15 s up to `last` seconds; special[t] replaces a line.
+local function quietRun(last, special)
+    local samples = {}
+    for t = 0, last, 15 do
+        samples[#samples + 1] = special[t] or ("t=" .. t .. ";dt=" .. (t == 0 and 0 or 15) .. ";a=s;fps=60;mem=800,,;pe=0.6,10,0.1")
+    end
+    return { started = "2026-11-23 12:00:00", ended = "2026-11-23 12:15:00", why = "stopped", interval = 15, features = true,
+        profiler = "missing", keys = {}, feat = {}, samples = samples }
+end
+
+do
+    -- least / kept growing / heavy skip missing memory (0 in a 0.6.0 file, empty in a 0.7.0 one).
+    local run = quietRun(750, {
+        [300] = "t=300;dt=15;a=s;fps=60;mem=0,,;pe=0.6,10,0.1",
+        [315] = "t=315;dt=15;a=s;fps=60;mem=,,;pe=0.6,10,0.1",
+    })
+    local sum = R.perfSummary(run)
+    eq({ sum.memory[1].min, sum.memory[1].max }, { 800, 800 }, "a memory reading of 0 or none is left out of least and most")
+    local out = R.formatPerf(perfFile({ run }))
+    check(has(out, "Pocket Essentials  800    800    800   800  0"), "least is not 0\n" .. table.concat(out, "\n"))
+    check(has(out, "Memory: light.") and has(out, "did not keep growing"), "missing readings do not make memory heavy or growing")
+end
+
+do
+    -- Reloads: listed in minutes, and the 30 s after each is left out of the plain words.
+    local heavy = "fps=60;mem=9000,,;pe=60000,10,50"
+    local run = quietRun(750, {
+        [300] = "t=300;dt=0;a=sr;fps=60;mem=,,",
+        [315] = "t=315;dt=15;a=s;" .. heavy,
+        [330] = "t=330;dt=15;a=s;" .. heavy,
+        -- A 0.6.0 file has no r: a sample with dt=0 after the first is a reload too.
+        [600] = "t=600;dt=0;a=s;fps=60;mem=0,,",
+    })
+    local out = R.formatPerf(perfFile({ run }))
+    check(has(out, "Reloads at: 5 min, 10 min"), "the reloads are listed\n" .. table.concat(out, "\n"))
+    check(has(out, "9000"), "the tables still show everything")
+    check(has(out, "Left out of these words: the 30 s after each of 2 reloads."), "the plain words say what they leave out\n" .. table.concat(out, "\n"))
+    check(has(out, "Time: light.") and has(out, "Memory: light.") and has(out, "Overall: light."),
+        "the stretch after a reload does not colour the words\n" .. table.concat(out, "\n"))
+    local plain = R.perfSummary(run, { plain = true })
+    eq(plain.seconds, 660, "720 s less the 30 s after each reload")
+    -- The same stretch counted (no reload mark, dt=15): it is heavy.
+    local counted = quietRun(750, { [315] = "t=315;dt=15;a=s;" .. heavy, [330] = "t=330;dt=15;a=s;" .. heavy })
+    check(has(R.formatPerf(perfFile({ counted })), "Time: heavy."), "without the reload the same numbers are heavy")
+end
+
+do
+    -- Under 10 minutes left: too short to judge.
+    local out = R.formatPerf(perfFile({ quietRun(300, {}) }))
+    check(has(out, "Too short to judge: 5 min 0 s of samples to go on (10 min needed)."), "a 5 minute run\n" .. table.concat(out, "\n"))
+    check(not has(out, "Overall:"), "no verdict")
+    -- 10 min 15 s, a reload in it (its own sample has dt=0): 9 min 30 s left.
+    out = R.formatPerf(perfFile({ quietRun(615, { [300] = "t=300;dt=0;a=sr;fps=60;mem=800,," }) }))
+    check(has(out, "Too short to judge: 9 min 30 s of samples to go on (10 min needed), after leaving out the 30 s after each of 1 reload."),
+        "too short once the reload is left out\n" .. table.concat(out, "\n"))
+    -- Exactly 10 minutes is enough.
+    check(has(R.formatPerf(perfFile({ quietRun(600, {}) })), "Overall: light."), "10 minutes is enough")
+end
+
+do
+    -- Samples marked p (the fight tests' pause) are left out of the plain words, and are not reloads.
+    local run = quietRun(750, { [300] = "t=300;dt=0;a=csp;fps=60;mem=5000,," })
+    local out = R.formatPerf(perfFile({ run }))
+    check(not has(out, "Reloads at"), "a pause is not a reload")
+    check(has(out, "5000"), "the table shows the reading")
+    check(has(out, "Memory: light."), "the pause's reading is left out of the words\n" .. table.concat(out, "\n"))
+    check(has(out, "Left out of these words: 1 pause for the fight tests."), "the words say so\n" .. table.concat(out, "\n"))
+    -- In --perf --diff too.
+    local diff = R.perfDiff(perfFile({ run }), perfFile({ quietRun(300, {}) }), "a.lua", "b.lua")
+    check(has(diff, "before: light") and has(diff, "after: too short to judge (5 min 0 s of samples to go on, 10 min needed)"),
+        "--perf --diff uses the same words\n" .. table.concat(diff, "\n"))
+end
+
+local function watchFile()
+    local db = fixture()
+    db.watch = {
+        { started = "2026-11-23 11:00:00", ended = "2026-11-23 11:05:00", why = "reload", bar = { missing = "PageUnit" },
+          press = { missing = "the bars' buttons", hooked = 0 }, events = { _secs = { c = 0, o = 300 }, missing = "UPDATE_BONUS_ACTIONBAR" },
+          sweep = { missing = "the main bar" } },
+        { started = "2026-11-23 12:00:00", ended = "2026-11-23 12:30:00", why = "disarmed",
+          bar = { main = { c = 3, o = 10 }, left = { c = 2, o = 0 }, both = { c = 1, o = 1 }, first = { "t=0;left;o", "t=5;main;o" } },
+          press = { main = { down = { c = 5, o = 3 }, up = { c = 5, o = 3 } }, left = { down = { c = 1, o = 0 }, other = { c = 2, o = 0 } },
+              kind = "boolean / secret", hooked = 32 },
+          events = { ACTIONBAR_UPDATE_COOLDOWN = { c = 120, o = 30 }, SPELL_UPDATE_COOLDOWN = { c = 60, o = 0 }, _secs = { c = 120, o = 1680 } },
+          sweep = { result = "allowed", shownByItself = "yes", durClass = "readable", screenshot = "taken", t = 95 } },
+        "junk",
+        { started = "2026-11-23 13:00:00", bar = {}, press = {}, events = { _secs = { c = 0, o = 0 } }, sweep = {} },
+    }
+    return db
+end
+
+do
+    local db = watchFile()
+    local out = R.format(db, { detailsOnly = true })
+    for _, part in ipairs({
+        "Watch my next fights: 3 armings, the newest last",
+        "  Arming 1: started 2026-11-23 11:00:00, ended 2026-11-23 11:05:00 (ended by a reload or a logout)",
+        "    Active bar: not watched (not found: PageUnit)",
+        "    Presses: not watched (not found: the bars' buttons)",
+        "    Events not on this client: UPDATE_BONUS_ACTIONBAR",
+        "    Cooldown sweep: not tried (not found: the main bar)",
+        "  Arming 2: started 2026-11-23 12:00:00, ended 2026-11-23 12:30:00 (Disarm)",
+        "    Time: 2 min 0 s in fights, 28 min 0 s out of them",
+        "    Active bar, in a fight / out of one: main 3 / 10, left 2 / 0, both 1 / 1",
+        "    First changes (seconds since Arm; bar; c in a fight, o out of one): t=0;left;o, t=5;main;o",
+        "    Presses (down / up), in a fight: main 5 / 5, left 1 / 0 (2 unreadable); out of one: main 3 / 3",
+        "    \"pressed\" read as: boolean / secret; buttons hooked: 32",
+        "    Events per minute, in a fight / out of one (the counts in brackets):",
+        "ACTIONBAR_UPDATE_COOLDOWN  60 / 1.1  (120 / 30)",
+        "SPELL_UPDATE_COOLDOWN      30 / 0    (60 / 0)",
+        "    Cooldown sweep: allowed, frame shown by itself yes, duration afterwards readable, screenshot taken, 1 min 35 s after Arm",
+        "  Arming 3: started 2026-11-23 13:00:00 (still armed when the file was written)",
+        "    Cooldown sweep: not tried (nothing was on cooldown in a fight)",
+    }) do
+        check(has(out, part), "--details: the watch table lacks \"" .. part .. "\"\n" .. table.concat(out, "\n"))
+    end
+    check(has(R.format(db), "Watch my next fights: 3 armings"), "the full report has the watch table too")
+    -- An old file without a watch table prints as before.
+    local old = fixture()
+    local before, beforeDetails = table.concat(R.format(old), "\n"), table.concat(R.format(old, { detailsOnly = true }), "\n")
+    check(not before:find("Watch my next fights", 1, true), "no watch table in an old file")
+    old.watch = {}
+    eq(table.concat(R.format(old), "\n"), before, "an empty watch table changes nothing")
+    eq(table.concat(R.format(old, { detailsOnly = true }), "\n"), beforeDetails, "nor --details")
+    old.watch = "junk"
+    local ok = pcall(R.format, old, { detailsOnly = true })
+    check(ok, "a watch table of the wrong type does not raise")
 end
 
 ---------------------------------------------------------------------------

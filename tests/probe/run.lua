@@ -4644,6 +4644,42 @@ test("fight button: tick shown 3 s then usable again", function()
 end)
 
 ---------------------------------------------------------------------------
+-- Probe 0.7.0: recorder fixes
+---------------------------------------------------------------------------
+
+test("perf: memory 0 stored as missing", function()
+    local c, P, db = newPerf()
+    c.world.perf.memory.PocketEssentials = 0
+    c:advance(15.3)
+    local r = lastRun(db)
+    eq(fields(r.samples[#r.samples]).mem, ",10000,300", "a reading of 0 leaves the field empty")
+    c.world.perf.memory.PocketEssentials, c.world.perf.memory.QuestieDB, c.world.perf.memory.PocketProbe = 0, 0, 0
+    c:advance(15)
+    eq(fields(r.samples[#r.samples]).mem, nil, "no reading at all: no mem field")
+    noErrors(c)
+end)
+
+test("perf: first sample after a reload has r", function()
+    local saved = {}
+    local c = newPerf({ saved = saved })
+    c:advance(20)
+    c:fire("PLAYER_LOGOUT")
+    local r = saved.perf.runs[1]
+    for _, line in ipairs(r.samples) do check(not fields(line).a:find("r", 1, true), "no r before the reload") end
+    local c2 = newPerf({ saved = saved, reload = true, setup = function(cl) cl.now = 1100 end })
+    local n = #r.samples
+    local s = fields(r.samples[n])
+    eq(s.dt, "0")
+    check(s.a:find("r", 1, true), "the first sample after the reload has r: " .. s.a)
+    c2:advance(15.3)
+    check(not fields(r.samples[n + 1]).a:find("r", 1, true), "only that one")
+    -- A fresh run (not carried on) has no r.
+    local c3, P3, db3 = newPerf()
+    check(not fields(lastRun(db3).samples[1]).a:find("r", 1, true), "a new run's first sample has no r")
+    noErrors(c); noErrors(c2); noErrors(c3)
+end)
+
+---------------------------------------------------------------------------
 -- Run
 ---------------------------------------------------------------------------
 

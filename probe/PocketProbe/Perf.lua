@@ -53,9 +53,12 @@ local ADDON_NAME, P = ...
 --       dt=   seconds this sample covers (0 for the first one and after a reload)
 --       a=    activity letters seen in that time: c fight, d dungeon or
 --             other instance, v vendor, w world map, b bags, m moving, s still;
---             p: the first sample after a pause for the fight tests (dt=0)
+--             p: the first sample after a pause for the fight tests (dt=0);
+--             r: the first sample after a reload the run carried on over (dt=0)
 --       fps=  frame rate
---       mem=  memory in KB: Pocket Essentials, QuestieDB, Pocket Probe
+--       mem=  memory in KB: Pocket Essentials, QuestieDB, Pocket Probe; a
+--             reading the game gave as 0 (right after a reload) is left
+--             empty, as for an addon that is not loaded: "mem=,812,96"
 --       pe=   the whole addon in that time: ms, runs, slowest run (0 when
 --             no run was slower than every one before it)
 --       f=    the same per feature: key number:ms:runs:slowest, ...
@@ -516,7 +519,8 @@ local function MemoryField(r, kind, now)
         if Loaded(name) then
             local ok, kb = pcall(get, name)
             kb = ok and Num(kb)
-            if kb then out[i], any = Fmt(kb, 0), true end
+            -- 0 is no reading (the game has not counted since a reload): left empty.
+            if kb and kb > 0 then out[i], any = Fmt(kb, 0), true end
         end
     end
     return any and ("mem=" .. tconcat(out, ",")) or nil
@@ -746,9 +750,11 @@ local function Begin(carryOn)
     local perf = Saved()
     local now = Clock()
     local r = carryOn and perf.runs[#perf.runs] or nil
+    local carried = false
     if type(r) == "table" and type(r.samples) == "table" and #r.samples < MAX_SAMPLES and r.ended == nil
         and now and type(r.t0) == "number" and now >= r.t0 and type(r.keys) == "table" and type(r.feat) == "table" then
         r.reloads = (type(r.reloads) == "number" and r.reloads or 0) + 1
+        carried = true
         Log("recording carries on after the reload")
     else
         if perf.on then CloseLast(perf, "ended at a reload or a logout") end
@@ -775,7 +781,9 @@ local function Begin(carryOn)
     ReadTags()
     Listen(true)
     EnsureHooks()
-    Sample("base")
+    -- The first sample after a reload says so (r): the report leaves the
+    -- next 30 seconds out of its plain words.
+    Sample("base", carried and "r" or nil)
     StartTicker()
     Place()
     dot:Show()
