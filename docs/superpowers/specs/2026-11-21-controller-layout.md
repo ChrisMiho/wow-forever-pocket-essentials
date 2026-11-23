@@ -204,14 +204,16 @@ missing from the base is skipped, never added. For every system changed,
 All numbers are UI units and first guesses. "Stored" is the raw setting
 value the game saves.
 
+Rows marked (0.11.1) were changed by `2026-11-23-controller-layout-0.11.1.md`.
+
 | Piece (system, index) | Anchor: point, relativeTo, relativePoint, x, y | Settings (stored) |
 |---|---|---|
-| Minimap (Minimap) | BOTTOM, UIParent, BOTTOM, 0, mapY | Size 3 (80%) |
+| Minimap (Minimap) | BOTTOM, UIParent, BOTTOM, 0, mapY | Size 3 (80%), HeaderUnderneath 1 (0.11.1) |
 | Chat (ChatFrame) | TOPRIGHT, UIParent, TOPRIGHT, -30, -40 | Width 430 (4, 30), height 210 (2, 10) |
-| Buffs (AuraFrame 1) | TOPRIGHT, UIParent, TOPRIGHT, -30, -262 | unchanged |
-| Debuffs (AuraFrame 2) | TOPRIGHT, UIParent, TOPRIGHT, -30, -300 | unchanged |
-| Quest tracker (ObjectiveTracker) | TOPRIGHT, UIParent, TOPRIGHT, -30, -345 | Height 0 (400) |
-| XP bars (StatusTrackingBar 1, 2) | unchanged, `isInDefaultPosition` unchanged | Size 16 (130%) |
+| Buffs (AuraFrame 1) | TOPRIGHT, UIParent, TOPRIGHT, -30, -292 (0.11.1) | unchanged |
+| Debuffs (AuraFrame 2) | TOPRIGHT, UIParent, TOPRIGHT, -30, -330 (0.11.1) | unchanged |
+| Quest tracker (ObjectiveTracker) | TOPRIGHT, UIParent, TOPRIGHT, -30, -375 (0.11.1) | Height 0 (400) |
+| XP bars (StatusTrackingBar 1, 2) | TOP, UIParent, TOP, 0, -2 (bar 1) and 0, -19 (bar 2) (0.11.1) | Size 10 (100%) (0.11.1) |
 | Gamepad bar (GamepadMainActionBar) | unchanged | Compact 0, ShowEmptyBars 0, ShouldExpand 0 |
 | Player, Pet, Target (UnitFrame 1, 8, 2) | see "Frames" | unchanged |
 | Swing timers (SwingTimer 1, 2, 3) | see "Swing timers" | Scale 3 (80%), Width 0 (213), Height 0 (15), Visibility per option |

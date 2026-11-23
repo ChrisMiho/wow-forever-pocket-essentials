@@ -24,6 +24,20 @@ local ADDON_NAME, PE = ...
 -- Blizzard's own (see SIZE). Still first guesses: the map's size below 100%
 -- (taken as the measured size times the percentage), the swing timer's size,
 -- and every spot and gap.
+--
+-- 0.11.1 (spec 2026-11-23-controller-layout-0.11.1.md): the XP bars top middle,
+-- the map's title strip under the map, the buffs clear of the chat, and each
+-- character's own layout to go back to.
+--
+-- The map's title strip under the map: Enum.EditModeMinimapSetting.HeaderUnderneath
+-- (Blizzard_APIDocumentationGenerated/EditModeManagerConstantsDocumentation.lua:580; the
+-- Minimap system's setting in Blizzard_EditMode/Shared/EditModeSettingDisplayInfo.lua:131,
+-- applied by EditModeSystemTemplates.lua:1794-1795). The Forever client's own map code
+-- (Blizzard_Minimap/Camelot/Minimap.lua:68-84) then puts the title strip at the map frame's
+-- bottom (8 up) and the map itself 30 up from that bottom, the mirror of the title on top
+-- (the title at the top edge, the map 30 down: Mainline/Minimap.xml:50 and
+-- Camelot/MinimapZoneTextButton.xml:11). The strip stays inside the map frame, whose bottom
+-- edge is the spot written here, so nothing under the map moves and MapY is not raised.
 
 local type, pairs, ipairs = type, pairs, ipairs
 local min = math.min
@@ -57,7 +71,16 @@ Plan.DEFAULTS = {
 -- A bar: Blizzard's size for a bar that does not grow
 -- (Blizzard_GamepadActionBars/ActionBarStyles.lua:172); the template switches
 -- growing off (ShouldExpand 0).
-local SIZE = { MAP_W = 273, MAP_H = 283, BAR_W = 208, BAR_H = 68 }
+-- An XP bar: 17 high (STATUS_BAR_CONTAINER_HEIGHT,
+-- Blizzard_StatusTrackingBar/Camelot/StatusTrackingBarConstants.lua:2), 596 wide at 100%
+-- with the Gamepad UI (STATUS_BAR_CONTAINER_WIDTH_GAMEPAD, same file, line 12, and
+-- StatusTrackingManagerOverrides.lua:80-81). The game's Gamepad preset stacks bar 2 one bar
+-- height above bar 1 (Blizzard_EditMode/Mainline/EditModePresetLayouts.lua:1441-1461, offsetY 0
+-- and 17 on StatusTrackingBarManager's bottom); with a Gamepad layout the game places both
+-- by their saved spot (Blizzard_EditMode/Camelot/EditModeUtil.lua:5-9). At the screen's top
+-- edge there is no room above, so here bar 2 sits one bar height under bar 1.
+local SIZE = { MAP_W = 273, MAP_H = 283, BAR_W = 208, BAR_H = 68, XP_H = 17 }
+local XP_TOP_Y = -2 -- the first XP bar's top edge, from the screen's top
 
 -- The map sizes offered. 100% is left out: the two sub-menu buttons sit a
 -- fixed 138 either side of the map's centre and a map that wide would cover
@@ -211,15 +234,20 @@ function Plan.Pieces(opts)
     local function add(system, index, anchor, settings)
         list[#list + 1] = { system = system, index = index, anchor = anchor, settings = settings, moved = anchor and true or nil }
     end
-    -- The stored Size counts in steps of 10% from 50%: 80% is 3.
-    add("Minimap", nil, Spot("BOTTOM", "BOTTOM", 0, Plan.MapY(o)), { Size = (o.map - 50) / 10 })
+    -- The stored Size counts in steps of 10% from 50%: 80% is 3. HeaderUnderneath 1 puts
+    -- the map's title strip (zone name, clock, mail) under the map (0.11.1 spec, 3); left out
+    -- by Plan.Apply when the game has no such setting.
+    add("Minimap", nil, Spot("BOTTOM", "BOTTOM", 0, Plan.MapY(o)), { Size = (o.map - 50) / 10, HeaderUnderneath = 1 })
     add("ChatFrame", nil, Spot("TOPRIGHT", "TOPRIGHT", -30, -40),
         { WidthHundreds = 4, WidthTensAndOnes = 30, HeightHundreds = 2, HeightTensAndOnes = 10 })
-    add("AuraFrame", "BuffFrame", Spot("TOPRIGHT", "TOPRIGHT", -30, -262), nil)
-    add("AuraFrame", "DebuffFrame", Spot("TOPRIGHT", "TOPRIGHT", -30, -300), nil)
-    add("ObjectiveTracker", nil, Spot("TOPRIGHT", "TOPRIGHT", -30, -345), { Height = 0 })
-    add("StatusTrackingBar", "StatusTrackingBar1", nil, { Size = 16 })
-    add("StatusTrackingBar", "StatusTrackingBar2", nil, { Size = 16 })
+    -- Buffs, debuffs and the quest tracker start under the chat's last lines (0.11.1 spec, 4).
+    add("AuraFrame", "BuffFrame", Spot("TOPRIGHT", "TOPRIGHT", -30, -292), nil)
+    add("AuraFrame", "DebuffFrame", Spot("TOPRIGHT", "TOPRIGHT", -30, -330), nil)
+    add("ObjectiveTracker", nil, Spot("TOPRIGHT", "TOPRIGHT", -30, -375), { Height = 0 })
+    -- The XP bars along the top edge, centred, at 100% (0.11.1 spec, 1), the second right
+    -- under the first.
+    add("StatusTrackingBar", "StatusTrackingBar1", Spot("TOP", "TOP", 0, XP_TOP_Y), { Size = 10 })
+    add("StatusTrackingBar", "StatusTrackingBar2", Spot("TOP", "TOP", 0, XP_TOP_Y - SIZE.XP_H), { Size = 10 })
     add("GamepadMainActionBar", nil, nil, { Compact = 0, ShowEmptyBars = 0, ShouldExpand = 0 })
     local frames = FRAME_SPOTS[o.frames] or FRAME_SPOTS.corner
     add("UnitFrame", "Player", Anchor(frames.Player), nil)
@@ -377,7 +405,8 @@ local function ReadEnums()
             SwingTimer = Enum.EditModeSystem.SwingTimer,
         },
         setting = {
-            Minimap = { Size = Enum.EditModeMinimapSetting.Size },
+            -- HeaderUnderneath may be nil (an older client): Plan.Apply then leaves it out.
+            Minimap = { Size = Enum.EditModeMinimapSetting.Size, HeaderUnderneath = Enum.EditModeMinimapSetting.HeaderUnderneath },
             ChatFrame = {
                 WidthHundreds = Enum.EditModeChatFrameSetting.WidthHundreds,
                 WidthTensAndOnes = Enum.EditModeChatFrameSetting.WidthTensAndOnes,

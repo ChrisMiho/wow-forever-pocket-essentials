@@ -54,6 +54,7 @@ local function fakeEnums()
     e.index.UnitFrame.Player, e.index.UnitFrame.Target, e.index.UnitFrame.Pet = 1, 2, 8
     e.index.SwingTimer.MainHand, e.index.SwingTimer.OffHand, e.index.SwingTimer.Ranged = 1, 2, 3
     e.index.StatusTrackingBar.StatusTrackingBar1, e.index.StatusTrackingBar.StatusTrackingBar2 = 1, 2
+    e.setting.Minimap.HeaderUnderneath = num()
     return e
 end
 
@@ -145,15 +146,15 @@ test("layout: Pieces for the defaults carry the template's anchors and settings"
     local map = piece(list, "Minimap")
     check(map, "no Minimap piece")
     eq(map.anchor, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 0, y = 44 })
-    eq(map.settings.Size, 3)
+    eq(map.settings, { Size = 3, HeaderUnderneath = 1 })
     eq(map.moved, true)
     local chat = piece(list, "ChatFrame")
     eq(chat.anchor, { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -30, y = -40 })
     eq(chat.settings, { WidthHundreds = 4, WidthTensAndOnes = 30, HeightHundreds = 2, HeightTensAndOnes = 10 })
-    eq(piece(list, "AuraFrame", "BuffFrame").anchor.y, -262)
-    eq(piece(list, "AuraFrame", "DebuffFrame").anchor.y, -300)
+    eq(piece(list, "AuraFrame", "BuffFrame").anchor.y, -292)
+    eq(piece(list, "AuraFrame", "DebuffFrame").anchor.y, -330)
     local quest = piece(list, "ObjectiveTracker")
-    eq(quest.anchor.y, -345)
+    eq(quest.anchor.y, -375)
     eq(quest.settings, { Height = 0 })
     local ranged = piece(list, "SwingTimer", "Ranged")
     eq(ranged.settings.Visibility, 1)
@@ -174,9 +175,8 @@ test("layout: Pieces for the defaults carry the template's anchors and settings"
     for _, name in ipairs({ "StatusTrackingBar1", "StatusTrackingBar2" }) do
         local p = piece(list, "StatusTrackingBar", name)
         check(p, "no " .. name)
-        eq(p.settings, { Size = 16 })
-        eq(p.anchor, nil)
-        eq(p.moved, nil)
+        eq(p.settings, { Size = 10 })
+        eq(p.moved, true)
     end
     local bar = piece(list, "GamepadMainActionBar")
     eq(bar.settings, { Compact = 0, ShowEmptyBars = 0, ShouldExpand = 0 })
@@ -342,6 +342,86 @@ test("layout: Apply drops a second anchor when it sets an anchor, and keeps it f
 end)
 
 ---------------------------------------------------------------------------
+-- 0.11.1 template changes (spec 2026-11-23-controller-layout-0.11.1.md, 1, 3 and 4)
+---------------------------------------------------------------------------
+
+test("plan: XP bars top middle at 100%", function()
+    local Plan = plan()
+    for _, o in ipairs({ with(Plan.DEFAULTS), with({ main = "under", map = 60, timers = "bars" }) }) do
+        local list = Plan.Pieces(o)
+        local one = piece(list, "StatusTrackingBar", "StatusTrackingBar1")
+        eq(one.anchor, { point = "TOP", relativeTo = "UIParent", relativePoint = "TOP", x = 0, y = -2 })
+        eq(one.settings, { Size = 10 })
+        eq(one.moved, true)
+        -- The second bar right under the first: a bar is 17 high (STATUS_BAR_CONTAINER_HEIGHT,
+        -- Blizzard_StatusTrackingBar/Camelot/StatusTrackingBarConstants.lua:2).
+        local two = piece(list, "StatusTrackingBar", "StatusTrackingBar2")
+        eq(two.anchor, { point = "TOP", relativeTo = "UIParent", relativePoint = "TOP", x = 0, y = -19 })
+        eq(two.settings, { Size = 10 })
+        eq(two.moved, true)
+    end
+    -- Written into a layout: both entries get the spot, the size, and leave their default position.
+    local e = fakeEnums()
+    local base = { systems = {
+        { system = e.system.StatusTrackingBar, systemIndex = 1, isInDefaultPosition = true,
+          settings = { { setting = e.setting.StatusTrackingBar.Size, value = 16 } },
+          anchorInfo = { point = "BOTTOM", relativeTo = "StatusTrackingBarManager", relativePoint = "BOTTOM", offsetX = 0, offsetY = 0 } },
+        { system = e.system.StatusTrackingBar, systemIndex = 2, isInDefaultPosition = true,
+          settings = { { setting = e.setting.StatusTrackingBar.Size, value = 16 } },
+          anchorInfo = { point = "BOTTOM", relativeTo = "StatusTrackingBarManager", relativePoint = "BOTTOM", offsetX = 0, offsetY = 17 } },
+    } }
+    local layout = Plan.Build(base, with(Plan.DEFAULTS), e)
+    eq(layout.systems[1].anchorInfo, { point = "TOP", relativeTo = "UIParent", relativePoint = "TOP", offsetX = 0, offsetY = -2 })
+    eq(layout.systems[2].anchorInfo, { point = "TOP", relativeTo = "UIParent", relativePoint = "TOP", offsetX = 0, offsetY = -19 })
+    for i = 1, 2 do
+        eq(settingValue(layout.systems[i], e.setting.StatusTrackingBar.Size), 10, "bar " .. i .. " size")
+        eq(layout.systems[i].isInDefaultPosition, false, "bar " .. i .. " moved")
+    end
+end)
+
+test("plan: minimap header underneath", function()
+    local Plan = plan()
+    local e = fakeEnums()
+    for _, m in ipairs({ 60, 70, 80 }) do
+        eq(piece(Plan.Pieces(with({ map = m })), "Minimap").settings.HeaderUnderneath, 1, "map " .. m)
+    end
+    local layout = Plan.Build(baseLayout(e), with(Plan.DEFAULTS), e)
+    eq(settingValue(layout.systems[1], e.setting.Minimap.HeaderUnderneath), 1)
+    eq(settingValue(layout.systems[1], e.setting.Minimap.Size), 3)
+    eq(#layout.systems[1].settings, 2, "Size and HeaderUnderneath")
+    -- The header sits inside the map's own frame (Blizzard_Minimap/Camelot/Minimap.lua:68-84),
+    -- so the map's spot is not lifted for it.
+    eq(Plan.MapY(with(Plan.DEFAULTS)), 44)
+end)
+
+test("plan: no HeaderUnderneath enum leaves it out", function()
+    local Plan = plan()
+    local e = fakeEnums()
+    e.setting.Minimap.HeaderUnderneath = nil
+    local layout = Plan.Build(baseLayout(e), with(Plan.DEFAULTS), e)
+    local map = layout.systems[1]
+    eq(#map.settings, 1, "only Size")
+    eq(settingValue(map, e.setting.Minimap.Size), 3)
+    eq(map.anchorInfo.offsetY, 44)
+end)
+
+test("plan: buffs, debuffs, tracker spots", function()
+    local Plan = plan()
+    local list = Plan.Pieces(with(Plan.DEFAULTS))
+    eq(piece(list, "AuraFrame", "BuffFrame").anchor,
+        { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -30, y = -292 })
+    eq(piece(list, "AuraFrame", "DebuffFrame").anchor,
+        { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -30, y = -330 })
+    local quest = piece(list, "ObjectiveTracker")
+    eq(quest.anchor, { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -30, y = -375 })
+    eq(quest.settings, { Height = 0 })
+    -- The chat box keeps its spot and size.
+    local chat = piece(list, "ChatFrame")
+    eq(chat.anchor, { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -30, y = -40 })
+    eq(chat.settings, { WidthHundreds = 4, WidthTensAndOnes = 30, HeightHundreds = 2, HeightTensAndOnes = 10 })
+end)
+
+---------------------------------------------------------------------------
 -- Map size (spec 2026-11-22-controller-layout-measured-sizes.md). The map is
 -- 273 by 283 at 100%: 163.8 by 169.8 at 60%, 191.1 by 198.1 at 70%, 218.4 by
 -- 226.4 at 80%. Every number below is worked out by hand from those.
@@ -433,7 +513,7 @@ test("layout: the template's Minimap entry stores the map's size as (map - 50) /
     local e = fakeEnums()
     for _, m in ipairs(MAP_CASES) do
         local map = piece(Plan.Pieces(with({ map = m.map })), "Minimap")
-        eq(map.settings, { Size = m.stored })
+        eq(map.settings, { Size = m.stored, HeaderUnderneath = 1 })
         eq(map.anchor, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 0, y = 44 })
         local layout = Plan.Build(baseLayout(e), with({ map = m.map }), e)
         eq(settingValue(layout.systems[1], e.setting.Minimap.Size), m.stored)
@@ -618,6 +698,32 @@ test("layout: the template starts from the active layout when that one is a Game
     eq(list[4].systems[1].anchorInfo.offsetY, 2, "the player's own layout changed")
     eq(opts(PE).prev, { name = "Mine", layoutType = 1 })
     c:assertClean()
+end)
+
+test("layout: on writes the map's title under the map; a game without that setting leaves it out", function()
+    -- The stand-in's Gamepad preset has the map as system 2 with Size (setting 2) = 5;
+    -- HeaderUnderneath is setting 0 (EditModeManagerConstantsDocumentation.lua:580).
+    local function mapEntry(c)
+        for _, l in ipairs(c.world.layouts.layouts) do
+            if l.layoutName == NAME then
+                for _, entry in ipairs(l.systems) do if entry.system == 2 then return entry end end
+            end
+        end
+    end
+    local c, PE = layoutClient({}, 3)
+    switchOn(c, PE)
+    local map = mapEntry(c)
+    check(map, "no map entry in our layout")
+    local values = {}
+    for _, st in ipairs(map.settings) do values[st.setting] = st.value end
+    eq(values, { [0] = 1, [2] = 3 })
+    c:assertClean()
+    local c2, PE2 = layoutClient({}, 3, { setup = function(c2) rawset(c2.env.Enum.EditModeMinimapSetting, "HeaderUnderneath", nil) end })
+    switchOn(c2, PE2)
+    check(PE2:IsModuleEnabled("ctrlLayout"), "the feature did not stay on")
+    local map2 = mapEntry(c2)
+    eq(#map2.settings, 1, "only Size")
+    eq(map2.settings[1].value, 3)
 end)
 
 test("layout: on with five account layouts refuses, says why, and switches back off", function()
