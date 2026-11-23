@@ -4,6 +4,20 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.11.2] - 2026-11-23
+
+Twenty-seventh test build. A fix for 0.11.1 from the owner's debug log. Not
+yet tested on a device. Your saved choices carry over.
+
+### Fixed
+
+- **Controller layout, each character:** the layout never switched on,
+  because the character's name could not be read on the device (the debug
+  log said "waiting for the character's name" at every login). Each
+  character's old layout is now kept in the game's own per-character saved
+  file instead, so no name is needed. With the debug log on, one line says
+  which part of the name could not be read, to find the cause.
+
 ## [0.11.1] - 2026-11-23
 
 Twenty-sixth test build. The clear bugs from the owner's level 40 main

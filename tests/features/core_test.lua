@@ -39,6 +39,19 @@ end
 ---------------------------------------------------------------------------
 
 -- CLAUDE.md "Features default off until device-tested"; Core.lua Login: only `== true` enables.
+-- Core.lua InitCharDB; the TOC's SavedVariablesPerCharacter line (0.11.2).
+test("core: this character's saved table is the game's per-character one, or a new one", function()
+    local mine = { ctrlLayoutPrev = { preset = 0 } }
+    local c, PE = T.new({ savedChar = mine })
+    check(PE.charDB == mine, "not the saved per-character table")
+    check(rawget(c.env, "PocketEssentialsCharDB") == mine, "the global was replaced")
+    local c2, PE2 = T.new({})
+    eq(type(PE2.charDB), "table")
+    check(rawget(c2.env, "PocketEssentialsCharDB") == PE2.charDB, "a new table the game would not save")
+    c:assertClean()
+    c2:assertClean()
+end)
+
 test("core: every feature is off on first install", function()
     local c, PE = T.new({})
     eq(PE.db.enabled, {})

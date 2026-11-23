@@ -2109,6 +2109,7 @@ end
 -- and the rest still load (as in the game). Returns PE.
 -- opts.addonName loads another addon the same way (its <name>.toc from
 -- opts.addonDir, saved variables <name>DB): the restriction probe's tests use it.
+-- opts.savedChar is this character's saved table (<name>CharDB).
 function Client:loadAddon()
     if self.PE then error("fakeclient: loadAddon() was already called on this client", 2) end
     local PE = {}
@@ -2125,6 +2126,8 @@ function Client:loadAddon()
         end
     end
     if self.opts.saved ~= nil then rawset(self.env, addonName .. "DB", self.opts.saved) end
+    -- The per-character saved variables (SavedVariablesPerCharacter): one table per character.
+    if self.opts.savedChar ~= nil then rawset(self.env, addonName .. "CharDB", self.opts.savedChar) end
     self:fire("ADDON_LOADED", addonName, false)
     self:fire("PLAYER_LOGIN")
     self:fire("PLAYER_ENTERING_WORLD", true, false)

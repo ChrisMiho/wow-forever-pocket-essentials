@@ -696,7 +696,20 @@ local function CleanOtherErrors(saved)
     return out
 end
 
+-- This character's own saved table (PocketEssentialsCharDB, the TOC's
+-- SavedVariablesPerCharacter), as PE.charDB. Read again on every call: the
+-- game sets it just before ADDON_LOADED, which calls this once more.
+local function InitCharDB()
+    local charDB = _G.PocketEssentialsCharDB
+    if type(charDB) ~= "table" then
+        charDB = {}
+        _G.PocketEssentialsCharDB = charDB
+    end
+    PE.charDB = charDB
+end
+
 local function InitDB()
+    InitCharDB()
     if PE.db then return end
     local db = _G.PocketEssentialsDB
     if type(db) ~= "table" then
@@ -740,6 +753,7 @@ local function EnsureDB()
     xpcall(InitDB, coreHandler)
     if PE.db then return end
     -- Last resort: settings work for this session but will not be saved.
+    if type(PE.charDB) ~= "table" then PE.charDB = {} end
     PE.db = {
         version = 1, enabled = {}, options = {},
         ui = { size = "medium", hubPos = "LEFT", moved = {} },

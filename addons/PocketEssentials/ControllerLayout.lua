@@ -354,21 +354,27 @@ end
 -- Gamepad 3; a preset's index is its Enum.EditModePresetLayouts value + 1).
 --
 -- The game remembers the active layout per character, so the layout to go back
--- to is kept per character (0.11.1 spec, 2): opts.prevs[<name>-<realm>] =
--- { name, layoutType, preset }, written when a switch-on has really happened
--- on that character. opts.prev is the 0.11.0 file's single entry for the whole
--- account, read once (Migrate) and then false.
+-- to is kept per character (0.11.1 spec, 2; 0.11.2): in the game's own
+-- per-character saved file (PocketEssentialsCharDB, the TOC's
+-- SavedVariablesPerCharacter line, as Blizzard's own addons do, e.g.
+-- Blizzard_AuctionHouseUI/Blizzard_AuctionHouseUI.toc:4), at
+-- PE.charDB.ctrlLayoutPrev = { name, layoutType, preset }, written when a
+-- switch-on has really happened on that character. Core loads that table with
+-- the account-wide one. No character name is needed: 0.11.1 keyed the entry by
+-- UnitName("player") and GetRealmName(), and on the device the name never read
+-- (the check waited for it forever). Two older entries are read once (Migrate):
+-- opts.prev, the 0.11.0 file's single entry for the whole account, and
+-- opts.prevs[<name>-<realm>], 0.11.1's, when this character's name can be read.
 --
--- The character's name and realm: UnitName("player")
--- (Blizzard_APIDocumentationGenerated/UnitDocumentation.lua:2489-2503) and
--- GetRealmName() (ConnectionDocumentation.lua:69-75). UnitName may answer
--- UNKNOWNOBJECT ("Unknown", compared the same way in
--- Blizzard_RaidUI/Mainline/Blizzard_RaidUI.lua:706) before the character is
--- loaded; the key is then unknown and the check waits.
+-- The name and realm are still read, for the debug log only (CharKey): which
+-- part fails is logged once a session, so the cause can be found. Nothing waits
+-- on them. UnitName (Blizzard_APIDocumentationGenerated/UnitDocumentation.lua:
+-- 2489-2503, secret when the unit's identity is restricted), GetRealmName
+-- (ConnectionDocumentation.lua:69-75), UNKNOWNOBJECT ("Unknown", compared the
+-- same way in Blizzard_RaidUI/Mainline/Blizzard_RaidUI.lua:706).
 --
--- At each login, and at each switch-on, Settle runs once this character's key
--- can be read and the game has handed Edit Mode its layouts
--- (EditModeManagerFrameMixin:IsInitialized,
+-- At each login, and at each switch-on, Settle runs once the game has handed
+-- Edit Mode its layouts (EditModeManagerFrameMixin:IsInitialized,
 -- Blizzard_EditMode/Shared/EditModeManager.lua:216-218, true once
 -- UpdateLayoutInfo, line 1012, ran on EDIT_MODE_LAYOUTS_UPDATED, line 193): a
 -- layout list read before that may be incomplete, and saving it could lose the
@@ -376,8 +382,8 @@ end
 -- PLAYER_ENTERING_WORLD and EDIT_MODE_LAYOUTS_UPDATED through the core's own
 -- event list (PE:RegisterCoreEvent), because a module that is off hears none
 -- of its own events; both are dropped as soon as Settle has run. While off,
--- this happens only when a layout is remembered for this character (or the old
--- single entry is still there), so a player who never used the feature has
+-- this happens only when a layout is remembered for this character (or an
+-- older entry is still to be read), so a player who never used the feature has
 -- nothing registered at all.
 --
 -- Settle, with the feature on: an entry for this character means it was
@@ -638,56 +644,91 @@ end
 -- Each character's own layout to go back to (see the notes above Say)
 ---------------------------------------------------------------------------
 
--- "<name>-<realm>" of the character playing, or nil while it cannot be read.
+-- "<name>-<realm>" of the character playing, or nil and which part failed. For
+-- the debug log and the one-time read of 0.11.1's entries only: nothing waits on it.
 local function CharKey()
-    if type(UnitName) ~= "function" or type(GetRealmName) ~= "function" then return nil end
+    if type(UnitName) ~= "function" or type(GetRealmName) ~= "function" then return nil, "no function" end
     local okName, name = pcall(UnitName, "player")
     local okRealm, realm = pcall(GetRealmName)
-    if not okName or not okRealm then return nil end
-    if issecretvalue and (issecretvalue(name) or issecretvalue(realm)) then return nil end
-    if type(name) ~= "string" or type(realm) ~= "string" or name == "" or realm == "" then return nil end
-    if name == UNKNOWNOBJECT then return nil end
+    if not okName or not okRealm then return nil, "error" end
+    if issecretvalue and issecretvalue(name) then return nil, "name secret" end
+    if issecretvalue and issecretvalue(realm) then return nil, "realm secret" end
+    if type(name) ~= "string" or name == "" then return nil, "name empty" end
+    if type(realm) ~= "string" or realm == "" then return nil, "realm empty" end
+    if name == UNKNOWNOBJECT then return nil, "unknown name" end
     return name .. "-" .. realm
 end
 
-local function Prevs()
-    local opts = mod.opts
-    if type(opts.prevs) ~= "table" then opts.prevs = {} end
-    return opts.prevs
+local nameLogged = false
+
+-- Once a session, with the debug log on: whether the character's name can be
+-- read, and if not, which part failed (0.11.1 never found it on the device).
+local function LogNameOnce()
+    if nameLogged or not PE.debugOn then return end
+    nameLogged = true
+    local key, why = CharKey()
+    PE:Debug("ctrlLayout", key and "the character's name reads" or ("the character's name does not read: " .. tostring(why)))
 end
 
--- The entry of a character, or nil.
-local function PrevOf(key)
-    if not key then return nil end
-    local entry = Prevs()[key]
+-- This character's own saved table (Core: PE.charDB), or nil before it is loaded.
+local function CharDB()
+    local t = PE.charDB
+    return type(t) == "table" and t or nil
+end
+
+-- This character's layout to go back to, or nil.
+local function ThisPrev()
+    local t = CharDB()
+    local entry = t and t.ctrlLayoutPrev
     return type(entry) == "table" and entry or nil
 end
 
-local function ThisPrev()
-    return PrevOf(CharKey())
-end
-
--- Writes (or, with nil, removes) a character's entry.
-local function SetPrev(key, entry)
-    Prevs()[key] = entry
+-- Writes (or, with nil, removes) this character's entry.
+local function SetThisPrev(entry)
+    local t = CharDB()
+    if t then t.ctrlLayoutPrev = entry end
 end
 
 local function HasLegacy()
     return type(mod.opts) == "table" and type(mod.opts.prev) == "table"
 end
 
--- The 0.11.0 file's single entry, read once: it becomes this character's entry
--- if ours is active here, otherwise it is dropped.
-local function Migrate(key)
+-- 0.11.1's entry for this character in the account-wide file (opts.prevs, by
+-- name and realm) and its key, or nil (none, or the name cannot be read).
+local function OldNamedPrev()
+    local opts = mod.opts
+    local prevs = type(opts) == "table" and opts.prevs
+    if type(prevs) ~= "table" or next(prevs) == nil then return nil end
+    local key = CharKey()
+    local entry = key and prevs[key]
+    if type(entry) == "table" then return entry, key end
+    return nil
+end
+
+-- An older entry is still to be read for this character.
+local function HasOldEntry()
+    return HasLegacy() or OldNamedPrev() ~= nil
+end
+
+-- Reads the older entries once. 0.11.1's entry for this character becomes its
+-- entry (and leaves the account-wide file). 0.11.0's single entry becomes it if
+-- ours is active here; otherwise it is dropped.
+local function Migrate()
+    local named, key = OldNamedPrev()
+    if named then
+        mod.opts.prevs[key] = nil
+        if not ThisPrev() then SetThisPrev(named) end
+        if PE.debugOn then PE:Debug("ctrlLayout", "the 0.11.1 layout to go back to moved to this character's own file") end
+    end
     if not HasLegacy() then return end
     local legacy = mod.opts.prev
     mod.opts.prev = false
-    if PrevOf(key) then return end
+    if ThisPrev() then return end
     local state = ReadState()
     local index = state and OursIndex(state)
     local kept = index ~= nil and state.active == index
-    if kept then SetPrev(key, legacy) end
-    if PE.debugOn then PE:Debug("ctrlLayout", "the 0.11.0 layout to go back to was " .. (kept and "kept for " .. key or "dropped")) end
+    if kept then SetThisPrev(legacy) end
+    if PE.debugOn then PE:Debug("ctrlLayout", "the 0.11.0 layout to go back to was " .. (kept and "kept for this character" or "dropped")) end
 end
 
 -- See the notes above Say.
@@ -1058,9 +1099,8 @@ local function SwitchOn()
         Refuse(TEXT_EDIT_MODE)
         return
     end
-    local key = CharKey()
-    if not key then
-        Fail("The character's name could not be read")
+    if not CharDB() then
+        Fail("This character's saved settings are not loaded")
         return
     end
     local e = Enums()
@@ -1073,7 +1113,7 @@ local function SwitchOn()
     if oursIndex and state.active == oursIndex then
         -- Already in use (picked in Edit Mode, or switched on for this character
         -- elsewhere): nothing to change. Off goes back to the Gamepad preset.
-        if not PrevOf(key) then SetPrev(key, { preset = e.preset.Gamepad }) end
+        if not ThisPrev() then SetThisPrev({ preset = e.preset.Gamepad }) end
         SyncBars()
         mod:RefreshPanel()
         return
@@ -1082,20 +1122,20 @@ local function SwitchOn()
     local prev = current and { name = current.name, layoutType = current.layoutType, preset = current.preset }
         or { preset = e.preset.Gamepad }
     if oursIndex then
-        SetPrev(key, prev)
+        SetThisPrev(prev)
         local ok, err = pcall(state.api.SetActiveLayout, oursIndex)
         if not ok then
-            SetPrev(key, nil)
+            SetThisPrev(nil)
             Fail("C_EditMode.SetActiveLayout failed: " .. tostring(err))
             return
         end
     else
-        SetPrev(key, prev) -- before the write: switching off must undo even a half-done change
+        SetThisPrev(prev) -- before the write: switching off must undo even a half-done change
         local called, ok, wrote = pcall(AddOurs, state, e)
         if not called then
             -- Every game call in AddOurs is protected, so an error here came
             -- before anything was written.
-            SetPrev(key, nil)
+            SetThisPrev(nil)
             Fail("Building the layout failed: " .. tostring(ok))
             return
         end
@@ -1103,7 +1143,7 @@ local function SwitchOn()
             -- After a tap the switch-off that follows the refusal undoes a half-done
             -- change. From a login check the switch stays on: no entry, so the next
             -- login tries again.
-            if not wrote or autoSwitch then SetPrev(key, nil) end
+            if not wrote or autoSwitch then SetThisPrev(nil) end
             return
         end
     end
@@ -1123,13 +1163,8 @@ end
 -- reload only when it changed the layout (a tap on the switch always asks).
 local function SwitchOff(atLogin)
     if wanted then return end -- switched on again before this ran
-    local key = CharKey()
-    if not key then
-        Begin(not atLogin) -- tried again once the name can be read; a tap keeps its reload request
-        return
-    end
-    Migrate(key)
-    local prev = PrevOf(key)
+    Migrate()
+    local prev = ThisPrev()
     if not prev then return end
     local state, why = ReadState()
     if not state then
@@ -1156,8 +1191,8 @@ local function SwitchOff(atLogin)
             changed = true
         end
     end
-    SetPrev(key, nil)
-    if PE.debugOn then PE:Debug("ctrlLayout", "switched off for " .. key .. (changed and ", its own layout put back" or "")) end
+    SetThisPrev(nil)
+    if PE.debugOn then PE:Debug("ctrlLayout", "switched off for this character" .. (changed and ", its own layout put back" or "")) end
     if changed or not atLogin then mod:RequestReload(RELOAD_REASON) end
     if changed and atLogin then PE:Print(CHAT_SWITCHED_OFF) end
 end
@@ -1353,8 +1388,7 @@ local OPTIONS = {
 
 -- This character's check (see the notes above Say). Runs out of combat; waits
 -- (and is called again by the next PLAYER_ENTERING_WORLD or
--- EDIT_MODE_LAYOUTS_UPDATED) while the character's name or Edit Mode's layouts
--- are not known yet.
+-- EDIT_MODE_LAYOUTS_UPDATED) while Edit Mode's layouts are not known yet.
 Settle = function()
     if not pending then
         StopWaiting()
@@ -1364,17 +1398,17 @@ Settle = function()
         if PE.debugOn then PE:Debug("ctrlLayout", "waiting for Edit Mode's layouts") end
         return
     end
-    local key = CharKey()
-    if not key then
-        if PE.debugOn then PE:Debug("ctrlLayout", "waiting for the character's name") end
+    if not CharDB() then
+        if PE.debugOn then PE:Debug("ctrlLayout", "waiting for this character's saved settings") end
         return
     end
+    LogNameOnce()
     local byTap = pendingTap
     pending, pendingTap = false, false
     StopWaiting()
-    Migrate(key)
+    Migrate()
     if wanted then
-        if PrevOf(key) then
+        if ThisPrev() then
             SyncBars()
             mod:RefreshPanel()
         else
@@ -1385,7 +1419,7 @@ Settle = function()
         end
         -- Option changes not yet written when the feature went off (after SwitchOn, so ours exists).
         if #pendingRewrites > 0 then PE:RunOutOfCombat("ctrlLayout:rewrite", RunRewrites) end
-    elseif PrevOf(key) then
+    elseif ThisPrev() then
         SwitchOff(not byTap)
     end
 end
@@ -1414,7 +1448,8 @@ end
 
 local defaults = DeepCopy(Plan.DEFAULTS)
 defaults.prev = false -- the 0.11.0 file's single layout to go back to; read once, then false
-defaults.prevs = {}   -- each character's layout to go back to, by "<name>-<realm>"
+-- (opts.prevs, 0.11.1's entries by character name, is only read: Migrate. Each
+-- character's entry now lives in its own saved file, PE.charDB.ctrlLayoutPrev.)
 
 mod = PE:RegisterModule({
     key = "ctrlLayout",
@@ -1429,8 +1464,8 @@ mod = PE:RegisterModule({
     blocked = function()
         -- Once a switch-on has changed this character's layout, never blocked: switching off
         -- must always be possible, and a login where the Gamepad style is not reported yet
-        -- must not stop it. The same while the 0.11.0 file's single entry is still unread.
-        if mod and type(mod.opts) == "table" and (HasLegacy() or ThisPrev()) then return nil end
+        -- must not stop it. The same while an older entry for this character is still unread.
+        if mod and type(mod.opts) == "table" and (ThisPrev() or HasOldEntry()) then return nil end
         if not PE:GamepadUI() then return TEXT_NEEDS_GAMEPAD end
         if not Api() or not Presets() or not GamepadBar() then return TEXT_NO_LAYOUTS end
         return nil
@@ -1461,12 +1496,10 @@ mod = PE:RegisterModule({
         if PE:IsModuleSavedOn("ctrlLayout") then
             -- Blocked at this login only because the game does not report its Gamepad UI
             -- yet: one more try at the next PLAYER_ENTERING_WORLD.
-            if not HasLegacy() and not ThisPrev() and not PE:GamepadUI() then WatchLateGamepadUI() end
+            if not ThisPrev() and not HasOldEntry() and not PE:GamepadUI() then WatchLateGamepadUI() end
             return
         end
-        if not HasLegacy() and next(Prevs()) == nil then return end -- nothing remembered for anyone
-        local key = CharKey()
-        if key and not PrevOf(key) and not HasLegacy() then return end -- nothing for this character
+        if not ThisPrev() and not HasOldEntry() then return end -- nothing remembered for this character
         Begin()
     end,
 
@@ -1496,9 +1529,7 @@ mod = PE:RegisterModule({
         wanted = false
         rowNote = nil
         RestoreBars() -- first: bars placed by any path are always put back
-        -- Nothing to undo when nothing was changed for this character (a name that cannot
-        -- be read yet goes on to SwitchOff, which waits for it).
-        if not HasLegacy() and CharKey() and not ThisPrev() then return end
+        if not ThisPrev() and not HasOldEntry() then return end -- nothing was changed for this character
         PE:RunOutOfCombat("ctrlLayout:off", function() SwitchOff(false) end)
     end,
 })

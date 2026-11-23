@@ -105,7 +105,7 @@ function T.new(opts)
             saved.setup = "skipped"
         end
     end
-    local c = Client.new({ root = root, addonDir = opts.addonDir or addonDir, saved = saved, gamepadUI = opts.gamepadUI,
+    local c = Client.new({ root = root, addonDir = opts.addonDir or addonDir, saved = saved, savedChar = opts.savedChar, gamepadUI = opts.gamepadUI,
         questieDB = opts.quest and qdbDir or nil, shareQuestieDB = true, screen = opts.screen })
     clients[#clients + 1] = c
     if opts.setup then opts.setup(c) end

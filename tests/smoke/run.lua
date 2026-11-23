@@ -54,6 +54,7 @@ local KNOWN_FAILURES = {
 -- game function (add it, with where it was read in Blizzard's source).
 local EXPECTED_MISSING = {
     ["global PocketEssentialsDB"] = "first install: no saved variables yet (Core.lua InitDB checks)",
+    ["global PocketEssentialsCharDB"] = "first login of a character: no per-character saved variables yet (Core.lua InitCharDB checks)",
     ["global LibQuestieDB"] = "scenarios without QuestieDB (Core.lua CheckQuestieDB, QuestData.lua InitData)",
     ["global PocketEssentialsSettingsPanel"] = "Chat.lua HookSettings looks before the settings window was first opened",
     ["global SMART_NAV_INPUT_DIRECTION"] = "Bags.lua NavApi, with the Sort button showing: the stand-in has Blizzard's navigation helpers only when it starts with the Gamepad UI on (they load with it), and these scenarios start with it off",

@@ -552,7 +552,7 @@ test("layout: registered, off, with its defaults, a Controller tab and no work w
     check(not PE:IsModuleEnabled("ctrlLayout"), "the feature is on at first install")
     for k, v in pairs(PE.LayoutPlan.DEFAULTS) do eq(mod.defaults[k], v, "default " .. k) end
     eq(mod.defaults.prev, false)
-    eq(mod.defaults.prevs, {})
+    eq(mod.defaults.prevs, nil, "0.11.1's entries by name are only read")
     eq(mod:status(), "Switching on or off reloads. Your old layout comes back when off.")
     eq(PE.SETTINGS_TABS[6].id, "controller")
     eq(PE.SETTINGS_TABS[6].label, "Controller")
@@ -617,11 +617,17 @@ end
 
 local function opts(PE) return PE:GetModule("ctrlLayout").opts end
 
--- The stand-in's character (UnitName("player"), GetRealmName()) and its remembered layout.
+-- The stand-in's character name and realm (UnitName("player"), GetRealmName()): 0.11.1's key.
 local KEY = "Tester-Camelot"
-local function prev(PE, key)
-    local p = opts(PE).prevs
-    return type(p) == "table" and p[key or KEY] or nil
+
+-- This character's own saved table (PocketEssentialsCharDB) in a client.
+local function charDB(c) return rawget(c.env, "PocketEssentialsCharDB") end
+
+-- This character's remembered layout (PE.charDB.ctrlLayoutPrev), or nil.
+local function prev(PE)
+    local t = PE.charDB
+    local entry = type(t) == "table" and t.ctrlLayoutPrev or nil
+    return type(entry) == "table" and entry or nil
 end
 
 -- Every SaveLayouts call sent the whole list the way Blizzard does: the three presets first
@@ -915,14 +921,14 @@ test("layout: a later login with the feature on changes no layout", function()
     local c, PE = layoutClient({}, 3)
     switchOn(c, PE)
     local db = rawget(c.env, "PocketEssentialsDB")
-    local c2, PE2 = T.new({ gamepadUI = true, saved = db, setup = function(c2) c2.world.layouts = c.world.layouts end })
+    local c2, PE2 = T.new({ gamepadUI = true, saved = db, savedChar = charDB(c), setup = function(c2) c2.world.layouts = c.world.layouts end })
     check(PE2:IsModuleEnabled("ctrlLayout"), "not on after the login")
     eq(layoutCalls(c2), 0, "a layout call at login")
     eq(reloadReason(PE2), nil)
     eq(statusText(PE2), USING)
     c2:assertClean()
     -- Another layout picked meanwhile: still nothing changed, and the status says so.
-    local c3, PE3 = T.new({ gamepadUI = true, saved = db, setup = function(c3)
+    local c3, PE3 = T.new({ gamepadUI = true, saved = db, savedChar = charDB(c), setup = function(c3)
         c3.world.layouts = { layouts = c.world.layouts.layouts, activeLayout = 2 }
     end })
     eq(layoutCalls(c3), 0)
@@ -1178,7 +1184,7 @@ test("layout: a later login with the feature on places the bars", function()
     local c, PE = layoutClient({}, 3)
     switchOn(c, PE)
     local db = rawget(c.env, "PocketEssentialsDB")
-    local c2, PE2 = T.new({ gamepadUI = true, saved = db, setup = function(c2) c2.world.layouts = c.world.layouts end })
+    local c2, PE2 = T.new({ gamepadUI = true, saved = db, savedChar = charDB(c), setup = function(c2) c2.world.layouts = c.world.layouts end })
     placedAt(c2, barFrames(c2).left, PE2.LayoutPlan.BarSpots(PE2.LayoutPlan.DEFAULTS).left, "left at login")
     c2:assertClean()
 end)
@@ -1720,8 +1726,8 @@ test("layout: switched on, then a login where the Gamepad UI reads off: still on
     local c, PE = layoutClient({}, 3)
     switchOn(c, PE)
     local db = rawget(c.env, "PocketEssentialsDB")
-    local db3, layouts3 = deepCopy(db), deepCopy(c.world.layouts) -- the third login starts from the same state
-    local c2, PE2 = T.new({ gamepadUI = false, saved = db, setup = function(c2) c2.world.layouts = c.world.layouts end })
+    local db3, layouts3, char3 = deepCopy(db), deepCopy(c.world.layouts), deepCopy(charDB(c)) -- the third login starts from the same state
+    local c2, PE2 = T.new({ gamepadUI = false, saved = db, savedChar = charDB(c), setup = function(c2) c2.world.layouts = c.world.layouts end })
     eq(PE2:GetModuleState("ctrlLayout"), "on")
     check(PE2:IsModuleEnabled("ctrlLayout"), "not running after the login")
     eq(layoutCalls(c2), 0)
@@ -1730,7 +1736,7 @@ test("layout: switched on, then a login where the Gamepad UI reads off: still on
     eq(prev(PE2), nil)
     c2:assertClean()
     -- The same login without the gamepad bar's anchors: nothing placed, nothing fails.
-    local c3, PE3 = T.new({ gamepadUI = false, saved = db3, setup = function(c3)
+    local c3, PE3 = T.new({ gamepadUI = false, saved = db3, savedChar = char3, setup = function(c3)
         c3.world.layouts = layouts3
         c3.barParts[c3.env.GamepadMainActionBarFrame].PageUnit = nil
     end })
@@ -1751,15 +1757,17 @@ end)
 
 
 ---------------------------------------------------------------------------
--- Each character's own layout to go back to (spec 2026-11-23-controller-layout-0.11.1.md, 2)
+-- Each character's own layout to go back to (spec 2026-11-23-controller-layout-0.11.1.md, 2;
+-- 0.11.2: kept in the game's per-character saved file, PocketEssentialsCharDB.ctrlLayoutPrev)
 ---------------------------------------------------------------------------
 
 -- A login of one character: the saved file `file` (shared by every character of the
 -- account), the account's saved layouts `list` and this character's active layout.
--- extra.name: the character's name (false: not readable yet); extra.setup as T.new.
+-- extra.char: this character's own saved table (nil: its first login); extra.name: the
+-- name UnitName("player") gives (false: nil); extra.setup as T.new.
 local function login(file, list, active, extra)
     extra = extra or {}
-    return T.new({ gamepadUI = extra.gamepadUI ~= false, saved = file, setup = function(c)
+    return T.new({ gamepadUI = extra.gamepadUI ~= false, saved = file, savedChar = extra.char, setup = function(c)
         if extra.name == false then c.world.playerName = nil elseif extra.name then c.world.playerName = extra.name end
         c.world.layouts = { layouts = deepCopy(list), activeLayout = active }
         if extra.setup then extra.setup(c) end
@@ -1767,6 +1775,12 @@ local function login(file, list, active, extra)
 end
 
 local function db(c) return rawget(c.env, "PocketEssentialsDB") end
+
+-- A client's character entry, read from that character's own saved table.
+local function entryOf(c)
+    local t = charDB(c)
+    return type(t) == "table" and t.ctrlLayoutPrev or nil
+end
 
 -- The index of a saved layout by name in a client's list, counting the three presets.
 local function indexOf(c, name)
@@ -1785,23 +1799,26 @@ local function addonEvents(c)
     return set
 end
 
+local GAMEPAD_ENTRY = { name = "Gamepad", preset = 2 }
+local MINE = { name = "Mine", layoutType = 2 }
+
 -- Character "Tester" switched on from the Gamepad preset: our layout saved at index 4.
 local function testerOn()
     local c, PE = layoutClient({}, 3)
     switchOn(c, PE)
-    eq(prev(PE), { name = "Gamepad", preset = 2 })
+    eq(prev(PE), GAMEPAD_ENTRY)
     return c, PE
 end
 
--- Tester switched on, then "Bee" logs in on its own character layout "Mine" (index 5) and
--- is switched over to ours by the login check. Returns Tester's and Bee's clients.
+-- Tester switched on, then "Bee" logs in for the first time on its own character layout
+-- "Mine" (index 5) and is switched over to ours by the login check.
 local function testerAndBee()
     local a, PEa = testerOn()
     local list = a.world.layouts.layouts
     list[#list + 1] = saved("Mine", 2)
     local b, PEb = login(db(a), list, 5, { name = "Bee" })
     eq(b.world.layouts.activeLayout, 4)
-    eq(prev(PEb, "Bee-Camelot"), { name = "Mine", layoutType = 2 })
+    eq(prev(PEb), MINE)
     return a, PEa, b, PEb
 end
 
@@ -1816,21 +1833,21 @@ test("switch: On, no entry, own layout active: remembers it, makes ours active, 
     eq(#set, 1)
     eq(set[1].args[1], 4)
     eq(c.world.layouts.activeLayout, 4)
-    eq(prev(PE, "Bee-Camelot"), { name = "Mine", layoutType = 2 })
-    eq(prev(PE), { name = "Gamepad", preset = 2 }, "Tester's own entry changed")
+    eq(prev(PE), MINE)
+    eq(entryOf(a), GAMEPAD_ENTRY, "Tester's own entry changed")
+    eq(rawget(c.env, "PocketEssentialsCharDB").ctrlLayoutPrev, MINE, "not in the per-character saved table")
     eq(reloadReason(PE), RELOAD)
     eq(statusText(PE), USING)
     c:assertClean()
 end)
 
 test("switch: On, no entry, no layout of ours yet: saves it and makes it active", function()
-    local file = { enabled = { ctrlLayout = true }, options = { ctrlLayout = { prevs = { ["Other-Camelot"] = { preset = 0 } } } } }
-    local c, PE = login(file, { saved("Mine", 2) }, 4)
+    local file = { enabled = { ctrlLayout = true } }
+    local c, PE = login(file, { saved("Mine", 2) }, 4, { char = {} })
     eq(#c:callsTo("C_EditMode.SaveLayouts"), 1)
     eq(indexOf(c, NAME), 4)
     eq(c.world.layouts.activeLayout, 4)
-    eq(prev(PE), { name = "Mine", layoutType = 2 })
-    eq(prev(PE, "Other-Camelot"), { preset = 0 })
+    eq(prev(PE), MINE)
     eq(reloadReason(PE), RELOAD)
     c:assertClean()
 end)
@@ -1845,31 +1862,31 @@ test("switch: On, ours active: nothing changes", function()
     -- Off on Bee goes back to the Gamepad preset (nothing else was known for Bee).
     switchOff(c, PE)
     eq(c.world.layouts.activeLayout, 3)
-    eq(prev(PE, "Bee-Camelot"), nil)
-    eq(prev(PE), { name = "Gamepad", preset = 2 }, "Tester's own entry changed")
+    eq(prev(PE), nil)
+    eq(entryOf(a), GAMEPAD_ENTRY, "Tester's own entry changed")
     c:assertClean()
 end)
 
 test("switch: On, entry present, another layout active: left alone, status says another", function()
     local a = testerOn()
-    local c, PE = login(db(a), a.world.layouts.layouts, 1)
+    local c, PE = login(db(a), a.world.layouts.layouts, 1, { char = charDB(a) })
     eq(layoutCalls(c), 0)
     eq(reloadReason(PE), nil)
     eq(statusText(PE), ANOTHER)
-    eq(prev(PE), { name = "Gamepad", preset = 2 })
+    eq(prev(PE), GAMEPAD_ENTRY)
     c:assertClean()
 end)
 
 test("switch: Off puts back this character's own and removes its entry", function()
-    local _, _, b = testerAndBee()
-    local c, PE = login(db(b), b.world.layouts.layouts, 4, { name = "Bee" })
+    local a, _, b = testerAndBee()
+    local c, PE = login(db(b), b.world.layouts.layouts, 4, { char = charDB(b) })
     eq(layoutCalls(c), 0, "a layout call at login")
     switchOff(c, PE)
     local set = c:callsTo("C_EditMode.SetActiveLayout")
     eq(#set, 1)
     eq(set[1].args[1], 5)
-    eq(prev(PE, "Bee-Camelot"), nil)
-    eq(prev(PE), { name = "Gamepad", preset = 2 }, "Tester's entry changed")
+    eq(prev(PE), nil)
+    eq(entryOf(a), GAMEPAD_ENTRY, "Tester's entry changed")
     eq(reloadReason(PE), RELOAD)
     c:assertClean()
 end)
@@ -1880,17 +1897,17 @@ test("switch: off on A, B puts back once", function()
     eq(a.world.layouts.activeLayout, 3)
     eq(prev(PEa), nil)
     -- Bee logs in with the switch off and ours still active on Bee: Bee's own comes back.
-    local c, PE = login(db(a), b.world.layouts.layouts, 4, { name = "Bee" })
+    local c, PE = login(db(a), b.world.layouts.layouts, 4, { char = charDB(b) })
     check(not PE:IsModuleEnabled("ctrlLayout"), "on after the login")
     local set = c:callsTo("C_EditMode.SetActiveLayout")
     eq(#set, 1)
     eq(set[1].args[1], 5)
     eq(c.world.layouts.activeLayout, 5)
-    eq(prev(PE, "Bee-Camelot"), nil)
+    eq(prev(PE), nil)
     eq(reloadReason(PE), RELOAD)
     c:assertClean()
     -- The next login on Bee: nothing more.
-    local c2, PE2 = login(db(c), c.world.layouts.layouts, 5, { name = "Bee" })
+    local c2, PE2 = login(db(c), c.world.layouts.layouts, 5, { char = charDB(c) })
     eq(layoutCalls(c2), 0)
     eq(reloadReason(PE2), nil)
     c2:assertClean()
@@ -1900,9 +1917,9 @@ test("switch: login off with an entry but another layout active only forgets the
     local a, PEa, b = testerAndBee()
     switchOff(a, PEa)
     -- Bee picked its own layout in Edit Mode meanwhile.
-    local c, PE = login(db(a), b.world.layouts.layouts, 5, { name = "Bee" })
+    local c, PE = login(db(a), b.world.layouts.layouts, 5, { char = charDB(b) })
     eq(layoutCalls(c), 0)
-    eq(prev(PE, "Bee-Camelot"), nil)
+    eq(prev(PE), nil)
     eq(reloadReason(PE), nil)
     c:assertClean()
 end)
@@ -1910,63 +1927,62 @@ end)
 test("switch: missing saved layout falls back to Gamepad", function()
     -- Bee deletes "Mine" in Edit Mode, then switches off.
     local _, _, b = testerAndBee()
-    local c, PE = login(db(b), { b.world.layouts.layouts[1] }, 4, { name = "Bee" })
+    local c, PE = login(db(b), { b.world.layouts.layouts[1] }, 4, { char = charDB(b) })
     eq(indexOf(c, NAME), 4)
     switchOff(c, PE)
     eq(c.world.layouts.activeLayout, 3)
-    eq(prev(PE, "Bee-Camelot"), nil)
+    eq(prev(PE), nil)
     c:assertClean()
     -- The same with the switch turned off on Tester: Bee's login puts back the Gamepad preset.
     local a2, PEa2, b2 = testerAndBee()
     switchOff(a2, PEa2)
-    local c2, PE2 = login(db(a2), { b2.world.layouts.layouts[1] }, 4, { name = "Bee" })
+    local c2, PE2 = login(db(a2), { b2.world.layouts.layouts[1] }, 4, { char = charDB(b2) })
     eq(c2.world.layouts.activeLayout, 3)
-    eq(prev(PE2, "Bee-Camelot"), nil)
+    eq(prev(PE2), nil)
     c2:assertClean()
 end)
 
-test("switch: no character key yet does nothing", function()
-    local a = testerOn()
-    local list = a.world.layouts.layouts
-    list[#list + 1] = saved("Mine", 2)
-    local c, PE = login(db(a), list, 5, { name = false })
-    eq(layoutCalls(c), 0, "a layout call without the character's name")
-    eq(prev(PE, "Bee-Camelot"), nil)
-    eq(prev(PE), { name = "Gamepad", preset = 2 }, "Tester's entry changed")
-    -- The game's "Unknown" is not a name either.
-    c.world.playerName = "Unknown"
-    c:fire("PLAYER_ENTERING_WORLD", false, false)
-    eq(layoutCalls(c), 0, "a layout call for the character \"Unknown\"")
-    eq(prev(PE, "Unknown-Camelot"), nil)
-    -- The name is known at the next PLAYER_ENTERING_WORLD.
-    c.world.playerName = "Bee"
-    c:fire("PLAYER_ENTERING_WORLD", false, false)
-    c:advance(0.1)
-    eq(c.world.layouts.activeLayout, 4)
-    eq(prev(PE, "Bee-Camelot"), { name = "Mine", layoutType = 2 })
-    c:assertClean()
-    -- Off: the same wait, then Bee's own back.
-    local file = db(c)
-    file.enabled.ctrlLayout = false
-    local c2, PE2 = login(file, c.world.layouts.layouts, 4, { name = false })
-    eq(layoutCalls(c2), 0)
-    c2.world.playerName = "Bee"
-    c2:fire("PLAYER_ENTERING_WORLD", false, false)
-    eq(c2.world.layouts.activeLayout, 5)
-    eq(prev(PE2, "Bee-Camelot"), nil)
-    c2:assertClean()
+test("switch: works when the character's name cannot be read, and the debug log says why", function()
+    local cases = {
+        { why = "name secret", setup = function(c) c.world.playerName = "Bee"; c.world.secrets.Bee = true end },
+        { why = "name empty", setup = function(c) c.world.playerName = nil end },
+        { why = "unknown name", setup = function(c) c.world.playerName = "Unknown" end },
+        { why = "realm empty", setup = function(c) c.world.realm = "" end },
+    }
+    for _, case in ipairs(cases) do
+        local a = testerOn()
+        local list = a.world.layouts.layouts
+        list[#list + 1] = saved("Mine", 2)
+        local file = db(a)
+        file.debug = { on = true }
+        local c, PE = login(file, list, 5, { setup = case.setup })
+        eq(c.world.layouts.activeLayout, 4, case.why .. ": not switched")
+        eq(prev(PE), MINE, case.why)
+        local found = 0
+        for _, line in ipairs(db(c).debug.lines) do
+            if tostring(line):find("the character's name does not read: " .. case.why, 1, true) then found = found + 1 end
+        end
+        eq(found, 1, case.why .. ": debug lines")
+        -- Switched off on this character later, still without the name: its own comes back.
+        local c2, PE2 = login(db(c), c.world.layouts.layouts, 4, { char = charDB(c), setup = case.setup })
+        switchOff(c2, PE2)
+        eq(c2.world.layouts.activeLayout, 5, case.why .. ": not put back")
+        eq(prev(PE2), nil)
+        eq(reloadReason(PE2), RELOAD)
+        c2:assertClean()
+    end
 end)
 
 test("switch: waits until the game has given Edit Mode its layouts", function()
     local a = testerOn()
     local list = a.world.layouts.layouts
     list[#list + 1] = saved("Mine", 2)
-    local c, PE = login(db(a), list, 5, { name = "Bee", setup = function(c) c.world.editModeReady = false end })
+    local c, PE = login(db(a), list, 5, { setup = function(c) c.world.editModeReady = false end })
     eq(layoutCalls(c), 0, "a layout call before Edit Mode had its layouts")
     c.world.editModeReady = true
     c:fire("EDIT_MODE_LAYOUTS_UPDATED")
     eq(c.world.layouts.activeLayout, 4)
-    eq(prev(PE, "Bee-Camelot"), { name = "Mine", layoutType = 2 })
+    eq(prev(PE), MINE)
     c:assertClean()
 end)
 
@@ -1974,7 +1990,7 @@ test("switch: login in a fight waits", function()
     local a = testerOn()
     local list = a.world.layouts.layouts
     list[#list + 1] = saved("Mine", 2)
-    local c, PE = login(db(a), list, 5, { name = "Bee", setup = function(c) c.world.inCombat = true end })
+    local c, PE = login(db(a), list, 5, { setup = function(c) c.world.inCombat = true end })
     eq(layoutCalls(c), 0, "a layout call in a fight")
     c:fire("PLAYER_ENTERING_WORLD", false, false)
     eq(layoutCalls(c), 0, "a layout call in a fight")
@@ -1982,16 +1998,16 @@ test("switch: login in a fight waits", function()
     c:advance(0.1)
     eq(#c:callsTo("C_EditMode.SetActiveLayout"), 1)
     eq(c.world.layouts.activeLayout, 4)
-    eq(prev(PE, "Bee-Camelot"), { name = "Mine", layoutType = 2 })
+    eq(prev(PE), MINE)
     c:assertClean()
     -- Off in a fight the same way.
     local file = db(c)
     file.enabled.ctrlLayout = false
-    local c2, PE2 = login(file, c.world.layouts.layouts, 4, { name = "Bee", setup = function(c2) c2.world.inCombat = true end })
+    local c2, PE2 = login(file, c.world.layouts.layouts, 4, { char = charDB(c), setup = function(c2) c2.world.inCombat = true end })
     eq(layoutCalls(c2), 0, "a layout call in a fight")
     c2:leaveCombat()
     eq(c2.world.layouts.activeLayout, 5)
-    eq(prev(PE2, "Bee-Camelot"), nil)
+    eq(prev(PE2), nil)
     c2:assertClean()
 end)
 
@@ -2004,14 +2020,14 @@ test("migrate: old prev moved or dropped once", function()
     -- Ours active on the character logging in: it becomes this character's entry.
     local c, PE = login(oldFile(true), { ours, saved("Mine", 2) }, 4)
     eq(layoutCalls(c), 0)
-    eq(prev(PE), { name = "Mine", layoutType = 2 })
+    eq(prev(PE), MINE)
     eq(opts(PE).prev, false)
     c:assertClean()
     -- Read once: a second character with ours not active gets its own layout remembered, not the old one.
-    local c2, PE2 = login(db(c), { ours, saved("Mine", 2), saved("Bees", 2) }, 6, { name = "Bee" })
+    local c2, PE2 = login(db(c), { ours, saved("Mine", 2), saved("Bees", 2) }, 6)
     eq(c2.world.layouts.activeLayout, 4)
-    eq(prev(PE2, "Bee-Camelot"), { name = "Bees", layoutType = 2 })
-    eq(prev(PE2), { name = "Mine", layoutType = 2 })
+    eq(prev(PE2), { name = "Bees", layoutType = 2 })
+    eq(entryOf(c), MINE)
     c2:assertClean()
     -- Ours not active: dropped; this character then switches as one with nothing remembered.
     local c3, PE3 = login(oldFile(true), { ours, saved("Mine", 2) }, 1)
@@ -2028,35 +2044,61 @@ test("migrate: old prev moved or dropped once", function()
     c4:assertClean()
 end)
 
+test("migrate: a 0.11.1 entry by name moves into this character's own file once", function()
+    local function namedFile(on)
+        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { prevs = {
+            [KEY] = { name = "Mine", layoutType = 2 }, ["Bee-Camelot"] = { preset = 0 } } } } }
+    end
+    local ours = saved(NAME)
+    -- On, ours active: moved over, nothing changes in the game.
+    local c, PE = login(namedFile(true), { ours, saved("Mine", 2) }, 4)
+    eq(layoutCalls(c), 0)
+    eq(prev(PE), MINE)
+    eq(opts(PE).prevs[KEY], nil, "left in the account-wide file")
+    eq(opts(PE).prevs["Bee-Camelot"], { preset = 0 }, "another character's entry changed")
+    eq(statusText(PE), USING)
+    c:assertClean()
+    -- Off, ours active: moved over and put back.
+    local c2, PE2 = login(namedFile(false), { ours, saved("Mine", 2) }, 4)
+    eq(c2.world.layouts.activeLayout, 5)
+    eq(prev(PE2), nil)
+    eq(opts(PE2).prevs[KEY], nil)
+    c2:assertClean()
+    -- The name unreadable: not found, and the switch-on works without it.
+    local c3, PE3 = login(namedFile(true), { ours, saved("Mine", 2) }, 5, { name = false })
+    eq(c3.world.layouts.activeLayout, 4)
+    eq(prev(PE3), MINE)
+    eq(opts(PE3).prevs[KEY], MINE, "read without the name")
+    c3:assertClean()
+end)
+
 test("switch: off state registers no events after the login check", function()
     local base = addonEvents((layoutClient({}, 3)))
     check(not base.PLAYER_ENTERING_WORLD and not base.EDIT_MODE_LAYOUTS_UPDATED, "a fresh install listens for layout events")
-    -- Nothing remembered for anyone: nothing to check at all.
+    -- Nothing remembered for this character: nothing to check at all.
     local c0 = login({ enabled = { ctrlLayout = false } }, {}, 3)
     eq(addonEvents(c0), base)
     -- An entry for this character, checked at login, then nothing more.
     local a, PEa, b = testerAndBee()
-    local file = deepCopy(db(a))
     switchOff(a, PEa)
-    local c = login(db(a), b.world.layouts.layouts, 4, { name = "Bee" })
+    local c = login(db(a), b.world.layouts.layouts, 4, { char = charDB(b) })
     eq(c.world.layouts.activeLayout, 5, "the login check did not run")
     eq(addonEvents(c), base)
     c:assertClean()
-    -- Waiting for the character's name: listening until it is known, then not.
-    file.enabled.ctrlLayout = false
-    local c2 = login(file, b.world.layouts.layouts, 4, { name = false })
-    check(addonEvents(c2).PLAYER_ENTERING_WORLD, "not waiting for the next PLAYER_ENTERING_WORLD")
-    c2.world.playerName = "Bee"
-    c2:fire("PLAYER_ENTERING_WORLD", false, false)
+    -- Waiting for Edit Mode's layouts: listening until they come, then not.
+    local a2, PEa2, b2 = testerAndBee()
+    switchOff(a2, PEa2)
+    local c2 = login(db(a2), b2.world.layouts.layouts, 4, { char = charDB(b2), setup = function(c2) c2.world.editModeReady = false end })
+    check(addonEvents(c2).EDIT_MODE_LAYOUTS_UPDATED, "not waiting for Edit Mode's layouts")
+    c2.world.editModeReady = true
+    c2:fire("EDIT_MODE_LAYOUTS_UPDATED")
     eq(c2.world.layouts.activeLayout, 5)
     eq(addonEvents(c2), base)
     c2:assertClean()
 end)
 
-
 ---------------------------------------------------------------------------
--- Review of 0.11.1: automatic switch-on failures, a Gamepad UI reported late, a tap off
--- before the character's name is known
+-- Review of 0.11.1: automatic switch-on failures, a Gamepad UI reported late
 ---------------------------------------------------------------------------
 
 test("switch: failed automatic switch-on keeps the switch on and other characters untouched", function()
@@ -2064,35 +2106,34 @@ test("switch: failed automatic switch-on keeps the switch on and other character
     local list = a.world.layouts.layouts
     list[#list + 1] = saved("Mine", 2)
     -- Bee's login: the game refuses to activate our layout.
-    local c, PE = login(db(a), list, 5, { name = "Bee", setup = function(c) c.world.layoutCallFails.SetActiveLayout = true end })
+    local c, PE = login(db(a), list, 5, { setup = function(c) c.world.layoutCallFails.SetActiveLayout = true end })
     c:advance(0.1)
     check(PE:IsModuleEnabled("ctrlLayout"), "the feature switched itself off")
     eq(PE:IsModuleSavedOn("ctrlLayout"), true)
-    eq(prev(PE, "Bee-Camelot"), nil, "an entry was written for a switch that did not happen")
-    eq(prev(PE), { name = "Gamepad", preset = 2 }, "Tester's entry changed")
+    eq(prev(PE), nil, "an entry was written for a switch that did not happen")
+    eq(entryOf(a), GAMEPAD_ENTRY, "Tester's entry changed")
     check(#PE.errors >= 1, "no error logged")
     check(statusText(PE):find("It tries again at the next login.", 1, true), "status: " .. tostring(statusText(PE)))
     eq(reloadReason(PE), nil)
     PE:ClearErrors() -- the saved error log would follow into the next logins
     -- Tester's next login: still on, ours still active there, nothing put back.
-    local c2, PE2 = login(db(c), c.world.layouts.layouts, 4)
+    local c2, PE2 = login(db(c), c.world.layouts.layouts, 4, { char = charDB(a) })
     check(PE2:IsModuleEnabled("ctrlLayout"), "off on Tester")
     eq(layoutCalls(c2), 0)
     eq(c2.world.layouts.activeLayout, 4)
     c2:assertClean()
     -- Bee's next login, with the game taking the call: switched.
-    local c3, PE3 = login(db(c), c.world.layouts.layouts, 5, { name = "Bee" })
+    local c3, PE3 = login(db(c), c.world.layouts.layouts, 5, { char = charDB(c) })
     eq(c3.world.layouts.activeLayout, 4)
-    eq(prev(PE3, "Bee-Camelot"), { name = "Mine", layoutType = 2 })
+    eq(prev(PE3), MINE)
     c3:assertClean()
     -- A refusal (five account-wide layouts, ours not saved yet) keeps the switch on too.
-    local file = { enabled = { ctrlLayout = true }, options = { ctrlLayout = { prevs = { ["Other-Camelot"] = { preset = 0 } } } } }
+    local file = { enabled = { ctrlLayout = true } }
     local c4, PE4 = login(file, { saved("A1"), saved("A2"), saved("A3"), saved("A4"), saved("A5"), saved("Mine", 2) }, 9)
     c4:advance(0.1)
     check(PE4:IsModuleEnabled("ctrlLayout"), "the feature switched itself off after the refusal")
     eq(layoutCalls(c4), 0)
     eq(prev(PE4), nil)
-    eq(prev(PE4, "Other-Camelot"), { preset = 0 })
     check(statusText(PE4):find("You already have 5 account-wide layouts.", 1, true), "status: " .. tostring(statusText(PE4)))
     c4:assertClean()
     -- A tap that fails still switches back off, as before.
@@ -2106,7 +2147,7 @@ test("switch: Gamepad UI reported late at login still switches on", function()
     local list = a.world.layouts.layouts
     list[#list + 1] = saved("Mine", 2)
     local file = deepCopy(db(a))
-    local c, PE = login(db(a), list, 5, { name = "Bee", gamepadUI = false, setup = function(c)
+    local c, PE = login(db(a), list, 5, { gamepadUI = false, setup = function(c)
         -- The game reports its Gamepad UI once the character enters the world: just before the
         -- addon hears that PLAYER_ENTERING_WORLD (this frame registered for it first).
         local f = c.env.CreateFrame("Frame")
@@ -2115,12 +2156,12 @@ test("switch: Gamepad UI reported late at login still switches on", function()
     end })
     check(PE:IsModuleEnabled("ctrlLayout"), "not started once the Gamepad UI read on")
     eq(c.world.layouts.activeLayout, 4)
-    eq(prev(PE, "Bee-Camelot"), { name = "Mine", layoutType = 2 })
+    eq(prev(PE), MINE)
     eq(reloadReason(PE), RELOAD)
     eq(addonEvents(c).EDIT_MODE_LAYOUTS_UPDATED, true, "the feature's own events")
     c:assertClean()
     -- Still off at that PLAYER_ENTERING_WORLD: not started, and only that one look.
-    local c2, PE2 = login(file, list, 5, { name = "Bee", gamepadUI = false })
+    local c2, PE2 = login(file, list, 5, { gamepadUI = false })
     check(not PE2:IsModuleEnabled("ctrlLayout"), "started without the Gamepad UI")
     eq(layoutCalls(c2), 0)
     check(not addonEvents(c2).PLAYER_ENTERING_WORLD, "still listening after the one look")
@@ -2130,33 +2171,16 @@ test("switch: Gamepad UI reported late at login still switches on", function()
     c2:assertClean()
 end)
 
-test("switch: a tap off before the character's name is known keeps its reload request", function()
-    -- Another layout active: nothing to put back, but a tap always asks for the reload.
+test("switch: a tap off always asks for the reload, a login off only when it changed the layout", function()
+    -- Another layout active: nothing to put back, but a tap still asks.
     local c, PE = testerOn()
     c.world.layouts.activeLayout = 1
     PE:GetModule("ctrlLayout"):CancelReload()
-    c.world.playerName = nil
     switchOff(c, PE)
-    eq(prev(PE), { name = "Gamepad", preset = 2 }, "forgotten before the name was known")
-    eq(reloadReason(PE), nil)
-    c.world.playerName = "Tester"
-    c:fire("PLAYER_ENTERING_WORLD", false, false)
     eq(prev(PE), nil)
     eq(#c:callsTo("C_EditMode.SetActiveLayout"), 0)
     eq(reloadReason(PE), RELOAD)
     c:assertClean()
-    -- Ours active: put back, with the reload request.
-    local c2, PE2 = testerOn()
-    PE2:GetModule("ctrlLayout"):CancelReload()
-    c2.world.playerName = nil
-    switchOff(c2, PE2)
-    eq(c2.world.layouts.activeLayout, 4)
-    c2.world.playerName = "Tester"
-    c2:fire("PLAYER_ENTERING_WORLD", false, false)
-    eq(c2.world.layouts.activeLayout, 3)
-    eq(prev(PE2), nil)
-    eq(reloadReason(PE2), RELOAD)
-    c2:assertClean()
 end)
 
 test("switch: a login that changes the layout says so in chat, a tap does not", function()
@@ -2168,13 +2192,13 @@ test("switch: a login that changes the layout says so in chat, a tap does not", 
     check(not said(a, "now uses the controller layout"), "a tap said it in chat")
     local list = a.world.layouts.layouts
     list[#list + 1] = saved("Mine", 2)
-    local c = login(db(a), list, 5, { name = "Bee" })
+    local c = login(db(a), list, 5)
     check(said(c, "now uses the controller layout"), "no chat line after the login switch-on")
     local a2, PEa2, b2 = testerAndBee()
     switchOff(a2, PEa2)
-    local c2 = login(db(a2), b2.world.layouts.layouts, 4, { name = "Bee" })
+    local c2 = login(db(a2), b2.world.layouts.layouts, 4, { char = charDB(b2) })
     check(said(c2, "own screen layout is back"), "no chat line after the login switch-off")
-    local c3 = login(db(c2), c2.world.layouts.layouts, 5, { name = "Bee" })
+    local c3 = login(db(c2), c2.world.layouts.layouts, 5, { char = charDB(c2) })
     check(not said(c3, "Reload now"), "a login that changed nothing said it")
 end)
 

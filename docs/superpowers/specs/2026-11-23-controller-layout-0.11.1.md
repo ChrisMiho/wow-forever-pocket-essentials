@@ -220,3 +220,22 @@ File paths are under `Interface/AddOns/` on the forever branch.
   keeps the tap's reload request (it used to return as a login check and ask
   none when nothing was changed; it also used to skip the switch-off
   altogether while the name could not be read).
+
+### 0.11.2 (2026-11-23): no character name needed
+
+- On the device the character's name never read: the debug log showed
+  "waiting for the character's name" at every login and tap over nine
+  sessions, so the check never ran and the layout never switched. Each
+  character's layout to go back to now lives in the game's own per-character
+  saved file: `## SavedVariablesPerCharacter: PocketEssentialsCharDB` in the
+  TOC (as Blizzard's own addons do, e.g.
+  `Blizzard_AuctionHouseUI/Blizzard_AuctionHouseUI.toc:4`), at
+  `PocketEssentialsCharDB.ctrlLayoutPrev`, same shape. Core loads it with the
+  account-wide file (`PE.charDB`). The wait for the name is gone; every other
+  rule of section 2 and the review fixes is unchanged.
+- Older entries are read once: 0.11.1's `opts.prevs[<name>-<realm>]` for this
+  character when its name does read (then removed there), and 0.11.0's
+  `opts.prev` as before, now into the per-character file.
+- The name is still read for the debug log only: once a session, one line
+  says whether it reads, or which part failed ("name secret", "realm secret",
+  "name empty", "realm empty", "unknown name", "no function", "error").
