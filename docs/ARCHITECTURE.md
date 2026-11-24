@@ -40,8 +40,12 @@ How the pieces protect each other:
   window. Caught failures go to the Errors page (kept between sessions, at
   most 30).
 - Nothing runs every frame while its feature is off. Only two things ever
-  tick: the minimap icons (10 times a second, only while moving) and the
-  arrow (10 times a second, only while it has something to point at).
+  tick: the minimap icons and the arrow (10 times a second, only while it has
+  something to point at). The minimap icons' OnUpdate runs every frame while
+  the map the player is on has icons that "Show icons for" lets through; it
+  only adds up the time, and every 0.1 s it reads the position, facing, zoom
+  and minimap size. The icons are placed again only when one of those
+  changed, so standing still costs those reads and nothing more.
 - The arrow chooses its spot once a second at most, never per frame. It
   knows a spot by its place on the map and its objective number (`pin.obj`),
   not by its table, because every quest-log change rebuilds the tables. A

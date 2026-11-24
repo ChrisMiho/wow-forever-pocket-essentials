@@ -200,6 +200,11 @@ local function IsRestingNow()
     return resting and true or false
 end
 
+-- Resting rule: "No quest focused" is hidden in cities and inns with restHide on.
+local function HiddenForRest()
+    return S.noFocus and Opt("restHide") == true and IsRestingNow()
+end
+
 ---------------------------------------------------------------------------
 -- Choosing the objective
 ---------------------------------------------------------------------------
@@ -230,12 +235,13 @@ local function Nearest(pins, px, py, width, height, skip)
     return best, bestD2, skipped, count
 end
 
--- The pin of `pins` that is the same spot as `old` (position and objective), or nil.
+-- The pin of `pins` that is the same spot as `old` (position, objective and kind), or nil.
+-- The kind counts: a turn-in at the objective's own spot is a new target.
 local function SameSpot(pins, old)
-    local x, y, obj = old.x, old.y, old.obj
+    local x, y, obj, kind = old.x, old.y, old.obj, old.kind
     for i = 1, #pins do
         local pin = pins[i]
-        if pin.x == x and pin.y == y and pin.obj == obj then return pin end
+        if pin.x == x and pin.y == y and pin.obj == obj and pin.kind == kind then return pin end
     end
     return nil
 end
@@ -404,7 +410,8 @@ local function Select(playerMap, px, py)
     S.noFocus = not tracked
     if not tracked then
         SetMessage("No quest focused", CODE_GREY .. "Focus one in your quest log|r")
-        if PE.debugOn then DebugState("text only: no quest focused") end
+        -- While it is hidden for resting the "hidden" line says so; this one would alternate with it.
+        if PE.debugOn and not HiddenForRest() then DebugState("text only: no quest focused") end
     else
         local byMap = QD:GetPinsForQuest(tracked)
         local pins = type(byMap) == "table" and byMap[playerMap]
@@ -441,7 +448,7 @@ local function Select(playerMap, px, py)
         S.tx, S.ty = pin.x, pin.y
         S.force = true
         -- The same spot rebuilt as a new table keeps "Here" and the distance shown.
-        if not (old and pin.x == old.x and pin.y == old.y and pin.obj == old.obj) then
+        if not (old and pin.x == old.x and pin.y == old.y and pin.obj == old.obj and pin.kind == old.kind) then
             S.here = false
             S.distCode = nil
             SetTitle(TitleFor(pin))
@@ -743,11 +750,6 @@ local function SetTurn(turn)
     SetBoxShown(not turn)
 end
 
--- Resting rule: "No quest focused" is hidden in cities and inns with restHide on.
-local function HiddenForRest()
-    return S.noFocus and Opt("restHide") == true and IsRestingNow()
-end
-
 -- Returns true when it ran to the end (the driver counts failures).
 local function Update()
     local playerMap, px, py = QD:GetPlayerPosition()
@@ -902,7 +904,7 @@ end
 ---------------------------------------------------------------------------
 
 local STATUS = {
-    instance = "Hidden while you are inside a dungeon.",
+    instance = "Hidden inside dungeons, raids and battlegrounds.",
     nopos = "Hidden: the game cannot tell where you are here.",
     notarget = "Hidden: the game cannot tell this zone's size.",
 }
@@ -918,11 +920,11 @@ mod = PE:RegisterModule({
     defaults = { position = DEFAULTS.position, scale = DEFAULTS.scale, restHide = DEFAULTS.restHide },
 
     options = {
-        { key = "scale", label = "Size of the arrow and its text",
+        { key = "scale", label = "Arrow and text size",
           number = { min = SCALE_MIN, max = SCALE_MAX, step = SCALE_STEP, default = SCALE_DEFAULT,
                      suffix = "%", unit = "of normal" },
           OnChange = function() Relayout() end },
-        { key = "restHide", label = "\"No quest focused\" in cities and inns",
+        { key = "restHide", label = "In cities and inns", help = "The \"No quest focused\" line.",
           choices = {
               { value = true, label = "Hide" },
               { value = false, label = "Show" },

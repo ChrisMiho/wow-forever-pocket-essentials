@@ -61,9 +61,9 @@ local QUESTS_PER_STEP = 4      -- quests rebuilt in one step
 local ZONE_DELAY = 0.1
 local MAX_ITEM_SOURCES = 60    -- an item dropped by more kinds of creature than this "drops everywhere": not shown
 local MAX_SOURCE_POINTS = 1500 -- one creature or object with more spawn points than this is "everywhere": not shown
-local MAX_PINS = 300           -- most pins one objective may have; above it they are thinned evenly
+local MAX_PINS = 300           -- most pins one objective may have on one map; above it they are thinned evenly
 
-local type, pairs, ipairs, select, tostring, tonumber, pcall, xpcall = type, pairs, ipairs, select, tostring, tonumber, pcall, xpcall
+local type, pairs, ipairs, select, tostring, tonumber, pcall = type, pairs, ipairs, select, tostring, tonumber, pcall
 local floor = math.floor
 
 -- State ----------------------------------------------------------------------
@@ -95,23 +95,15 @@ local watched = {}                -- reused by QD:GetWatchedQuests()
 
 local EMPTY = {}                  -- shared empty table; only ever read
 
--- Debug log only (PE.debugOn): quests rebuilt in the running rebuild, and when it began.
-local dbg = { rebuilt = 0, start = nil }
+-- Debug log only (PE.debugOn): in the running rebuild, the quests rebuilt, the steps
+-- taken and the milliseconds spent in them (not the waits between steps).
+local dbg = { rebuilt = 0, steps = 0, ms = 0 }
 
 -- Small helpers --------------------------------------------------------------
 local function LogError(msg, stack)
     if type(PE.LogError) == "function" then
         pcall(PE.LogError, PE, "questData", tostring(msg), stack or "")
     end
-end
-
-local function OnError(err)
-    LogError(err, type(debugstack) == "function" and debugstack(2) or "")
-    return err
-end
-
-local function Safe(fn, ...)
-    return xpcall(fn, OnError, ...)
 end
 
 local function Str(v)
@@ -241,18 +233,30 @@ local function Name(entity, id)
 end
 
 -- Building pins ----------------------------------------------------------------
--- Pins of the objective being built wait here until Flush() moves them out.
+-- Spots of the objective being built wait here, one entry per spot in each of
+-- these scratch arrays, until Flush() turns the ones it keeps into pins. A busy
+-- objective can have thousands of spots and keep only MAX_PINS, so no table is
+-- made for a spot that is thinned away.
 -- bufObj is that objective's number in the quest log (nil: none matched).
-local buf, bufMap, seen = {}, {}, {}
+local bufN = 0
+local bufMap, bufX, bufY, bufKind, bufQuest, bufText, bufTarget, bufInside, bufObjs = {}, {}, {}, {}, {}, {}, {}, {}, {}
+local seen = {}
 local bufObj
 
 local function AddPin(mapID, x, y, kind, quest, objText, target, inside)
-    local n = #buf + 1
-    bufMap[n] = mapID
-    buf[n] = {
-        x = x / 100, y = y / 100, kind = kind,
+    local n = bufN + 1
+    bufN = n
+    bufMap[n], bufX[n], bufY[n], bufKind[n] = mapID, x, y, kind
+    bufQuest[n], bufText[n], bufTarget[n], bufInside[n], bufObjs[n] = quest, objText, target, inside, bufObj
+end
+
+-- The pin for scratch spot j.
+local function MakePin(j)
+    local quest = bufQuest[j]
+    return {
+        x = bufX[j] / 100, y = bufY[j] / 100, kind = bufKind[j],
         questID = quest.id, title = quest.title,
-        objText = objText, target = target, inside = inside, obj = bufObj,
+        objText = bufText[j], target = bufTarget[j], inside = bufInside[j], obj = bufObjs[j],
     }
 end
 
@@ -295,32 +299,50 @@ local function Spread(pins, limit)
 end
 QD._Spread = Spread   -- test seam
 
--- This objective's surviving pins grouped by map (scratch, reused).
-local groups = {}
+-- This objective's surviving pins grouped by map, and per map: how many spots it
+-- has, how many of them were looked at, and the next one kept (scratch, reused).
+local groups, mapSpots, mapAt, mapNext = {}, {}, {}, {}
 
--- End of one objective: hand its pins over (thinned evenly if there are too many).
+-- End of one objective: hand its pins over. A map with more than MAX_PINS spots
+-- keeps MAX_PINS of them, spread evenly through its list; every other map keeps
+-- all of its own, however many the objective has on other maps.
 local function Flush(out)
-    local n = #buf
-    local take = n > MAX_PINS and MAX_PINS or n
-    for i = 1, take do
-        local j = floor((i - 1) * n / take) + 1
-        local list = out[bufMap[j]]
-        if not list then
-            list = {}
-            out[bufMap[j]] = list
-        end
-        list[#list + 1] = buf[j]
-    end
+    local n = bufN
     local limit = limitCell
-    if limit > 0 then
-        for i = 1, take do
-            local j = floor((i - 1) * n / take) + 1
-            local g = groups[bufMap[j]]
-            if not g then
-                g = {}
-                groups[bufMap[j]] = g
+    for j = 1, n do
+        local mapID = bufMap[j]
+        mapSpots[mapID] = (mapSpots[mapID] or 0) + 1
+    end
+    for j = 1, n do
+        local mapID = bufMap[j]
+        local count = mapSpots[mapID]
+        local at = (mapAt[mapID] or 0) + 1
+        mapAt[mapID] = at
+        local keep = count <= MAX_PINS
+        if not keep then
+            -- Kept: spot floor((i - 1) * count / MAX_PINS) + 1 of this map, for i = 1 .. MAX_PINS.
+            local i = mapNext[mapID] or 1
+            if at == floor((i - 1) * count / MAX_PINS) + 1 then
+                keep = true
+                mapNext[mapID] = i + 1
             end
-            g[#g + 1] = buf[j]
+        end
+        if keep then
+            local pin = MakePin(j)
+            local list = out[mapID]
+            if not list then
+                list = {}
+                out[mapID] = list
+            end
+            list[#list + 1] = pin
+            if limit > 0 then
+                local g = groups[mapID]
+                if not g then
+                    g = {}
+                    groups[mapID] = g
+                end
+                g[#g + 1] = pin
+            end
         end
     end
     local hook = QD._groupHook   -- test seam
@@ -331,8 +353,14 @@ local function Flush(out)
             wipe(g)
         end
     end
-    wipe(buf)
-    wipe(bufMap)
+    -- Drop the references (to quest text and names) the scratch spots hold.
+    for j = 1, n do
+        bufQuest[j], bufText[j], bufTarget[j], bufInside[j], bufObjs[j] = nil, nil, nil, nil, nil
+    end
+    bufN = 0
+    wipe(mapSpots)
+    wipe(mapAt)
+    wipe(mapNext)
     wipe(seen)
     bufObj = nil
 end
@@ -667,7 +695,8 @@ local function Fire(reason)
     end
     for i = 1, n do
         local fn = listeners[keys[i]]
-        if fn and users[keys[i]] then Safe(fn, reason) end
+        -- An error in a user's callback is that user's (its module key, e.g. "questIcons").
+        if fn and users[keys[i]] then PE:Safe(keys[i], fn, reason) end
     end
 end
 
@@ -683,23 +712,31 @@ local function After(delay, fn)
     return C_Timer and C_Timer.After and pcall(C_Timer.After, delay, fn) or false
 end
 
+local function DebugReset()
+    dbg.rebuilt, dbg.steps, dbg.ms = 0, 0, 0
+end
+
 -- Debug log: one line for a finished rebuild. Only called while the log is on.
--- GetTime only moves between frames, so a rebuild done in one step reads 0 ms.
 local function DebugRebuild(changed)
     local pins, maps = 0, 0
     for _, list in pairs(pinsByMap) do
         pins, maps = pins + #list, maps + 1
     end
-    local ms = dbg.start and floor((GetTime() - dbg.start) * 1000 + 0.5) or 0
-    PE:Debug("questData", "rebuild: " .. #order .. " quests in log, " .. dbg.rebuilt .. " rebuilt, " .. pins
-        .. " icons on " .. maps .. " maps, " .. ms .. " ms" .. (changed and "" or ", nothing changed"))
+    PE:Debug("questData", "rebuild: " .. #order .. " quests in log, " .. dbg.rebuilt .. " rebuilt in " .. dbg.steps
+        .. (dbg.steps == 1 and " step, " or " steps, ") .. pins .. " icons on " .. maps .. " maps, "
+        .. floor(dbg.ms + 0.5) .. " ms work" .. (changed and "" or ", nothing changed"))
 end
 
 -- Returns true when the rebuild is not finished and wants another step.
 local function RebuildStep()
     if userCount <= 0 then return false end
-    if PE.debugOn and not dbg.start then dbg.start = GetTime() end
+    local clock = PE.debugOn and type(debugprofilestop) == "function" and debugprofilestop
+    local startedAt = clock and clock()
     local changed, more = Rebuild()
+    if PE.debugOn then
+        dbg.steps = dbg.steps + 1
+        if startedAt then dbg.ms = dbg.ms + (clock() - startedAt) end
+    end
     if more then return true end
     if PE.debugOn then DebugRebuild(changed) end
     local force = forceNotify
@@ -709,11 +746,13 @@ local function RebuildStep()
     return false
 end
 
+-- The timer's own lines only move the waiting flag; the step itself runs through
+-- PE:Safe, so a failing step is logged and the next event can schedule a rebuild again.
 local function OnRebuildTimer()
-    local ok, more = Safe(RebuildStep)
+    local ok, more = PE:Safe("questData", RebuildStep)
     if ok and more and After(STEP_DELAY, OnRebuildTimer) then return end
     rebuildPending = false
-    dbg.rebuilt, dbg.start = 0, nil
+    DebugReset()
 end
 
 -- At most one rebuild per REBUILD_DELAY, and never a second one while one is waiting or running.
@@ -722,16 +761,16 @@ local function ScheduleRebuild()
     rebuildPending = After(REBUILD_DELAY, OnRebuildTimer)
 end
 
-local function OnZoneTimer()
+local OnZoneTimer = PE:Wrap("questData", function()
     zonePending = false
     if PE.debugOn then PE:Debug("questData", "zone change noticed, map " .. PE.Plain((QD:GetPlayerPosition()))) end
     if userCount > 0 then Fire("zone") end
-end
+end)
 
-local function OnWatchTimer()
+local OnWatchTimer = PE:Wrap("questData", function()
     watchPending = false
     if userCount > 0 then Fire("quests") end
-end
+end)
 
 local EVENTS = {
     QUEST_LOG_UPDATE = "quests", QUEST_ACCEPTED = "quests", QUEST_REMOVED = "quests",
@@ -775,7 +814,7 @@ function QD:Acquire(userKey)
         if not frame then
             frame = CreateFrame("Frame")
             frame:Hide()
-            frame:SetScript("OnEvent", function(_, event) xpcall(OnEvent, OnError, event) end)
+            frame:SetScript("OnEvent", PE:Wrap("questData", function(_, event) OnEvent(event) end))
         end
         for event in pairs(EVENTS) do
             pcall(frame.RegisterEvent, frame, event)
@@ -804,7 +843,7 @@ function QD:Release(userKey)
     lastTracked = nil
     wipe(watched)
     arrowPin = nil
-    dbg.rebuilt, dbg.start = 0, nil
+    DebugReset()
     if PE.debugOn then PE:Debug("questData", "last release (" .. tostring(userKey) .. "): events dropped, caches wiped") end
 end
 
@@ -867,7 +906,7 @@ function QD:SetTrackedQuest(questID)
     if ST and ST.SetSuperTrackedQuestID then
         pcall(ST.SetSuperTrackedQuestID, questID or 0)   -- 0 clears it
     end
-    Safe(NotifyTracked)
+    PE:Safe("questData", NotifyTracked)
 end
 
 -- The quest focused in the game's quest log, for as long as it is in the log.

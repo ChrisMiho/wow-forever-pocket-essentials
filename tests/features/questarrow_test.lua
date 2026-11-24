@@ -93,6 +93,26 @@ local function focusOne() return { focus = QW.ONE } end
 -- Which spot
 ---------------------------------------------------------------------------
 
+-- Spec 0.15.0 C6: "The arrow compares the spot kind too, so a completed quest switches to the turn-in."
+-- Quest 1786: kill Henze Faulk in Elwynn Forest, then hand the quest in to him, at the same spot. With no
+-- quest-log objective matched (the log lists none) the objective spot has no number, as the turn-in has none.
+test("quest arrow: a completed quest whose turn-in is the objective's own spot switches to Turn in", function()
+    local c, PE = newArrow({ quests = { { id = 1786 } }, focus = 1786, pos = { x = 0.70, y = 0.50 } })
+    c.world.questLog.quests[1].objectives = {}
+    c:fire("QUEST_LOG_UPDATE")
+    c:advance(1.5)
+    local spot = (PE.QuestData:GetPinsForQuest(1786)[QW.HOME] or {})[1]
+    check(spot and spot.kind == "slay" and spot.obj == nil, "test data: quest 1786 has no unnumbered kill spot on Elwynn Forest")
+    eq(parts(c).rawTitle(), questLine("Quest: ", "The Tome of Divinity"))
+    c.world.questLog.quests[1].complete = true
+    c:fire("QUEST_LOG_UPDATE")
+    c:advance(1.5)
+    local now = published(PE)
+    check(now and now.kind == "turnin", "the arrow does not point at the turn-in: " .. T.show(now and now.kind))
+    check(now.x == spot.x and now.y == spot.y, "test data: the turn-in is not at the objective's spot")
+    eq(parts(c).rawTitle(), questLine("Turn in: ", "The Tome of Divinity"))
+end)
+
 -- Header: "A quest is focused and has known places on this map: its nearest pin." Spec section 2:
 -- "unchanged choice (nearest of all pins, extra or not)".
 test("quest arrow: points at the spot nearest the player (the published pin)", function()
@@ -306,10 +326,11 @@ test("quest arrow: the option rows, in order, with the size choice gone", functi
     local o = mod.options
     eq(#o, 3, "rows")
     eq(o[1].key, "scale")
-    eq(o[1].label, "Size of the arrow and its text")
+    eq(o[1].label, "Arrow and text size")
     eq(o[1].number, { min = 50, max = 150, step = 10, default = 100, suffix = "%", unit = "of normal" })
     eq(o[2].key, "restHide")
-    eq(o[2].label, "\"No quest focused\" in cities and inns")
+    eq(o[2].label, "In cities and inns")
+    eq(o[2].help, "The \"No quest focused\" line.")
     eq(o[2].choices, { { value = true, label = "Hide" }, { value = false, label = "Show" } })
     eq(o[3].label, "Position on screen")
     eq(o[3].button, "Move the arrow")
@@ -451,6 +472,36 @@ test("quest arrow: resting at login with no quest focused starts hidden", functi
     check(not parts(c).driver.frame:IsVisible(), "the driver is still running")
 end)
 
+-- Spec 0.15.0 C8: the debug log stops writing "text only: no quest focused" while the arrow is hidden for
+-- resting (it alternated with "hidden: no quest focused while resting" at every look and filled the log).
+test("quest arrow: resting with nothing focused writes the hidden line once, not text only lines", function()
+    local c, PE = newArrow({ nofocus = true, resting = true })
+    PE:SetDebug(true)
+    for _ = 1, 4 do
+        PE.QuestData:RequestRebuild()                       -- each one makes the arrow look again
+        c:advance(1)
+    end
+    local lines = rawget(c.env, "PocketEssentialsDB").debug.lines
+    local textOnly, hidden = 0, 0
+    for _, line in ipairs(lines) do
+        if line:find("questArrow: text only: no quest focused", 1, true) then textOnly = textOnly + 1 end
+        if line:find("questArrow: hidden: no quest focused while resting", 1, true) then hidden = hidden + 1 end
+    end
+    eq(textOnly, 0, "text only lines while hidden for resting")
+    check(hidden <= 1, hidden .. " hidden lines while nothing changed")
+    check(not parts(c).display.frame:IsVisible(), "the message is on screen while resting")
+    c.world.resting = false                                 -- out of the inn: the text only line is right again
+    c:fire("PLAYER_UPDATE_RESTING")
+    c:advance(0.5)
+    PE.QuestData:RequestRebuild()
+    c:advance(1)
+    textOnly = 0
+    for _, line in ipairs(lines) do
+        if line:find("questArrow: text only: no quest focused", 1, true) then textOnly = textOnly + 1 end
+    end
+    eq(textOnly, 1, "text only lines after leaving the inn")
+end)
+
 -- Spec: "PLAYER_UPDATE_RESTING, which is registered only while the feature is on."
 test("quest arrow: PLAYER_UPDATE_RESTING is listened for only while the arrow is on", function()
     local c, PE = newArrow({ nofocus = true }, { "questIcons" })   -- icons hold the quest data
@@ -526,7 +577,7 @@ end)
 ---------------------------------------------------------------------------
 
 -- DECISIONS-adjacent: QuestArrow.lua header "The driver is stopped completely inside instances";
--- STATUS.instance "Hidden while you are inside a dungeon."; the brief: "hidden inside an instance".
+-- STATUS.instance "Hidden inside dungeons, raids and battlegrounds." (spec 0.15.0 C8); the brief: "hidden inside an instance".
 test("quest arrow: hidden inside an instance, and nothing of ours ticks there", function()
     local c, PE = newArrow()
     check(parts(c).display.frame:IsVisible(), "the arrow is not on screen before the instance")
@@ -537,7 +588,7 @@ test("quest arrow: hidden inside an instance, and nothing of ours ticks there", 
     check(not a.display.frame:IsVisible(), "the arrow is on screen inside an instance")
     check(not a.driver.frame:IsVisible(), "the driver is still running inside an instance")
     eq(published(PE), nil)
-    eq(PE:GetModule("questArrow").status(PE:GetModule("questArrow")), "Hidden while you are inside a dungeon.")
+    eq(PE:GetModule("questArrow").status(PE:GetModule("questArrow")), "Hidden inside dungeons, raids and battlegrounds.")
     local ticks = c.stats.addonOnUpdate
     c:advance(3)
     eq(c.stats.addonOnUpdate, ticks, "an OnUpdate of ours ran inside the instance")

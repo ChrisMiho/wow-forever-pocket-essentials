@@ -338,7 +338,9 @@ local function LabelText(d)
         end
         if d.target and d.target ~= d.objText then
             n = n + 1
-            lines[n] = "|cffb3b3b3" .. tostring(kinds[d.kind] or KIND_LABEL[d.kind] or "Go to") .. ": " .. Escape(d.target) .. "|r"
+            -- An explore spot with a name is a place to go to (the icon key still says "Explore").
+            local label = d.kind == "event" and "Go to" or kinds[d.kind] or KIND_LABEL[d.kind] or "Go to"
+            lines[n] = "|cffb3b3b3" .. tostring(label) .. ": " .. Escape(d.target) .. "|r"
         end
     end
     if d.inside then
@@ -959,7 +961,12 @@ end
 -- engine resets it after the event.
 local function OnWorldEvent(_, event)
     ReapplyMinimapHaze()
-    if event == "PLAYER_ENTERING_WORLD" then mod:After(HAZE_AGAIN_SECONDS, ReapplyMinimapHaze) end
+    if event == "PLAYER_ENTERING_WORLD" then
+        mod:After(HAZE_AGAIN_SECONDS, ReapplyMinimapHaze)
+        -- After a loading screen the position gets its three retries again: inside a
+        -- dungeon the zone events may have used them all up.
+        miniRetries = 0
+    end
 end
 
 local function RefreshAll()
@@ -1198,12 +1205,15 @@ end
 local TOGGLES = {
     map = { key = "map", name = "Map icons" },
     mini = { key = "mini", name = "Minimap icons" },
-    haze = { key = "hideHaze", name = "Hide Blue Quest Haze" },
+    haze = { key = "hideHaze" },   -- its own line below, in the settings row's words
 }
 local CLUSTER_WORDS = { off = 0, normal = 2, more = 5 }
 local SPOTS_WORDS = { all = 0 }
-local SHOW_WORDS = { focus = "Focused quest", tracked = "Tracked quests", all = "All quests" }
-local USAGE = "/qd show tracked (or focus, all), /qd map, /qd mini, /qd haze, /qd size small (or xsmall, medium, large), /qd cluster 2 (0 to 10, 0 is off), /qd spots all (or 1 to 20)"
+-- The answers use the words of the settings rows (Show icons for, Icon size, ...).
+local SHOW_WORDS = { focus = "Focused", tracked = "Tracked", all = "All" }
+local SIZE_WORDS = { tiny = "xsmall" }   -- "tiny" is the settings' name for the saved value "xsmall"
+local SIZE_LABEL = { xsmall = "Tiny", small = "Small", medium = "Medium", large = "Large" }
+local USAGE = "/qd show tracked (or focus, all), /qd map, /qd mini, /qd haze, /qd size small (or tiny, medium, large), /qd cluster 2 (0 to 10, 0 is off), /qd spots all (or 1 to 20)"
 
 -- "/qd spots 7": a whole number from 1 to MAX_SPOTS, else nil.
 local function SpotsNumber(text)
@@ -1229,7 +1239,11 @@ local function SlashCommand(msg)
     if toggle then
         opts[toggle.key] = not Opt(toggle.key)
         changed = toggle.key
-        PE:Print(toggle.name .. ": " .. (opts[toggle.key] and "on" or "off") .. ".")
+        if toggle.key == "hideHaze" then
+            PE:Print("Blizzard blue quest haze: " .. (opts.hideHaze and "hidden" or "shown") .. ".")
+        else
+            PE:Print(toggle.name .. ": " .. (opts[toggle.key] and "on" or "off") .. ".")
+        end
     elseif cmd == "blizz" then
         PE:Print("Hiding Blizzard's quest pins was removed.")
         return
@@ -1237,20 +1251,20 @@ local function SlashCommand(msg)
         opts.show = value
         changed = "show"
         PE:Print("Show icons for: " .. SHOW_WORDS[value] .. ".")
-    elseif cmd == "size" and MAP_PX[value] then
-        opts.size = value
+    elseif cmd == "size" and MAP_PX[SIZE_WORDS[value] or value] then
+        opts.size = SIZE_WORDS[value] or value
         changed = "size"
-        PE:Print("Icon size: " .. value .. ".")
+        PE:Print("Icon size: " .. (SIZE_LABEL[opts.size] or opts.size) .. ".")
     elseif cmd == "cluster" and (CLUSTER_WORDS[value] or tonumber(value)) then
         local number = CLUSTER_WORDS[value] or tonumber(value)
         if number ~= number then number = DEFAULT_CLUSTER end
         opts.cluster = floor(max(0, min(MAX_CLUSTER, number)))
         changed = "cluster"
-        PE:Print("Merge icons closer than: " .. (opts.cluster == 0 and "off" or (tostring(opts.cluster) .. "%")) .. ".")
+        PE:Print("Merge icons closer than: " .. (opts.cluster == 0 and "Off" or (tostring(opts.cluster) .. "%")) .. ".")
     elseif cmd == "spots" and (SPOTS_WORDS[value] or SpotsNumber(value)) then
         opts.spots = SPOTS_WORDS[value] or SpotsNumber(value)
         changed = "spots"
-        PE:Print("Spots per objective: " .. (opts.spots == 0 and "all" or tostring(opts.spots)) .. ".")
+        PE:Print("Spots per objective: " .. (opts.spots == 0 and "All" or tostring(opts.spots)) .. ".")
     else
         PE:Print(USAGE)
         return
