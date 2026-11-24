@@ -1600,3 +1600,35 @@ To start again from empty later: Probe, tab **Controller and layout**, row
 **Clear saved results**, tap **Clear** twice.
 
 On a computer: `scripts/read-probe.sh <PocketProbe.lua> --details --perf`.
+
+### 26. Version 0.12.0: the mockup's setup in game
+
+**What this is for.** The Controller layout now matches the mockup's "Face
+bars (one setup)" screen, using the game's own bars. Pocket Probe is not
+needed (untick it on the AddOns screen if you like). Download: the GitHub
+pre-release **v0.12.0**.
+
+1. In `AddOns`, delete the old `PocketEssentials` folder (keep `QuestieDB`)
+   and unzip the new zip. Fully restart the game and log into your main.
+2. A chat line says the controller layout was updated (or, on a character
+   not on our layout yet, that it now uses it). Open the settings and tap
+   **Reload now**. If you started clean (old Pocket Essentials saved file
+   deleted) and switch the layout On by hand, you will still see the old
+   arrangement after that reload: on the Controller tab tap **Start over**,
+   tap it again, then **Reload now**.
+3. Look at the screen and take a screenshot. You should see: the map bottom
+   middle with its name and the swing timers under it; on the left the LT
+   bar with the main bar under it; on the right the RT bar with the LT+RT
+   bar under it; your frame with the pet above it on the left, the target on
+   the right; the XP bar at the top. Tell me what is in the way.
+4. Hold LT, then RT, then both: does the right bar light up each time?
+5. Open the pet wheel (LB + LT) and the pet spells wheel (RB + RT). Does
+   either land on a bar or a frame?
+6. Target something with LB and RB. Do the two targeting pictures sit next
+   to the main bar's corner, and does targeting work as before?
+7. Fight a few mobs with all four bars. Do your spells cast, and does
+   anything say "Interface action blocked" or "failed because of an AddOn"?
+8. Settings, tab **Errors**: screenshot it. Send me
+   `SavedVariables/PocketEssentials.lua` and the screenshots.
+
+To go back to your own layout: Controller tab, switch Off, **Reload now**.
