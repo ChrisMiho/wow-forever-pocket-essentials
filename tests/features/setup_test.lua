@@ -617,15 +617,17 @@ test("setup: the finish screen lists what is on and what is off, then the Tap, H
     check(hasText(c, "|cff59eb73On: |rnothing yet"), "no \"On: nothing yet\" line")
     local off = textWith(c, "Off: |r")
     check(off, "no Off line with everything off")
+    -- 0.15.0 (B5): only the features the guide shows, in the order of its screens.
     for _, mod in ipairs(PE.moduleList) do
-        check(off:find(mod.label, 1, true), "Off does not name " .. mod.label)
+        if mod.key ~= "errors" then check(off:find(mod.label, 1, true), "Off does not name " .. mod.label) end
     end
+    check(not off:find("Catch all errors", 1, true), "Off names Catch all errors, which the guide does not show")
 
     PE:SetModuleEnabled("sellJunk", true)
     PE:SetModuleEnabled("chat", true)
     c:advance(0.1)
     check(hasText(c, "|cff59eb73On: |rAuto sell junk, Chat picker"), "the On line is wrong: " .. tostring(textWith(c, "On: |r")))
-    eq(textWith(c, "Off: |r"), "|cff9e9ea3Off: |rQuest icons, Quest arrow, Bag sorting, Bigger bag, Auto repair, Controller layout, Menu background, Loot sparkles, Catch all errors")
+    eq(textWith(c, "Off: |r"), "|cff9e9ea3Off: |rQuest icons, Quest arrow, Bigger bag, Bag sorting, Auto repair, Menu background, Loot sparkles, Controller layout")
     for _, t in ipairs({ "Tap", "Hold", "Move things", "Opens the settings, or Chat picker when it is on.",
         "Always opens the settings.", "Settings, General tab." }) do
         check(hasText(c, t), "the tiles have no \"" .. t .. "\"")
@@ -664,7 +666,8 @@ test("setup: with every feature on the finish screen has no Off line", function(
     c:advance(0.5)
     open(c, PE)
     goTo(c, N + 1) -- ten screens with Quest icons on
-    check(textWith(c, "On: |rQuest icons, Quest arrow, Bag sorting"), "no On line")
+    check(textWith(c, "On: |rQuest icons, Quest arrow, Bigger bag, Bag sorting"), "no On line")
+    check(not textWith(c, "Catch all errors"), "the On line names Catch all errors, which the guide does not show")
     check(not textWith(c, "Off: |r"), "an Off line with everything on")
 end)
 

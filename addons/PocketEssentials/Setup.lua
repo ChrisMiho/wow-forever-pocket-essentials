@@ -574,10 +574,18 @@ end
 -- All set: what is on and off, the three tiles, and the reload offer when a
 -- feature asked for one.
 function DRAW.Finish(y, width)
-    local on, off = {}, {}
-    for _, mod in ipairs(PE.moduleList) do
-        local into = PE:IsModuleEnabled(mod.key) and on or off
-        into[#into + 1] = Escape(mod.label)
+    -- Only the features the guide's screens show, in the order of the
+    -- screens and their cards (not the modules' own order).
+    local on, off, seen = {}, {}, {}
+    for _, screen in ipairs(SCREENS) do
+        for _, card in ipairs(screen.cards or {}) do
+            local mod = not seen[card.key] and PE:GetModule(card.key)
+            if mod then
+                seen[card.key] = true
+                local into = PE:IsModuleEnabled(mod.key) and on or off
+                into[#into + 1] = Escape(mod.label)
+            end
+        end
     end
     y = list:Card(0, y, width, function(ix, iy, iw)
         local yy = iy
