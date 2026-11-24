@@ -94,9 +94,16 @@ local function badge(c, PE)
     return nil
 end
 
+-- The character's saved whisper list (spec 0.15.0 D1: PocketEssentialsCharDB.chatWhispers),
+-- or {} when nothing was written yet.
+local function whispers(PE)
+    local list = type(PE.charDB) == "table" and PE.charDB.chatWhispers
+    return type(list) == "table" and list or {}
+end
+
 local function savedList(PE)
     local out = {}
-    for i, e in ipairs(PE:GetModule("chat").opts.whispers) do
+    for i, e in ipairs(whispers(PE)) do
         out[i] = { name = e.name, unanswered = e.unanswered }
     end
     return out
@@ -182,7 +189,7 @@ test("chat: a seventh whisperer pushes out the oldest", function()
     local c, PE = newChat()
     for i = 1, 7 do c:whisperIn("W" .. i, "hi") end
     eq(openPicker(c, PE).whispers, { "W7", "W6", "W5", "W4", "W3", "W2" })
-    eq(#PE:GetModule("chat").opts.whispers, 6)
+    eq(#whispers(PE), 6)
     eq(badge(c, PE), "6", "the badge counts only the six that have buttons")
 end)
 
@@ -194,7 +201,7 @@ test("chat: a repeat whisperer moves to the front without being listed twice", f
     c:whisperIn("W3", "hi")
     c:whisperIn("W1", "again")
     eq(openPicker(c, PE).whispers, { "W1", "W3", "W2" })
-    eq(#PE:GetModule("chat").opts.whispers, 3)
+    eq(#whispers(PE), 3)
     eq(badge(c, PE), "3")
 end)
 
@@ -205,7 +212,7 @@ test("chat: a whisperer on our realm shows by short name, another realm by full 
     c:whisperIn("Jaina-Otherrealm", "hi")
     eq(openPicker(c, PE).whispers, { "Jaina-Otherrealm", "Thrall" })
     c:whisperOut("Thrall-Camelot", "hello")  -- our reply is matched to the same person
-    eq(#PE:GetModule("chat").opts.whispers, 2)
+    eq(#whispers(PE), 2)
 end)
 
 ---------------------------------------------------------------------------
@@ -279,7 +286,7 @@ test("chat: during chat lockdown nothing is recorded and nothing errors", functi
     c:whisperIn("Ann", "hi")
     c:whisperOut("Bob", "hello")
     c:advance(0.5)
-    eq(PE:GetModule("chat").opts.whispers, {})
+    eq(whispers(PE), {})
     eq(badge(c, PE), nil)
     c:assertClean("lockdown")
     -- and it records again once the lockdown ends
@@ -292,7 +299,7 @@ end)
 test("chat: with the feature off, whispers are not recorded and no whisper event is registered", function()
     local c, PE = T.new({})
     c:whisperIn("Ann", "hi")
-    eq(PE:GetModule("chat").opts.whispers, {})
+    eq(whispers(PE), {})
     eq(badge(c, PE), nil)
     for _, rec in ipairs(c:frames()) do
         if rec.addonFile then
@@ -627,13 +634,13 @@ end)
 
 -- Chat.lua OnEnable line 594 (UpdateBadge) and CleanList lines 76-92.
 test("chat: saved unanswered whispers show the badge when chat is enabled at login", function()
-    local saved = { version = 1, enabled = { chat = true }, ui = { size = "medium", hubPos = "LEFT" }, errors = {},
-        options = { chat = { whispers = {
-            { name = "Ann", target = "Ann", unanswered = true, time = 1 },
-            { name = "Bob", target = "Bob", unanswered = false, time = 2 },
-            { name = "Cy", target = "Cy-Realm", unanswered = true, time = 3 },
-        } } } }
-    local c, PE = T.new({ saved = saved })
+    local saved = { version = 1, enabled = { chat = true }, ui = { size = "medium", hubPos = "LEFT" }, errors = {} }
+    local savedChar = { chatWhispers = {
+        { name = "Ann", target = "Ann", unanswered = true, time = 1 },
+        { name = "Bob", target = "Bob", unanswered = false, time = 2 },
+        { name = "Cy", target = "Cy-Realm", unanswered = true, time = 3 },
+    } }
+    local c, PE = T.new({ saved = saved, savedChar = savedChar })
     eq(badge(c, PE), "2")
     eq(openPicker(c, PE).whispers, { "Ann", "Bob", "Cy" })
 end)
@@ -642,11 +649,46 @@ test("chat: a saved list longer than six, with Battle.net or damaged entries, is
     local list = { { name = "A1", target = "A1", unanswered = true, time = 1 }, { bn = true, name = "BN", unanswered = true },
         { name = "", unanswered = true }, "junk" }
     for i = 2, 8 do list[#list + 1] = { name = "A" .. i, target = "A" .. i, unanswered = true, time = i } end
-    local saved = { version = 1, enabled = { chat = true }, ui = { size = "medium", hubPos = "LEFT" }, errors = {},
-        options = { chat = { whispers = list } } }
-    local c, PE = T.new({ saved = saved })
+    local saved = { version = 1, enabled = { chat = true }, ui = { size = "medium", hubPos = "LEFT" }, errors = {} }
+    local c, PE = T.new({ saved = saved, savedChar = { chatWhispers = list } })
     eq(openPicker(c, PE).whispers, { "A1", "A2", "A3", "A4", "A5", "A6" })
     eq(badge(c, PE), "6")
+end)
+
+-- Spec 0.15.0 D1: the whisper list belongs to the character, in PocketEssentialsCharDB,
+-- not the account-wide file players send with the debug log.
+test("chat: whispers are saved in the character's own file, not the shared one", function()
+    local c, PE = newChat()
+    c:whisperIn("Ann", "hi")
+    eq(savedList(PE), { { name = "Ann", unanswered = true } })
+    check(rawget(c.env, "PocketEssentialsCharDB").chatWhispers == PE.charDB.chatWhispers, "not in PocketEssentialsCharDB")
+    eq(rawget(c.env, "PocketEssentialsDB").options.chat.whispers, nil, "a name went into the shared file")
+end)
+
+test("chat: an alt does not see the main's whisperers", function()
+    local main, PEmain = newChat()
+    main:whisperIn("Ann", "hi")
+    local shared = rawget(main.env, "PocketEssentialsDB")
+    -- The alt logs in with the same account file and its own (empty) character file.
+    local alt, PEalt = T.new({ saved = shared, savedChar = {} })
+    eq(openPicker(alt, PEalt).whispers, {})
+    eq(badge(alt, PEalt), nil)
+end)
+
+test("chat: an old shared whisper list is removed at login and not shown", function()
+    local saved = { version = 1, enabled = { chat = true }, ui = { size = "medium", hubPos = "LEFT" }, errors = {},
+        options = { chat = { scale = 100, whispers = {
+            { name = "Ann", target = "Ann", unanswered = true, time = 1 },
+        } } } }
+    local c, PE = T.new({ saved = saved })
+    eq(rawget(c.env, "PocketEssentialsDB").options.chat.whispers, nil, "the old list is still in the shared file")
+    eq(openPicker(c, PE).whispers, {})
+    eq(badge(c, PE), nil)
+    -- With the feature off the old list goes too.
+    local saved2 = { version = 1, enabled = {}, ui = { size = "medium", hubPos = "LEFT" }, errors = {},
+        options = { chat = { whispers = { { name = "Bob", target = "Bob", unanswered = true, time = 1 } } } } }
+    local c2 = T.new({ saved = saved2 })
+    eq(rawget(c2.env, "PocketEssentialsDB").options.chat.whispers, nil, "the old list stayed with chat off")
 end)
 
 -- DECISIONS "What was left out": "Battle.net whispers ... Only ordinary character whispers are listed";
@@ -958,11 +1000,9 @@ test("chat size: nothing is called or saved until a button is tapped", function(
     settingsButton(c, PE, "+")
     eq(#sizeCalls(c), 0)
     local saved = rawget(c.env, "PocketEssentialsDB").options.chat
-    eq(saved.whispers, {})
     -- The window size (spec 0.9.0, key scale) is the picker's own setting, not the text size.
-    local keys = 0
-    for key in pairs(saved) do if key ~= "scale" then keys = keys + 1 end end
-    eq(keys, 1, "the chat feature saved something besides its whisper list")
+    -- The whisper list is in the character's file (spec 0.15.0 D1).
+    for key in pairs(saved) do eq(key, "scale", "the chat feature saved something besides its window size") end
 end)
 
 -- Spec 3 "Rules": the edit box is never touched; the game's own size list is not written to.
@@ -1198,7 +1238,7 @@ test("chat size: with the feature off nothing is saved and nothing is called unt
     local saved = rawget(c.env, "PocketEssentialsDB").options.chat
     for key in pairs(type(saved) == "table" and saved or {}) do
         -- scale: the picker window's size (spec 0.9.0), not the text size.
-        if key ~= "scale" then eq(key, "whispers", "the chat feature saved something besides its whisper list") end
+        eq(key, "scale", "the chat feature saved something besides its window size")
     end
 end)
 

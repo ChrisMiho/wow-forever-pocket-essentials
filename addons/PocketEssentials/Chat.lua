@@ -50,21 +50,27 @@ local function Escape(text)
 end
 
 ---------------------------------------------------------------------------
--- The saved whisper list: mod.opts.whispers, newest first, at most
--- MAX_WHISPERS long, so every counted mark has a button in the window.
+-- The saved whisper list: PE.charDB.chatWhispers, in this character's own
+-- saved file (PocketEssentialsCharDB), so an alt never sees the names and
+-- they stay out of the account-wide file that goes with a debug log. Newest
+-- first, at most MAX_WHISPERS long, so every counted mark has a button in
+-- the window.
 --   { name = "Thrall", target = "Thrall-Realm", unanswered = true, time = ... }
 -- `name` is the short form: the button label, and what an incoming and an
 -- outgoing whisper are matched by. `target` is the sender exactly as the game
--- delivered it, and is what the chat box gets addressed to.
+-- delivered it, and is what the chat box gets addressed to. The unanswered
+-- mark lives in the entry, so it moves with it.
 ---------------------------------------------------------------------------
 
+-- PE.charDB is read on every call: Core sets it again when the saved
+-- variables load.
 local function List()
-    local opts = mod and mod.opts
-    if type(opts) ~= "table" then return nil end
-    local list = opts.whispers
+    local charDB = PE.charDB
+    if type(charDB) ~= "table" then return nil end
+    local list = charDB.chatWhispers
     if type(list) ~= "table" then
         list = {}
-        opts.whispers = list
+        charDB.chatWhispers = list
     end
     return list
 end
@@ -1095,7 +1101,7 @@ mod = PE:RegisterModule({
     label = "Chat picker",
     desc = "Tap the round button to pick who to talk to.",
     order = 60,
-    defaults = { whispers = {}, scale = SCALE_DEFAULT },
+    defaults = { scale = SCALE_DEFAULT },
 
     options = {
         { label = "Chat text size", value = TextSizeValue, stepper = TextSizeStepper, always = true,
@@ -1103,6 +1109,13 @@ mod = PE:RegisterModule({
         { key = "scale", label = "Size of the chat picker window",
           number = { min = SCALE_MIN, max = SCALE_MAX, step = 10, default = SCALE_DEFAULT, suffix = "%", unit = "of normal" } },
     },
+
+    -- Before 0.15.0 the whisper list was in the account-wide file
+    -- (opts.whispers). It is dropped there, on or off, so names leave that
+    -- file; each character starts with an empty list once.
+    OnLoad = function(self)
+        if type(self.opts) == "table" then self.opts.whispers = nil end
+    end,
 
     OnEnable = function(self)
         CleanList()
