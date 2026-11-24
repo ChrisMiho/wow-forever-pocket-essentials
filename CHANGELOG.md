@@ -14,18 +14,21 @@ it is for testing only).
 
 ### Changed
 
-- **Controller layout, a new arrangement** (Rebuild the layout once after
-  updating): the chat sits at the left edge with its tabs in a row above the
+- **Controller layout, a new arrangement** (at your first login after
+  updating, the addon rebuilds the layout by itself and asks for one reload;
+  tap Rebuild the layout only if it does not): the chat sits at the left edge with its tabs in a row above the
   text and no dark box behind it; the quest list sits at the right edge from
   the top; your buffs and debuffs run along the top, left of the quest list;
   the map sits at the bottom middle with a plain black border instead of the
   gold ring; the place name and clock sit right under it; the three swing
   timers stack above the map; the green and red targeting pictures (LB and RB)
   moved off the "LB + LT" and "RB + RT" prompts; the tooltip sits at the right
-  edge above your target's frame. Nothing overlaps at any Spell panel size.
+  edge above your target's frame. Nothing overlaps at any Spell panel size:
+  checked offline, waiting for the device test.
 - **The PE button's first spot** follows the layout: bottom left corner while
   the layout is on, where it was when it is off. A spot you chose with Move on
-  screen stays as you set it.
+  screen stays as you set it, and moving it from the bottom left corner starts
+  from where it sits.
 
 ### Added
 
@@ -36,9 +39,12 @@ it is for testing only).
   off puts everything back: the chat box, the map's ring, both buttons, the
   reminder.
 - **Pocket Probe 0.8.0:** "Buffs in a fight" trials (what a fight leaves
-  readable of the target's and your pet's buffs), run from the Fight button
-  and Run all. While the layout is on, Stop and Fight sit on the left edge
-  above the chat.
+  readable of the target's and your pet's buffs, and whether the game's own
+  buff box for addons fills for your target), run from the Fight button and
+  Run all. One more, out of a fight with Risky and Auto on: whether the
+  target frame's buff icons can stay visible while the rest of the frame
+  fades (it puts the frame back at once). While the layout is on, Stop and
+  Fight sit on the left edge above the chat.
 
 ### Not yet
 

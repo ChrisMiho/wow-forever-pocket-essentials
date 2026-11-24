@@ -1772,18 +1772,21 @@ PocketProbe). Turn the **Debug log** on before you start.
 
 1. In `AddOns`, delete the old `PocketEssentials` folder (keep `QuestieDB`)
    and unzip the new one; put the new `PocketProbe` folder in as well. Fully
-   restart the game and log in. Controller tab: **Rebuild the layout**, then
-   reload once when it asks.
+   restart the game and log in. At this first login the addon should update
+   the layout by itself: a chat line says so and it asks for one reload. Tell
+   me whether it asked by itself, then reload. Only if it did not ask:
+   Controller tab, **Rebuild the layout**, then reload once when it asks.
 2. **The arrangement, screenshot it.** Chat at the left edge, tabs in a row
    above the text, no dark box; quest list at the top right; buffs along the
    top; map at the bottom middle with a plain black ring; place name and clock
    under it; three swing timers above it; the PE button in the bottom left
-   corner. Screenshot at rest and while holding LT, RT and both.
+   corner. Screenshot at rest and while holding LT, RT (the left and right
+   triggers) and both.
 3. **The five collisions** from your 2026-11-24 screenshots: is any piece
    still on top of another? Name each one that is.
 4. **Chat:** open the chat and type. Does the dark box stay gone? Do all five
    tabs still switch? Does a long message wrap inside the chat? A pop-up
-   whisper window may still show its box: that is expected for now.
+   whisper window may still show its dark box: that is expected for now.
 5. **Controls reminder:** On, then Off. On shows the game's hint box in the
    top left; Off hides it. Does it overlap anything?
 6. **Map buttons:** Hidden (the default) shows only the place name and clock;
@@ -1793,22 +1796,33 @@ PocketProbe). Turn the **Debug log** on before you start.
    the PE button, the tooltip and your frames stay clear of the panels?
 8. **Tooltip:** point at a target and at an item. Is the tooltip above your
    target's frame, and does a tall one reach the quest list?
-9. **PE button:** move it with "Move on screen", then switch the layout off
-   and on again. Tell me where the button ends up.
-10. **Layout off puts everything back.** Switch the layout off and reload:
-    the chat box, the map's gold ring, the two map buttons and the controls
-    reminder are as before.
+9. **PE button:** move it with "Move on screen": the first press of an
+   arrow should move it one small step from the bottom left corner, not jump.
+   Then switch the layout off and on again. Tell me where the button ends up.
+10. **Layout off puts everything back.** Switch the layout off. Before you
+    reload, look at the chat box, the map's gold ring, the two map buttons and
+    the controls reminder: are they back as before? Then reload and look again.
 11. **The probe, Fight tests.** Have your pet out and a debuff on your target.
     The Fight button is on the left edge above the chat (not beside the PE
-    button) while the layout is on. Tap it once and wait for the tick. Then
-    open the probe's window and take a **performance recording** in town, and
-    another in a fight.
-12. Settings, tab **Errors**: screenshot it. Send me
+    button) while the layout is on. Tap it once and wait until the word Fight
+    on it turns into a tick mark (or the word Done). This also tries the
+    game's own buff box for addons on your target; nothing to switch on for
+    it. Then open the probe's window and take a **performance recording** in
+    town, and another in a fight.
+12. **The probe, the target frame's buffs (last, out of a fight).** Target
+    something with a buff. In the probe's window tap **Risky** so it reads On,
+    then **Auto** so it reads On. Wait until the status line says "pass
+    done" (about a minute). This tries once whether the target frame's buff
+    icons can stay visible while the rest of the frame fades, and puts it back
+    at once. Tap Risky and Auto off again, then **Save** (it reloads): the
+    risky trials can leave the controller refusing some actions until that
+    reload.
+13. Settings, tab **Errors**: screenshot it. Send me
     `SavedVariables/PocketEssentials.lua`, `SavedVariables/PocketProbe.lua`
     and the screenshots.
 
 Things to watch for (known, not fixed):
-- A pop-up whisper window still shows its dark box.
+- A pop-up whisper window may still show its dark box.
 - A wheel or the "new spell" picture opened from a spell button appears where
   the game's hidden button is.
 - With Map buttons Shown, the magnifier's left edge may not take a tap.

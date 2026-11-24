@@ -1025,6 +1025,40 @@ do
     check(stuck == nil and tostring(why):find("too long", 1, true), "a file that never finishes was not stopped: " .. tostring(why))
 end
 
+---------------------------------------------------------------------------
+-- Probe 0.8.0: the area "Buffs in a fight" prints, with its notes
+---------------------------------------------------------------------------
+
+do
+    local db = {
+        version = 1, game = "1.60.1 (70959)", probe = "0.8.0",
+        trials = {
+            { id = "aura.count", area = "Buffs in a fight", label = "Count the target's and the pet's buffs and debuffs", kind = "value" },
+            { id = "aura.custom", area = "Buffs in a fight", label = "Point the game's own buff container for addons at the target", kind = "value" },
+            { id = "aura.ignore", area = "Buffs in a fight", label = "Let the target frame's buff icons ignore the frame's see-through", kind = "action", risky = true },
+        },
+        results = {
+            ["aura.count"] = { [TOWN_AUTO] = "readable", [FIGHT_AUTO] = "secret" },
+            ["aura.custom"] = { [FIGHT_AUTO] = "readable" },
+            ["aura.ignore"] = { [TOWN_AUTO] = "allowed" },
+        },
+        details = {
+            { trial = "aura.custom", situation = FIGHT_AUTO, result = "readable",
+                message = "made at load accepted; SetUnit target accepted; icons shown 2" },
+            { trial = "aura.count", situation = FIGHT_AUTO, result = "secret", message = "target buffs secret" },
+        },
+    }
+    local text = table.concat(R.format(db), "\n")
+    check(text:find("\nBuffs in a fight\n", 1, true), "the area 'Buffs in a fight' is not printed:\n" .. text)
+    check(text:find("Point the game's own buff container for addons at the target", 1, true), "the container trial's row")
+    check(text:find("icons shown 2", 1, true), "the container trial's notes")
+    check(text:find("target buffs secret", 1, true), "a secret count's notes")
+    local areas = R.areas(db)
+    eq(#areas, 1, "one area")
+    eq(areas[1].area, "Buffs in a fight", "its name")
+    eq(R.cell(db, "aura.ignore", TOWN_AUTO), "allowed", "the frame changer's cell")
+end
+
 for _, path in ipairs(temps) do os.remove(path) end
 
 if #failures > 0 then

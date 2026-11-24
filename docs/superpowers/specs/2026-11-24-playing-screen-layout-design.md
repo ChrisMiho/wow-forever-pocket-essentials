@@ -174,6 +174,10 @@ as `ControllerLayout.lua` has them; each number's source is cited there.
 - Probe, the four buff trials have no row of their own in the probe's window (its ten tabs
   were full and an eleventh would break the tap-size rule); they run from the Fight button
   and Run all, and their results are saved and read by `scripts/read-probe.sh` as usual.
+- Probe, after the final review: six buff trials, all without a row. `aura.custom` (the game's
+  container for addons) runs from the Fight button; `aura.ignore` changes a frame of the
+  game's, so it is risky and runs only in the automatic pass out of a fight with Risky and Auto
+  on.
 - Chat: the dark box is hidden by hiding its textures as well as setting its see-through to
   0, because the game's fade-in would otherwise bring it back to at least 0.25. A pop-up
   whisper window keeps its box for now.
@@ -217,6 +221,11 @@ back, placed above the diamonds as closely as their size allows.
   a countdown from them.
 - Whether Blizzard's own buff icons on the target frame can stay visible while the frame's
   other art is invisible.
+- Added at the final review: the target frame's buff container is told to ignore its parents'
+  see-through and put back at once (out of a fight, Risky and Auto on); the game's own buff
+  container for addons (`CustomAuraContainerTemplate`, made at load) is pointed at the target in
+  a fight; the box of ours also tries the duration object and the stack text; every read and
+  call is noted as accepted, refused or missing.
 - The performance recording, in town and in a fight, as the "before" reading.
 
 ## Left to the builder

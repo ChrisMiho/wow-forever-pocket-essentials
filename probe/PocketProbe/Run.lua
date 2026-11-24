@@ -373,7 +373,9 @@ local function RunTrial(trial, pass, inPress, done)
 
     if trial.kind == "value" then
         local classes = P.Classes()
-        xpcall(trial.read, OnError, classes)
+        -- read(c) may return "missing", text: what it needs is not on this client.
+        local okRead, why, text = xpcall(trial.read, OnError, classes)
+        if okRead and why == "missing" then return Finish("missing", type(text) == "string" and text or nil) end
         return Finish(classes:result())
     end
 

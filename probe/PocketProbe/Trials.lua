@@ -37,7 +37,8 @@ local ADDON_NAME, P = ...
 --                             "wait"            look again after `wait` seconds
 --   check(state)            for "wait": returns true / false / nil as above
 --   undo(state)             puts things back; always runs, in its own pcall
---   read(c)                 a value: c:add(name, value) for each value read
+--   read(c)                 a value: c:add(name, value) for each value read;
+--                           returning "missing", text records "missing"
 --
 -- Which trials are risky, from the first run on the device (Gamepad UI on):
 -- opening, focusing or closing the chat box and opening the bags all go
@@ -1916,49 +1917,96 @@ Add({ id = "val.whisper", area = "Values", label = "Whisper event payload (when 
 
 ---------------------------------------------------------------------------
 -- Probe 0.8.0: what a fight leaves readable of the target's and the pet's
--- buffs. Pocket Essentials 0.17.0 wants to slim the target frame; these four
--- read-only trials say whether the buff icons stay readable in a fight and
--- what keeps them visible. Only classes and counts are saved, never an icon,
--- a number of the game's or a name of a spell.
+-- buffs. Pocket Essentials 0.17.0 wants to slim the target frame; these
+-- trials say whether the buff icons stay readable in a fight and what keeps
+-- them visible. Only classes, counts and our own words are saved, never an
+-- icon, a number read from the game (a time, a stack count) or a name of a spell.
 --
 -- Game names (Blizzard_APIDocumentationGenerated/, branch forever):
 --   C_UnitAuras.GetUnitAuraInstanceIDs(unit, filter)  UnitAuraDocumentation.lua:475
 --       (RequiresUnitAuraAccess: a fight may refuse it)
 --   C_UnitAuras.GetAuraDataByAuraInstanceID(unit, id) UnitAuraDocumentation.lua:190
 --       (SecretWhenUnitAuraRestricted: the answer may be secret)
+--   C_UnitAuras.GetAuraDuration(unit, id) -> duration object
+--                                                      UnitAuraDocumentation.lua:286
+--   C_UnitAuras.GetAuraApplicationDisplayCount(unit, id, minDisplayCount) -> text
+--                                                      UnitAuraDocumentation.lua:128
+--   C_XMLUtil.GetTemplateInfo(name)                    XMLUtilDocumentation.lua:11
 --   texture :SetTexture(asset) -> success             SimpleTextureBaseAPIDocumentation.lua:604
 --   cooldown :SetCooldownFromExpirationTime(expirationTime, duration)
 --                                                      FrameAPICooldownDocumentation.lua:320
---       (protected; secret arguments only from untainted code)
---   frame :GetChildren / :GetAlpha / :IsIgnoringParentAlpha
---                                                      SimpleFrameAPIDocumentation.lua:323, 276, 823
---   object :GetParent / :GetName                       SimpleObjectAPIDocumentation.lua:34,
---                                                      SimpleFrameScriptObjectAPIDocumentation.lua:107
+--   cooldown :SetCooldownFromDurationObject(duration) FrameAPICooldownDocumentation.lua:308
+--       (both protected; secret arguments only from untainted code)
+--   frame :GetChildren / :GetAlpha / :IsIgnoringParentAlpha / :SetIgnoreParentAlpha(ignore)
+--                                                      SimpleFrameAPIDocumentation.lua:323, 276, 823, 1364
+--   object :GetParent / :GetName / :IsForbidden        SimpleObjectAPIDocumentation.lua:34,
+--                                                      SimpleFrameScriptObjectAPIDocumentation.lua:107, 242
+-- The game's own route for addons to show a unit's buffs: the template
+-- CustomAuraContainerTemplate, an AuraContainer frame
+-- (Blizzard_AuraContainer/Blizzard_CustomAuraContainer.xml:5, the frame type
+-- in Blizzard_AuraContainer.xml:5), with :AddAuraGroup(groupKey, filterString,
+-- options) and :GetAuraGroupFrameCount(groupKey), :GetAuraGroupFrame(groupKey,
+-- index) (Blizzard_CustomAuraContainer.lua:286, 348, 335) and :SetUnit(unitToken)
+-- (Blizzard_AuraContainer.lua:40). AddAuraGroup makes its icons itself, ten at
+-- a time (Blizzard_AuraContainerShared.lua:105, Blizzard_AuraContainerFrameProviders.lua:96),
+-- so it is called at load, with at most ten icons: nothing is made in a fight.
 -- Not in the documentation folder and so guarded: the field names icon,
 -- applications, duration and expirationTime of the aura table (the game
 -- hands the table over from its own code), and the TargetFrame's parent keys
 -- TargetFrameContent.TargetFrameContentContextual.Auras
--- (Blizzard_UnitFrame/Mainline/TargetFrame.lua:502).
+-- (Blizzard_UnitFrame/Mainline/TargetFrame.lua:502; the container and its
+-- buttons come from TargetFrameAuraContainer.xml and TargetFrameAuraButton.xml
+-- in Blizzard_UnitFrame/Shared, so a read on them may be refused).
 ---------------------------------------------------------------------------
 
 local AURA_AREA = "Buffs in a fight"
 local AURA_UNITS = { "target", "pet" }
 local AURA_FILTERS = { { "HELPFUL", "buffs" }, { "HARMFUL", "debuffs" } }
 
--- The box the show trial uses: ours, made now, hidden. A picture and a
--- cooldown child, nothing of the game's.
+-- The box the show trial uses: ours, made now, hidden. A picture, a stack
+-- number and a cooldown child, nothing of the game's.
 local auraBox = CreateFrame("Frame", nil, UIParent)
 auraBox:SetSize(8, 8)
 auraBox:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
 auraBox:Hide()
 auraBox.picture = auraBox:CreateTexture(nil, "ARTWORK")
 auraBox.picture:SetAllPoints(auraBox)
-local madeCooldown, cooldownFrame = pcall(CreateFrame, "Cooldown", nil, auraBox)
+auraBox.count = auraBox:CreateFontString(nil, "OVERLAY")
+auraBox.count:SetPoint("BOTTOMRIGHT", auraBox, "BOTTOMRIGHT", 0, 0)
+local madeCooldown, cooldownFrame = pcall(CreateFrame, "Cooldown", nil, auraBox, "CooldownFrameTemplate")
 if madeCooldown and type(cooldownFrame) == "table" then
     auraBox.cooldown = cooldownFrame
     cooldownFrame:SetAllPoints(auraBox)
 end
 P.auraBox = auraBox
+
+-- Calls obj:method(...) guarded: "missing" (no such method), "refused" (it
+-- raised), "secret" (the answer is secret), or "accepted" and the answer.
+local function Ask(obj, method, ...)
+    local okF, fn = pcall(function() return obj[method] end)
+    if not okF or type(fn) ~= "function" then return "missing" end
+    local ok, value = pcall(fn, obj, ...)
+    if not ok then return "refused" end
+    if IsSecret(value) then return "secret" end
+    return "accepted", value
+end
+P.AuraAsk = Ask
+
+-- A frame's own see-through, in words: "alpha 50%", "alpha refused" and so on.
+local function AlphaWords(frame)
+    local word, alpha = Ask(frame, "GetAlpha")
+    alpha = Num(alpha)
+    if word ~= "accepted" then return "alpha " .. word end
+    if not alpha then return "alpha unreadable" end
+    return "alpha " .. floor(alpha * 100 + 0.5) .. "%"
+end
+
+-- Whether a frame ignores its parent's see-through, in words.
+local function IgnoresWords(frame)
+    local word, ignores = Ask(frame, "IsIgnoringParentAlpha")
+    if word ~= "accepted" then return "ignores the parent's " .. word end
+    return "ignores the parent's " .. (ignores == true and "yes" or ignores == false and "no" or "unreadable")
+end
 
 -- The aura ids of one unit and filter: the list, or nil and "refused" or "secret".
 local function AuraIds(unit, filter)
@@ -1969,7 +2017,8 @@ local function AuraIds(unit, filter)
     return ids
 end
 
--- The first buff (else the first debuff) of a unit: its data table, or nil and why.
+-- The first buff (else the first debuff) of a unit: its data table and its
+-- aura id, or nil and why.
 local function FirstAura(unit)
     local why
     for _, f in ipairs(AURA_FILTERS) do
@@ -1980,7 +2029,7 @@ local function FirstAura(unit)
                 local ok, info = pcall(Find("C_UnitAuras.GetAuraDataByAuraInstanceID"), unit, id)
                 if not ok then return nil, "refused" end
                 if IsSecret(info) then return nil, "secret" end
-                if type(info) == "table" then return info end
+                if type(info) == "table" then return info, nil, id end
             end
         else
             why = why or reason
@@ -2028,7 +2077,7 @@ Add({
             else
                 for _, field in ipairs(AURA_FIELDS) do
                     local ok, value = pcall(function() return info[field] end)
-                    value = ok and value or nil
+                    if not ok then value = nil end   -- a field that is false stays false
                     local class = c:add(unit .. " " .. field, value)
                     c:note(unit .. " " .. field .. " " .. (class == "readable" and "plain" or class == "nil" and "missing" or class))
                 end
@@ -2037,15 +2086,26 @@ Add({
     end,
 })
 
+-- One documented function of C_UnitAuras, guarded: "missing" when it is not
+-- on this client, "refused" when it raised, else "accepted" and its answer.
+local function AuraCall(name, ...)
+    local fn = Find("C_UnitAuras." .. name)
+    if type(fn) ~= "function" then return "missing" end
+    local ok, value = pcall(fn, ...)
+    if not ok then return "refused" end
+    return "accepted", value
+end
+
 Add({
     id = "aura.show", area = AURA_AREA, label = "Feed a box of ours a buff's icon and time (run it in a fight too)",
     kind = "value", fight = true, noRow = true,
     needs = AURA_NEEDS,
     read = function(c)
-        local info, why, from
+        local info, why, from, auraId
         for _, unit in ipairs(AURA_UNITS) do
-            info, why = FirstAura(unit)
-            if info then from = unit break end
+            local id
+            info, why, id = FirstAura(unit)
+            if info then from, auraId = unit, id break end
         end
         if not info then
             c:add("aura", nil)
@@ -2066,6 +2126,26 @@ Add({
                 c:note("SetCooldownFromExpirationTime " .. (okC and "accepted" or "refused"))
                 pcall(cd.Clear, cd)
             end
+            -- The time as the game's duration object, and the cooldown's setter for it.
+            local word, duration = AuraCall("GetAuraDuration", from, auraId)
+            c:note("GetAuraDuration " .. word)
+            if word == "accepted" then
+                if not cd or type(cd.SetCooldownFromDurationObject) ~= "function" then
+                    c:note("SetCooldownFromDurationObject missing")
+                else
+                    local okD = pcall(cd.SetCooldownFromDurationObject, cd, duration)
+                    c:note("SetCooldownFromDurationObject " .. (okD and "accepted" or "refused"))
+                    pcall(cd.Clear, cd)
+                end
+            end
+            -- The stack number as the game's display text, and our own text for it.
+            local countWord, text = AuraCall("GetAuraApplicationDisplayCount", from, auraId, 2)
+            c:note("GetAuraApplicationDisplayCount " .. countWord)
+            if countWord == "accepted" then
+                local okS = pcall(auraBox.count.SetText, auraBox.count, text)
+                c:note("stack text SetText " .. (okS and "accepted" or "refused"))
+                pcall(auraBox.count.SetText, auraBox.count, "")
+            end
         end)
         auraBox:Hide()
         if not okAll then c:note("stopped: " .. P.Plain(err, 80)) end
@@ -2076,8 +2156,8 @@ Add({
 
 -- One frame's name for the chain: its own name, else its key in its parent.
 local function AuraFrameName(frame, parent)
-    local name = Has(frame, "GetName") and select(2, pcall(frame.GetName, frame))
-    name = Str(name)
+    local word, name = Ask(frame, "GetName")
+    name = word == "accepted" and Str(name) or nil
     if name and name ~= "" then return name end
     if type(parent) == "table" and not IsSecret(parent) then
         local okK, key = pcall(function()
@@ -2099,54 +2179,184 @@ local function AuraContainer(frame)
     return nil
 end
 
+-- The target frame's aura container, or nil and why (our own words).
+local function TargetAuras()
+    local frame = Find("TargetFrame")
+    if type(frame) ~= "table" or IsSecret(frame) then return nil, "TargetFrame is not there" end
+    local container = AuraContainer(frame)
+    if not container then return nil, "no aura container under TargetFrame (its key path is not there)" end
+    return container
+end
+
+-- Probe 0.8.0, review: can Blizzard's buff icons stay visible while the rest
+-- of the target frame is invisible? The container is told to ignore its
+-- parents' see-through, what it then reads is noted, and the value it had is
+-- put back at once. It changes one of the game's frames, so by this file's
+-- rules it is risky (Risky on, last in a pass) and never tried in a fight;
+-- it has no row (the panel's tabs are full): it runs in the automatic pass
+-- out of a fight with both Auto and Risky on.
+local function PutBackIgnore(st)
+    if not st.container or st.was == nil then return nil end
+    local container, was = st.container, st.was
+    st.container, st.was = nil, nil
+    container:SetIgnoreParentAlpha(was)
+    local word, now = Ask(container, "IsIgnoringParentAlpha")
+    if word ~= "accepted" then return "put back to " .. tostring(was) .. ", then reads " .. word end
+    return "put back to " .. tostring(was) .. ", then reads " .. (now == was and "the same" or "something else")
+end
+
+Add({
+    id = "aura.ignore", area = AURA_AREA,
+    label = "Let the target frame's buff icons ignore the frame's see-through, then put it back",
+    kind = "action", risky = true, noRow = true,
+    ready = NotInCombat,
+    run = function(st)
+        local container, why = TargetAuras()
+        if not container then return "missing", why end
+        if not Has(container, "SetIgnoreParentAlpha") then return "missing", "the container's SetIgnoreParentAlpha" end
+        local word, was = Ask(container, "IsIgnoringParentAlpha")
+        if word ~= "accepted" or type(was) ~= "boolean" then
+            return false, "IsIgnoringParentAlpha " .. (word == "accepted" and "unreadable" or word) .. " before, so nothing was changed"
+        end
+        st.container, st.was = container, was
+        -- Called straight, not guarded: a refusal is this trial's answer (Run.lua records it).
+        container:SetIgnoreParentAlpha(true)
+        local after, now = Ask(container, "IsIgnoringParentAlpha")
+        local notes = { "SetIgnoreParentAlpha(true) accepted", "then IsIgnoringParentAlpha " ..
+            (after == "accepted" and (now == true and "reads yes" or now == false and "reads no" or "unreadable") or after) }
+        notes[#notes + 1] = PutBackIgnore(st)
+        return after == "accepted" and now == true, tconcat(notes, ", ")
+    end,
+    undo = function(st) PutBackIgnore(st) end,
+})
+
+-- The game's own aura container for addons, made now (at load, out of a
+-- fight) on a hidden, see-through frame of ours, with one group of at most
+-- ten buffs (its icons are made by the game now, too). What each step at
+-- load answered is kept for the trial's notes.
+local AURA_GROUP = "buffs"
+local auraHome = CreateFrame("Frame", nil, UIParent)
+auraHome:SetSize(8, 8)
+auraHome:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+auraHome:SetAlpha(0)
+auraHome:Hide()
+local auraCustom = { made = "missing", group = "not tried" }
+P.auraCustom = auraCustom
+do
+    local info = Find("C_XMLUtil.GetTemplateInfo")
+    local known
+    if type(info) == "function" then
+        local ok, found = pcall(info, "CustomAuraContainerTemplate")
+        if ok and not IsSecret(found) then known = found ~= nil end
+    end
+    if known ~= false then
+        local ok, frame = pcall(CreateFrame, "AuraContainer", nil, auraHome, "CustomAuraContainerTemplate")
+        if ok and type(frame) == "table" then
+            auraCustom.frame, auraCustom.made = frame, "accepted"
+            pcall(frame.Hide, frame)
+            auraCustom.group = Ask(frame, "AddAuraGroup", AURA_GROUP, "HELPFUL", { maxFrameCount = 10 })
+        else
+            auraCustom.made = known and "refused" or "missing"
+        end
+    end
+end
+
+Add({
+    id = "aura.custom", area = AURA_AREA,
+    label = "Point the game's own buff container for addons at the target (run it in a fight too)",
+    kind = "value", fight = true, noRow = true,
+    read = function(c)
+        if auraCustom.made == "missing" then return "missing", "CustomAuraContainerTemplate is not on this client" end
+        c:note("made at load " .. auraCustom.made)
+        c:note("AddAuraGroup at load " .. auraCustom.group)
+        local frame = auraCustom.frame
+        if not frame then
+            c:add("container", nil)
+            return
+        end
+        auraHome:Show()
+        pcall(frame.Show, frame)
+        local okAll, err = pcall(function()
+            c:note("SetUnit target " .. Ask(frame, "SetUnit", "target"))
+            local word, n = Ask(frame, "GetAuraGroupFrameCount", AURA_GROUP)
+            n = Num(n)
+            c:note("GetAuraGroupFrameCount " .. (word == "accepted" and ("accepted, group frames " .. (n and tostring(n) or "unreadable")) or word))
+            -- How many of the group's icons the game shows for the target now.
+            local shown, refused = 0, 0
+            for i = 1, (n and math.min(n, 10)) or 0 do
+                local w, icon = Ask(frame, "GetAuraGroupFrame", AURA_GROUP, i)
+                if w == "accepted" and type(icon) == "table" then
+                    local sw, isShown = Ask(icon, "IsShown")
+                    if sw == "accepted" then
+                        if isShown == true then shown = shown + 1 end
+                    else
+                        refused = refused + 1
+                    end
+                else
+                    refused = refused + 1
+                end
+            end
+            c:note("icons shown " .. shown .. (refused > 0 and (", unreadable " .. refused) or ""))
+            c:note("SetUnit none " .. Ask(frame, "SetUnit", "none"))
+        end)
+        pcall(frame.Hide, frame)
+        auraHome:Hide()
+        if not okAll then c:note("stopped: " .. P.Plain(err, 80)) end
+        c:add("container", "made")
+    end,
+})
+
 Add({
     id = "aura.blizzard", area = AURA_AREA, label = "Look at where the target frame's buff icons hang (changes nothing)",
     kind = "value", fight = true, noRow = true,
     read = function(c)
-        local frame = Find("TargetFrame")
-        if type(frame) ~= "table" or IsSecret(frame) then
-            c:add("TargetFrame", nil)
-            c:note("TargetFrame is not there")
-            return
-        end
-        local container = AuraContainer(frame)
+        local container, why = TargetAuras()
         if not container then
-            c:add("aura container", nil)
-            c:note("no aura container under TargetFrame (its key path is not there)")
+            c:add(why:find("^TargetFrame") and "TargetFrame" or "aura container", nil)
+            c:note(why)
             return
         end
         -- The icons: the container's children that carry an Icon, else its first child.
         local okC, kids = pcall(function() return { container:GetChildren() } end)
-        kids = okC and kids or {}
+        if not okC then
+            local okF, fn = pcall(function() return container.GetChildren end)
+            c:note("GetChildren " .. ((okF and type(fn) == "function") and "refused" or "missing"))
+            kids = {}
+        else
+            c:note("GetChildren accepted, children " .. #kids)
+        end
         local icon
         for _, kid in ipairs(kids) do
-            if type(kid) == "table" and kid.Icon ~= nil then icon = kid break end
+            local okI, has = pcall(function() return type(kid) == "table" and kid.Icon ~= nil end)
+            if okI and has then icon = kid break end
         end
         icon = icon or kids[1]
-        local direct = false
         if icon then
-            local okP, parent = pcall(icon.GetParent, icon)
-            direct = okP and parent == container
+            local word, parent = Ask(icon, "GetParent")
+            c:note("icons are " .. (word ~= "accepted" and ("children of a parent that is " .. word)
+                or parent == container and "children of the container" or "children of something else"))
+            local fw, forbidden = Ask(icon, "IsForbidden")
+            c:note("first icon " .. AlphaWords(icon) .. ", " .. IgnoresWords(icon) .. ", forbidden "
+                .. (fw == "accepted" and (forbidden == true and "yes" or "no") or fw))
+        else
+            c:note("icons not found")
         end
-        c:note("children " .. #kids .. ", icons are " .. (icon and (direct and "children of the container" or "children of something else") or "not found"))
-        -- The chain from the container up: name, own see-through (alpha under 1), ignores the parent's.
+        -- The chain from the container up: name, own see-through, ignores the parent's.
         local chain, own = {}, nil
         local node, depth = container, 0
         while type(node) == "table" and depth < 8 do
-            local okP, parent = pcall(node.GetParent, node)
-            parent = okP and not IsSecret(parent) and parent or nil
-            local alpha = Has(node, "GetAlpha") and select(2, pcall(node.GetAlpha, node))
+            local pw, parent = Ask(node, "GetParent")
+            if pw ~= "accepted" or type(parent) ~= "table" then parent = nil end
+            local word, alpha = Ask(node, "GetAlpha")
             alpha = Num(alpha)
-            local ignores = Has(node, "IsIgnoringParentAlpha") and select(2, pcall(node.IsIgnoringParentAlpha, node))
-            local note = AuraFrameName(node, parent)
-            if alpha and alpha < 1 then note = note .. " (own see-through " .. floor(alpha * 100 + 0.5) .. "%)"; own = own or note end
-            if ignores == true then note = note .. " (ignores the parent's)" end
+            local note = AuraFrameName(node, parent) .. " (" .. AlphaWords(node) .. ", " .. IgnoresWords(node) .. ")"
+            if word == "accepted" and alpha and alpha < 1 then own = own or note end
             chain[#chain + 1] = note
             node, depth = parent, depth + 1
         end
         c:note("chain " .. tconcat(chain, " < "))
-        c:note(own and ("a frame with its own see-through: " .. own) or "no frame in the chain has its own see-through")
-        c:add("aura container", container)
+        c:note(own and ("a frame with its own see-through: " .. own) or "no frame in the chain reads a see-through of its own")
+        c:add("aura container", "found")
         c:note("changed nothing")
     end,
 })
