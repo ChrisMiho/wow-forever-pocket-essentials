@@ -21,12 +21,17 @@ local ADDON_NAME, PE = ...
 -- own. Nothing is made, hooked or registered until the first Start. While stopped
 -- no event is registered and nothing ticks; the hooks (each installed once, as
 -- hooksecurefunc and HookScript cannot be taken off) return at once. While started
--- every hook and event only marks what changed, and one OnUpdate on the next frame
--- does the work and removes itself. No timer of our own.
+-- every hook and event only marks what changed (on one picture, only the part that
+-- changed: its icon, range dot, count, checked or glow), and one OnUpdate on the next
+-- frame does the work and removes itself. No timer of our own. While the game hides
+-- its bars nothing is drawn; everything is drawn again when they come back.
 --
 -- Display only: plain frames on UIParent, no secure templates, no click handler.
--- Each picture takes the mouse, so a tap on it (or the game's cursor) never
--- reaches a hidden button. Nothing is ever written into Blizzard's tables or
+-- Each picture takes the mouse, and under the pictures one plain frame per side
+-- (left grid, right grid) takes the mouse over the whole grid and both real bars
+-- under it, so a tap between two pictures (or the game's cursor) never reaches a
+-- hidden button: the real bars take taps at see-through 0 (enableMouse,
+-- G/ActionBarTemplates.xml:606-699). Nothing is ever written into Blizzard's tables or
 -- frames except the four anchors' see-through (SetAlpha is not a protected call:
 -- device-proven on the bars, docs/11-23-face-bars/EVIDENCE.md) and the hooks.
 --
@@ -59,8 +64,15 @@ local ADDON_NAME, PE = ...
 --     (DOC/FrameAPICooldownDocumentation.lua:308; allowed in a fight on our frame,
 --     device-proven). Never SetCooldown with the game's numbers (refused in a fight).
 --     "On cooldown" from C_ActionBar.GetActionCooldown(slot).isActive and .isOnGCD,
---     both NeverSecret (DOC/SpellSharedDocumentation.lua:26-31).
---   * CooldownFrameTemplate: Blizzard_FrameXMLUtil/Mainline/Cooldown.xml:3.
+--     both NeverSecret (DOC/SpellSharedDocumentation.lua:26-31). isOnGCD is only to be
+--     trusted inside a SPELL_UPDATE_COOLDOWN handler (:31), so it is read there, kept
+--     on each picture, and the next frame only shows it.
+--   * CooldownFrameTemplate: Blizzard_FrameXMLUtil/Mainline/Cooldown.xml:3. It draws the
+--     star flash and the edge by default (:3-10); the game's buttons turn both off
+--     (Blizzard_ActionBar/Mainline/ActionButtonTemplate.xml:111), and so do we
+--     (SetDrawBling, SetDrawEdge: DOC/FrameAPICooldownDocumentation.lua:390, 401).
+--   * The real bars' size, 208 by 68 when they do not grow (G/ActionBarStyles.lua:172),
+--     each button inside them at most 32 (G/ActionBarStyles.lua:158-195).
 --   * The active bar: PageUnit:RegisterActiveActionBarUpdatedCallback(fn, name)
 --     (G/PageUnit.lua:705-707), called as fn(name) from SetActiveActionBar (:527-540)
 --     on every trigger check, changed or not; PageUnit:GetActiveBar() (:542-544).
@@ -76,6 +88,7 @@ local ADDON_NAME, PE = ...
 --     (DOC/PetInfoDocumentation.lua:250).
 
 local type, pairs, ipairs, pcall, tostring = type, pairs, ipairs, pcall, tostring
+local min, max, huge = math.min, math.max, math.huge
 
 local Face = {}
 PE.FaceBars = Face
@@ -95,6 +108,16 @@ local SPOTS_DEFAULT = {
     rt   = { dpad = { x = -297, y = 39 },  face = { x = 297, y = 39 } },
     both = { dpad = { x = -297, y = 113 }, face = { x = 297, y = 113 } },
 }
+-- The game's four real bars, used when PE.LayoutPlan.RealBarRects is missing: 208 by
+-- 68 at 90%, the main and LT bars centred at x -248, RT and LT+RT at +248, on the rows
+-- 39 and 113 up ({ left, bottom, right, top } from the screen's bottom centre).
+local function BarRect(x, y) return { x - 93.6, y - 30.6, x + 93.6, y + 30.6 } end
+local REAL_DEFAULT = { main = BarRect(-248, 39), lt = BarRect(-248, 113), rt = BarRect(248, 39), both = BarRect(248, 113) }
+-- The frames under the pictures that take a tap: each side's grid and real bars plus
+-- this margin, but never past the player and target frames, whose boxes start 345
+-- either side of the centre (ControllerLayout.lua, FRAME_X).
+local BACKING_MARGIN = 4
+local FRAME_EDGE = 345
 
 -- The four groups, each tied to one of the game's bar anchors.
 local GROUPS = {
@@ -129,7 +152,10 @@ local logged = {}         -- [reason] = true: each reason goes to the debug log 
 
 local holder, driver      -- the pictures' parent, and the frame for events and the one OnUpdate
 local pageUnit
+local rootFrame           -- GamepadMainActionBarFrame, the game's bars' own parent
+local barsHidden = false  -- the game hides its bars now: nothing is drawn until they are back
 local groups = {}         -- [1..4] = { def, frame, pics = { [1..8] = picture }, anchor, bar, tags }
+local backings = {}       -- [1] left, [2] right: the plain frames under the pictures that take a tap
 local buttonPic = {}      -- [real button] = picture, for the buttons bound now
 local hooked = {}         -- [real button or Blizzard frame] = true: its hooks are on
 local callbackSet, alertsHooked, pageHooked, mainHooked = false, false, false, false
@@ -142,8 +168,9 @@ local bindDirty, picsDirty, stateDirty, cooldownDirty, alphaDirty = false, false
 local Flush, OnUpdate     -- set below
 
 -- Read only, for the offline tests and for looking around in /dump: the groups and
--- their pictures. Never written from outside.
+-- their pictures, and the two frames under them. Never written from outside.
 Face.view = groups
+Face.backing = backings
 
 local function IsSecret(v)
     return issecretvalue ~= nil and issecretvalue(v) == true
@@ -161,6 +188,17 @@ local function Shown(region)
     if type(region) ~= "table" then return false end
     local ok, v = pcall(region.IsShown, region)
     return ok and not IsSecret(v) and v == true
+end
+
+-- True only for a readable "visible" (shown, and every parent shown); IsShown when
+-- IsVisible cannot be read.
+local function Visible(frame)
+    if type(frame) ~= "table" then return false end
+    if type(frame.IsVisible) == "function" then
+        local ok, v = pcall(frame.IsVisible, frame)
+        if ok and not IsSecret(v) and type(v) == "boolean" then return v end
+    end
+    return Shown(frame)
 end
 
 -- A region's colour, or white when it cannot be read or is secret.
@@ -210,7 +248,7 @@ local function Guard(fn)
 end
 
 local function Schedule()
-    if pending or not driver then return end
+    if pending or not driver or barsHidden then return end
     pending = true
     driver:SetScript("OnUpdate", OnUpdate)
 end
@@ -296,6 +334,10 @@ local function NewCooldown(parent)
     if not ok or type(cd) ~= "table" then ok, cd = pcall(CreateFrame, "Cooldown", nil, parent) end
     if not ok or type(cd) ~= "table" or type(cd.SetCooldownFromDurationObject) ~= "function" then return nil end
     pcall(cd.SetHideCountdownNumbers, cd, true)
+    -- No star flash when a cooldown ends and no bright edge on the sweep, as on the
+    -- game's own buttons.
+    if type(cd.SetDrawBling) == "function" then pcall(cd.SetDrawBling, cd, false) end
+    if type(cd.SetDrawEdge) == "function" then pcall(cd.SetDrawEdge, cd, false) end
     return cd
 end
 
@@ -379,6 +421,50 @@ local function FaceNumbers()
     return face, spots
 end
 
+local function IsRect(r)
+    return type(r) == "table" and type(r[1]) == "number" and type(r[2]) == "number"
+        and type(r[3]) == "number" and type(r[4]) == "number"
+end
+
+-- The four real bars' rectangles: ControllerLayout.lua's, when it has them.
+local function RealBars()
+    local plan = PE.LayoutPlan
+    local fn = type(plan) == "table" and plan.RealBarRects
+    if type(fn) == "function" then
+        local ok, r = pcall(fn)
+        if ok and type(r) == "table" and IsRect(r.main) and IsRect(r.lt) and IsRect(r.rt) and IsRect(r.both) then return r end
+    end
+    return REAL_DEFAULT
+end
+
+local function Grow(box, l, b, r, t)
+    box[1], box[2], box[3], box[4] = min(box[1], l), min(box[2], b), max(box[3], r), max(box[4], t)
+end
+
+-- The two frames under the pictures, { left, bottom, right, top } each from the
+-- screen's bottom centre: [1] the left grid (every d-pad diamond) and the real bars
+-- left of the centre, [2] the right grid and the real bars right of it, each grown by
+-- the margin and cut at the player and target frames.
+local function BackingRects(face, spots)
+    local boxes = { { huge, huge, -huge, -huge }, { huge, huge, -huge, -huge } }
+    local hw, hh = face.dx + face.button / 2, face.dy + face.button / 2
+    for _, def in ipairs(GROUPS) do
+        local spot = spots[def.key] or SPOTS_DEFAULT[def.key]
+        for half = 0, 1 do
+            local c = (half == 0) and spot.dpad or spot.face
+            Grow(boxes[c.x < 0 and 1 or 2], c.x - hw, c.y - hh, c.x + hw, c.y + hh)
+        end
+    end
+    for _, r in pairs(RealBars()) do
+        Grow(boxes[(r[1] + r[3]) < 0 and 1 or 2], r[1], r[2], r[3], r[4])
+    end
+    for side, box in ipairs(boxes) do
+        box[1], box[2], box[3], box[4] = box[1] - BACKING_MARGIN, box[2] - BACKING_MARGIN, box[3] + BACKING_MARGIN, box[4] + BACKING_MARGIN
+        if side == 1 then box[1] = max(box[1], -FRAME_EDGE) else box[3] = min(box[3], FRAME_EDGE) end
+    end
+    return boxes
+end
+
 local OnEvent -- below
 
 -- Makes every frame, once. Returns true, or false and the reason.
@@ -390,9 +476,21 @@ local function Build()
     driver = CreateFrame("Frame")
     driver:SetScript("OnEvent", Guard(function(_, event) OnEvent(event) end))
     local face, spots = FaceNumbers()
+    -- Under the pictures (the same strata, a lower level): takes a tap, draws nothing,
+    -- has no script.
+    for side, r in ipairs(BackingRects(face, spots)) do
+        local f = CreateFrame("Frame", nil, holder)
+        f:SetFrameStrata("MEDIUM")
+        f:SetFrameLevel(holder:GetFrameLevel() + 1)
+        f:SetPoint("BOTTOMLEFT", UIParent, "BOTTOM", r[1], r[2])
+        f:SetSize(r[3] - r[1], r[4] - r[2])
+        f:EnableMouse(true)
+        backings[side] = f
+    end
     for gi, def in ipairs(GROUPS) do
         local gf = CreateFrame("Frame", nil, holder)
         gf:SetAllPoints(holder)
+        gf:SetFrameLevel(holder:GetFrameLevel() + 2) -- the pictures above the frames that take a tap
         local g = { def = def, frame = gf, pics = {}, tags = {} }
         local spot = spots[def.key] or SPOTS_DEFAULT[def.key]
         for half = 0, 1 do
@@ -428,13 +526,26 @@ local function ShowIcon(pic, r, g, b, grey)
     pic.empty = false
 end
 
--- The real icon's texture, colour (secret: white) and greying.
+-- The real icon's texture, colour (secret: white) and greying. Our texture is set
+-- only when it changed; a secret one is always set (it cannot be compared).
 local function CopyIcon(pic, icon)
     if not icon or not Shown(icon) then return ShowEmpty(pic) end
     local ok, tex = pcall(icon.GetTexture, icon)
-    if not ok or (not IsSecret(tex) and (tex == nil or tex == "")) then return ShowEmpty(pic) end
-    if not pcall(pic.icon.SetTexture, pic.icon, tex) then return ShowEmpty(pic) end
-    pic.icon:SetTexCoord(0, 1, 0, 1)
+    if not ok then return ShowEmpty(pic) end
+    if IsSecret(tex) then
+        if not pcall(pic.icon.SetTexture, pic.icon, tex) then pic.tex = nil return ShowEmpty(pic) end
+        pic.tex = nil
+    else
+        if tex == nil or tex == "" then return ShowEmpty(pic) end
+        if tex ~= pic.tex then
+            if not pcall(pic.icon.SetTexture, pic.icon, tex) then pic.tex = nil return ShowEmpty(pic) end
+            pic.tex = tex
+        end
+    end
+    if not pic.plainCoords then
+        pic.icon:SetTexCoord(0, 1, 0, 1)
+        pic.plainCoords = true
+    end
     local r, g, b = Colour(icon)
     local okGrey, grey = pcall(icon.IsDesaturated, icon)
     ShowIcon(pic, r, g, b, okGrey and not IsSecret(grey) and grey == true)
@@ -443,6 +554,7 @@ end
 -- The main bar's face buttons: the picture the game draws on them (an atlas, or a
 -- texture with its texture coordinates, as for a raid marker).
 local function CopySpecial(pic, sp)
+    pic.tex, pic.plainCoords = nil, false -- set here outside CopyIcon's record
     local done = false
     local okAtlas, atlas = pcall(sp.GetAtlas, sp)
     if okAtlas and not IsSecret(atlas) and type(atlas) == "string" and atlas ~= "" then
@@ -466,6 +578,43 @@ local function CopySpecial(pic, sp)
     ShowIcon(pic, r, g, b, false)
 end
 
+-- The picture: the real icon, or the game's own picture on the main bar's face
+-- buttons. When it turns empty or special (or back), the cooldown is looked at again.
+local function RefreshIcon(pic)
+    local b = pic.button
+    local wasEmpty, wasSpecial = pic.empty, pic.special
+    if not b then
+        pic.special = false
+        ShowEmpty(pic)
+    else
+        local sp = Field(b, "SpecialActionIcon")
+        pic.special = sp ~= nil and Shown(sp)
+        if pic.special then CopySpecial(pic, sp) else CopyIcon(pic, Field(b, "icon")) end
+    end
+    if pic.empty ~= wasEmpty or pic.special ~= wasSpecial then pic.dCooldown = true end
+end
+
+local function RefreshRange(pic)
+    local range = pic.button and Field(pic.button, "RangeIndicator")
+    if range and Shown(range) then
+        pic.range:SetVertexColor(Colour(range))
+        pic.range:Show()
+    else
+        pic.range:Hide()
+    end
+end
+
+-- The count goes from the game's text to ours as it is: in a fight it may be
+-- secret, which our SetText takes; it is never compared or changed.
+local function RefreshCount(pic)
+    local count, text = pic.button and Field(pic.button, "Count"), ""
+    if count then
+        local ok, v = pcall(count.GetText, count)
+        if ok then text = v end
+    end
+    if not pcall(pic.count.SetText, pic.count, text) then pic.count:SetText("") end
+end
+
 local function RefreshChecked(pic)
     local b, on = pic.button, false
     if b and not pic.special then
@@ -485,38 +634,33 @@ local function RefreshGlow(pic)
     pic.glow:SetShown(on)
 end
 
--- Everything one picture copies from its real button, except the cooldown.
-local function Refresh(pic)
-    local b = pic.button
-    if not b then
-        pic.special = false
-        ShowEmpty(pic)
-        pic.range:Hide()
-        pic.count:SetText("")
-        pic.checked:Hide()
-        pic.glow:Hide()
-        return
+-- The parts of one picture that were marked, each copied from its real button. The
+-- icon goes first: checked and the cooldown depend on what it found.
+local function RefreshMarked(pic)
+    if pic.dIcon then
+        pic.dIcon = false
+        RefreshIcon(pic)
     end
-    local sp = Field(b, "SpecialActionIcon")
-    pic.special = sp ~= nil and Shown(sp)
-    if pic.special then CopySpecial(pic, sp) else CopyIcon(pic, Field(b, "icon")) end
-    local range = Field(b, "RangeIndicator")
-    if range and Shown(range) then
-        pic.range:SetVertexColor(Colour(range))
-        pic.range:Show()
-    else
-        pic.range:Hide()
+    if pic.dRange then
+        pic.dRange = false
+        RefreshRange(pic)
     end
-    -- The count goes from the game's text to ours as it is: in a fight it may be
-    -- secret, which our SetText takes; it is never compared or changed.
-    local count, text = Field(b, "Count"), ""
-    if count then
-        local ok, v = pcall(count.GetText, count)
-        if ok then text = v end
+    if pic.dCount then
+        pic.dCount = false
+        RefreshCount(pic)
     end
-    if not pcall(pic.count.SetText, pic.count, text) then pic.count:SetText("") end
-    RefreshChecked(pic)
-    RefreshGlow(pic)
+    if pic.dChecked then
+        pic.dChecked = false
+        RefreshChecked(pic)
+    end
+    if pic.dGlow then
+        pic.dGlow = false
+        RefreshGlow(pic)
+    end
+end
+
+local function MarkWhole(pic)
+    pic.dIcon, pic.dRange, pic.dCount, pic.dChecked, pic.dGlow, pic.dCooldown = true, true, true, true, true, true
 end
 
 local function ClearCooldown(pic)
@@ -527,14 +671,39 @@ local function ClearCooldown(pic)
     pic.dim:Hide()
 end
 
--- The cooldown sweep from the game's duration object, and the icon darkened while
--- the game says the spell is on cooldown (not for the global cooldown).
-local function RefreshCooldown(pic)
+-- The action slot a picture's cooldown comes from, or nil (no button, an empty or
+-- special picture, a pet button, a secret or unusable slot).
+local function SlotOf(pic)
     local b = pic.button
     local slot = b and b.action
-    if pic.empty or pic.special or IsSecret(slot) or type(slot) ~= "number" or slot < 1 then return ClearCooldown(pic) end
+    if pic.empty or pic.special or IsSecret(slot) or type(slot) ~= "number" or slot < 1 then return nil end
+    return slot
+end
+
+-- Whether the game says the slot is on cooldown, the global cooldown alone not
+-- counting; kept on the picture with the slot it was read for. A secret, missing or
+-- unreadable answer is "not on cooldown".
+local function ReadDim(pic, slot)
+    local dim = false
     local api = C_ActionBar
-    if type(api) ~= "table" then return ClearCooldown(pic) end
+    if type(api) == "table" and type(api.GetActionCooldown) == "function" then
+        local ok, info = pcall(api.GetActionCooldown, slot)
+        if ok and not IsSecret(info) and type(info) == "table" then
+            local active, gcd = info.isActive, info.isOnGCD
+            dim = not IsSecret(active) and active == true and not (not IsSecret(gcd) and gcd == true)
+        end
+    end
+    pic.dimOn, pic.dimSlot = dim, slot
+end
+
+-- The cooldown sweep from the game's duration object, and the darkening kept by
+-- ReadDim. The darkening is read here only for a slot it was never read for (a
+-- new button or page): there is no event to read it in then, and the next
+-- SPELL_UPDATE_COOLDOWN puts it right.
+local function RefreshCooldown(pic)
+    local slot = SlotOf(pic)
+    local api = C_ActionBar
+    if not slot or type(api) ~= "table" then return ClearCooldown(pic) end
     local ok, object = pcall(api.GetActionCooldownDuration, slot)
     if ok and (IsSecret(object) or object ~= nil) then ok = pcall(pic.cd.SetCooldownFromDurationObject, pic.cd, object) else ok = false end
     if ok then
@@ -543,13 +712,8 @@ local function RefreshCooldown(pic)
         pcall(pic.cd.Clear, pic.cd)
         pic.cdOn = false
     end
-    local dim = false
-    local okInfo, info = pcall(api.GetActionCooldown, slot)
-    if okInfo and not IsSecret(info) and type(info) == "table" then
-        local active, gcd = info.isActive, info.isOnGCD
-        dim = not IsSecret(active) and active == true and not (not IsSecret(gcd) and gcd == true)
-    end
-    pic.dim:SetShown(dim)
+    if pic.dimSlot ~= slot then ReadDim(pic, slot) end
+    pic.dim:SetShown(pic.dimOn == true)
 end
 
 local function ApplyGroupAlpha()
@@ -562,21 +726,29 @@ end
 -- Following the real buttons
 ---------------------------------------------------------------------------
 
-local function MarkButton(b, slotChanged)
+-- One part of the picture bound to a real button needs copying again ("dIcon",
+-- "dRange", "dCount", "dChecked", "dGlow").
+local function MarkPart(b, part)
     if not running then return end
     local pic = buttonPic[b]
     if not pic then return end
-    pic.dirty = true
+    pic[part] = true
     picsDirty = true
-    if slotChanged then cooldownDirty = true end
     Schedule()
 end
 
 local function MarkAll()
     for _, g in ipairs(groups) do
-        for _, pic in ipairs(g.pics) do pic.dirty = true end
+        for _, pic in ipairs(g.pics) do MarkWhole(pic) end
     end
     picsDirty, cooldownDirty = true, true
+end
+
+-- Every picture's darkening is read again when next drawn.
+local function ForgetDim()
+    for _, g in ipairs(groups) do
+        for _, pic in ipairs(g.pics) do pic.dimSlot = nil end
+    end
 end
 
 local function Hook(t, name, fn)
@@ -586,23 +758,37 @@ local function Hook(t, name, fn)
     return false
 end
 
--- The hooks on one real button and its pictures' regions, once; they only mark
--- the picture bound to that button, and do nothing while stopped or unbound.
+local ICON_CALLS = { "SetTexture", "SetVertexColor", "SetDesaturated", "Show", "Hide" }
+local SPECIAL_CALLS = { "SetTexture", "SetAtlas", "SetTexCoord", "SetColorTexture", "SetVertexColor", "Show", "Hide" }
+local RANGE_CALLS = { "SetVertexColor", "Show", "Hide" }
+
+-- The hooks on one real button and its regions, once; each marks only its part of
+-- the picture bound to that button, and does nothing while stopped or unbound.
 local function HookButton(b)
     if hooked[b] then return end
     hooked[b] = true
-    local mark = Guard(function() MarkButton(b) end)
+    local markIcon = Guard(function() MarkPart(b, "dIcon") end)
     local icon = Field(b, "icon")
-    for _, name in ipairs({ "SetTexture", "SetVertexColor", "SetDesaturated", "Show", "Hide" }) do Hook(icon, name, mark) end
+    for _, name in ipairs(ICON_CALLS) do Hook(icon, name, markIcon) end
     local sp = Field(b, "SpecialActionIcon")
-    for _, name in ipairs({ "SetTexture", "SetAtlas", "SetTexCoord", "SetColorTexture", "SetVertexColor", "Show", "Hide" }) do
-        Hook(sp, name, mark)
-    end
+    for _, name in ipairs(SPECIAL_CALLS) do Hook(sp, name, markIcon) end
+    local markRange = Guard(function() MarkPart(b, "dRange") end)
     local range = Field(b, "RangeIndicator")
-    for _, name in ipairs({ "SetVertexColor", "Show", "Hide" }) do Hook(range, name, mark) end
-    Hook(Field(b, "Count"), "SetText", mark)
-    if type(b.UpdateState) == "function" then Hook(b, "UpdateState", mark) end
-    if type(b.UpdateAction) == "function" then Hook(b, "UpdateAction", Guard(function() MarkButton(b, true) end)) end
+    for _, name in ipairs(RANGE_CALLS) do Hook(range, name, markRange) end
+    Hook(Field(b, "Count"), "SetText", Guard(function() MarkPart(b, "dCount") end))
+    if type(b.UpdateState) == "function" then Hook(b, "UpdateState", Guard(function() MarkPart(b, "dChecked") end)) end
+    if type(b.UpdateAction) == "function" then
+        -- The button may hold another action now: everything, the darkening read again.
+        Hook(b, "UpdateAction", Guard(function()
+            if not running then return end
+            local pic = buttonPic[b]
+            if not pic then return end
+            MarkWhole(pic)
+            pic.dimSlot = nil
+            picsDirty = true
+            Schedule()
+        end))
+    end
 end
 
 local markBind = Guard(function()
@@ -642,8 +828,9 @@ local function Rebind()
                     buttonPic[b] = pic
                     HookButton(b)
                 end
-                pic.dirty = true
-                picsDirty, cooldownDirty = true, true
+                MarkWhole(pic)
+                pic.dimSlot = nil
+                picsDirty = true
             end
         end
     end
@@ -673,21 +860,26 @@ local onActiveBar = Guard(function()
     if running and ReadActive() then Schedule() end
 end)
 
+-- The work the hooks and events marked. Does nothing while the game hides its bars:
+-- the marks wait, and everything is drawn again when the bars come back.
 Flush = function()
     if driver then driver:SetScript("OnUpdate", nil) end
     pending = false
-    if not running then return end
+    if not running or barsHidden then return end
     if bindDirty then
         bindDirty = false
         Rebind()
     end
-    if picsDirty then
+    local allCooldowns = cooldownDirty
+    cooldownDirty = false
+    if picsDirty or allCooldowns then
         picsDirty = false
         for _, g in ipairs(groups) do
             for _, pic in ipairs(g.pics) do
-                if pic.dirty then
-                    pic.dirty = false
-                    Refresh(pic)
+                RefreshMarked(pic)
+                if allCooldowns or pic.dCooldown then
+                    pic.dCooldown = false
+                    RefreshCooldown(pic)
                 end
             end
         end
@@ -698,12 +890,6 @@ Flush = function()
             for _, pic in ipairs(g.pics) do RefreshChecked(pic) end
         end
     end
-    if cooldownDirty then
-        cooldownDirty = false
-        for _, g in ipairs(groups) do
-            for _, pic in ipairs(g.pics) do RefreshCooldown(pic) end
-        end
-    end
     if alphaDirty then
         alphaDirty = false
         ApplyGroupAlpha()
@@ -711,9 +897,23 @@ Flush = function()
 end
 OnUpdate = Guard(function() Flush() end)
 
+-- SPELL_UPDATE_COOLDOWN: the one moment isOnGCD can be trusted, so every bound
+-- slot's darkening is read now; the next frame only shows it.
+local function ReadAllDim()
+    for _, g in ipairs(groups) do
+        for _, pic in ipairs(g.pics) do
+            local slot = SlotOf(pic)
+            if slot then ReadDim(pic, slot) end
+        end
+    end
+end
+
 OnEvent = function(event)
     if not running then return end
-    if event == "ACTIONBAR_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_COOLDOWN" then
+    if event == "SPELL_UPDATE_COOLDOWN" then
+        if not barsHidden then ReadAllDim() end
+        cooldownDirty = true
+    elseif event == "ACTIONBAR_UPDATE_COOLDOWN" then
         cooldownDirty = true
     elseif event == "ACTIONBAR_UPDATE_STATE" then
         stateDirty = true
@@ -724,13 +924,32 @@ OnEvent = function(event)
     Schedule()
 end
 
+-- The game's bars came back: everything is drawn again at once, before they show.
+local function BarsShown()
+    if not running or not holder or not Visible(rootFrame) then return end
+    barsHidden = false
+    bindDirty = true
+    MarkAll()
+    ForgetDim()
+    Flush()
+    holder:Show()
+end
+
+local function BarsHidden()
+    if not running or not holder then return end
+    barsHidden = true
+    holder:Hide()
+    if driver then driver:SetScript("OnUpdate", nil) end
+    pending = false
+end
+
 -- The hooks that are not per button, once each.
 local function HookOnce(root)
     if not mainHooked and type(root.HookScript) == "function" then
         mainHooked = true
         -- The pictures hide while the game hides its bars (binding editor, Gamepad UI off).
-        pcall(root.HookScript, root, "OnShow", Guard(function() if running and holder then holder:Show() end end))
-        pcall(root.HookScript, root, "OnHide", Guard(function() if running and holder then holder:Hide() end end))
+        pcall(root.HookScript, root, "OnShow", Guard(BarsShown))
+        pcall(root.HookScript, root, "OnHide", Guard(BarsHidden))
     end
     if not pageHooked and type(pageUnit.SetCurrentPage) == "function" then
         pageHooked = Hook(pageUnit, "SetCurrentPage", Guard(function()
@@ -743,7 +962,7 @@ local function HookOnce(root)
     local manager = ActionButtonSpellAlertManager
     if not alertsHooked and type(manager) == "table" then
         alertsHooked = true
-        local glow = Guard(function(_, button) MarkButton(button) end)
+        local glow = Guard(function(_, button) MarkPart(button, "dGlow") end)
         if type(manager.ShowAlert) == "function" then Hook(manager, "ShowAlert", glow) end
         if type(manager.HideAlert) == "function" then Hook(manager, "HideAlert", glow) end
     end
@@ -796,10 +1015,12 @@ StopNow = function()
         g.bar = nil
         for _, pic in ipairs(g.pics) do
             pic.button = nil
+            pic.dimSlot = nil
             ClearCooldown(pic)
         end
     end
     lastActive, activeGroup = nil, nil
+    barsHidden = false
 end
 
 -- Raises only on a bug; Start counts it.
@@ -837,6 +1058,7 @@ local function StartNow()
         end
     end
     for i, g in ipairs(groups) do g.anchor = anchors[i] end
+    rootFrame = root
     HookOnce(root)
 
     running = true
@@ -846,8 +1068,11 @@ local function StartNow()
     ReadActive()
     bindDirty, alphaDirty = true, true
     MarkAll()
-    Flush() -- the pictures are right before the real bars go invisible
-    holder:SetShown(Shown(root))
+    -- The pictures are right before the real bars go invisible; while the game hides
+    -- its bars they wait (drawn when the bars come back).
+    barsHidden = not Visible(root)
+    Flush()
+    holder:SetShown(not barsHidden)
     faded = true
     SetAnchorsAlpha(0)
     Note("on" .. (callbackSet and "" or " (no active-bar callback: every bar at full strength)"))

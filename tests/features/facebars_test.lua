@@ -651,4 +651,327 @@ test("face: the contract's numbers come from PE.LayoutPlan when it has them", fu
     near(pic(Face, 1, 1).frame:GetWidth(), 20)
 end)
 
+---------------------------------------------------------------------------
+-- Taps between the pictures (the frames under them)
+---------------------------------------------------------------------------
+
+-- A frame's rectangle { left, bottom, right, top } from the screen's bottom centre;
+-- the frames under the pictures are set by their BOTTOMLEFT on UIParent's BOTTOM.
+local function rectOf(f)
+    local point, rel, relPoint, x, y = f:GetPoint(1)
+    check(point == "BOTTOMLEFT" and relPoint == "BOTTOM", "placed by BOTTOMLEFT on BOTTOM, got " .. tostring(point) .. " " .. tostring(relPoint))
+    return { x, y, x + f:GetWidth(), y + f:GetHeight() }
+end
+
+local function inside(inner, outer)
+    local e = 1e-6
+    return inner[1] >= outer[1] - e and inner[2] >= outer[2] - e and inner[3] <= outer[3] + e and inner[4] <= outer[4] + e
+end
+
+local function overlaps(a, b)
+    return math.min(a[3], b[3]) - math.max(a[1], b[1]) > 1e-6 and math.min(a[4], b[4]) - math.max(a[2], b[2]) > 1e-6
+end
+
+-- Every rectangle of the game's that takes a tap under the face, worked out from
+-- Blizzard's numbers rather than ours: each real bar (208 by 68, enableMouse,
+-- Blizzard_GamepadActionBars/ActionBarTemplates.xml:606-699; ActionBarStyles.lua:172)
+-- at 90%, centred at x -248 (main, LT) and +248 (RT, LT+RT) on the rows 39 and 113, and
+-- its eight buttons where the collapsed style puts them (ActionBarStyles.lua:158-195:
+-- the d-pad group square, 32; the face group round, 30).
+local function realTapRects()
+    local out = {}
+    local s = 0.9
+    local buttons = {
+        { -92, 0, 32 }, { -58, 17, 32 }, { -24, 0, 32 }, { -58, -17, 32 },
+        { 25, 0, 30 }, { 55, 18, 30 }, { 85, 0, 30 }, { 55, -18, 30 },
+    }
+    for _, bar in ipairs({ { "main", -248, 39 }, { "LT", -248, 113 }, { "RT", 248, 39 }, { "LT+RT", 248, 113 } }) do
+        local cx, cy = bar[2], bar[3]
+        out[#out + 1] = { name = bar[1] .. " bar", r = { cx - 104 * s, cy - 34 * s, cx + 104 * s, cy + 34 * s } }
+        for i, b in ipairs(buttons) do
+            local x, y, h = cx + b[1] * s, cy + b[2] * s, b[3] / 2 * s
+            out[#out + 1] = { name = bar[1] .. " button " .. i, r = { x - h, y - h, x + h, y + h } }
+        end
+    end
+    return out
+end
+
+-- The pieces the frames under the pictures must leave alone: the map, the two
+-- sub-menu buttons (138 either side, 188 up, about 19 round), the LB / RB targeting
+-- pictures (108 to 144 either side, 84 to 116 up) and the player and target frames
+-- (from 345 either side outwards).
+local KEEP_CLEAR = {
+    { name = "LB+LT button", r = { -138 - 19, 188 - 19, -138 + 19, 188 + 19 } },
+    { name = "RB+RT button", r = { 138 - 19, 188 - 19, 138 + 19, 188 + 19 } },
+    { name = "LB targeting picture", r = { -144, 84, -108, 116 } },
+    { name = "RB targeting picture", r = { 108, 84, 144, 116 } },
+    { name = "player frame", r = { -345 - 232, 56, -345, 156 } },
+    { name = "target frame", r = { 345, 56, 345 + 232, 156 } },
+}
+
+local function checkBacking(c, PE, Face, what)
+    eq(#Face.backing, 2, what .. ": two frames, one per side")
+    local holder = c._state(Face.view[1].frame).parent
+    local lowestPicture = math.huge
+    for g = 1, 4 do
+        for n = 1, 8 do lowestPicture = math.min(lowestPicture, pic(Face, g, n).frame:GetFrameLevel()) end
+    end
+    local rects = {}
+    for side, f in ipairs(Face.backing) do
+        local rec = st(c, f)
+        eq(rec.parent, holder, what .. ": in the holder")
+        eq(rec.mouse, true, what .. ": takes a tap")
+        eq(f:GetFrameStrata(), "MEDIUM", what .. ": the pictures' strata")
+        check(f:GetFrameLevel() < lowestPicture, what .. ": under the pictures")
+        eq(#rec.regions, 0, what .. ": draws nothing")
+        for name in pairs(rec.scripts) do error(what .. ": the frame under the pictures has a " .. name .. " script") end
+        check(f:IsVisible(), what .. ": shown with the pictures")
+        rects[side] = rectOf(f)
+    end
+    -- The d-pad's left button on the main and LT bars pokes 0.2 past -345 (-248 - 92 * 0.9
+    -- - 16 * 0.9 = -345.2), into the player frame's box, where our frames stop: under a
+    -- fifth of a pixel at 720p. Only the part inside 345 either side is checked.
+    for _, t in ipairs(realTapRects()) do
+        local r = { math.max(t.r[1], -345), t.r[2], math.min(t.r[3], 345), t.r[4] }
+        check(inside(r, rects[1]) or inside(r, rects[2]), what .. ": " .. t.name .. " is not under a frame of ours that takes a tap")
+    end
+    local clear = {}
+    for _, k in ipairs(KEEP_CLEAR) do clear[#clear + 1] = k end
+    for name, r in pairs(PE.LayoutPlan.Rects()) do
+        if not name:find(" dpad$") and not name:find(" face$") then clear[#clear + 1] = { name = name, r = r } end
+    end
+    for side, r in ipairs(rects) do
+        for _, k in ipairs(clear) do
+            check(not overlaps(r, k.r), what .. ": the frame on side " .. side .. " covers the " .. k.name)
+        end
+    end
+    return rects
+end
+
+test("face: a tap between the pictures never reaches a hidden button; the frames under them clear the map, sub-menus, targeting pictures and unit frames", function()
+    local c, PE, Face = started()
+    local rects = checkBacking(c, PE, Face, "with the layout's numbers")
+    -- The left grid and the main and LT bars, 4 more each way, cut at the player frame; the right side its mirror.
+    for i, want in ipairs({ -345, 2, -150.4, 150 }) do near(rects[1][i], want, "left " .. i) end
+    for i, want in ipairs({ 150.4, 2, 345, 150 }) do near(rects[2][i], want, "right " .. i) end
+    c:assertClean()
+    -- Without ControllerLayout's numbers the fallback gives the same frames.
+    local c2, PE2, Face2 = new()
+    rawset(PE2.LayoutPlan, "RealBarRects", nil)
+    rawset(PE2.LayoutPlan, "FaceSpots", nil)
+    rawset(PE2.LayoutPlan, "FACE", nil)
+    eq(Face2:Start(), true)
+    local rects2 = checkBacking(c2, PE2, Face2, "with the fallback numbers")
+    for side = 1, 2 do for i = 1, 4 do near(rects2[side][i], rects[side][i], "fallback " .. side .. "/" .. i) end end
+    c2:assertClean()
+end)
+
+test("face: the frames under the pictures hide with them", function()
+    local c, PE, Face = started()
+    c.env.GamepadMainActionBarFrame:Hide()
+    for _, f in ipairs(Face.backing) do eq(f:IsVisible(), false) end
+    c.env.GamepadMainActionBarFrame:Show()
+    for _, f in ipairs(Face.backing) do eq(f:IsVisible(), true) end
+    Face:Stop()
+    for _, f in ipairs(Face.backing) do eq(f:IsVisible(), false) end
+end)
+
+---------------------------------------------------------------------------
+-- Cooldown looks
+---------------------------------------------------------------------------
+
+test("face: our cooldowns draw no star flash and no edge, as the game's buttons", function()
+    for _, opts in ipairs({ {}, { setup = function(cl) cl.world.noCooldownTemplate = true end } }) do
+        local c, PE, Face = started(opts)
+        for g = 1, 4 do
+            for n = 1, 8 do
+                local rec = st(c, pic(Face, g, n).cd)
+                eq(rec.drawBling, false, "star flash on " .. g .. "/" .. n)
+                eq(rec.drawEdge, false, "edge on " .. g .. "/" .. n)
+            end
+        end
+        c:assertClean()
+    end
+end)
+
+-- Counts C_ActionBar.GetActionCooldown calls; returns a function giving the count so far.
+local function countCooldownReads(c)
+    local api = c.env.C_ActionBar
+    local orig = rawget(api, "GetActionCooldown")
+    local n = 0
+    rawset(api, "GetActionCooldown", function(...) n = n + 1 return orig(...) end)
+    return function() return n end
+end
+
+test("face: the darkening is read inside SPELL_UPDATE_COOLDOWN; the next frame only shows it", function()
+    local c, PE, Face = started()
+    local p1 = pic(Face, 1, 1)
+    local reads = countCooldownReads(c)
+    eq(shown(c, p1.dim), false)
+    -- ACTIONBAR_UPDATE_COOLDOWN: the sweep again, the darkening not read.
+    c.world.actions[1].duration = 5
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    c:advance(0.1)
+    eq(st(c, p1.cd).cooldown.duration, 5, "the sweep follows")
+    eq(shown(c, p1.dim), false, "not read outside SPELL_UPDATE_COOLDOWN")
+    eq(reads(), 0, "no GetActionCooldown on a flush outside the event")
+    -- SPELL_UPDATE_COOLDOWN: read at once, in the handler.
+    c:fire("SPELL_UPDATE_COOLDOWN")
+    local inEvent = reads()
+    check(inEvent > 0, "GetActionCooldown not read in the event")
+    -- What the game says after the event does not count: the frame shows what was read.
+    c.world.actions[1].duration = 0
+    c:advance(0.1)
+    eq(reads(), inEvent, "the flush only shows what was read")
+    eq(shown(c, p1.dim), true)
+    -- The global cooldown alone: the sweep runs, no darkening.
+    c.world.actions[1].duration, c.world.actions[1].gcd = 1.5, true
+    c:fire("SPELL_UPDATE_COOLDOWN")
+    c:advance(0.1)
+    eq(shown(c, p1.cd), true)
+    eq(shown(c, p1.dim), false, "the global cooldown alone does not darken")
+    c:assertClean()
+end)
+
+test("face: a secret or missing isActive / isOnGCD reads as not darkened", function()
+    local c, PE, Face = started()
+    local secret = {}
+    c.world.secrets[secret] = true
+    local api = c.env.C_ActionBar
+    for _, case in ipairs({
+        { what = "isActive secret", info = { isActive = secret, isOnGCD = false } },
+        { what = "isActive missing", info = { isOnGCD = false } },
+        { what = "raises", raise = true },
+    }) do
+        rawset(api, "GetActionCooldown", function()
+            if case.raise then error("no") end
+            return case.info
+        end)
+        c:fire("SPELL_UPDATE_COOLDOWN")
+        c:advance(0.1)
+        eq(shown(c, pic(Face, 1, 2).dim), false, case.what)
+    end
+    -- isOnGCD secret: only isActive counts.
+    rawset(api, "GetActionCooldown", function() return { isActive = true, isOnGCD = secret } end)
+    c:fire("SPELL_UPDATE_COOLDOWN")
+    c:advance(0.1)
+    eq(shown(c, pic(Face, 1, 2).dim), true, "isOnGCD secret")
+    c:assertClean()
+end)
+
+---------------------------------------------------------------------------
+-- Only the part that changed is copied
+---------------------------------------------------------------------------
+
+-- Counts calls to a method of a Blizzard region or frame (wrapped in place).
+local function counter(obj, name)
+    local orig = obj[name]
+    local n = 0
+    rawset(obj, name, function(...) n = n + 1 return orig(...) end)
+    return function() return n end
+end
+
+local function watchButton(b)
+    return {
+        checked = counter(b, "GetChecked"),
+        icon = counter(b.icon, "GetTexture"),
+        count = counter(b.Count, "GetText"),
+        range = counter(b.RangeIndicator, "IsShown"),
+    }
+end
+
+local function counts(w)
+    return { checked = w.checked(), icon = w.icon(), count = w.count(), range = w.range() }
+end
+
+test("face: UpdateState on a button reads only its checked state", function()
+    local c, PE, Face = started()
+    local b1, b2 = c.barButtons.TopCenteredAnchor[1], c.barButtons.TopCenteredAnchor[2]
+    local w1, w2 = watchButton(b1), watchButton(b2)
+    local cd = #c.cdCalls
+    b1:UpdateState()
+    c:advance(0.1)
+    eq(counts(w1), { checked = 1, icon = 0, count = 0, range = 0 })
+    eq(counts(w2), { checked = 0, icon = 0, count = 0, range = 0 })
+    eq(#c.cdCalls, cd, "no cooldown work")
+    c:assertClean()
+end)
+
+test("face: a real icon's colour re-copies only that icon; the count and range dot alone likewise", function()
+    local c, PE, Face = started()
+    local b1, b2 = c.barButtons.TopCenteredAnchor[1], c.barButtons.TopCenteredAnchor[2]
+    local w1, w2 = watchButton(b1), watchButton(b2)
+    local p1 = pic(Face, 1, 1)
+    local setTexture = counter(p1.icon, "SetTexture")
+    local cd = #c.cdCalls
+    b1.icon:SetVertexColor(0.5, 0.5, 1)
+    c:advance(0.1)
+    eq(counts(w1), { checked = 0, icon = 1, count = 0, range = 0 })
+    eq(counts(w2), { checked = 0, icon = 0, count = 0, range = 0 })
+    eq(st(c, p1.icon).vertexColor, { 0.5, 0.5, 1, 1 })
+    eq(setTexture(), 0, "the texture is the same: not set again")
+    eq(#c.cdCalls, cd, "no cooldown work")
+    -- A new texture is set once.
+    b1.icon:SetTexture(31337)
+    c:advance(0.1)
+    eq(setTexture(), 1)
+    eq(st(c, p1.icon).texture, 31337)
+    -- The count text alone.
+    b1.Count:SetText("3")
+    c:advance(0.1)
+    eq(counts(w1), { checked = 0, icon = 2, count = 1, range = 0 })
+    eq(p1.count:GetText(), "3")
+    -- The range dot alone.
+    c:setRange(b1, true, false)
+    c:advance(0.1)
+    local after = counts(w1)
+    eq({ after.checked, after.icon, after.count }, { 0, 2, 1 })
+    check(after.range > 0, "the range dot was not read")
+    eq(shown(c, p1.range), true)
+    c:assertClean()
+end)
+
+---------------------------------------------------------------------------
+-- While the game hides its bars
+---------------------------------------------------------------------------
+
+test("face: while the game hides its bars nothing is drawn; all is drawn again when they come back", function()
+    local c, PE, Face = started()
+    local root = c.env.GamepadMainActionBarFrame
+    local p1, p2 = pic(Face, 1, 1), pic(Face, 1, 2)
+    root:Hide()
+    local reads = countCooldownReads(c)
+    local cd = #c.cdCalls
+    c:setAction(1, { texture = 5555, duration = 4, count = "" })
+    c.world.actions[2].duration = 0
+    c:fire("SPELL_UPDATE_COOLDOWN")
+    c:fire("ACTIONBAR_UPDATE_STATE")
+    c:pressTriggers(true, false)
+    eq(onUpdates(c), 0, "nothing waits for a frame while hidden")
+    c:advance(0.5)
+    eq(st(c, p1.icon).texture, 135274, "not drawn while hidden")
+    eq(#c.cdCalls, cd, "no cooldown work while hidden")
+    eq(reads(), 0, "the darkening is not read while hidden")
+    root:Show()
+    eq(st(c, p1.icon).texture, 5555, "drawn at once when the bars come back")
+    eq(st(c, p1.cd).cooldown.duration, 4)
+    eq(shown(c, p1.dim), true)
+    eq(shown(c, p2.dim), false)
+    eq(alphaOf(c, Face.view[2].frame), 1, "LT active")
+    eq(onUpdates(c), 0)
+    c:assertClean()
+end)
+
+test("face: started while the whole interface is hidden, the pictures wait for it (IsVisible)", function()
+    local c, PE, Face = new()
+    c.UIParent:Hide()
+    eq(Face:Start(), true)
+    local holder = c._state(Face.view[1].frame).parent
+    eq(holder:IsShown(), false)
+    c.UIParent:Show()
+    eq(holder:IsShown(), true)
+    eq(st(c, pic(Face, 1, 1).icon).texture, 135274)
+    c:assertClean()
+end)
+
 return { known = KNOWN_FAILURES }

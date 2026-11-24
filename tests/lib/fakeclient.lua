@@ -88,7 +88,7 @@ local M_MINIMAP = list([[GetZoom SetQuestBlobInsideAlpha SetQuestBlobOutsideAlph
     SetQuestBlobRingScalar SetTaskBlobInsideAlpha SetTaskBlobOutsideAlpha SetTaskBlobRingAlpha SetTaskBlobRingScalar]])
 -- FrameAPICooldownDocumentation.lua (SetCooldown is added to each Cooldown frame by
 -- CreateFrame below, so that a call is recorded rather than raising).
-local M_COOLDOWN = list("SetCooldownFromDurationObject Clear SetHideCountdownNumbers")
+local M_COOLDOWN = list("SetCooldownFromDurationObject Clear SetHideCountdownNumbers SetDrawBling SetDrawEdge")
 local M_ANIMGROUP = list("CreateAnimation Play Stop SetToFinalAlpha SetScript GetScript HookScript GetParent IsForbidden")
 local M_ANIM = list("SetFromAlpha SetToAlpha SetDuration Play Stop SetScript GetScript HookScript GetParent IsForbidden")
 local M_FONT = list("SetFont GetFont SetFontObject SetTextColor SetShadowColor SetShadowOffset SetJustifyH SetJustifyV GetAlpha SetAlpha IsForbidden")
@@ -853,6 +853,10 @@ function Client.new(opts)
         SetShownState(self, false)
     end
     function METHODS:SetHideCountdownNumbers(v) St(self).hideNumbers = v and true or false end
+    -- The star flash and the edge (FrameAPICooldownDocumentation.lua:390, 401); both on by
+    -- default with CooldownFrameTemplate (Blizzard_FrameXMLUtil/Mainline/Cooldown.xml:3-10).
+    function METHODS:SetDrawBling(v) St(self).drawBling = v and true or false end
+    function METHODS:SetDrawEdge(v) St(self).drawEdge = v and true or false end
 
     -- Animation groups (the button flash): played by c:advance().
     function METHODS:CreateAnimation(kind)
@@ -2121,6 +2125,7 @@ function Client.new(opts)
             end)
             if cooldownTemplate then
                 W[w].shown = false
+                W[w].drawBling, W[w].drawEdge = true, true
                 if parent then w:SetAllPoints(parent) end
             end
         end
