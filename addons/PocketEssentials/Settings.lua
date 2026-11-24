@@ -1051,7 +1051,13 @@ end
 ---------------------------------------------------------------------------
 
 local function BuildKey(width)
-    list:Button("Back", 0, 0, M.button * 3, M.button, "normal", PE:Wrap("core", function() PE:OpenSettings("questIcons") end))
+    local backWidth = M.button * 3
+    list:Button("Back", 0, 0, backWidth, M.button, "normal", PE:Wrap("core", function() PE:OpenSettings("questIcons") end))
+    -- The page's title right of Back, in the middle of its height.
+    local tx = backWidth + M.gap
+    local th, titleText = list:Text("title", "Quest icon key", tx, 0, max(width - tx, 10), COLOR.title, 1)
+    titleText:ClearAllPoints()
+    titleText:SetPoint("TOPLEFT", list.child, "TOPLEFT", tx, -max((M.button - th) * 0.5, 0))
     local y = M.button + M.gap
     local key = PE.QuestIconKey -- made when QuestIcons.lua loads, so read it here
     if type(key) ~= "table" or #key == 0 then

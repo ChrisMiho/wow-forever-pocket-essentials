@@ -557,6 +557,17 @@ test("icon key: an Icon key row opens the key page; Back returns to the Quest ic
     eq(settingsPanel(c).peTitle:GetText(), "Pocket Essentials")
     local back = shownButtons(c, "Back")[1]
     check(back and near(back:GetWidth(), PE.UI:Metrics().button * 3), "no Back button three buttons wide")
+    -- 0.15.0 (B6): the page's title right of Back, in the middle of its height.
+    local titleText
+    for _, r in ipairs(c._state(settingsPanel(c).peNavArea.child).regions) do
+        local st = c._state(r)
+        if st.type == "FontString" and st.text == "Quest icon key" and r:IsVisible() then titleText = r end
+    end
+    check(titleText, "no Quest icon key title on the key page")
+    local tl, _, tt = c._rect(titleText)
+    local _, br, bt, bb = c._rect(back)
+    check(tl > br, "the title is not right of Back")
+    check(near(tt - PE.UI:TextHeight(titleText, "title") / 2, (bt + bb) / 2, 0.5), "the title is not centred on Back")
     for _, d in ipairs({ "A creature to kill.", "A creature that drops a quest item.", "An object to click, use or open.",
         "A place to go to, or someone to talk to.", "Where to hand the quest in.", "Tap an icon on the map to see what it is for." }) do
         check(shownText(c, d), "missing: " .. d)
