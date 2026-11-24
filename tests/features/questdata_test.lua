@@ -16,7 +16,7 @@ local KNOWN_FAILURES = {
 --   5150 "Dadanga is Hungry!": one loot objective, 565 spots, all on map 1449 (Un'Goro Crater).
 local SPREAD, SPREAD_SMALL = 889, { 1416, 1420 }
 local BUSY, BUSY_MAP = 5150, 1449
-local MAX_PINS = 300
+local MAX_PINS, MIN_PER_MAP = 300, 30
 
 -- A fresh client with these quests in the log and the quest icons on (so the data is in use).
 local function newData(ids)
@@ -48,6 +48,19 @@ test("quest data: a map with few spots keeps them when the objective has many on
     for _, map in ipairs(SPREAD_SMALL) do
         check(count(byMap, map) >= 1, "map " .. map .. " lost its spot of quest 889 to the busy maps")
     end
+end)
+
+-- QuestData.lua MAX_PINS and MIN_PER_MAP: keeping every map's spots must not let one objective keep
+-- thousands; it keeps about MAX_PINS in all, plus at most MIN_PER_MAP for each map.
+test("quest data: an objective spread over many maps keeps about 300 spots in all", function()
+    local _, PE = newData({ SPREAD })
+    local total, maps = 0, 0
+    for _, list in pairs(PE.QuestData:GetPinsForQuest(SPREAD)) do
+        total, maps = total + #list, maps + 1
+    end
+    check(total <= MAX_PINS + MIN_PER_MAP * maps,
+        "quest 889 kept " .. total .. " spots on " .. maps .. " maps, more than its budget")
+    check(total >= MAX_PINS * 0.8, "quest 889 kept only " .. total .. " spots")
 end)
 
 -- Spec C3 (the limit still holds on a busy map) and QuestData.lua MAX_PINS.

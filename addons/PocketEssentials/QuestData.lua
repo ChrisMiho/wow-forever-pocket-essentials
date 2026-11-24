@@ -61,10 +61,11 @@ local QUESTS_PER_STEP = 4      -- quests rebuilt in one step
 local ZONE_DELAY = 0.1
 local MAX_ITEM_SOURCES = 60    -- an item dropped by more kinds of creature than this "drops everywhere": not shown
 local MAX_SOURCE_POINTS = 1500 -- one creature or object with more spawn points than this is "everywhere": not shown
-local MAX_PINS = 300           -- most pins one objective may have on one map; above it they are thinned evenly
+local MAX_PINS = 300           -- pins one objective keeps over all maps (thinned evenly), plus MIN_PER_MAP below
+local MIN_PER_MAP = 30         -- each map keeps at least this many of its own spots (or all, if fewer)
 
 local type, pairs, ipairs, select, tostring, tonumber, pcall = type, pairs, ipairs, select, tostring, tonumber, pcall
-local floor = math.floor
+local floor, min, max = math.floor, math.min, math.max
 
 -- State ----------------------------------------------------------------------
 local frame                       -- private hidden frame; only has events while acquired
@@ -300,12 +301,15 @@ end
 QD._Spread = Spread   -- test seam
 
 -- This objective's surviving pins grouped by map, and per map: how many spots it
--- has, how many of them were looked at, and the next one kept (scratch, reused).
-local groups, mapSpots, mapAt, mapNext = {}, {}, {}, {}
+-- has, how many it keeps, how many were looked at, and the next one kept
+-- (scratch, reused).
+local groups, mapSpots, mapQuota, mapAt, mapNext = {}, {}, {}, {}, {}
 
--- End of one objective: hand its pins over. A map with more than MAX_PINS spots
--- keeps MAX_PINS of them, spread evenly through its list; every other map keeps
--- all of its own, however many the objective has on other maps.
+-- End of one objective: hand its pins over. An objective with at most MAX_PINS
+-- spots keeps them all. Above that, each map keeps its share of MAX_PINS (by how
+-- many spots it has), but never fewer than MIN_PER_MAP of its own, so a map with
+-- a few spots keeps them however many the objective has on other maps. A map's
+-- kept spots are spread evenly through its list.
 local function Flush(out)
     local n = bufN
     local limit = limitCell
@@ -313,16 +317,24 @@ local function Flush(out)
         local mapID = bufMap[j]
         mapSpots[mapID] = (mapSpots[mapID] or 0) + 1
     end
+    for mapID, count in pairs(mapSpots) do
+        local quota = count
+        if n > MAX_PINS then
+            quota = min(count, max(MIN_PER_MAP, floor(MAX_PINS * count / n)))
+        end
+        mapQuota[mapID] = quota
+    end
     for j = 1, n do
         local mapID = bufMap[j]
         local count = mapSpots[mapID]
+        local quota = mapQuota[mapID]
         local at = (mapAt[mapID] or 0) + 1
         mapAt[mapID] = at
-        local keep = count <= MAX_PINS
+        local keep = count <= quota
         if not keep then
-            -- Kept: spot floor((i - 1) * count / MAX_PINS) + 1 of this map, for i = 1 .. MAX_PINS.
+            -- Kept: spot floor((i - 1) * count / quota) + 1 of this map, for i = 1 .. quota.
             local i = mapNext[mapID] or 1
-            if at == floor((i - 1) * count / MAX_PINS) + 1 then
+            if at == floor((i - 1) * count / quota) + 1 then
                 keep = true
                 mapNext[mapID] = i + 1
             end
@@ -359,6 +371,7 @@ local function Flush(out)
     end
     bufN = 0
     wipe(mapSpots)
+    wipe(mapQuota)
     wipe(mapAt)
     wipe(mapNext)
     wipe(seen)

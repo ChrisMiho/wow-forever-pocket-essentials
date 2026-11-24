@@ -47,7 +47,7 @@ How the pieces protect each other:
   and minimap size. The icons are placed again only when one of those
   changed, so standing still costs those reads and nothing more.
 - The arrow chooses its spot once a second at most, never per frame. It
-  knows a spot by its place on the map and its objective number (`pin.obj`),
+  knows a spot by its place on the map, its objective number (`pin.obj`) and, since 0.15.0, its kind,
   not by its table, because every quest-log change rebuilds the tables. A
   spot it has reached ("Here", then left) is set aside for 180 seconds in a
   small table that is only read in that once-a-second choice (0.1.0).
