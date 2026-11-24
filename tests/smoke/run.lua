@@ -225,11 +225,11 @@ end
 -- Walks the open setup guide from its first screen to its last with Next,
 -- pressing no switch. eachScreen(i, n) runs on every screen. Returns the
 -- number of screens; the guide is left on the last one. The window is titled
--- "Setup"; the place comes from PE.Setup:Screen() (spec 0.9.0).
+-- "Setup guide"; the place comes from PE.Setup:Screen() (spec 0.9.0).
 local function walkGuide(c, PE, where, eachScreen)
     local guide = guideOf(c)
     check(guideShown(c), where .. ": the setup guide is not open")
-    check(guide.peTitle:GetText() == "Setup", where .. ": the setup guide is titled " .. tostring(guide.peTitle:GetText()))
+    check(guide.peTitle:GetText() == "Setup guide", where .. ": the setup guide is titled " .. tostring(guide.peTitle:GetText()))
     local _, first, n = PE.Setup:Screen()
     check(first == 1 and n and n >= 3, where .. ": the setup guide is not on screen 1 of at least 3")
     for i = 1, n do
@@ -610,7 +610,7 @@ local function everythingOn(c, PE, hasQDB)
     c:assertClean("Controller layout on")
 
     -- every feature's options, at each button size (switches and reload left alone)
-    local skip = function(label, ctx, w) return isSwitch(label, w) or ctx == "Button size" end
+    local skip = function(label, ctx, w) return isSwitch(label, w) or ctx == "Size of all buttons" end
     local presses = 0
     for _, size in ipairs({ "small", "medium", "large" }) do
         PE:SetUISetting("size", size)
@@ -735,12 +735,12 @@ scenarios[#scenarios + 1] = { name = "1 first install", run = function()
     c.world.cvars.combinedBags = "0"
     for _, size in ipairs({ "Small", "Medium", "Large" }) do
         openPage(c, PE, "general")
-        local btn = findButton(c, panelOf(c), size, "Button size")
-        check(btn ~= nil, "no " .. size .. " button under \"Button size\"")
+        local btn = findButton(c, panelOf(c), size, "Size of all buttons")
+        check(btn ~= nil, "no " .. size .. " button under \"Size of all buttons\"")
         c:click(btn)
         c:advance(0.4)
         check(PE.db.ui.size == size:lower(), "pressing " .. size .. " left the size at " .. tostring(PE.db.ui.size))
-        local skip = function(label, ctx) return ctx == "Button size" end
+        local skip = function(label, ctx) return ctx == "Size of all buttons" end
         for _, page in ipairs(PAGES) do
             presses = presses + pressAll(c, PE, page, skip)
             c:assertClean("pressing every button on page " .. page .. " at " .. size)

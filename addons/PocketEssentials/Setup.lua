@@ -15,7 +15,7 @@
 -- PE:SetModuleEnabled, as the settings switch does; this file never writes
 -- the saved on/off table itself.
 --
--- "Move things now" (and "Move the arrow" in the quest arrow's card) opens
+-- "Open Move on screen" (and "Move the arrow" in the quest arrow's card) opens
 -- Move on screen: the guide goes away and comes back on the same screen when
 -- that window closes (Move.lua calls Setup:BackFromMove).
 --
@@ -32,7 +32,7 @@ local type, tostring, ipairs, pairs, pcall = type, tostring, ipairs, pairs, pcal
 local max, min, sin, cos, pi = math.max, math.min, math.sin, math.cos, math.pi
 
 local PANEL_NAME = "PocketEssentialsSetupPanel" -- the prefix matters: our windows close each other by it
-local TITLE = "Setup"
+local TITLE = "Setup guide"
 local FIRST_LOGIN_DELAY = 1.5 -- seconds after the first loading screen
 
 local TEXT_CLOSED = "Setup guide closed. It will show again next time you log in. Press Skip in it to stop that. "
@@ -99,7 +99,7 @@ local SCREENS = {
       lines = { "Made for playing with a controller. Needs the game's Gamepad UI." },
       cards = { { key = "ctrlLayout", only = {} } } },
     { id = "layout", title = "Your screen", draw = "Layout",
-      lines = { "This is where each piece sits to start with. Move any of them to suit your screen." } },
+      lines = { "This is where each piece sits now. Move any of them to suit your screen." } },
     { id = "finish", title = "All set", draw = "Finish" },
 }
 
@@ -381,7 +381,7 @@ local DRAW = {}
 function DRAW.Welcome(y, width)
     local touch = PE:UsesTouch()
     y = list:Card(0, y, width, function(ix, iy, iw)
-        return list:ChoiceRow("How do you play?", {
+        return list:ChoiceRow("I play with", {
             { label = "Touch controls", selected = touch, onClick = handlers.touch },
             { label = "Controller", selected = not touch, onClick = handlers.controller },
         }, ix, iy, iw)
@@ -393,22 +393,32 @@ function DRAW.Welcome(y, width)
         local cw = (iw - 2 * M.gap) / 3
         local items = {
             { glyph = "dpad", text = "Move the blue highlight" },
-            { glyph = "press", lit = "bottom", text = "Press the highlighted button" },
+            { glyph = "press", lit = "bottom", text = "Press it" },
             { glyph = "close", lit = "right", text = "Close the window" },
         }
+        -- The texts first, to know the row's height: the three pictures then
+        -- share one line in its middle and each text is centred on them,
+        -- also when one of the texts wraps.
         local rowHeight = d
+        local texts = {}
+        local tw = max(cw - d - M.gap, 10)
+        for i, item in ipairs(items) do
+            local cx = ix + (i - 1) * (cw + M.gap)
+            local h, fs = list:Text("font", item.text, cx + d + M.gap, yy, tw, COLOR.name)
+            texts[i] = { fs = fs, h = h, x = cx + d + M.gap }
+            rowHeight = max(rowHeight, h)
+        end
+        local gy = yy + (rowHeight - d) * 0.5
         for i, item in ipairs(items) do
             local cx = ix + (i - 1) * (cw + M.gap)
             if item.glyph == "dpad" then
-                DpadGlyph(cx, yy, d)
+                DpadGlyph(cx, gy, d)
             else
-                FaceGlyph(cx, yy, d, item.lit, item.glyph)
+                FaceGlyph(cx, gy, d, item.lit, item.glyph)
             end
-            local tw = max(cw - d - M.gap, 10)
-            local h, fs = list:Text("font", item.text, cx + d + M.gap, yy, tw, COLOR.name)
-            fs:ClearAllPoints()
-            fs:SetPoint("TOPLEFT", list.child, "TOPLEFT", cx + d + M.gap, -(yy + max((d - h) * 0.5, 0)))
-            rowHeight = max(rowHeight, h)
+            local t = texts[i]
+            t.fs:ClearAllPoints()
+            t.fs:SetPoint("TOPLEFT", list.child, "TOPLEFT", t.x, -(yy + (rowHeight - t.h) * 0.5))
         end
         list:Reach(yy + rowHeight)
         yy = yy + rowHeight + M.gap * 0.8
@@ -465,8 +475,8 @@ function DRAW.RoundButton(y, width)
         local rx = ix + pv + M.gap * 2
         local rw = max(iw - pv - M.gap * 2, 10)
         local ry = iy
-        ry = list:ChoiceRow("Colour", Items(COLOR_CHOICES, ui.hubColor or "gold", handlers.color), rx, ry, rw)
-        ry = list:ChoiceRow("Size of all Pocket Essentials buttons", Items(SIZE_CHOICES, M.size, handlers.size), rx, ry, rw)
+        ry = list:ChoiceRow("Round button colour", Items(COLOR_CHOICES, ui.hubColor or "gold", handlers.color), rx, ry, rw)
+        ry = list:ChoiceRow("Size of all buttons", Items(SIZE_CHOICES, M.size, handlers.size), rx, ry, rw)
         return max(iy + pv + M.gap, ry)
     end)
 end
@@ -505,7 +515,8 @@ local function ScreenPicture(x, y, w)
             local bx, by, bw, bh = Place(l, b, rw, rh)
             DashedBox(bx, by, bw, bh, COLOR.gold, 1, true)
             local label = tostring(piece.label):gsub("\"", "")
-            local tw = min(bw + UI:Px(80), w)
+            -- As wide as the label needs, so it stays on one line.
+            local tw = min(max(bw + UI:Px(80), UI:TextWidth(label, "small") + UI:Px(6)), w)
             local tx = min(max(bx + bw * 0.5 - tw * 0.5, x), x + w - tw)
             CenteredText("small", Escape(label), tx, by + bh + UI:Px(3), tw, COLOR.gold)
         end
@@ -513,7 +524,7 @@ local function ScreenPicture(x, y, w)
     return h
 end
 
--- Your screen: the picture, and Move things now beside it.
+-- Your screen: the picture, and Open Move on screen beside it.
 function DRAW.Layout(y, width)
     return list:Card(0, y, width, function(ix, iy, iw)
         local room = max((area.viewHeight or 0) - M.button * 3, M.button * 2)
@@ -522,8 +533,8 @@ function DRAW.Layout(y, width)
         local rx = ix + pw + M.gap * 2
         local rw = max(iw - pw - M.gap * 2, 10)
         local ry = iy
-        ry = ry + list:Text("font", "Gold boxes show where each piece starts.", rx, ry, rw, COLOR.name) + M.gap
-        list:Button("Move things now", rx, ry, rw, M.button, "normal", handlers.moveNow)
+        ry = ry + list:Text("font", "Gold boxes show where each piece is now.", rx, ry, rw, COLOR.name) + M.gap
+        list:Button("Open Move on screen", rx, ry, rw, M.button, "normal", handlers.moveNow)
         ry = ry + M.button + M.gap * 0.6
         ry = ry + list:Text("small", "You can do this later too: Settings, General tab.", rx, ry, rw, COLOR.dim)
         list:Reach(ry)
@@ -531,11 +542,11 @@ function DRAW.Layout(y, width)
     end)
 end
 
--- Three tiles of the same size: Tap, Hold, Move things.
+-- Three tiles of the same size: Tap, Hold, Move on screen.
 local TILES = {
-    { title = "Tap", text = "Opens the settings, or Chat picker when it is on.", picture = "hub" },
+    { title = "Tap", text = "Opens the settings, or the Chat picker when that is on.", picture = "hub" },
     { title = "Hold", text = "Always opens the settings.", picture = "hold" },
-    { title = "Move things", text = "Settings, General tab.", picture = "move" },
+    { title = "Move on screen", text = "Settings, General tab.", picture = "move" },
 }
 
 local function Tiles(x, y, width)
@@ -676,7 +687,8 @@ local function LayoutBottomRow(count, pos)
     backButton:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 0, 0)
     skipButton:ClearAllPoints()
     skipButton:SetSize(width, M.button)
-    skipButton:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", width + M.gap, 0)
+    -- On the first screen Back is hidden, so Skip takes its place at the edge.
+    skipButton:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", pos == 1 and 0 or width + M.gap, 0)
     nextButton:ClearAllPoints()
     nextButton:SetSize(width, M.button)
     nextButton:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0)

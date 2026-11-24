@@ -778,7 +778,7 @@ test("back-fill: an error of ours seen 3 times before login is logged once with 
 end)
 
 -- Review fix 6: the unequal parts are only for the filter row.
-test("row rule: the Button size row at Large keeps equal parts", function()
+test("row rule: the Size of all buttons row at Large keeps equal parts", function()
     local c, PE = T.new({})
     PE:SetUISetting("size", "large")
     PE:OpenSettings("general")

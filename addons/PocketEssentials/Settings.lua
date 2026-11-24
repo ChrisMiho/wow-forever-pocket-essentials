@@ -794,7 +794,7 @@ local function BuildGeneral(width)
     local y = 0
     y = list:Card(0, y, width, function(ix, iy, iw)
         local yy = iy
-        yy = list:ChoiceRow("Button size", Items(SIZE_CHOICES, M.size,
+        yy = list:ChoiceRow("Size of all buttons", Items(SIZE_CHOICES, M.size,
             function(v) PE:SetUISetting("size", v) end), ix, yy, iw)
         yy = list:ChoiceRow("Round button colour", Items(COLOR_CHOICES, ui.hubColor or "gold",
             function(v) PE:SetUISetting("hubColor", v) end), ix, yy, iw)
@@ -807,7 +807,7 @@ local function BuildGeneral(width)
     y = list:Card(0, y, width, function(ix, iy, iw)
         local yy = iy
         if PE.Move and PE.Move.Open then
-            yy = list:ActionRow("Move things on screen", "Open",
+            yy = list:ActionRow("Move on screen", "Open",
                 PE:Wrap("core", function() PE.Move:Open() end), ix, yy, iw)
         end
         if PE.Setup and PE.Setup.Open then

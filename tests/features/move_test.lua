@@ -180,7 +180,7 @@ end)
 -- Opening and the list of pieces
 ---------------------------------------------------------------------------
 
--- The two Open buttons of the General tab, top to bottom: Move things on screen, then Setup guide.
+-- The two Open buttons of the General tab, top to bottom: Move on screen, then Setup guide.
 local function generalOpenButtons(c, PE)
     PE:OpenSettings("general")
     c:advance(0.2)
@@ -189,7 +189,7 @@ local function generalOpenButtons(c, PE)
     return open
 end
 
-test("move: the General tab's Move things on screen row opens the panel and closes the settings", function()
+test("move: the General tab's Move on screen row opens the panel and closes the settings", function()
     local c, PE = T.new({})
     local settings = settingsPanel(c)
     local moveBtn = generalOpenButtons(c, PE)

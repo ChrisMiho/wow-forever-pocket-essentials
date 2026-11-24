@@ -491,7 +491,7 @@ end)
 test("general: two cards with the core rows, I play with saves touch and moves the Sort button", function()
     local c, PE = T.new({})
     openSettings(c, PE, "general")
-    for _, name in ipairs({ "Button size", "Round button colour", "I play with", "Move things on screen", "Setup guide",
+    for _, name in ipairs({ "Size of all buttons", "Round button colour", "I play with", "Move on screen", "Setup guide",
         "Reload the interface" }) do
         check(shownText(c, name), "no row " .. name)
     end
@@ -517,7 +517,7 @@ test("general: two cards with the core rows, I play with saves touch and moves t
     c:assertClean("general")
 end)
 
-test("general: Button size and Round button colour are segmented choices that save at once", function()
+test("general: Size of all buttons and Round button colour are segmented choices that save at once", function()
     local c, PE = T.new({})
     openSettings(c, PE, "general")
     c:click(shownButtons(c, "Large")[1])
