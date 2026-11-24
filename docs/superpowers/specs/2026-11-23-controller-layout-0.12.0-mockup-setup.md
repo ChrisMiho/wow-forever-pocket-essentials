@@ -112,9 +112,30 @@ build differs from the mockup's numbers, and why:
   the game's smallest, at 80% (`EditModeSettingDisplayInfo.lua:777-830`).
 - **Player and target frames 232 by 100, pet and target of target 120 by 49**
   (the mockup drew 192 by 60 and 112 by 34). The frames keep the mockup's
-  inner edges (x -236 / +236); the player and target sit 172 to 272 up
-  (centred on the mockup's middle, clear of the LT and RT bars' tops at 167),
-  the pet and target of target 274 to 323 up, about 21 higher than drawn.
+  inner edges (x -236 / +236). Player and target sit 226 to 326 up (34 higher
+  than drawn), the pet and the target of target 351 to 400 up (57 higher), the
+  pet right-aligned and the target of target left-aligned with the inner edges
+  (review fix, see "Target cast bar and auras" below).
+- **Target cast bar and auras (review fix).** The target gets Edit Mode's
+  BuffsOnTop (`EditModeSettingDisplayInfo.lua:215-219`; the game's own Gamepad
+  preset sets it, `Mainline/EditModePresetLayouts.lua:1312-1316`), so its
+  auras grow up, away from the RT bar: two rows of 21 reach 22.5 above the
+  frame's top (`TargetFrame.lua:538-555`, `Shared/TargetFrameAuraShared.lua:6-19`;
+  the frame picture's size, 192 by 67, is the retail atlas, not in this
+  source). The pet and target of target sit 25 above the frames, over those
+  two rows; a third row of target auras reaches the target of target. With
+  the target of target shown, the game moves the cast bar 123 right and 46
+  under the frame's bottom (`TargetFrame.lua:830-852`, from line 914), not
+  something to fight; the frames sit at 226 so that spot (170 to 180 up)
+  clears the RT bar's top (167). The player side is the mirror. A game
+  without the setting gets the spot without it.
+- **An open wheel covers about 19 units of the round map's edge**: the
+  sub-menu wheels (175 across, centred 138 either side) reach 50.5 from the
+  centre, the round map 69.3.
+- **A character switched on by a login may need a second reload at the next
+  login**: the switch-on asks for one reload; if the game only reports our
+  layout as active after it, the template check runs at the next login and
+  asks again.
 - **Target of target placed by the addon**: it is not an Edit Mode system on
   Camelot but a plain secure button the game anchors once under the target
   frame (`Blizzard_UnitFrame/Mainline/TargetFrame.lua:732-737`,
@@ -133,9 +154,9 @@ build differs from the mockup's numbers, and why:
   the strip (`Mainline/Minimap.xml:25-31`).
 - **Quest tracker flush with the right edge** (TOPRIGHT 0, -375; was -30). It
   is 260 wide (probe), not the mockup's 218, and has no width setting. Even
-  flush right, once it holds a long list (more than about 120 tall) its lower
-  left part reaches over the target frame's right end (by 45) and the RT bar's
-  top-right corner (by 16). Nothing else can move without reaching a sub-menu
+  flush right, once it holds a long list its lower left part reaches over the
+  target frame's right end (by 45), the target's cast bar while the target of
+  target shows (by 86) and the RT bar's top-right corner (by 16). Nothing else can move without reaching a sub-menu
   wheel; a later item could move the tracker or cap its list.
 - **Template rebuild only at a login**, as the spec says: a tap on the switch
   that finds an existing older layout keeps it as it is until the next login

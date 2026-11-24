@@ -20,10 +20,10 @@ Source paths under `Interface/AddOns/` (branch forever).
 | Map (MinimapCluster) | `BOTTOM`, UIParent, `BOTTOM`, -10, 38; Size 2 (70%); HeaderUnderneath 1 | Header underneath: the round map's container sits 30 up and 10 right of the cluster's bottom (`Blizzard_Minimap/Camelot/Minimap.lua:72-73`), scaled 0.7; container 253 (probe), map 198 centred in it (`Mainline/Minimap.xml:60-62`). Round map centre = 38 + 30 + 253 × 0.7 / 2 = 156.6 up, x 0 (mockup 153) |
 | Title strip | follows the map: 46 to 69 up, x -11 | `Camelot/Minimap.lua:75-76` (`BOTTOM`, -1, 8), 152 × 23 (`Camelot/MinimapZoneTextButton.xml:9`) |
 | Swing timers | `BOTTOM`, UIParent, `BOTTOM`, 0, y: Main Hand 31, Off Hand 17, Ranged 3; Scale 3 (80%), Width 0 (213), Height 0 (15) | 170.4 × 12 each (`EditModeSystemTemplates.lua:2784-2804`, `EditModeSettingDisplayInfo.lua:777-830`); offsets are UI units (`EditModeSystemTemplates.lua:373-375`) |
-| Player (UnitFrame 1) | `BOTTOMRIGHT`, UIParent, `BOTTOM`, -236, 172 | frame 232 × 100 (`Blizzard_UnitFrame/Mainline/PlayerFrame.xml:14`), centred on the mockup's 222; bottom clear of the LT bar's top (167) |
-| Pet (UnitFrame 8) | `BOTTOMRIGHT`, UIParent, `BOTTOM`, -236, 274 | 120 × 49 (probe), right above the player frame |
-| Target (UnitFrame 2) | `BOTTOMLEFT`, UIParent, `BOTTOM`, 236, 172 | mirror of the player |
-| Target of target | `BOTTOMLEFT` on `TargetFrame` `TOPLEFT`, 0, 2 (placed by the addon, out of a fight) | not an Edit Mode system: a secure button made by `TargetFrameMixin:CreateTargetofTarget` (`Mainline/TargetFrame.lua:732-737`, template `Mainline/TargetFrame.xml:397-405`), never re-anchored for the target frame |
+| Player (UnitFrame 1) | `BOTTOMRIGHT`, UIParent, `BOTTOM`, -236, 226 | frame 232 × 100 (`Blizzard_UnitFrame/Mainline/PlayerFrame.xml:14`); mirror of the target (review fix) |
+| Pet (UnitFrame 8) | `BOTTOMRIGHT`, UIParent, `BOTTOM`, -236, 351 | 120 × 49 (probe), 25 above the player frame |
+| Target (UnitFrame 2) | `BOTTOMLEFT`, UIParent, `BOTTOM`, 236, 226; BuffsOnTop 1 | its cast bar, moved 123 right / 46 down while the target of target shows (`Mainline/TargetFrame.lua:830-852`), clears the RT bar; auras grow up (review fix) |
+| Target of target | `BOTTOMLEFT` on `TargetFrame` `TOPLEFT`, 0, 25 (placed by the addon, out of a fight), over two rows of target auras | not an Edit Mode system: a secure button made by `TargetFrameMixin:CreateTargetofTarget` (`Mainline/TargetFrame.lua:732-737`, template `Mainline/TargetFrame.xml:397-405`), never re-anchored for the target frame |
 | LT bar (Left anchor) | CENTER at -335, 133, scale 1 | mockup |
 | Main bar (Top anchor) | CENTER at -335, 45, scale 1 | mockup |
 | RT bar (Right anchor) | CENTER at 335, 133, scale 1 | mockup |

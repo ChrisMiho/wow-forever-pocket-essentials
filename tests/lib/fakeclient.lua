@@ -1399,6 +1399,7 @@ function Client.new(opts)
         EditModeSystem = { ActionBar = 0, CastBar = 1, Minimap = 2, UnitFrame = 3, AuraFrame = 6, ChatFrame = 8,
             ObjectiveTracker = 12, StatusTrackingBar = 15, SwingTimer = 29, GamepadMainActionBar = 30 },
         EditModeMinimapSetting = { HeaderUnderneath = 0, RotateMinimap = 1, Size = 2, IconScale = 3 },
+        EditModeUnitFrameSetting = { HidePortrait = 0, CastBarUnderneath = 1, BuffsOnTop = 2, UseLargerFrame = 3 },
         EditModeChatFrameSetting = { WidthHundreds = 0, WidthTensAndOnes = 1, HeightHundreds = 2, HeightTensAndOnes = 3 },
         EditModeObjectiveTrackerSetting = { Height = 0, Opacity = 1, TextSize = 2 },
         EditModeStatusTrackingBarSetting = { Height = 0, Width = 1, TextSize = 2, Size = 3 },

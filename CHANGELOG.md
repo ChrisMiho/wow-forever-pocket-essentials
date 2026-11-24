@@ -19,7 +19,8 @@ Not yet tested on a device. Your saved choices carry over.
   corners: the LT bar over the main bar on the left, the RT bar over the LT +
   RT bar on the right, all at full size. Your frame sits above the left
   bars with your pet above it; the target frame sits above the right bars
-  with the target of target above it. The two sub-menu buttons and the LB / RB
+  with the target of target above it, and the target's buffs show above the
+  target frame so they and its cast bar stay clear of the spell bars. The two sub-menu buttons and the LB / RB
   targeting pictures stay beside the map where you know them. XP bar, chat,
   buffs and debuffs as in 0.11.1; the quest tracker moved to the screen's
   right edge.
@@ -35,7 +36,9 @@ Not yet tested on a device. Your saved choices carry over.
 
 - The game's quest tracker is wider than the mockup drew it: when it holds a
   long list, its lower left corner reaches over the right end of the target
-  frame and the corner of the RT bar.
+  frame, the target's cast bar and the corner of the RT bar.
+- The rebuild replaces any changes you made to the Pocket Essentials layout in
+  Edit Mode; the chat line says so.
 
 ## [0.11.2] - 2026-11-23
 

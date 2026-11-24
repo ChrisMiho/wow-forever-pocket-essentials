@@ -99,14 +99,46 @@ local STRIP = { w = 152, h = 23, up = 8, x = -1 }
 local TIMER = { w = 213 * 0.8, h = 15 * 0.8, y = { MainHand = 31, OffHand = 17, Ranged = 3 } }
 
 -- The unit frames: player and target 232 by 100
--- (Blizzard_UnitFrame/Mainline/PlayerFrame.xml:14), pet 120 by 49 (probe). The
--- mockup drew them smaller (192 by 60, 112 by 34); the frames keep its inner edges
--- (x -236 and +236) and its middle height, and sit clear of the LT and RT bars.
+-- (Blizzard_UnitFrame/Mainline/PlayerFrame.xml:14), pet and target of target 120 by
+-- 49 (probe; TargetofTargetFrameTemplate, Mainline/TargetFrame.xml:398). The mockup
+-- drew them smaller (192 by 60, 112 by 34); the frames keep its inner edges (x -236
+-- and +236).
+local UNIT = { w = 232, h = 100 }
+local SMALL = { w = 120, h = 49 }
+
+-- What the target frame puts around itself in a fight:
+--   * Its auras: with Edit Mode's BuffsOnTop (EditModeSettingDisplayInfo.lua:215-219, set on
+--     the target by the game's own Gamepad preset, Mainline/EditModePresetLayouts.lua:1312-1316)
+--     they grow up from the frame picture's top, 6 into it
+--     (TargetFrame.lua:538-555, AURA_START_X 5, AURA_MIRRORED_START_Y -6, lines 5-7), in rows
+--     of at most 122 (101 for the first two while the target of target shows) with 21
+--     icons, 3 apart (Shared/TargetFrameAuraShared.lua:6-19). Two rows reach 22.5 above
+--     the frame's top. The frame picture is centred in the frame
+--     (Mainline/TargetFrame.xml:78-81); its size, 192 by 67, is the retail atlas (not in
+--     this source).
+--   * Its cast bar, 150 by 10 (Mainline/TargetFrame.xml:536-537): with the target of
+--     target shown and the Gamepad UI on, 123 right of and 46 under the frame's bottom
+--     left (TargetFrame.lua:830-852, from TargetOfTargetMixin:Update, line 914). The
+--     frame sits high enough that this spot clears the RT bar.
+local TARGET_AURAS = { picture = { w = 192, h = 67 }, startX = 5, startY = -6, rowWidth = 122, rows = 2, size = 21, spacing = 3 }
+local TARGET_CAST = { x = 123, y = -46, w = 150, h = 10 }
+
+-- Player and target 226 up: the target's cast bar (226 - 46 - 10 = 170) then clears the
+-- RT bar's top (167). The player side is the mirror. The pet and the target of target
+-- sit above the two aura rows (25 over the frames' tops), the pet right-aligned and
+-- the target of target left-aligned with the frames' inner edges.
+local FRAME_Y = 226
+local SMALL_Y = FRAME_Y + UNIT.h + 25
 local FRAMES = {
-    Player = { "BOTTOMRIGHT", UI, "BOTTOM", -236, 172 },
-    Pet = { "BOTTOMRIGHT", UI, "BOTTOM", -236, 274 },
-    Target = { "BOTTOMLEFT", UI, "BOTTOM", 236, 172 },
+    Player = { "BOTTOMRIGHT", UI, "BOTTOM", -236, FRAME_Y },
+    Pet = { "BOTTOMRIGHT", UI, "BOTTOM", -236, SMALL_Y },
+    Target = { "BOTTOMLEFT", UI, "BOTTOM", 236, FRAME_Y },
 }
+
+-- The target of target, placed by the module on the target frame (see EXTRAS).
+Plan.TOT_SPOT = { point = "BOTTOMLEFT", relativePoint = "TOPLEFT", x = 0, y = SMALL_Y - FRAME_Y - UNIT.h }
+-- The two LB / RB targeting pictures, placed by the module on UIParent's bottom (see EXTRAS).
+Plan.SHOULDERS = { left = { "BOTTOMRIGHT", -108, 84 }, right = { "BOTTOMLEFT", 108, 84 } }
 
 -- A bar that does not grow: 208 by 68 (Blizzard_GamepadActionBars/ActionBarStyles.lua:172;
 -- the template switches growing off, ShouldExpand 0).
@@ -149,9 +181,18 @@ function Plan.BarSpots()
     return DeepCopy(SPOTS)
 end
 
+-- A frame's rectangle from its anchor point (on UIParent's bottom) and its size.
+local function RectAt(point, x, y, w, h)
+    local left = (point:find("LEFT") and x) or (point:find("RIGHT") and x - w) or x - w / 2
+    local bottom = (point:find("BOTTOM") and y) or (point:find("TOP") and y - h) or y - h / 2
+    return { left, bottom, left + w, bottom + h }
+end
+
 -- The rectangles the template puts on screen, for the overlap check:
--- { name = { left, bottom, right, top } } in UI units from the bottom centre.
--- The quest tracker is taken at the height the probe measured (264).
+-- { name = { left, bottom, right, top } } in UI units from the bottom centre,
+-- worked out from the spots and sizes above. The quest tracker is taken at the
+-- height the probe measured (264). The target's two aura rows are the part above
+-- the frame; its cast bar is the spot it takes with the target of target shown.
 function Plan.Rects()
     local r = {}
     local function box(name, cx, cy, w, h) r[name] = { cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2 } end
@@ -163,10 +204,22 @@ function Plan.Rects()
     box("map", MAP.x + MAP.frameRight, roundCentre, round, round)
     r["title strip"] = { MAP.x + STRIP.x - STRIP.w / 2, MAP.y + STRIP.up, MAP.x + STRIP.x + STRIP.w / 2, MAP.y + STRIP.up + STRIP.h }
     for name, y in pairs(TIMER.y) do r[name .. " timer"] = { -TIMER.w / 2, y, TIMER.w / 2, y + TIMER.h } end
-    r.player = { -236 - 232, 172, -236, 272 }
-    r.pet = { -236 - 120, 274, -236, 323 }
-    r.target = { 236, 172, 236 + 232, 272 }
-    r["target of target"] = { 236, 274, 236 + 120, 323 }
+    local function frame(spot, size) return RectAt(spot[1], spot[4], spot[5], size.w, size.h) end
+    r.player = frame(FRAMES.Player, UNIT)
+    r.pet = frame(FRAMES.Pet, SMALL)
+    local target = frame(FRAMES.Target, UNIT)
+    r.target = target
+    local tot = Plan.TOT_SPOT -- on the target frame's corner named by relativePoint
+    local cornerX = tot.relativePoint:find("LEFT") and target[1] or target[3]
+    local cornerY = tot.relativePoint:find("TOP") and target[4] or target[2]
+    r["target of target"] = RectAt(tot.point, cornerX + tot.x, cornerY + tot.y, SMALL.w, SMALL.h)
+    local a = TARGET_AURAS
+    local pictureLeft = (target[1] + target[3]) / 2 - a.picture.w / 2
+    local pictureTop = (target[2] + target[4]) / 2 + a.picture.h / 2
+    local aurasTop = pictureTop + a.startY + a.rows * a.size + (a.rows - 1) * a.spacing
+    r["target auras"] = { pictureLeft + a.startX, target[4], pictureLeft + a.startX + a.rowWidth, aurasTop }
+    local castTop = target[2] + TARGET_CAST.y
+    r["target cast bar"] = { target[1] + TARGET_CAST.x, castTop - TARGET_CAST.h, target[1] + TARGET_CAST.x + TARGET_CAST.w, castTop }
     for _, side in ipairs({ -1, 1 }) do
         box(side < 0 and "LB+LT button" or "RB+RT button", side * 138, SPOTS.bottom.y - 50, 38, 38)
     end
@@ -216,7 +269,9 @@ function Plan.Pieces(opts)
     add("GamepadMainActionBar", nil, nil, { Compact = 0, ShowEmptyBars = 0, ShouldExpand = 0 })
     add("UnitFrame", "Player", Anchor(FRAMES.Player), nil)
     add("UnitFrame", "Pet", Anchor(FRAMES.Pet), nil)
-    add("UnitFrame", "Target", Anchor(FRAMES.Target), nil)
+    -- BuffsOnTop 1 (as the game's Gamepad preset has it): the target's auras grow up, away
+    -- from the RT bar. Left out by Plan.Apply when the game has no such setting.
+    add("UnitFrame", "Target", Anchor(FRAMES.Target), { BuffsOnTop = 1 })
     local visibility = { Ranged = o.ranged, MainHand = o.mainHand, OffHand = o.offHand }
     for _, name in ipairs({ "MainHand", "OffHand", "Ranged" }) do
         add("SwingTimer", name, Spot("BOTTOM", "BOTTOM", 0, TIMER.y[name]),
@@ -370,7 +425,7 @@ local RELOAD_REASON = "Reload to finish changing the screen layout."
 -- request itself only shows in the settings window, which is closed at login.
 local CHAT_SWITCHED_ON = "This character now uses the controller layout. Open the settings and tap Reload now to finish."
 local CHAT_SWITCHED_OFF = "This character's own screen layout is back. Open the settings and tap Reload now to finish."
-local CHAT_UPDATED = "The controller layout was updated to the new arrangement. Open the settings and tap Reload now to finish."
+local CHAT_UPDATED = "The controller layout was updated to the new arrangement (changes you made to it in Edit Mode are replaced). Open the settings and tap Reload now to finish."
 -- Status lines while the login check waits (0.12.0 spec, "Getting it without taps"): no silent waiting.
 local TEXT_WAIT_FIGHT = "Updating the layout after this fight."
 local TEXT_WAIT_LAYOUTS = "Waiting for the game's layouts."
@@ -396,6 +451,13 @@ local function Api()
         and type(api.SaveLayouts) == "function" and type(api.OnLayoutAdded) == "function" then
         return api
     end
+    return nil
+end
+
+-- The value fn reads, or nil if it raises (a group this client does not have).
+local function Optional(fn)
+    local ok, v = pcall(fn)
+    if ok then return v end
     return nil
 end
 
@@ -433,6 +495,11 @@ local function ReadEnums()
                 Width = Enum.EditModeSwingTimerSetting.Width,
                 Height = Enum.EditModeSwingTimerSetting.Height,
                 Visibility = Enum.EditModeSwingTimerSetting.Visibility,
+            },
+            -- BuffsOnTop (EditModeManagerConstantsDocumentation.lua:792) may be missing, its
+            -- whole group too: Plan.Apply then leaves it out.
+            UnitFrame = {
+                BuffsOnTop = Optional(function() return Enum.EditModeUnitFrameSetting.BuffsOnTop end),
             },
         },
         index = {
@@ -890,7 +957,8 @@ end
 -- anchored to the main bar's anchor at -108 / +108, 42
 -- (Blizzard_GamepadActionBars/MainActionBarFrame.xml:18-26). Moving the main bar to
 -- its corner would take them along, so they are anchored where that anchor held them
--- (the main bar centred, 42 up): BOTTOMRIGHT at -108, 84 and BOTTOMLEFT at 108, 84.
+-- (the main bar centred, 42 up): Plan.SHOULDERS, BOTTOMRIGHT at -108, 84 and BOTTOMLEFT
+-- at 108, 84.
 -- No game code re-anchors them (MainActionBarFrame.lua:631-649 only sets their
 -- pictures and the pressed highlight, which is anchored on them).
 --
@@ -905,11 +973,11 @@ end
 
 local EXTRAS = {
     { name = "LB targeting picture", get = function() return Child(Child(GamepadBar(), "PageUnit"), "LeftShoulderBackground") end,
-      point = function() return "BOTTOMRIGHT", UIParent, "BOTTOM", -108, 84 end },
+      point = function() local s = Plan.SHOULDERS.left return s[1], UIParent, "BOTTOM", s[2], s[3] end },
     { name = "RB targeting picture", get = function() return Child(Child(GamepadBar(), "PageUnit"), "RightShoulderBackground") end,
-      point = function() return "BOTTOMLEFT", UIParent, "BOTTOM", 108, 84 end },
+      point = function() local s = Plan.SHOULDERS.right return s[1], UIParent, "BOTTOM", s[2], s[3] end },
     { name = "target of target", get = function() return Child(type(TargetFrame) == "table" and TargetFrame or nil, "totFrame") end,
-      point = function() return "BOTTOMLEFT", TargetFrame, "TOPLEFT", 0, 2 end },
+      point = function() local t = Plan.TOT_SPOT return t.point, TargetFrame, t.relativePoint, t.x, t.y end },
 }
 
 local extraFound = {}   -- [region] = { { point, relativeTo, relativePoint, x, y }, ... } read before the first change

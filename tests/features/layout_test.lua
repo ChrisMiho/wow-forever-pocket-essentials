@@ -144,10 +144,59 @@ end)
 test("plan: player, pet and target frames", function()
     local Plan = plan()
     local list = Plan.Pieces()
-    eq(piece(list, "UnitFrame", "Player").anchor, { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -236, y = 172 })
-    eq(piece(list, "UnitFrame", "Pet").anchor, { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -236, y = 274 })
-    eq(piece(list, "UnitFrame", "Target").anchor, { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 236, y = 172 })
+    eq(piece(list, "UnitFrame", "Player").anchor, { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -236, y = 226 })
+    eq(piece(list, "UnitFrame", "Pet").anchor, { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -236, y = 351 })
+    eq(piece(list, "UnitFrame", "Target").anchor, { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 236, y = 226 })
     for _, i in ipairs({ "Player", "Pet", "Target" }) do eq(piece(list, "UnitFrame", i).moved, true, i) end
+    -- The target of target, placed by the module: above the two aura rows, left edges lined up.
+    eq(Plan.TOT_SPOT, { point = "BOTTOMLEFT", relativePoint = "TOPLEFT", x = 0, y = 25 })
+    eq(Plan.SHOULDERS, { left = { "BOTTOMRIGHT", -108, 84 }, right = { "BOTTOMLEFT", 108, 84 } })
+end)
+
+test("plan: the target gets its auras on top", function()
+    local Plan = plan()
+    eq(piece(Plan.Pieces(), "UnitFrame", "Target").settings, { BuffsOnTop = 1 })
+    eq(piece(Plan.Pieces(), "UnitFrame", "Player").settings, nil)
+    local e = fakeEnums()
+    e.setting.UnitFrame.BuffsOnTop = 501
+    local layout = { systems = { { system = e.system.UnitFrame, systemIndex = e.index.UnitFrame.Target, settings = {}, isInDefaultPosition = true,
+        anchorInfo = { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", offsetX = 0, offsetY = 0 } } } }
+    Plan.Apply(layout, Plan.Pieces(), e)
+    eq(settingValue(layout.systems[1], 501), 1)
+    -- A game without the setting: the spot is written, the setting left out.
+    e.setting.UnitFrame.BuffsOnTop = nil
+    local layout2 = { systems = { { system = e.system.UnitFrame, systemIndex = e.index.UnitFrame.Target, settings = {}, isInDefaultPosition = true,
+        anchorInfo = { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", offsetX = 0, offsetY = 0 } } } }
+    Plan.Apply(layout2, Plan.Pieces(), e)
+    eq(#layout2.systems[1].settings, 0)
+    eq(layout2.systems[1].anchorInfo.offsetY, 226)
+end)
+
+test("plan: the target's cast bar and two aura rows clear the RT bar", function()
+    local Plan = plan()
+    local r = Plan.Rects()
+    -- Cast bar with the target of target shown (Gamepad UI): 123 right, 46 under the frame's bottom left.
+    eq(r["target cast bar"], { 236 + 123, 226 - 46 - 10, 236 + 123 + 150, 226 - 46 })
+    check(r["target cast bar"][2] > r["right bar"][4], "the cast bar reaches the RT bar")
+    -- Two rows of 21 with 3 between, up from 6 inside the frame picture's top (192 by 67, centred).
+    local pictureTop = 226 + 50 + 33.5
+    eq(r["target auras"], { 236 + 20 + 5, 326, 236 + 20 + 5 + 122, pictureTop - 6 + 45 })
+    check(r["target auras"][4] < r["target of target"][2], "the aura rows reach the target of target")
+end)
+
+test("plan: the rectangles follow the frames' spots", function()
+    local Plan = plan()
+    local r = Plan.Rects()
+    local list = Plan.Pieces()
+    local p = piece(list, "UnitFrame", "Player").anchor
+    eq(r.player, { p.x - 232, p.y, p.x, p.y + 100 })
+    local pet = piece(list, "UnitFrame", "Pet").anchor
+    eq(r.pet, { pet.x - 120, pet.y, pet.x, pet.y + 49 })
+    local t = piece(list, "UnitFrame", "Target").anchor
+    eq(r.target, { t.x, t.y, t.x + 232, t.y + 100 })
+    eq(r["target of target"], { t.x + Plan.TOT_SPOT.x, t.y + 100 + Plan.TOT_SPOT.y, t.x + Plan.TOT_SPOT.x + 120, t.y + 100 + Plan.TOT_SPOT.y + 49 })
+    -- The pet and the target of target mirror each other.
+    eq({ -r.pet[3], r.pet[2], -r.pet[1], r.pet[4] }, r["target of target"])
 end)
 
 test("plan: four whole bars at the mockup's spots", function()
@@ -179,7 +228,10 @@ test("plan: no piece overlaps another", function()
     -- frame 232, not 192; at the height the probe read (264) the tracker's lower-left part
     -- reaches over the target frame's right end (45) and the RT bar's top-right corner (16).
     -- Written in the spec's "As built"; nothing can move without reaching a wheel.
-    local allowed = { ["quest tracker|right bar"] = 16.34, ["quest tracker|target"] = 45.34 }
+    -- The target's cast bar, shifted right by the game while the target of target shows,
+    -- reaches under it the same way (86).
+    local allowed = { ["quest tracker|right bar"] = 16.34, ["quest tracker|target"] = 45.34,
+        ["quest tracker|target cast bar"] = 86.34 }
     for i = 1, #names do
         local a = r[names[i]]
         check(a[1] >= -W / 2 and a[3] <= W / 2 and a[2] >= 0 and a[4] <= H, names[i] .. " is off screen")
@@ -293,8 +345,8 @@ test("layout: a piece with an index only changes the entry with that index", fun
           anchorInfo = { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", offsetX = 0, offsetY = 0 } },
     } }
     eq(Plan.Apply(layout, Plan.Pieces(with(Plan.DEFAULTS)), e), 2)
-    eq(layout.systems[1].anchorInfo.offsetY, 172)
-    eq(layout.systems[2].anchorInfo.offsetY, 274)
+    eq(layout.systems[1].anchorInfo.offsetY, 226)
+    eq(layout.systems[2].anchorInfo.offsetY, 351)
     eq(layout.systems[2].isInDefaultPosition, false)
 end)
 
@@ -1937,7 +1989,7 @@ end)
 test("bars: the target of target sits above the target frame", function()
     local c = onClient()
     local _, _, tot = extras(c)
-    eq(pointsOf(c, tot), { { "BOTTOMLEFT", c.env.TargetFrame, "TOPLEFT", 0, 2 } })
+    eq(pointsOf(c, tot), { { "BOTTOMLEFT", c.env.TargetFrame, "TOPLEFT", 0, 25 } })
     c:assertClean()
 end)
 
@@ -1985,7 +2037,7 @@ test("bars: a missing, nil or failing targeting picture or target of target plac
         local want = {
             { "BOTTOMRIGHT", c.env.UIParent, "BOTTOM", -108, 84 },
             { "BOTTOMLEFT", c.env.UIParent, "BOTTOM", 108, 84 },
-            { "BOTTOMLEFT", rawget(c.env, "TargetFrame"), "TOPLEFT", 0, 2 },
+            { "BOTTOMLEFT", rawget(c.env, "TargetFrame"), "TOPLEFT", 0, 25 },
         }
         switchOn(c, PE)
         check(PE:IsModuleEnabled("ctrlLayout"), case.what .. ": switched off")
@@ -2015,7 +2067,7 @@ test("bars: the targeting pictures and the target of target are never moved in a
     c:leaveCombat()
     c:advance(0.1)
     local _, _, tot = extras(c)
-    eq(pointsOf(c, tot), { { "BOTTOMLEFT", c.env.TargetFrame, "TOPLEFT", 0, 2 } })
+    eq(pointsOf(c, tot), { { "BOTTOMLEFT", c.env.TargetFrame, "TOPLEFT", 0, 25 } })
     -- The game re-anchors the bars in a fight: nothing moves until it ends.
     local calls = totCalls(c)
     c:enterCombat()
@@ -2041,7 +2093,7 @@ local function systemEntry(layout, system, index)
     return nil
 end
 
-local UPDATED = "The controller layout was updated to the new arrangement. Open the settings and tap Reload now to finish."
+local UPDATED = "The controller layout was updated to the new arrangement (changes you made to it in Edit Mode are replaced). Open the settings and tap Reload now to finish."
 
 local function saidIn(c, text)
     local n = 0
@@ -2174,6 +2226,42 @@ test("template: the rebuild failing logs it and tries again next login", functio
     eq(opts(PE3).template, 2)
     eq(saidIn(c3, UPDATED), 1)
     c3:assertClean()
+end)
+
+
+test("layout: on writes the target's auras on top; a game without that setting still switches on", function()
+    -- The stand-in's Gamepad preset has the target as system 3, index 2; BuffsOnTop is setting 2
+    -- (EditModeManagerConstantsDocumentation.lua:792).
+    local function targetEntry(c)
+        for _, l in ipairs(c.world.layouts.layouts) do
+            if l.layoutName == NAME then
+                for _, entry in ipairs(l.systems) do
+                    if entry.system == 3 and entry.systemIndex == 2 then return entry end
+                end
+            end
+        end
+    end
+    local c, PE = layoutClient({}, 3)
+    switchOn(c, PE)
+    local entry = targetEntry(c)
+    eq(entry.settings, { { setting = 2, value = 1 } })
+    eq(entry.anchorInfo.offsetY, 226)
+    c:assertClean()
+    local cases = {
+        { what = "no BuffsOnTop", setup = function(c2) rawset(c2.env.Enum.EditModeUnitFrameSetting, "BuffsOnTop", nil) end },
+        { what = "no setting group", setup = function(c2) rawset(c2.env.Enum, "EditModeUnitFrameSetting", nil) end },
+        { what = "a group that raises", setup = function(c2)
+            rawset(c2.env.Enum, "EditModeUnitFrameSetting", setmetatable({}, { __index = function() error("no such value") end })) end },
+    }
+    for _, case in ipairs(cases) do
+        local c2, PE2 = layoutClient({}, 3, { setup = case.setup })
+        switchOn(c2, PE2)
+        check(PE2:IsModuleEnabled("ctrlLayout"), case.what .. ": not on")
+        local e2 = targetEntry(c2)
+        eq(#e2.settings, 0, case.what .. ": a setting was written")
+        eq(e2.anchorInfo.offsetY, 226, case.what)
+        eq(#PE2.errors, 0, case.what .. ": errors logged")
+    end
 end)
 
 return { known = KNOWN_FAILURES }
