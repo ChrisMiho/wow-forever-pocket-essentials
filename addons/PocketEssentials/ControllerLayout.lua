@@ -22,10 +22,9 @@ local ADDON_NAME, PE = ...
 --     go back to is remembered for this character (see Settle); it listens
 --     for two events until that check has run, then for nothing.
 --
--- The map's size at 100% was measured on a device and the bar's size is
--- Blizzard's own (see SIZE). Still first guesses: the map's size below 100%
--- (taken as the measured size times the percentage), the swing timer's size,
--- and every spot and gap.
+-- Sizes come from Blizzard's source and the probe's measurements (see MAP,
+-- TIMER, FRAMES, BAR below); every spot is the mockup's, moved only where a real
+-- size does not fit (0.12.0 spec, "As built").
 --
 -- 0.11.1 (spec 2026-11-23-controller-layout-0.11.1.md): the XP bars top middle,
 -- the map's title strip under the map, the buffs clear of the chat, and each
@@ -42,7 +41,6 @@ local ADDON_NAME, PE = ...
 -- edge is the spot written here, so nothing under the map moves and MapY is not raised.
 
 local type, pairs, ipairs = type, pairs, ipairs
-local min = math.min
 local sort = table.sort
 
 local Plan = {}
@@ -50,29 +48,25 @@ PE.LayoutPlan = Plan
 
 Plan.NAME = "Pocket Essentials"
 
+-- 0.12.0 (spec 2026-11-23-controller-layout-0.12.0-mockup-setup.md): one setup,
+-- the mockup's "Face bars (one setup)" (docs/ui-review/mockup-0.8.1.html,
+-- drawFace) with the game's real bars. The only options left are the three
+-- swing timers' visibility. Every spot below is in UI units at UI scale 1
+-- (1365 by 768): x from the screen's centre, y ("up") from its bottom edge.
+-- How each number follows from the Camelot source is in
+-- docs/superpowers/plans/2026-11-23-controller-layout-0.12.0.md.
+
 Plan.DEFAULTS = {
-    main = "above",     -- the main bar: "above" or "under" the map
-    map = 80,           -- the map's size in percent: 60, 70 or 80
-    frames = "corner",  -- player, pet and target frames: "corner", "stacked" or "flat"
-    size = 100,         -- spell button size in percent, 70 to 100 (below 100 a spell's own wheel may open beside its button)
-    fineMain = 1,       -- main bar size: 0.85, 1 or 1.15
-    fineSide = 1,       -- LT and RT bars
-    fineBoth = 1,       -- both-triggers bar
-    timers = "under",   -- swing timers: "under" the map, "above" the bars, or under the LT and RT bars ("bars")
     ranged = 1,         -- timer visibility: 0 Always, 1 In combat, 2 Hidden
     mainHand = 1,
     offHand = 2,
 }
 
--- The map at 100%: measured by the probe (273 by 283 at UI scale 1); the
--- Gamepad preset's map size is 100%
--- (Blizzard_EditMode/Mainline/EditModePresetLayouts.lua:397). At another
--- size it is taken as this times the percentage; the real map may be a few
--- units larger, because only a part inside it is scaled
--- (Blizzard_Minimap/Mainline/Minimap.lua:418-419).
--- A bar: Blizzard's size for a bar that does not grow
--- (Blizzard_GamepadActionBars/ActionBarStyles.lua:172); the template switches
--- growing off (ShouldExpand 0).
+-- The template's version, saved with our layout whenever it is built
+-- (opts.template). A login that finds an older one rebuilds our layout once.
+-- 1: 0.11.x (no number saved). 2: 0.12.0, the mockup's one setup.
+Plan.TEMPLATE = 2
+
 -- An XP bar: 17 high (STATUS_BAR_CONTAINER_HEIGHT,
 -- Blizzard_StatusTrackingBar/Camelot/StatusTrackingBarConstants.lua:2), 596 wide at 100%
 -- with the Gamepad UI (STATUS_BAR_CONTAINER_WIDTH_GAMEPAD, same file, line 12, and
@@ -81,35 +75,65 @@ Plan.DEFAULTS = {
 -- and 17 on StatusTrackingBarManager's bottom); with a Gamepad layout the game places both
 -- by their saved spot (Blizzard_EditMode/Camelot/EditModeUtil.lua:5-9). At the screen's top
 -- edge there is no room above, so here bar 2 sits one bar height under bar 1.
-local SIZE = { MAP_W = 273, MAP_H = 283, BAR_W = 208, BAR_H = 68, XP_H = 17 }
+local XP_H = 17
 local XP_TOP_Y = -2 -- the first XP bar's top edge, from the screen's top
-
--- The map sizes offered. 100% is left out: the two sub-menu buttons sit a
--- fixed 138 either side of the map's centre and a map that wide would cover
--- them.
-local MAP_SIZES = { [60] = true, [70] = true, [80] = true }
-
-local MAIN_UNDER_MAP_Y = 8 + SIZE.BAR_H + 14 -- the map's height with the main bar under it, written for size 100%
-local TIMERS_UNDER_LIFT = 36         -- what the swing timers under the map add to that
-local OFF_HAND_LIFT = 16             -- one more timer row under the map
 
 local UI = "UIParent"
 
+-- The map: Edit Mode Size 2 (70%; the stored Size counts in steps of 10% from 50%),
+-- its title strip underneath. With the strip underneath, the Forever map code puts
+-- the round map's frame 30 up and 10 right of the map's own bottom
+-- (Blizzard_Minimap/Camelot/Minimap.lua:72-73), scaled to 70%: a 253 frame (probe,
+-- 2026-11-23) holding the 198 round map at its centre (Mainline/Minimap.xml:60-62).
+-- Its spot is 10 left of the centre so the round map itself is centred.
+local MAP = { size = 70, x = -10, y = 38, frame = 253, round = 198, frameUp = 30, frameRight = 10 }
+-- The title strip (zone, clock): 152 by 23, 8 up and 1 left of the map's bottom
+-- (Camelot/MinimapZoneTextButton.xml:9, Camelot/Minimap.lua:75-76).
+local STRIP = { w = 152, h = 23, up = 8, x = -1 }
+
+-- Swing timers: Scale 3 (80%), Width 0 (213), Height 0 (15): 170.4 by 12 each
+-- (Blizzard_EditMode/Shared/EditModeSystemTemplates.lua:2784-2804, settings at
+-- EditModeSettingDisplayInfo.lua:777-830). Edit Mode places a frame's spot in UI
+-- units whatever its scale (EditModeSystemTemplates.lua:373-375). Stacked under the
+-- title strip, Main Hand on top as the mockup draws them.
+local TIMER = { w = 213 * 0.8, h = 15 * 0.8, y = { MainHand = 31, OffHand = 17, Ranged = 3 } }
+
+-- The unit frames: player and target 232 by 100
+-- (Blizzard_UnitFrame/Mainline/PlayerFrame.xml:14), pet 120 by 49 (probe). The
+-- mockup drew them smaller (192 by 60, 112 by 34); the frames keep its inner edges
+-- (x -236 and +236) and its middle height, and sit clear of the LT and RT bars.
+local FRAMES = {
+    Player = { "BOTTOMRIGHT", UI, "BOTTOM", -236, 172 },
+    Pet = { "BOTTOMRIGHT", UI, "BOTTOM", -236, 274 },
+    Target = { "BOTTOMLEFT", UI, "BOTTOM", 236, 172 },
+}
+
+-- A bar that does not grow: 208 by 68 (Blizzard_GamepadActionBars/ActionBarStyles.lua:172;
+-- the template switches growing off, ShouldExpand 0).
+local BAR = { w = 208, h = 68 }
+
+-- The four bars, whole, at scale 1, and the bottom anchor that carries the two
+-- sub-menu buttons (at -138 / +138, -50 from it:
+-- Blizzard_GamepadActionBars/MainActionBarFrame.xml:94-112), so they sit 138 either
+-- side of the centre, 188 up.
+local SPOTS = {
+    left = { x = -335, y = 133, s = 1 },  -- LT bar
+    top = { x = -335, y = 45, s = 1 },    -- main bar (no trigger)
+    right = { x = 335, y = 133, s = 1 },  -- RT bar
+    both = { x = 335, y = 45, s = 1 },    -- LT + RT bar
+    bottom = { x = 0, y = 238, s = 1 },   -- sub-menu buttons at (±138, 188)
+}
+
 -- The options with every missing or unusable value replaced by its default.
+-- Values saved by older versions for rows that are gone are ignored.
 local function Fill(opts)
     local out = {}
     opts = type(opts) == "table" and opts or {}
     for k, default in pairs(Plan.DEFAULTS) do
         local v = opts[k]
-        if type(v) == type(default) then out[k] = v else out[k] = default end
+        if v == 0 or v == 1 or v == 2 then out[k] = v else out[k] = default end
     end
-    if not MAP_SIZES[out.map] then out.map = Plan.DEFAULTS.map end
     return out
-end
-
--- The map's width and height at the chosen size. `o` is already filled.
-local function MapSize(o)
-    return SIZE.MAP_W * o.map / 100, SIZE.MAP_H * o.map / 100
 end
 
 local function DeepCopy(v)
@@ -119,87 +143,44 @@ local function DeepCopy(v)
     return out
 end
 
--- The three group sizes: main, side and both-triggers bars.
-function Plan.Scales(opts)
-    local o = Fill(opts)
-    local base = o.size / 100
-    local kM = min(1, base * o.fineMain)
-    local kS = min(1, base * o.fineSide)
-    local kB = min(1, base * o.fineBoth) * 0.7
-    return kM, kS, kB
+-- Where each bar group's centre goes, and its scale (always 1). x and y are UI
+-- units from the screen's bottom centre.
+function Plan.BarSpots()
+    return DeepCopy(SPOTS)
 end
 
--- The map's bottom edge, in UI units from the screen's bottom.
-function Plan.MapY(opts)
-    local o = Fill(opts)
-    local offHandShown = o.offHand ~= 2
-    if o.main == "under" then
-        local y = MAIN_UNDER_MAP_Y
-        if o.timers == "under" then
-            y = y + TIMERS_UNDER_LIFT
-            if offHandShown then y = y + OFF_HAND_LIFT end
-        end
-        return y
+-- The rectangles the template puts on screen, for the overlap check:
+-- { name = { left, bottom, right, top } } in UI units from the bottom centre.
+-- The quest tracker is taken at the height the probe measured (264).
+function Plan.Rects()
+    local r = {}
+    local function box(name, cx, cy, w, h) r[name] = { cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2 } end
+    for name, s in pairs(SPOTS) do
+        if name ~= "bottom" then box(name .. " bar", s.x, s.y, BAR.w, BAR.h) end
     end
-    if o.timers == "under" then
-        return 44 + (offHandShown and OFF_HAND_LIFT or 0)
+    local roundCentre = MAP.y + MAP.frameUp + MAP.frame * MAP.size / 100 / 2
+    local round = MAP.round * MAP.size / 100
+    box("map", MAP.x + MAP.frameRight, roundCentre, round, round)
+    r["title strip"] = { MAP.x + STRIP.x - STRIP.w / 2, MAP.y + STRIP.up, MAP.x + STRIP.x + STRIP.w / 2, MAP.y + STRIP.up + STRIP.h }
+    for name, y in pairs(TIMER.y) do r[name .. " timer"] = { -TIMER.w / 2, y, TIMER.w / 2, y + TIMER.h } end
+    r.player = { -236 - 232, 172, -236, 272 }
+    r.pet = { -236 - 120, 274, -236, 323 }
+    r.target = { 236, 172, 236 + 232, 272 }
+    r["target of target"] = { 236, 274, 236 + 120, 323 }
+    for _, side in ipairs({ -1, 1 }) do
+        box(side < 0 and "LB+LT button" or "RB+RT button", side * 138, SPOTS.bottom.y - 50, 38, 38)
     end
-    return 6
+    local W, H = 1365.33, 768
+    r["quest tracker"] = { W / 2 - 260, H - 375 - 264, W / 2, H - 375 }
+    return r
 end
 
--- Where each bar group's centre goes, and its scale. x and y are UI units from
--- the screen's bottom centre, before dividing by the scale.
-function Plan.BarSpots(opts)
-    local o = Fill(opts)
-    local kM, kS, kB = Plan.Scales(o)
-    local W, H = SIZE.BAR_W, SIZE.BAR_H
-    local mapW, mapH = MapSize(o)
-    local mapY = Plan.MapY(o)
-    local lift = o.timers == "bars" and 22 or 0
-    local left, top, both, bottom
-    if o.main == "under" then
-        left = { x = -(W * kM / 2 + 12 + W * kS / 2), y = 8 + lift + H * kS / 2, s = kS }
-        top = { x = 0, y = 8 + lift + H * kM / 2, s = kM }
-        both = { x = 0, y = mapY + mapH + 14 + H * kB / 2, s = kB }
-        bottom = { x = 0, y = mapY + mapH * 0.5 + 50, s = 1 }
-    else
-        left = { x = -(mapW / 2 + 14 + W * kS / 2), y = 8 + lift + H * kS / 2, s = kS }
-        top = { x = 0, y = mapY + mapH + 12 + H * kM / 2, s = kM }
-        both = { x = 0, y = top.y + H * kM / 2 + 22 + H * kB / 2, s = kB }
-        bottom = { x = 0, y = mapY + mapH * 0.62 + 50, s = 1 }
-    end
-    local right = { x = -left.x, y = left.y, s = left.s }
-    return { top = top, left = left, right = right, bottom = bottom, both = both }
+-- The two sub-menu wheels: centred on the sub-menu buttons, 175 across (the
+-- mockup's ring; the game puts its eight buttons 60 out, FlyoutRadial.lua:28).
+function Plan.Wheels()
+    local y = SPOTS.bottom.y - 50
+    return { { x = -138, y = y, r = 87.5 }, { x = 138, y = y, r = 87.5 } }
 end
-
--- The numbers the timers "above" and "bars" placements hang on: the top of the
--- highest bar above the map, and the LT bar's centre, both at size 100% and
--- fine-tunes of 1, for the current main bar choice and map size.
-local function TimerAnchors(o)
-    local at100 = Fill(o)
-    at100.size, at100.fineMain, at100.fineSide, at100.fineBoth = 100, 1, 1, 1
-    local spots = Plan.BarSpots(at100)
-    local _, _, kB = Plan.Scales(at100)
-    return spots.both.y + SIZE.BAR_H * kB / 2, -spots.left.x
-end
-
-local FRAME_SPOTS = {
-    corner = {
-        Player = { "BOTTOMLEFT", UI, "BOTTOMLEFT", 20, 20 },
-        Pet = { "BOTTOMLEFT", UI, "BOTTOMLEFT", 40, 124 },
-        Target = { "BOTTOMRIGHT", UI, "BOTTOMRIGHT", -20, 20 },
-    },
-    stacked = {
-        Player = { "BOTTOMRIGHT", UI, "BOTTOM", -165, 112 },
-        Pet = { "BOTTOMRIGHT", UI, "BOTTOM", -185, 216 },
-        Target = { "BOTTOMLEFT", UI, "BOTTOM", 165, 112 },
-    },
-    flat = {
-        Player = { "BOTTOMRIGHT", UI, "BOTTOM", -165, 112 },
-        Pet = { "BOTTOMRIGHT", UI, "BOTTOM", -401, 130 },
-        Target = { "BOTTOMLEFT", UI, "BOTTOM", 165, 112 },
-    },
-}
 
 local function Anchor(spot)
     return { point = spot[1], relativeTo = spot[2], relativePoint = spot[3], x = spot[4], y = spot[5] }
@@ -209,58 +190,37 @@ local function Spot(point, relativePoint, x, y)
     return { point = point, relativeTo = UI, relativePoint = relativePoint, x = x, y = y }
 end
 
--- The swing timers' spots: { Ranged, MainHand, OffHand } as { x, y }.
-local function TimerSpots(o)
-    if o.timers == "above" then
-        local topY = TimerAnchors(o)
-        return { { 0, topY + 40 }, { 0, topY + 24 }, { 0, topY + 8 } }
-    elseif o.timers == "bars" then
-        local _, sideX = TimerAnchors(o)
-        return { { -sideX, 6 }, { sideX, 6 }, { sideX, 22 } }
-    end
-    -- With the main bar under the map, the stack sits between that bar and the map.
-    local lift = o.main == "under" and 78 or 0
-    if o.offHand ~= 2 then
-        return { { 0, 40 + lift }, { 0, 24 + lift }, { 0, 8 + lift } }
-    end
-    return { { 0, 24 + lift }, { 0, 8 + lift }, { 0, -8 + lift } }
-end
-
--- Every piece of the template that the options decide, in the order of the
--- spec's tables. A piece with no `anchor` keeps its place and only gets
--- settings. `moved` is true where the game must be told the piece is no longer
--- in its default position.
+-- Every piece of the template, in the order of the spec's table. A piece with no
+-- `anchor` keeps its place and only gets settings. `moved` is true where the game
+-- must be told the piece is no longer in its default position.
 function Plan.Pieces(opts)
     local o = Fill(opts)
     local list = {}
     local function add(system, index, anchor, settings)
         list[#list + 1] = { system = system, index = index, anchor = anchor, settings = settings, moved = anchor and true or nil }
     end
-    -- The stored Size counts in steps of 10% from 50%: 80% is 3. HeaderUnderneath 1 puts
-    -- the map's title strip (zone name, clock, mail) under the map (0.11.1 spec, 3); left out
-    -- by Plan.Apply when the game has no such setting.
-    add("Minimap", nil, Spot("BOTTOM", "BOTTOM", 0, Plan.MapY(o)), { Size = (o.map - 50) / 10, HeaderUnderneath = 1 })
+    -- HeaderUnderneath 1 puts the map's title strip under the map (0.11.1 spec, 3); left
+    -- out by Plan.Apply when the game has no such setting.
+    add("Minimap", nil, Spot("BOTTOM", "BOTTOM", MAP.x, MAP.y), { Size = (MAP.size - 50) / 10, HeaderUnderneath = 1 })
     add("ChatFrame", nil, Spot("TOPRIGHT", "TOPRIGHT", -30, -40),
         { WidthHundreds = 4, WidthTensAndOnes = 30, HeightHundreds = 2, HeightTensAndOnes = 10 })
-    -- Buffs, debuffs and the quest tracker start under the chat's last lines (0.11.1 spec, 4).
+    -- Buffs and debuffs under the chat's last lines (0.11.1 spec, 4). The quest tracker
+    -- flush with the right edge: it is 260 wide (probe), not the mockup's 218, and this
+    -- keeps it clear of the RT bar until it holds a long list.
     add("AuraFrame", "BuffFrame", Spot("TOPRIGHT", "TOPRIGHT", -30, -292), nil)
     add("AuraFrame", "DebuffFrame", Spot("TOPRIGHT", "TOPRIGHT", -30, -330), nil)
-    add("ObjectiveTracker", nil, Spot("TOPRIGHT", "TOPRIGHT", -30, -375), { Height = 0 })
-    -- The XP bars along the top edge, centred, at 100% (0.11.1 spec, 1), the second right
-    -- under the first.
+    add("ObjectiveTracker", nil, Spot("TOPRIGHT", "TOPRIGHT", 0, -375), { Height = 0 })
+    -- The XP bars along the top edge, centred, at 100% (0.11.1 spec, 1).
     add("StatusTrackingBar", "StatusTrackingBar1", Spot("TOP", "TOP", 0, XP_TOP_Y), { Size = 10 })
-    add("StatusTrackingBar", "StatusTrackingBar2", Spot("TOP", "TOP", 0, XP_TOP_Y - SIZE.XP_H), { Size = 10 })
+    add("StatusTrackingBar", "StatusTrackingBar2", Spot("TOP", "TOP", 0, XP_TOP_Y - XP_H), { Size = 10 })
     add("GamepadMainActionBar", nil, nil, { Compact = 0, ShowEmptyBars = 0, ShouldExpand = 0 })
-    local frames = FRAME_SPOTS[o.frames] or FRAME_SPOTS.corner
-    add("UnitFrame", "Player", Anchor(frames.Player), nil)
-    add("UnitFrame", "Pet", Anchor(frames.Pet), nil)
-    add("UnitFrame", "Target", Anchor(frames.Target), nil)
-    local t = TimerSpots(o)
-    local names = { "Ranged", "MainHand", "OffHand" }
-    local visibility = { o.ranged, o.mainHand, o.offHand }
-    for i, name in ipairs(names) do
-        add("SwingTimer", name, Spot("BOTTOM", "BOTTOM", t[i][1], t[i][2]),
-            { Scale = 3, Width = 0, Height = 0, Visibility = visibility[i] })
+    add("UnitFrame", "Player", Anchor(FRAMES.Player), nil)
+    add("UnitFrame", "Pet", Anchor(FRAMES.Pet), nil)
+    add("UnitFrame", "Target", Anchor(FRAMES.Target), nil)
+    local visibility = { Ranged = o.ranged, MainHand = o.mainHand, OffHand = o.offHand }
+    for _, name in ipairs({ "MainHand", "OffHand", "Ranged" }) do
+        add("SwingTimer", name, Spot("BOTTOM", "BOTTOM", 0, TIMER.y[name]),
+            { Scale = 3, Width = 0, Height = 0, Visibility = visibility[name] })
     end
     return list
 end
@@ -967,7 +927,7 @@ local function PlaceNow()
             return
         end
     end
-    local spots = Plan.BarSpots(mod.opts)
+    local spots = Plan.BarSpots()
     placed = true
     for _, b in ipairs(BAR_FRAMES) do
         local spot = spots[b.spot]
@@ -1219,16 +1179,13 @@ local function RememberApplied(opts)
     for k in pairs(Plan.DEFAULTS) do applied[k] = o[k] end
 end
 
--- Which pieces of Plan.Pieces each (L) row rewrites.
-local function TimersAndMap(p) return p.system == "SwingTimer" or p.system == "Minimap" end
+-- Which pieces of Plan.Pieces each row rewrites: its own swing timer only (one
+-- setup since 0.12.0: the stack's spots no longer depend on what is shown).
+local function Timer(index) return function(p) return p.system == "SwingTimer" and p.index == index end end
 local REWRITES = {
-    main = TimersAndMap,                                         -- the map's height and the timer stack under it
-    map = TimersAndMap,                                          -- the map's size, and the timers that hang on the bars
-    frames = function(p) return p.system == "UnitFrame" end,     -- Player, Pet, Target
-    timers = TimersAndMap,
-    ranged = function(p) return p.system == "SwingTimer" and p.index == "Ranged" end,
-    mainHand = function(p) return p.system == "SwingTimer" and p.index == "MainHand" end,
-    offHand = TimersAndMap,                                      -- the stack and the map's height depend on it
+    ranged = Timer("Ranged"),
+    mainHand = Timer("MainHand"),
+    offHand = Timer("OffHand"),
 }
 
 -- Our layout from a fresh read: state, its position in state.saved, and enums;
@@ -1302,17 +1259,10 @@ local function RewritePieces(filter, key)
     return true
 end
 
--- OnChange of a row: (L) rows rewrite their pieces, (B) rows place the bars.
-local function LayoutRow(key, bars)
+-- OnChange of a row: rewrites its pieces in our layout.
+local function LayoutRow(key)
     return function()
-        if RewritePieces(REWRITES[key], key) and bars then SyncBars() end
-    end
-end
-
-local function BarsRow(key)
-    return function(m)
-        applied[key] = m.opts[key]
-        SyncBars()
+        RewritePieces(REWRITES[key], key)
     end
 end
 
@@ -1355,34 +1305,14 @@ local function StartOver()
     PE:RunOutOfCombat("ctrlLayout:startOver", RunStartOver)
 end
 
-local SIZES = { { value = 0.85, label = "Smaller" }, { value = 1, label = "Same" }, { value = 1.15, label = "Bigger" } }
 local VISIBILITY = { { value = 0, label = "Always" }, { value = 1, label = "In combat" }, { value = 2, label = "Hidden" } }
 
+-- One setup (0.12.0 spec, "One setup"): the rows that made other arrangements are
+-- gone; values older versions saved for them stay in the file, unused.
 local OPTIONS = {
-    { key = "main", label = "Main bar",
-      choices = { { value = "above", label = "Above the map" }, { value = "under", label = "Under the map" } },
-      OnChange = LayoutRow("main", true) },
-    { key = "map", label = "Map size",
-      choices = { { value = 60, label = "60%" }, { value = 70, label = "70%" }, { value = 80, label = "80%" } },
-      OnChange = LayoutRow("map", true) },
-    { key = "frames", label = "Player and target frames",
-      choices = { { value = "corner", label = "Corners" }, { value = "stacked", label = "Stacked" },
-                  { value = "flat", label = "Side by side" } },
-      OnChange = LayoutRow("frames", false) },
-    { key = "size", label = "Spell button size",
-      help = "Below 100%, a spell that opens its own wheel may open beside its button.",
-      number = { min = 70, max = 100, step = 5, default = 100, suffix = "%" },
-      OnChange = BarsRow("size") },
-    { key = "fineMain", label = "Main bar size", choices = SIZES, OnChange = BarsRow("fineMain") },
-    { key = "fineSide", label = "LT and RT bar size", choices = SIZES, OnChange = BarsRow("fineSide") },
-    { key = "fineBoth", label = "Both-triggers bar size", choices = SIZES, OnChange = BarsRow("fineBoth") },
-    { key = "timers", label = "Swing timers",
-      choices = { { value = "under", label = "Under the map" }, { value = "above", label = "Above the bars" },
-                  { value = "bars", label = "Under the LT and RT bars" } },
-      OnChange = LayoutRow("timers", true) },
-    { key = "ranged", label = "Ranged timer", choices = VISIBILITY, OnChange = LayoutRow("ranged", false) },
-    { key = "mainHand", label = "Main Hand timer", choices = VISIBILITY, OnChange = LayoutRow("mainHand", false) },
-    { key = "offHand", label = "Off Hand timer", choices = VISIBILITY, OnChange = LayoutRow("offHand", false) },
+    { key = "ranged", label = "Ranged timer", choices = VISIBILITY, OnChange = LayoutRow("ranged") },
+    { key = "mainHand", label = "Main Hand timer", choices = VISIBILITY, OnChange = LayoutRow("mainHand") },
+    { key = "offHand", label = "Off Hand timer", choices = VISIBILITY, OnChange = LayoutRow("offHand") },
     { label = "Template", button = "Start over", action = function() StartOver() end },
 }
 

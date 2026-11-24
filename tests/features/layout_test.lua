@@ -69,73 +69,6 @@ end
 -- Sizes
 ---------------------------------------------------------------------------
 
-test("layout: Scales give size times the fine-tune, capped at 100%, the both-triggers bar 0.7 of that", function()
-    local Plan = plan()
-    local dM, dS, dB = Plan.Scales(with(Plan.DEFAULTS))
-    near(dM, 1, "default kM")
-    near(dS, 1, "default kS")
-    near(dB, 0.7, "default kB")
-    local kM, kS, kB = Plan.Scales(with({ size = 85 }))
-    near(kM, 0.85, "kM")
-    near(kS, 0.85, "kS")
-    near(kB, 0.595, "kB")
-    local _, kS2 = Plan.Scales(with({ size = 100, fineSide = 1.15 }))
-    near(kS2, 1, "kS capped")
-    local kM3 = Plan.Scales(with({ size = 70, fineMain = 0.85 }))
-    near(kM3, 0.595, "kM small")
-end)
-
-test("layout: MapY is 44 with the timers under, 6 otherwise, and 90 or more with the main bar under", function()
-    local Plan = plan()
-    eq(Plan.MapY(with(Plan.DEFAULTS)), 44)
-    eq(Plan.MapY(with({ timers = "bars" })), 6)
-    eq(Plan.MapY(with({ timers = "above" })), 6)
-    eq(Plan.MapY(with({ main = "under", timers = "under" })), 126)
-    eq(Plan.MapY(with({ main = "under", timers = "above" })), 90)
-    eq(Plan.MapY(with({ main = "under", timers = "bars", size = 70 })), 90, "the template is written for 100%")
-    -- A shown Off Hand timer adds 16 under the map.
-    eq(Plan.MapY(with({ offHand = 0 })), 60)
-    eq(Plan.MapY(with({ main = "under", offHand = 1 })), 142)
-    eq(Plan.MapY(with({ timers = "above", offHand = 0 })), 6)
-end)
-
-test("layout: BarSpots for the defaults follow the spec's Bars table", function()
-    local Plan = plan()
-    local o = with(Plan.DEFAULTS)
-    o.size = 85 -- the scaled arithmetic (the default is 100)
-    local s = Plan.BarSpots(o)
-    near(s.left.x, -(218.4 / 2 + 14 + 208 * 0.85 / 2), "left.x")
-    near(s.left.y, 8 + 68 * 0.85 / 2, "left.y")
-    near(s.left.s, 0.85, "left.s")
-    near(s.right.x, -s.left.x, "right.x")
-    near(s.right.y, s.left.y, "right.y")
-    near(s.top.x, 0, "top.x")
-    near(s.top.y, 44 + 226.4 + 12 + 68 * 0.85 / 2, "top.y")
-    near(s.top.s, 0.85, "top.s")
-    eq(s.bottom.s, 1)
-    near(s.bottom.x, 0, "bottom.x")
-    near(s.bottom.y, 44 + 226.4 * 0.62 + 50, "bottom.y")
-    near(s.both.x, 0, "both.x")
-    near(s.both.y, s.top.y + 68 * 0.85 / 2 + 22 + 68 * 0.595 / 2, "both.y")
-    near(s.both.s, 0.595, "both.s")
-    -- Timers under the LT and RT bars: both side bars sit 22 higher.
-    local b = Plan.BarSpots(with({ timers = "bars", size = 85 }))
-    near(b.left.y, s.left.y + 22, "lifted left")
-    near(b.right.y, s.right.y + 22, "lifted right")
-end)
-
-test("layout: BarSpots with the main bar under the map", function()
-    local Plan = plan()
-    local o = with({ main = "under", timers = "above", size = 85 })
-    local s = Plan.BarSpots(o)
-    near(s.left.x, -(208 * 0.85 / 2 + 12 + 208 * 0.85 / 2), "left.x")
-    near(s.left.y, 8 + 68 * 0.85 / 2, "left.y")
-    near(s.top.y, 8 + 68 * 0.85 / 2, "top.y")
-    near(s.both.y, 90 + 226.4 + 14 + 68 * 0.595 / 2, "both.y")
-    near(s.bottom.y, 90 + 226.4 * 0.5 + 50, "bottom.y")
-    eq(s.bottom.s, 1)
-end)
-
 ---------------------------------------------------------------------------
 -- Pieces
 ---------------------------------------------------------------------------
@@ -145,8 +78,8 @@ test("layout: Pieces for the defaults carry the template's anchors and settings"
     local list = Plan.Pieces(with(Plan.DEFAULTS))
     local map = piece(list, "Minimap")
     check(map, "no Minimap piece")
-    eq(map.anchor, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 0, y = 44 })
-    eq(map.settings, { Size = 3, HeaderUnderneath = 1 })
+    eq(map.anchor, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -10, y = 38 })
+    eq(map.settings, { Size = 2, HeaderUnderneath = 1 })
     eq(map.moved, true)
     local chat = piece(list, "ChatFrame")
     eq(chat.anchor, { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -30, y = -40 })
@@ -154,24 +87,15 @@ test("layout: Pieces for the defaults carry the template's anchors and settings"
     eq(piece(list, "AuraFrame", "BuffFrame").anchor.y, -292)
     eq(piece(list, "AuraFrame", "DebuffFrame").anchor.y, -330)
     local quest = piece(list, "ObjectiveTracker")
-    eq(quest.anchor.y, -375)
+    eq(quest.anchor, { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = 0, y = -375 })
     eq(quest.settings, { Height = 0 })
-    local ranged = piece(list, "SwingTimer", "Ranged")
-    eq(ranged.settings.Visibility, 1)
-    eq(ranged.settings.Scale, 3)
-    eq(ranged.settings.Width, 0)
-    eq(ranged.settings.Height, 0)
-    eq(ranged.anchor, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 0, y = 24 })
-    eq(piece(list, "SwingTimer", "MainHand").anchor.y, 8)
+    for _, name in ipairs({ "MainHand", "OffHand", "Ranged" }) do
+        local t = piece(list, "SwingTimer", name)
+        eq({ t.settings.Scale, t.settings.Width, t.settings.Height }, { 3, 0, 0 }, name)
+    end
+    eq(piece(list, "SwingTimer", "Ranged").settings.Visibility, 1)
     eq(piece(list, "SwingTimer", "MainHand").settings.Visibility, 1)
     eq(piece(list, "SwingTimer", "OffHand").settings.Visibility, 2)
-    eq(piece(list, "SwingTimer", "OffHand").anchor.y, -8)
-    eq(piece(list, "UnitFrame", "Player").anchor,
-        { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOMLEFT", x = 20, y = 20 })
-    eq(piece(list, "UnitFrame", "Pet").anchor,
-        { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOMLEFT", x = 40, y = 124 })
-    eq(piece(list, "UnitFrame", "Target").anchor,
-        { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOMRIGHT", x = -20, y = 20 })
     for _, name in ipairs({ "StatusTrackingBar1", "StatusTrackingBar2" }) do
         local p = piece(list, "StatusTrackingBar", name)
         check(p, "no " .. name)
@@ -184,49 +108,114 @@ test("layout: Pieces for the defaults carry the template's anchors and settings"
     eq(bar.moved, nil)
 end)
 
-test("layout: Pieces follow the frames option", function()
+test("plan: map bottom middle at 70% with its title under it", function()
     local Plan = plan()
-    local flat = Plan.Pieces(with({ frames = "flat" }))
-    eq(piece(flat, "UnitFrame", "Pet").anchor,
-        { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -401, y = 130 })
-    eq(piece(flat, "UnitFrame", "Player").anchor.x, -165)
-    eq(piece(flat, "UnitFrame", "Target").anchor,
-        { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 165, y = 112 })
-    local stacked = Plan.Pieces(with({ frames = "stacked" }))
-    eq(piece(stacked, "UnitFrame", "Pet").anchor,
-        { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -185, y = 216 })
+    local map = piece(Plan.Pieces(), "Minimap")
+    eq(map.anchor, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -10, y = 38 })
+    eq(map.settings, { Size = 2, HeaderUnderneath = 1 })
+    -- The round map: 30 up and 10 right of the map's bottom, its 253 frame at 70%.
+    local r = Plan.Rects()
+    near((r.map[1] + r.map[3]) / 2, 0, "round map centred")
+    near((r.map[2] + r.map[4]) / 2, 38 + 30 + 253 * 0.7 / 2, "round map centre up")
+    near(r.map[3] - r.map[1], 198 * 0.7, "round map width")
+    -- The title strip right under it.
+    eq(r["title strip"], { -10 - 1 - 76, 46, -10 - 1 + 76, 69 })
+    check(r["title strip"][4] < r.map[2], "the strip reaches the round map")
 end)
 
-test("layout: Pieces follow the timers option", function()
+test("plan: swing timers stacked under the title strip", function()
     local Plan = plan()
-    -- Off Hand shown with the timers under: the stack keeps Ranged on top.
-    local shown = Plan.Pieces(with({ offHand = 0 }))
-    eq(piece(shown, "SwingTimer", "OffHand").anchor.y, 8)
-    eq(piece(shown, "SwingTimer", "MainHand").anchor.y, 24)
-    eq(piece(shown, "SwingTimer", "Ranged").anchor.y, 40)
-    eq(piece(shown, "Minimap").anchor.y, 60)
-    -- Above the bars.
-    local o = with({ timers = "above" })
-    local spots = Plan.BarSpots(with({ timers = "above", size = 100, fineMain = 1, fineSide = 1, fineBoth = 1 }))
-    local topY = spots.both.y + 68 * 0.7 / 2
-    local above = Plan.Pieces(o)
-    near(piece(above, "SwingTimer", "Ranged").anchor.y, topY + 40, "above ranged")
-    near(piece(above, "SwingTimer", "MainHand").anchor.y, topY + 24, "above main hand")
-    near(piece(above, "SwingTimer", "OffHand").anchor.y, topY + 8, "above off hand")
-    eq(piece(above, "Minimap").anchor.y, 6)
-    -- Under the LT and RT bars.
-    local sideX = -Plan.BarSpots(with({ timers = "bars", size = 100 })).left.x
-    local bars = Plan.Pieces(with({ timers = "bars" }))
-    near(piece(bars, "SwingTimer", "Ranged").anchor.x, -sideX, "bars ranged x")
-    near(piece(bars, "SwingTimer", "MainHand").anchor.x, sideX, "bars main hand x")
-    near(piece(bars, "SwingTimer", "OffHand").anchor.x, sideX, "bars off hand x")
-    eq(piece(bars, "SwingTimer", "Ranged").anchor.y, 6)
-    eq(piece(bars, "SwingTimer", "OffHand").anchor.y, 22)
-    -- Visibility is the option's value.
-    local vis = Plan.Pieces(with({ ranged = 2, mainHand = 0, offHand = 1 }))
-    eq(piece(vis, "SwingTimer", "Ranged").settings.Visibility, 2)
-    eq(piece(vis, "SwingTimer", "MainHand").settings.Visibility, 0)
-    eq(piece(vis, "SwingTimer", "OffHand").settings.Visibility, 1)
+    local list = Plan.Pieces()
+    eq(piece(list, "SwingTimer", "MainHand").anchor, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 0, y = 31 })
+    eq(piece(list, "SwingTimer", "OffHand").anchor.y, 17)
+    eq(piece(list, "SwingTimer", "Ranged").anchor.y, 3)
+    local r = Plan.Rects()
+    near(r["MainHand timer"][3] - r["MainHand timer"][1], 170.4, "timer width")
+    near(r["MainHand timer"][4] - r["MainHand timer"][2], 12, "timer height")
+    check(r["MainHand timer"][4] < r["title strip"][2], "the top timer reaches the strip")
+    check(r["Ranged timer"][2] >= 0, "the bottom timer is off screen")
+    -- Order from the top: Main Hand, Off Hand, Ranged, whatever is shown.
+    for _, o in ipairs({ { offHand = 0 }, { ranged = 2, mainHand = 2 } }) do
+        local l = Plan.Pieces(o)
+        eq({ piece(l, "SwingTimer", "MainHand").anchor.y, piece(l, "SwingTimer", "OffHand").anchor.y, piece(l, "SwingTimer", "Ranged").anchor.y }, { 31, 17, 3 })
+    end
+end)
+
+test("plan: player, pet and target frames", function()
+    local Plan = plan()
+    local list = Plan.Pieces()
+    eq(piece(list, "UnitFrame", "Player").anchor, { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -236, y = 172 })
+    eq(piece(list, "UnitFrame", "Pet").anchor, { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -236, y = 274 })
+    eq(piece(list, "UnitFrame", "Target").anchor, { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 236, y = 172 })
+    for _, i in ipairs({ "Player", "Pet", "Target" }) do eq(piece(list, "UnitFrame", i).moved, true, i) end
+end)
+
+test("plan: four whole bars at the mockup's spots", function()
+    local Plan = plan()
+    local s = Plan.BarSpots()
+    eq(s.left, { x = -335, y = 133, s = 1 })
+    eq(s.top, { x = -335, y = 45, s = 1 })
+    eq(s.right, { x = 335, y = 133, s = 1 })
+    eq(s.both, { x = 335, y = 45, s = 1 })
+    -- Old saved values change nothing.
+    eq(Plan.BarSpots({ size = 70, fineBoth = 0.85, main = "under", map = 60 }), s)
+end)
+
+test("plan: sub-menu buttons 138 either side at 188 up", function()
+    local Plan = plan()
+    eq(Plan.BarSpots().bottom, { x = 0, y = 238, s = 1 })
+    local w = Plan.Wheels()
+    eq({ w[1].x, w[1].y, w[2].x, w[2].y }, { -138, 188, 138, 188 })
+end)
+
+test("plan: no piece overlaps another", function()
+    local Plan = plan()
+    local r = Plan.Rects()
+    local names = {}
+    for name in pairs(r) do names[#names + 1] = name end
+    table.sort(names)
+    local W, H = 1365.33, 768
+    -- Known: the quest tracker is 260 wide (probe), not the mockup's 218, and the target
+    -- frame 232, not 192; at the height the probe read (264) the tracker's lower-left part
+    -- reaches over the target frame's right end (45) and the RT bar's top-right corner (16).
+    -- Written in the spec's "As built"; nothing can move without reaching a wheel.
+    local allowed = { ["quest tracker|right bar"] = 16.34, ["quest tracker|target"] = 45.34 }
+    for i = 1, #names do
+        local a = r[names[i]]
+        check(a[1] >= -W / 2 and a[3] <= W / 2 and a[2] >= 0 and a[4] <= H, names[i] .. " is off screen")
+        for j = i + 1, #names do
+            local b = r[names[j]]
+            local w = math.min(a[3], b[3]) - math.max(a[1], b[1])
+            local h = math.min(a[4], b[4]) - math.max(a[2], b[2])
+            if w > 0 and h > 0 then
+                local limit = allowed[names[i] .. "|" .. names[j]]
+                check(limit and w <= limit, names[i] .. " overlaps " .. names[j] .. " (" .. w .. " by " .. h .. ")")
+            end
+        end
+    end
+end)
+
+test("plan: the bars and frames clear the two wheel circles", function()
+    local Plan = plan()
+    local r = Plan.Rects()
+    for _, wheel in ipairs(Plan.Wheels()) do
+        for _, name in ipairs({ "left bar", "top bar", "right bar", "both bar", "player", "pet", "target", "target of target" }) do
+            local b = r[name]
+            local nx = math.max(b[1], math.min(wheel.x, b[3]))
+            local ny = math.max(b[2], math.min(wheel.y, b[4]))
+            local d = math.sqrt((nx - wheel.x) ^ 2 + (ny - wheel.y) ^ 2)
+            check(d > wheel.r, name .. " reaches the wheel at " .. wheel.x .. " (" .. d .. ")")
+        end
+    end
+end)
+
+test("plan: old saved option values do not change the plan", function()
+    local Plan = plan()
+    local old = { main = "under", map = 60, frames = "flat", size = 70, fineMain = 1.15, fineSide = 0.85, fineBoth = 0.85, timers = "bars" }
+    eq(Plan.Pieces(old), Plan.Pieces())
+    -- Only the three timer visibilities count; a value that is not 0, 1 or 2 is its default.
+    eq(piece(Plan.Pieces({ ranged = 0, offHand = 1 }), "SwingTimer", "Ranged").settings.Visibility, 0)
+    eq(piece(Plan.Pieces({ ranged = "x", offHand = 7 }), "SwingTimer", "OffHand").settings.Visibility, 2)
 end)
 
 ---------------------------------------------------------------------------
@@ -271,8 +260,8 @@ test("layout: Build changes the template's pieces, leaves the rest and the base 
     eq(layout.systems[3], base.systems[3], "an unrelated system changed")
     local map = layout.systems[1]
     eq(map.isInDefaultPosition, false)
-    eq(map.anchorInfo, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = 0, offsetY = 44 })
-    eq(settingValue(map, e.setting.Minimap.Size), 3)
+    eq(map.anchorInfo, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = -10, offsetY = 38 })
+    eq(settingValue(map, e.setting.Minimap.Size), 2)
     -- A setting missing from the entry is appended.
     local chat = layout.systems[2]
     eq(settingValue(chat, e.setting.ChatFrame.WidthHundreds), 4)
@@ -289,7 +278,7 @@ test("layout: Apply changes only the pieces given and reports how many it change
     local list = Plan.Pieces(with(Plan.DEFAULTS))
     local only = { piece(list, "Minimap"), piece(list, "UnitFrame", "Pet") }
     eq(Plan.Apply(layout, only, e), 1, "only the Minimap is in this layout")
-    eq(layout.systems[1].anchorInfo.offsetY, 44)
+    eq(layout.systems[1].anchorInfo.offsetY, 38)
     eq(layout.systems[2].isInDefaultPosition, true)
     eq(Plan.Apply(layout, {}, e), 0)
 end)
@@ -304,25 +293,9 @@ test("layout: a piece with an index only changes the entry with that index", fun
           anchorInfo = { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", offsetX = 0, offsetY = 0 } },
     } }
     eq(Plan.Apply(layout, Plan.Pieces(with(Plan.DEFAULTS)), e), 2)
-    eq(layout.systems[1].anchorInfo.offsetX, 20)
-    eq(layout.systems[2].anchorInfo.offsetX, 40)
+    eq(layout.systems[1].anchorInfo.offsetY, 172)
+    eq(layout.systems[2].anchorInfo.offsetY, 274)
     eq(layout.systems[2].isInDefaultPosition, false)
-end)
-
-test("layout: with the main bar under the map the timer stack sits between that bar and the map", function()
-    local Plan = plan()
-    local hidden = Plan.Pieces(with({ main = "under" }))
-    eq(piece(hidden, "SwingTimer", "Ranged").anchor.y, 102)
-    eq(piece(hidden, "SwingTimer", "MainHand").anchor.y, 86)
-    eq(piece(hidden, "SwingTimer", "OffHand").anchor.y, 70)
-    eq(piece(hidden, "Minimap").anchor.y, 126)
-    local shown = Plan.Pieces(with({ main = "under", offHand = 0 }))
-    eq(piece(shown, "SwingTimer", "Ranged").anchor.y, 118)
-    eq(piece(shown, "SwingTimer", "MainHand").anchor.y, 102)
-    eq(piece(shown, "SwingTimer", "OffHand").anchor.y, 86)
-    eq(piece(shown, "Minimap").anchor.y, 142)
-    -- Main bar above: unchanged.
-    eq(piece(Plan.Pieces(with({})), "SwingTimer", "Ranged").anchor.y, 24)
 end)
 
 test("layout: Apply drops a second anchor when it sets an anchor, and keeps it for settings only", function()
@@ -347,7 +320,7 @@ end)
 
 test("plan: XP bars top middle at 100%", function()
     local Plan = plan()
-    for _, o in ipairs({ with(Plan.DEFAULTS), with({ main = "under", map = 60, timers = "bars" }) }) do
+    for _, o in ipairs({ with(Plan.DEFAULTS), with({ offHand = 0 }) }) do
         local list = Plan.Pieces(o)
         local one = piece(list, "StatusTrackingBar", "StatusTrackingBar1")
         eq(one.anchor, { point = "TOP", relativeTo = "UIParent", relativePoint = "TOP", x = 0, y = -2 })
@@ -382,16 +355,11 @@ end)
 test("plan: minimap header underneath", function()
     local Plan = plan()
     local e = fakeEnums()
-    for _, m in ipairs({ 60, 70, 80 }) do
-        eq(piece(Plan.Pieces(with({ map = m })), "Minimap").settings.HeaderUnderneath, 1, "map " .. m)
-    end
+    eq(piece(Plan.Pieces(), "Minimap").settings.HeaderUnderneath, 1)
     local layout = Plan.Build(baseLayout(e), with(Plan.DEFAULTS), e)
     eq(settingValue(layout.systems[1], e.setting.Minimap.HeaderUnderneath), 1)
-    eq(settingValue(layout.systems[1], e.setting.Minimap.Size), 3)
+    eq(settingValue(layout.systems[1], e.setting.Minimap.Size), 2)
     eq(#layout.systems[1].settings, 2, "Size and HeaderUnderneath")
-    -- The header sits inside the map's own frame (Blizzard_Minimap/Camelot/Minimap.lua:68-84),
-    -- so the map's spot is not lifted for it.
-    eq(Plan.MapY(with(Plan.DEFAULTS)), 44)
 end)
 
 test("plan: no HeaderUnderneath enum leaves it out", function()
@@ -401,8 +369,8 @@ test("plan: no HeaderUnderneath enum leaves it out", function()
     local layout = Plan.Build(baseLayout(e), with(Plan.DEFAULTS), e)
     local map = layout.systems[1]
     eq(#map.settings, 1, "only Size")
-    eq(settingValue(map, e.setting.Minimap.Size), 3)
-    eq(map.anchorInfo.offsetY, 44)
+    eq(settingValue(map, e.setting.Minimap.Size), 2)
+    eq(map.anchorInfo.offsetY, 38)
 end)
 
 test("plan: buffs, debuffs, tracker spots", function()
@@ -413,127 +381,12 @@ test("plan: buffs, debuffs, tracker spots", function()
     eq(piece(list, "AuraFrame", "DebuffFrame").anchor,
         { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -30, y = -330 })
     local quest = piece(list, "ObjectiveTracker")
-    eq(quest.anchor, { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -30, y = -375 })
+    eq(quest.anchor, { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = 0, y = -375 })
     eq(quest.settings, { Height = 0 })
     -- The chat box keeps its spot and size.
     local chat = piece(list, "ChatFrame")
     eq(chat.anchor, { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -30, y = -40 })
     eq(chat.settings, { WidthHundreds = 4, WidthTensAndOnes = 30, HeightHundreds = 2, HeightTensAndOnes = 10 })
-end)
-
----------------------------------------------------------------------------
--- Map size (spec 2026-11-22-controller-layout-measured-sizes.md). The map is
--- 273 by 283 at 100%: 163.8 by 169.8 at 60%, 191.1 by 198.1 at 70%, 218.4 by
--- 226.4 at 80%. Every number below is worked out by hand from those.
----------------------------------------------------------------------------
-
-local MAP_CASES = {
-    -- leftX: mapW/2 + 14 + 104. topY: 44 + mapH + 12 + 34. bothY: topY + 34 + 22 + 23.8.
-    -- bottomY: 44 + mapH * 0.62 + 50. aboveTop: the both-triggers bar's top with the map at 6.
-    { map = 60, stored = 1, leftX = 199.9, topY = 259.8, bothY = 339.6, bottomY = 199.276, aboveTop = 325.4,
-      underBothY = 297.6, underBottomY = 224.9 },
-    { map = 70, stored = 2, leftX = 213.55, topY = 288.1, bothY = 367.9, bottomY = 216.822, aboveTop = 353.7,
-      underBothY = 325.9, underBottomY = 239.05 },
-    { map = 80, stored = 3, leftX = 227.2, topY = 316.4, bothY = 396.2, bottomY = 234.368, aboveTop = 382,
-      underBothY = 354.2, underBottomY = 253.2 },
-}
-
-test("layout: the map option defaults to 80", function()
-    local Plan = plan()
-    eq(Plan.DEFAULTS.map, 80)
-end)
-
-test("layout: BarSpots follow the map's size at 60, 70 and 80 percent", function()
-    local Plan = plan()
-    for _, m in ipairs(MAP_CASES) do
-        local what = "map " .. m.map .. " "
-        local s = Plan.BarSpots(with({ map = m.map }))
-        near(s.left.x, -m.leftX, what .. "left.x")
-        near(s.right.x, m.leftX, what .. "right.x")
-        near(s.left.y, 42, what .. "left.y")
-        near(s.right.y, 42, what .. "right.y")
-        near(s.left.s, 1, what .. "left.s")
-        near(s.top.x, 0, what .. "top.x")
-        near(s.top.y, m.topY, what .. "top.y")
-        near(s.top.s, 1, what .. "top.s")
-        near(s.both.x, 0, what .. "both.x")
-        near(s.both.y, m.bothY, what .. "both.y")
-        near(s.both.s, 0.7, what .. "both.s")
-        near(s.bottom.y, m.bottomY, what .. "bottom.y")
-        eq(s.bottom.s, 1)
-        -- Main bar under the map: the side bars hug the main bar, so the map's width does not move them.
-        local u = Plan.BarSpots(with({ map = m.map, main = "under", timers = "above" }))
-        near(u.left.x, -220, what .. "under left.x")
-        near(u.top.y, 42, what .. "under top.y")
-        near(u.both.y, m.underBothY, what .. "under both.y")
-        near(u.bottom.y, m.underBottomY, what .. "under bottom.y")
-    end
-end)
-
-test("layout: the map's y does not depend on the map's size", function()
-    local Plan = plan()
-    for _, m in ipairs(MAP_CASES) do
-        eq(Plan.MapY(with({ map = m.map })), 44)
-        eq(Plan.MapY(with({ map = m.map, offHand = 0 })), 60)
-        eq(Plan.MapY(with({ map = m.map, timers = "above" })), 6)
-        eq(Plan.MapY(with({ map = m.map, timers = "bars" })), 6)
-        eq(Plan.MapY(with({ map = m.map, main = "under" })), 126)
-        eq(Plan.MapY(with({ map = m.map, main = "under", timers = "bars" })), 90)
-    end
-end)
-
-test("layout: the timer spots follow the map's size at 60, 70 and 80 percent", function()
-    local Plan = plan()
-    for _, m in ipairs(MAP_CASES) do
-        local what = "map " .. m.map .. " "
-        -- Under the map: the same spots at every size.
-        local under = Plan.Pieces(with({ map = m.map }))
-        eq(piece(under, "SwingTimer", "Ranged").anchor, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 0, y = 24 })
-        eq(piece(under, "SwingTimer", "MainHand").anchor.y, 8)
-        eq(piece(under, "SwingTimer", "OffHand").anchor.y, -8)
-        -- Above the bars: over the both-triggers bar's top, at any spell button size.
-        local above = Plan.Pieces(with({ map = m.map, timers = "above", size = 70, fineBoth = 0.85 }))
-        near(piece(above, "SwingTimer", "Ranged").anchor.y, m.aboveTop + 40, what .. "above ranged")
-        near(piece(above, "SwingTimer", "MainHand").anchor.y, m.aboveTop + 24, what .. "above main hand")
-        near(piece(above, "SwingTimer", "OffHand").anchor.y, m.aboveTop + 8, what .. "above off hand")
-        eq(piece(above, "SwingTimer", "Ranged").anchor.x, 0)
-        -- Under the LT and RT bars: on the side bars' centres.
-        local bars = Plan.Pieces(with({ map = m.map, timers = "bars" }))
-        near(piece(bars, "SwingTimer", "Ranged").anchor.x, -m.leftX, what .. "bars ranged x")
-        near(piece(bars, "SwingTimer", "MainHand").anchor.x, m.leftX, what .. "bars main hand x")
-        near(piece(bars, "SwingTimer", "OffHand").anchor.x, m.leftX, what .. "bars off hand x")
-        eq(piece(bars, "SwingTimer", "Ranged").anchor.y, 6)
-        eq(piece(bars, "SwingTimer", "MainHand").anchor.y, 6)
-        eq(piece(bars, "SwingTimer", "OffHand").anchor.y, 22)
-    end
-end)
-
-test("layout: the template's Minimap entry stores the map's size as (map - 50) / 10", function()
-    local Plan = plan()
-    local e = fakeEnums()
-    for _, m in ipairs(MAP_CASES) do
-        local map = piece(Plan.Pieces(with({ map = m.map })), "Minimap")
-        eq(map.settings, { Size = m.stored, HeaderUnderneath = 1 })
-        eq(map.anchor, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 0, y = 44 })
-        local layout = Plan.Build(baseLayout(e), with({ map = m.map }), e)
-        eq(settingValue(layout.systems[1], e.setting.Minimap.Size), m.stored)
-        eq(layout.systems[1].anchorInfo, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = 0, offsetY = 44 })
-    end
-end)
-
-test("layout: an unusable map value falls back to 80", function()
-    local Plan = plan()
-    local at80 = Plan.BarSpots(with({ map = 80 }))
-    for _, bad in ipairs({ 100, 50, 65, 0, -80, 60.5, "60", true }) do
-        local what = "map " .. tostring(bad)
-        local s = Plan.BarSpots(with({ map = bad }))
-        near(s.left.x, -227.2, what .. " left.x")
-        near(s.top.y, 316.4, what .. " top.y")
-        eq(s, at80, what)
-        eq(piece(Plan.Pieces(with({ map = bad })), "Minimap").settings.Size, 3, what .. " stored size")
-    end
-    eq(piece(Plan.Pieces(with({})), "Minimap").settings.Size, 3, "no map value")
-    near(Plan.BarSpots(nil).left.x, -227.2, "no options")
 end)
 
 ---------------------------------------------------------------------------
@@ -664,7 +517,7 @@ test("layout: on from the Gamepad preset saves a new account-wide Gamepad layout
     eq(ours.interfaceStyle, 1, "Gamepad")
     eq(ours.layoutIndex, nil, "the preset-only field was kept")
     -- Built from the Gamepad preset: its map moved, its action bar entry untouched.
-    eq(ours.systems[1].anchorInfo, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = 0, offsetY = 44 })
+    eq(ours.systems[1].anchorInfo, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = -10, offsetY = 38 })
     eq(ours.systems[1].isInDefaultPosition, false)
     eq(ours.systems[2].isInDefaultPosition, true)
     local added = c:callsTo("C_EditMode.OnLayoutAdded")
@@ -707,7 +560,7 @@ test("layout: the template starts from the active layout when that one is a Game
     local ours = list[5]
     eq(ours.layoutName, NAME)
     eq(#ours.systems, 1, "not built from the Gamepad preset")
-    eq(ours.systems[1].anchorInfo.offsetY, 44)
+    eq(ours.systems[1].anchorInfo.offsetY, 38)
     eq(list[4].layoutName, "Mine")
     eq(list[4].systems[1].anchorInfo.offsetY, 2, "the player's own layout changed")
     eq(prev(PE), { name = "Mine", layoutType = 1 })
@@ -730,14 +583,14 @@ test("layout: on writes the map's title under the map; a game without that setti
     check(map, "no map entry in our layout")
     local values = {}
     for _, st in ipairs(map.settings) do values[st.setting] = st.value end
-    eq(values, { [0] = 1, [2] = 3 })
+    eq(values, { [0] = 1, [2] = 2 })
     c:assertClean()
     local c2, PE2 = layoutClient({}, 3, { setup = function(c2) rawset(c2.env.Enum.EditModeMinimapSetting, "HeaderUnderneath", nil) end })
     switchOn(c2, PE2)
     check(PE2:IsModuleEnabled("ctrlLayout"), "the feature did not stay on")
     local map2 = mapEntry(c2)
     eq(#map2.settings, 1, "only Size")
-    eq(map2.settings[1].value, 3)
+    eq(map2.settings[1].value, 2)
 end)
 
 test("layout: on with five account layouts refuses, says why, and switches back off", function()
@@ -1087,7 +940,7 @@ test("layout: on with ours active places the bar anchors and the both-triggers b
     placedAt(c, f.bottom, spots.bottom, "bottom")
     eq(frameState(c, f.bottom).scale, 1)
     placedAt(c, f.both, spots.both, "both-triggers bar")
-    near(frameState(c, f.both).scale, 0.7, "both-triggers scale")
+    near(frameState(c, f.both).scale, 1, "both-triggers scale")
     c:assertClean()
 end)
 
@@ -1117,17 +970,15 @@ end)
 test("layout: another layout picked puts the bars back as the game had them", function()
     local c, PE = layoutClient({}, 3)
     local before = allStates(c)
-    opts(PE).size = 85 -- scaled, so a scale left behind would show
     switchOn(c, PE)
     c.world.layouts.activeLayout = 1
     c:fire("EDIT_MODE_LAYOUTS_UPDATED")
     eq(allStates(c), before)
-    eq(frameState(c, barFrames(c).left).scale, 1)
     check(statusText(PE):find("Another Edit Mode layout is active", 1, true), "status: " .. tostring(statusText(PE)))
     -- Picked again: placed again.
     c.world.layouts.activeLayout = 4
     c:fire("EDIT_MODE_LAYOUTS_UPDATED")
-    near(frameState(c, barFrames(c).left).scale, 0.85, "placed again")
+    placedAt(c, barFrames(c).left, PE.LayoutPlan.BarSpots().left, "placed again")
     c:assertClean()
 end)
 
@@ -1161,7 +1012,6 @@ end)
 test("layout: off puts every bar frame back exactly as it was, and is clean", function()
     local c, PE = layoutClient({}, 3)
     local before = allStates(c)
-    opts(PE).size = 85
     switchOn(c, PE)
     check(barCalls(c, "SetPoint") >= 5, "the bars were not placed")
     switchOff(c, PE)
@@ -1172,9 +1022,8 @@ end)
 test("layout: off restores the bars even when no layout was changed (ours was already active)", function()
     local c, PE = layoutClient({ saved(NAME) }, 4)
     local before = allStates(c)
-    opts(PE).size = 85
     switchOn(c, PE)
-    near(frameState(c, barFrames(c).left).scale, 0.85, "placed")
+    placedAt(c, barFrames(c).left, PE.LayoutPlan.BarSpots().left, "placed")
     switchOff(c, PE)
     eq(allStates(c), before)
     c:assertClean()
@@ -1271,181 +1120,34 @@ local function ours(c)
     return nil
 end
 
-test("layout: the card has twelve option rows with the spec's labels and choices", function()
+test("rows: only the three timer rows and Start over", function()
     local _, PE = layoutClient({}, 3)
     local list = PE:GetModule("ctrlLayout").options
-    eq(#list, 12)
     local labels = {}
     for i, o in ipairs(list) do labels[i] = o.label end
-    eq(labels, { "Main bar", "Map size", "Player and target frames", "Spell button size", "Main bar size", "LT and RT bar size",
-        "Both-triggers bar size", "Swing timers", "Ranged timer", "Main Hand timer", "Off Hand timer", "Template" })
-    local function choiceList(o)
-        local out = {}
-        for i, ch in ipairs(o.choices) do out[i] = { ch.value, ch.label } end
-        return out
-    end
-    eq(list[1].key, "main")
-    eq(choiceList(list[1]), { { "above", "Above the map" }, { "under", "Under the map" } })
-    eq(list[2].key, "map")
-    eq(choiceList(list[2]), { { 60, "60%" }, { 70, "70%" }, { 80, "80%" } })
-    eq(list[3].key, "frames")
-    eq(choiceList(list[3]), { { "corner", "Corners" }, { "stacked", "Stacked" }, { "flat", "Side by side" } })
-    eq(list[4].key, "size")
-    eq({ list[4].number.min, list[4].number.max, list[4].number.step, list[4].number.default, list[4].number.suffix },
-        { 70, 100, 5, 100, "%" })
-    eq(list[4].help, "Below 100%, a spell that opens its own wheel may open beside its button.")
-    for i, key in ipairs({ "fineMain", "fineSide", "fineBoth" }) do
-        eq(list[4 + i].key, key)
-        eq(choiceList(list[4 + i]), { { 0.85, "Smaller" }, { 1, "Same" }, { 1.15, "Bigger" } })
-    end
-    eq(list[8].key, "timers")
-    eq(choiceList(list[8]), { { "under", "Under the map" }, { "above", "Above the bars" }, { "bars", "Under the LT and RT bars" } })
+    eq(labels, { "Ranged timer", "Main Hand timer", "Off Hand timer", "Template" })
     for i, key in ipairs({ "ranged", "mainHand", "offHand" }) do
-        eq(list[8 + i].key, key)
-        eq(choiceList(list[8 + i]), { { 0, "Always" }, { 1, "In combat" }, { 2, "Hidden" } })
+        eq(list[i].key, key)
+        local out = {}
+        for j, ch in ipairs(list[i].choices) do out[j] = { ch.value, ch.label } end
+        eq(out, { { 0, "Always" }, { 1, "In combat" }, { 2, "Hidden" } })
     end
-    eq(list[12].button, "Start over")
-    eq(type(list[12].action), "function")
+    eq(list[4].button, "Start over")
+    eq(type(list[4].action), "function")
 end)
 
-local MAP_SIZE = 2 -- Enum.EditModeMinimapSetting.Size in the stand-in
-
-test("layout: Map size rewrites the map and the timers in our layout, re-places the bars and asks for a reload", function()
-    local c, PE = onClient()
-    local before = deepCopy(ours(c))
-    eq(settingValue(entryOf(before, SYS.Minimap), MAP_SIZE), 3, "the template's map size")
-    choose(c, PE, "map", 60)
-    eq(checkSaves(c), 2)
-    local after = ours(c)
-    local map = entryOf(after, SYS.Minimap)
-    eq(settingValue(map, MAP_SIZE), 1)
-    eq(map.anchorInfo, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = 0, offsetY = 44 })
-    eq(map.isInDefaultPosition, false)
-    eq(entryOf(after, SYS.UnitFrame, 8), entryOf(before, SYS.UnitFrame, 8), "the pet frame changed")
-    eq(entryOf(after, SYS.ChatFrame), entryOf(before, SYS.ChatFrame), "the chat entry changed")
-    local f = barFrames(c)
-    placedAt(c, f.left, { x = -199.9, y = 42, s = 1 }, "left")
-    placedAt(c, f.right, { x = 199.9, y = 42, s = 1 }, "right")
-    placedAt(c, f.top, { x = 0, y = 259.8, s = 1 }, "top")
-    placedAt(c, f.both, { x = 0, y = 339.6, s = 0.7 }, "both")
-    placedAt(c, f.bottom, { x = 0, y = 199.276, s = 1 }, "bottom")
-    eq(reloadReason(PE), RELOAD)
-    eq(statusText(PE), USING)
-    -- 70%, then back to 80%.
-    choose(c, PE, "map", 70)
-    eq(checkSaves(c), 3)
-    eq(settingValue(entryOf(ours(c), SYS.Minimap), MAP_SIZE), 2)
-    placedAt(c, f.left, { x = -213.55, y = 42, s = 1 }, "left at 70")
-    choose(c, PE, "map", 80)
-    eq(checkSaves(c), 4)
-    eq(settingValue(entryOf(ours(c), SYS.Minimap), MAP_SIZE), 3)
-    placedAt(c, f.left, { x = -227.2, y = 42, s = 1 }, "left at 80")
-    placedAt(c, f.top, { x = 0, y = 316.4, s = 1 }, "top at 80")
-    c:assertClean()
-end)
-
-test("layout: Map size moves the timers that hang on the bars", function()
-    local c, PE = onClient()
-    choose(c, PE, "timers", "bars")
-    near(entryOf(ours(c), SYS.SwingTimer, SWING.Ranged).anchorInfo.offsetX, -227.2, "ranged x at 80")
-    choose(c, PE, "map", 60)
-    eq(checkSaves(c), 3)
-    local after = ours(c)
-    near(entryOf(after, SYS.SwingTimer, SWING.Ranged).anchorInfo.offsetX, -199.9, "ranged x")
-    near(entryOf(after, SYS.SwingTimer, SWING.MainHand).anchorInfo.offsetX, 199.9, "main hand x")
-    eq(entryOf(after, SYS.Minimap).anchorInfo.offsetY, 6)
-    placedAt(c, barFrames(c).left, { x = -199.9, y = 42 + 22, s = 1 }, "left")
-    c:assertClean()
-end)
-
-test("layout: Map size is refused while Edit Mode is open and put back", function()
-    local c, PE = onClient()
-    c.world.editMode = true
-    choose(c, PE, "map", 60)
-    eq(#c:callsTo("C_EditMode.SaveLayouts"), 1)
-    eq(statusText(PE), "Close Edit Mode first.")
-    eq(opts(PE).map, 80)
-    placedAt(c, barFrames(c).left, { x = -227.2, y = 42, s = 1 }, "left")
-    eq(reloadReason(PE), nil)
-    c:assertClean()
-end)
-
-test("layout: when the Map size rewrite cannot be saved the option and the bars go back", function()
-    local c, PE = onClient()
-    c.world.layoutCallFails.SaveLayouts = true
-    choose(c, PE, "map", 60)
-    check(#PE.errors >= 1, "no error logged")
-    eq(opts(PE).map, 80)
-    placedAt(c, barFrames(c).left, { x = -227.2, y = 42, s = 1 }, "left")
-    eq(reloadReason(PE), nil)
-end)
-
-test("layout: a saved map value that is not 60, 70 or 80 places the bars as 80", function()
-    local c, PE = layoutClient({}, 3)
-    opts(PE).map = 100
+test("rows: old saved values for the removed rows change nothing", function()
+    local file = { enabled = { ctrlLayout = false }, options = { ctrlLayout = {
+        main = "under", map = 60, frames = "flat", size = 70, fineMain = 1.15, fineSide = 0.85, fineBoth = 0.85, timers = "bars" } } }
+    local c, PE = T.new({ gamepadUI = true, saved = file, setup = function(c) c.world.layouts = { layouts = {}, activeLayout = 3 } end })
     switchOn(c, PE)
-    eq(settingValue(entryOf(ours(c), SYS.Minimap), MAP_SIZE), 3)
-    placedAt(c, barFrames(c).left, { x = -227.2, y = 42, s = 1 }, "left")
-    placedAt(c, barFrames(c).top, { x = 0, y = 316.4, s = 1 }, "top")
-    c:assertClean()
-end)
-
-test("layout: Player and target frames rewrites only the frames in our layout and asks for a reload", function()
-    local c, PE = onClient()
-    local before = deepCopy(ours(c))
-    choose(c, PE, "frames", "flat")
-    eq(checkSaves(c), 2)
-    local after = ours(c)
-    eq(entryOf(after, SYS.UnitFrame, 8).anchorInfo,
-        { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = -401, offsetY = 130 })
-    eq(entryOf(after, SYS.UnitFrame, 1).anchorInfo.offsetX, -165)
-    eq(entryOf(after, SYS.Minimap), entryOf(before, SYS.Minimap), "the map entry changed")
-    eq(entryOf(after, SYS.ChatFrame), entryOf(before, SYS.ChatFrame), "the chat entry changed")
-    eq(entryOf(after, SYS.SwingTimer, SWING.Ranged), entryOf(before, SYS.SwingTimer, SWING.Ranged))
-    eq(reloadReason(PE), RELOAD)
-    eq(statusText(PE), USING)
-    c:assertClean()
-end)
-
-test("layout: Spell button size re-places the bars only", function()
-    local c, PE = onClient()
-    choose(c, PE, "size", 70)
-    eq(#c:callsTo("C_EditMode.SaveLayouts"), 1)
-    near(frameState(c, barFrames(c).left).scale, 0.7, "left scale")
-    placedAt(c, barFrames(c).left, PE.LayoutPlan.BarSpots({ size = 70 }).left, "left")
-    eq(reloadReason(PE), nil)
-    c:assertClean()
-end)
-
-test("layout: the three bar size rows re-place their bars only", function()
-    local c, PE = onClient()
-    choose(c, PE, "fineMain", 1.15)
-    choose(c, PE, "fineSide", 0.85)
-    choose(c, PE, "fineBoth", 0.85)
-    eq(#c:callsTo("C_EditMode.SaveLayouts"), 1)
-    local spots = PE.LayoutPlan.BarSpots({ fineMain = 1.15, fineSide = 0.85, fineBoth = 0.85 })
+    local spots = PE.LayoutPlan.BarSpots()
     local f = barFrames(c)
-    placedAt(c, f.top, spots.top, "top")
     placedAt(c, f.left, spots.left, "left")
     placedAt(c, f.both, spots.both, "both")
-    c:assertClean()
-end)
-
-test("layout: Swing timers rewrites the timers and the map and lifts the side bars", function()
-    local c, PE = onClient()
-    local before = deepCopy(ours(c))
-    local spotsBefore = PE.LayoutPlan.BarSpots(PE.LayoutPlan.DEFAULTS)
-    choose(c, PE, "timers", "bars")
-    eq(checkSaves(c), 2)
-    local after = ours(c)
-    local sideX = -PE.LayoutPlan.BarSpots({ timers = "bars", size = 100 }).left.x
-    near(entryOf(after, SYS.SwingTimer, SWING.Ranged).anchorInfo.offsetX, -sideX, "ranged x")
-    eq(entryOf(after, SYS.SwingTimer, SWING.OffHand).anchorInfo.offsetY, 22)
-    eq(entryOf(after, SYS.Minimap).anchorInfo.offsetY, 6)
-    eq(entryOf(after, SYS.UnitFrame, 8), entryOf(before, SYS.UnitFrame, 8), "the pet frame changed")
-    local left = frameState(c, barFrames(c).left)
-    near(left.points[1][5] * left.scale, spotsBefore.left.y + 22, "left bar lifted")
-    eq(reloadReason(PE), RELOAD)
+    local map = entryOf(ours(c), SYS.Minimap)
+    eq(map.anchorInfo.offsetY, 38)
+    eq(opts(PE).map, 60, "the old value no longer stays in the file")
     c:assertClean()
 end)
 
@@ -1461,23 +1163,15 @@ test("layout: Ranged timer changes only that timer's Visibility", function()
     c:assertClean()
 end)
 
-test("layout: Off Hand timer rewrites all three timers and the map (the stack depends on it)", function()
+test("layout: Off Hand timer changes only that timer's Visibility", function()
     local c, PE = onClient()
+    local expected = deepCopy(ours(c))
+    for _, s in ipairs(entryOf(expected, SYS.SwingTimer, SWING.OffHand).settings) do
+        if s.setting == VISIBILITY then s.value = 0 end
+    end
     choose(c, PE, "offHand", 0)
     eq(checkSaves(c), 2)
-    local after = ours(c)
-    eq(entryOf(after, SYS.Minimap).anchorInfo.offsetY, 60)
-    eq(entryOf(after, SYS.SwingTimer, SWING.Ranged).anchorInfo.offsetY, 40)
-    eq(entryOf(after, SYS.SwingTimer, SWING.OffHand).anchorInfo.offsetY, 8)
-    c:assertClean()
-end)
-
-test("layout: Main bar under the map moves the map up and the main bar down", function()
-    local c, PE = onClient()
-    choose(c, PE, "main", "under")
-    eq(checkSaves(c), 2)
-    eq(entryOf(ours(c), SYS.Minimap).anchorInfo.offsetY, 126)
-    placedAt(c, barFrames(c).top, { x = 0, y = 8 + 68 / 2, s = 1 }, "top")
+    eq(ours(c), expected)
     eq(reloadReason(PE), RELOAD)
     c:assertClean()
 end)
@@ -1485,17 +1179,13 @@ end)
 test("layout: an option that changes the layout is refused while Edit Mode is open and put back", function()
     local c, PE = onClient()
     c.world.editMode = true
-    choose(c, PE, "frames", "flat")
+    choose(c, PE, "ranged", 2)
     eq(#c:callsTo("C_EditMode.SaveLayouts"), 1)
     eq(statusText(PE), "Close Edit Mode first.")
-    eq(opts(PE).frames, "corner")
-    choose(c, PE, "timers", "bars")
-    eq(opts(PE).timers, "under")
-    local left = frameState(c, barFrames(c).left)
-    near(left.points[1][5] * left.scale, PE.LayoutPlan.BarSpots({}).left.y, "the bars moved anyway")
+    eq(opts(PE).ranged, 1)
     -- Edit Mode closed: the next change goes through and the refusal goes away.
     c.world.editMode = false
-    choose(c, PE, "frames", "flat")
+    choose(c, PE, "ranged", 2)
     eq(#c:callsTo("C_EditMode.SaveLayouts"), 2)
     eq(statusText(PE), USING)
     c:assertClean()
@@ -1504,30 +1194,28 @@ end)
 test("layout: option changes in a fight are written together once it ends", function()
     local c, PE = onClient()
     c:enterCombat()
-    choose(c, PE, "frames", "flat")
     choose(c, PE, "ranged", 2)
-    choose(c, PE, "size", 70)
+    choose(c, PE, "offHand", 0)
     eq(#c:callsTo("C_EditMode.SaveLayouts"), 1, "a save in combat")
     c:leaveCombat()
     c:advance(0.1)
     eq(checkSaves(c), 2, "one save for both changes")
-    local after = ours(c)
-    eq(entryOf(after, SYS.UnitFrame, 8).anchorInfo.offsetX, -401)
-    local vis
-    for _, s in ipairs(entryOf(after, SYS.SwingTimer, SWING.Ranged).settings) do
-        if s.setting == VISIBILITY then vis = s.value end
+    local function vis(index)
+        for _, s in ipairs(entryOf(ours(c), SYS.SwingTimer, index).settings) do
+            if s.setting == VISIBILITY then return s.value end
+        end
     end
-    eq(vis, 2)
-    near(frameState(c, barFrames(c).left).scale, 0.7, "left scale")
+    eq(vis(SWING.Ranged), 2)
+    eq(vis(SWING.OffHand), 0)
     c:assertClean()
 end)
 
 test("layout: an option change with our layout deleted writes nothing and keeps the choice", function()
     local c, PE = onClient()
     c.world.layouts = { layouts = {}, activeLayout = 3 }
-    choose(c, PE, "frames", "flat")
+    choose(c, PE, "ranged", 0)
     eq(#c:callsTo("C_EditMode.SaveLayouts"), 1)
-    eq(opts(PE).frames, "flat")
+    eq(opts(PE).ranged, 0)
     eq(statusText(PE), ANOTHER)
     c:assertClean()
 end)
@@ -1551,7 +1239,7 @@ test("layout: Start over asks for a second tap within 20 seconds, then rebuilds 
     eq(after.layoutType, 1)
     eq(after.interfaceStyle, 1)
     eq(after.layoutIndex, nil)
-    eq(entryOf(after, SYS.Minimap).anchorInfo.offsetX, 0)
+    eq(entryOf(after, SYS.Minimap).anchorInfo.offsetX, -10)
     eq(entryOf(after, 99), nil, "a system not in the template stayed")
     eq(#after.systems, #c.env.EditModePresetLayoutManager:GetCopyOfPresetLayouts()[3].systems)
     eq(c.world.layouts.activeLayout, 4, "ours is still the active one")
@@ -1606,14 +1294,16 @@ test("layout: the settings window's Controller tab draws the rows while on, and 
             if rs.type == "FontString" and rs.text and r:IsVisible() then texts[rs.text] = true end
         end
     end)
-    for _, label in ipairs({ "Main bar", "Map size", "Player and target frames", "Spell button size", "Swing timers", "Off Hand timer", "Template" }) do
+    for _, label in ipairs({ "Ranged timer", "Main Hand timer", "Off Hand timer", "Template" }) do
         check(texts[label], "no row " .. label)
     end
+    for _, gone in ipairs({ "Main bar", "Map size", "Player and target frames", "Spell button size", "Swing timers" }) do
+        check(not texts[gone], "a removed row is drawn: " .. gone)
+    end
     check(buttons["Start over"], "no Start over button")
-    check(buttons["Side by side"], "no Side by side button")
-    c:click(buttons["Side by side"])
+    check(buttons["Always"], "no Always button")
+    c:click(buttons["Always"])
     c:advance(0.2)
-    eq(opts(PE).frames, "flat")
     eq(checkSaves(c), 2)
     eq(reloadReason(PE), RELOAD)
     c:assertClean()
@@ -1628,7 +1318,6 @@ local function setCompact(c, on) c.barParts[c.env.GamepadMainActionBarFrame].use
 test("layout: a Compact layout picked while on gets the bars stacked on the bottom anchor, as the game has them", function()
     local c, PE = layoutClient({}, 3)
     local before = allStates(c)
-    opts(PE).size = 85
     switchOn(c, PE)
     -- The player picks a layout with Compact on: the game stacks the three anchors, then the event.
     c.world.layouts.activeLayout = 1
@@ -1656,7 +1345,6 @@ test("layout: with Compact off the bars go back to the game's own points even if
     -- The session starts on a Compact layout: the anchors are stacked when the addon first reads them.
     setCompact(c, true)
     pu:RefreshCompactLayout()
-    opts(PE).size = 85
     switchOn(c, PE)
     check(barCalls(c, "SetPoint") >= 5, "the bars were not placed")
     -- Later the Gamepad preset (Compact off) is picked.
@@ -1686,26 +1374,30 @@ end)
 
 test("layout: an option changed in a fight and then switched off is written at the next switch-on", function()
     local c, PE = onClient()
+    local function vis()
+        for _, s in ipairs(entryOf(ours(c), SYS.SwingTimer, SWING.Ranged).settings) do
+            if s.setting == VISIBILITY then return s.value end
+        end
+    end
     c:enterCombat()
-    choose(c, PE, "frames", "flat")
+    choose(c, PE, "ranged", 0)
     switchOff(c, PE)
     c:leaveCombat()
     c:advance(0.1)
-    eq(entryOf(ours(c), SYS.UnitFrame, 8).anchorInfo.offsetX, 40, "written while off")
+    eq(vis(), 1, "written while off")
     switchOn(c, PE)
-    eq(entryOf(ours(c), SYS.UnitFrame, 8).anchorInfo.offsetX, -401)
+    eq(vis(), 0)
     checkSaves(c)
     c:assertClean()
 end)
 
-test("layout: when the rewrite cannot be saved the option and the bars go back", function()
+test("layout: when the rewrite cannot be saved the option goes back", function()
     local c, PE = onClient()
     c.world.layoutCallFails.SaveLayouts = true
-    choose(c, PE, "timers", "bars")
+    choose(c, PE, "ranged", 2)
     check(#PE.errors >= 1, "no error logged")
-    eq(opts(PE).timers, "under")
-    local left = frameState(c, barFrames(c).left)
-    near(left.points[1][5] * left.scale, PE.LayoutPlan.BarSpots({}).left.y, "the bars stayed lifted")
+    eq(opts(PE).ranged, 1)
+    placedAt(c, barFrames(c).left, PE.LayoutPlan.BarSpots().left, "left")
     eq(reloadReason(PE), nil)
 end)
 
@@ -1713,7 +1405,7 @@ test("layout: an option refused in Edit Mode says so in the status line only, an
     local c, PE = onClient()
     local lines = #c.chat
     c.world.editMode = true
-    choose(c, PE, "frames", "flat")
+    choose(c, PE, "ranged", 2)
     eq(statusText(PE), "Close Edit Mode first.")
     eq(#c.chat, lines, "a chat line for a refused tap")
     c.world.editMode = false
