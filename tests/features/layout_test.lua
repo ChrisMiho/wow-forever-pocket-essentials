@@ -87,7 +87,7 @@ test("layout: Pieces for the defaults carry the template's anchors and settings"
     eq(piece(list, "AuraFrame", "BuffFrame").anchor.y, -292)
     eq(piece(list, "AuraFrame", "DebuffFrame").anchor.y, -330)
     local quest = piece(list, "ObjectiveTracker")
-    eq(quest.anchor, { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = 0, y = -375 })
+    eq(quest.anchor, { point = "TOPLEFT", relativeTo = "UIParent", relativePoint = "TOPLEFT", x = 92, y = -5 })
     eq(quest.settings, { Height = 0 })
     for _, name in ipairs({ "MainHand", "OffHand", "Ranged" }) do
         local t = piece(list, "SwingTimer", name)
@@ -144,9 +144,9 @@ end)
 test("plan: player, pet and target frames", function()
     local Plan = plan()
     local list = Plan.Pieces()
-    eq(piece(list, "UnitFrame", "Player").anchor, { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -236, y = 226 })
-    eq(piece(list, "UnitFrame", "Pet").anchor, { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -236, y = 351 })
-    eq(piece(list, "UnitFrame", "Target").anchor, { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 236, y = 226 })
+    eq(piece(list, "UnitFrame", "Player").anchor, { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -345, y = 56 })
+    eq(piece(list, "UnitFrame", "Pet").anchor, { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -345, y = 181 })
+    eq(piece(list, "UnitFrame", "Target").anchor, { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 345, y = 56 })
     for _, i in ipairs({ "Player", "Pet", "Target" }) do eq(piece(list, "UnitFrame", i).moved, true, i) end
     -- The target of target, placed by the module: above the two aura rows, left edges lined up.
     eq(Plan.TOT_SPOT, { point = "BOTTOMLEFT", relativePoint = "TOPLEFT", x = 0, y = 25 })
@@ -169,19 +169,55 @@ test("plan: the target gets its auras on top", function()
         anchorInfo = { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", offsetX = 0, offsetY = 0 } } } }
     Plan.Apply(layout2, Plan.Pieces(), e)
     eq(#layout2.systems[1].settings, 0)
-    eq(layout2.systems[1].anchorInfo.offsetY, 226)
+    eq(layout2.systems[1].anchorInfo.offsetY, 56)
 end)
 
-test("plan: the target's cast bar and two aura rows clear the RT bar", function()
+test("plan: the target's cast bar lands on screen in the free corner, the aura rows under the target of target", function()
     local Plan = plan()
     local r = Plan.Rects()
     -- Cast bar with the target of target shown (Gamepad UI): 123 right, 46 under the frame's bottom left.
-    eq(r["target cast bar"], { 236 + 123, 226 - 46 - 10, 236 + 123 + 150, 226 - 46 })
-    check(r["target cast bar"][2] > r["right bar"][4], "the cast bar reaches the RT bar")
+    eq(r["target cast bar"], { 345 + 123, 56 - 46 - 10, 345 + 123 + 150, 56 - 46 })
+    local cast = r["target cast bar"]
+    check(cast[1] >= -682.6 and cast[3] <= 682.6 and cast[2] >= 0 and cast[4] <= 768, "the cast bar is off screen")
+    for _, half in ipairs({ "main face", "lt face", "rt face", "both face" }) do
+        check(cast[1] > r[half][3], "the cast bar reaches the face's " .. half)
+    end
     -- Two rows of 21 with 3 between, up from 6 inside the frame picture's top (192 by 67, centred).
-    local pictureTop = 226 + 50 + 33.5
-    eq(r["target auras"], { 236 + 20 + 5, 326, 236 + 20 + 5 + 122, pictureTop - 6 + 45 })
+    local pictureTop = 56 + 50 + 33.5
+    eq(r["target auras"], { 345 + 20 + 5, 156, 345 + 20 + 5 + 122, pictureTop - 6 + 45 })
     check(r["target auras"][4] < r["target of target"][2], "the aura rows reach the target of target")
+end)
+
+test("plan: the face, four bars of two diamonds, split d-pad left and face buttons right", function()
+    local Plan = plan()
+    eq(Plan.FACE, { button = 28, dx = 30, dy = 19 })
+    local s = Plan.FaceSpots()
+    eq(s, {
+        main = { dpad = { x = -199, y = 39 }, face = { x = 199, y = 39 } },
+        lt = { dpad = { x = -199, y = 113 }, face = { x = 199, y = 113 } },
+        rt = { dpad = { x = -297, y = 39 }, face = { x = 297, y = 39 } },
+        both = { dpad = { x = -297, y = 113 }, face = { x = 297, y = 113 } },
+    })
+    -- A fresh copy each time.
+    s.main.dpad.x = 0
+    eq(Plan.FaceSpots().main.dpad.x, -199)
+    -- A diamond is 88 by 66; each side's grid is 155 to 341 from the centre and 6 to 146 up.
+    local r = Plan.Rects()
+    near(r["main dpad"][3] - r["main dpad"][1], 88, "diamond width")
+    near(r["main dpad"][4] - r["main dpad"][2], 66, "diamond height")
+    for _, side in ipairs({ { "dpad", -1 }, { "face", 1 } }) do
+        local l, b, rr, t = math.huge, math.huge, -math.huge, -math.huge
+        for _, bar in ipairs({ "main", "lt", "rt", "both" }) do
+            local d = r[bar .. " " .. side[1]]
+            check(d, "no diamond " .. bar .. " " .. side[1])
+            check((d[1] + d[3]) / 2 * side[2] > 0, bar .. " " .. side[1] .. " on the wrong side")
+            l, b, rr, t = math.min(l, d[1]), math.min(b, d[2]), math.max(rr, d[3]), math.max(t, d[4])
+        end
+        eq({ math.min(math.abs(l), math.abs(rr)), math.max(math.abs(l), math.abs(rr)), b, t }, { 155, 341, 6, 146 }, side[1] .. " grid")
+    end
+    -- Up is LT, out is RT.
+    check(s.lt.face.y > s.main.face.y and s.both.face.y > s.rt.face.y, "LT rows are not on top")
+    check(math.abs(s.rt.dpad.x) > math.abs(s.main.dpad.x) and math.abs(s.both.face.x) > math.abs(s.lt.face.x), "RT is not outside")
 end)
 
 test("plan: the rectangles follow the frames' spots", function()
@@ -199,15 +235,56 @@ test("plan: the rectangles follow the frames' spots", function()
     eq({ -r.pet[3], r.pet[2], -r.pet[1], r.pet[4] }, r["target of target"])
 end)
 
-test("plan: four whole bars at the mockup's spots", function()
+test("plan: the four real bars at 90%, two under each face grid", function()
     local Plan = plan()
     local s = Plan.BarSpots()
-    eq(s.left, { x = -335, y = 133, s = 1 })
-    eq(s.top, { x = -335, y = 45, s = 1 })
-    eq(s.right, { x = 335, y = 133, s = 1 })
-    eq(s.both, { x = 335, y = 45, s = 1 })
+    eq(s.top, { x = -248, y = 39, s = 0.9 })
+    eq(s.left, { x = -248, y = 113, s = 0.9 })
+    eq(s.right, { x = 248, y = 39, s = 0.9 })
+    eq(s.both, { x = 248, y = 113, s = 0.9 })
     -- Old saved values change nothing.
     eq(Plan.BarSpots({ size = 70, fineBoth = 0.85, main = "under", map = 60 }), s)
+    -- 187.2 by 61.2 each.
+    local real = Plan.RealBarRects()
+    for _, bar in ipairs({ "main", "lt", "rt", "both" }) do
+        near(real[bar][3] - real[bar][1], 187.2, bar .. " width")
+        near(real[bar][4] - real[bar][2], 61.2, bar .. " height")
+    end
+end)
+
+test("plan: each real bar lies under its own side's face grid, clear of everything else", function()
+    local Plan = plan()
+    local r, real = Plan.Rects(), Plan.RealBarRects()
+    -- The grid each real bar sits under (main and LT left, RT and LT+RT right), from the diamonds.
+    local function grid(sideKey)
+        local g = { math.huge, math.huge, -math.huge, -math.huge }
+        for _, bar in ipairs({ "main", "lt", "rt", "both" }) do
+            local d = r[bar .. " " .. sideKey]
+            g = { math.min(g[1], d[1]), math.min(g[2], d[2]), math.max(g[3], d[3]), math.max(g[4], d[4]) }
+        end
+        return g
+    end
+    local side = { main = grid("dpad"), lt = grid("dpad"), rt = grid("face"), both = grid("face") }
+    -- Each real bar is 1.2 wider than the grid (187.2 against 186): 0.6 either side.
+    for bar, b in pairs(real) do
+        local g = side[bar]
+        check(b[1] >= g[1] - 0.61 and b[3] <= g[3] + 0.61 and b[2] >= g[2] and b[4] <= g[4], bar .. " real bar is not under its grid")
+        local cx, cy = (b[1] + b[3]) / 2, (b[2] + b[4]) / 2
+        local own = Plan.FaceSpots()[bar]
+        local row = (own.dpad.y == cy) or (own.face.y == cy)
+        check(row, bar .. " real bar is not on its own row")
+        check(cx * ((bar == "main" or bar == "lt") and -1 or 1) > 0, bar .. " real bar on the wrong side")
+    end
+    -- Clear of the frames, the map, the targeting pictures and every other piece but the face.
+    for bar, b in pairs(real) do
+        for name, a in pairs(r) do
+            if not name:find(" dpad$") and not name:find(" face$") then
+                local w = math.min(a[3], b[3]) - math.max(a[1], b[1])
+                local h = math.min(a[4], b[4]) - math.max(a[2], b[2])
+                check(not (w > 0 and h > 0), bar .. " real bar overlaps " .. name)
+            end
+        end
+    end
 end)
 
 test("plan: sub-menu buttons 138 either side at 188 up", function()
@@ -224,14 +301,14 @@ test("plan: no piece overlaps another", function()
     for name in pairs(r) do names[#names + 1] = name end
     table.sort(names)
     local W, H = 1365.33, 768
-    -- Known: the quest tracker is 260 wide (probe), not the mockup's 218, and the target
-    -- frame 232, not 192; at the height the probe read (264) the tracker's lower-left part
-    -- reaches over the target frame's right end (45) and the RT bar's top-right corner (16).
-    -- Written in the spec's "As built"; nothing can move without reaching a wheel.
-    -- The target's cast bar, shifted right by the game while the target of target shows,
-    -- reaches under it the same way (86).
-    local allowed = { ["quest tracker|right bar"] = 16.34, ["quest tracker|target"] = 45.34,
-        ["quest tracker|target cast bar"] = 86.34 }
+    -- Every piece the spec names is in the check.
+    for _, name in ipairs({ "main dpad", "main face", "lt dpad", "lt face", "rt dpad", "rt face", "both dpad", "both face",
+        "player", "pet", "target", "target of target", "target auras", "target cast bar", "map", "title strip",
+        "MainHand timer", "OffHand timer", "Ranged timer", "LB+LT button", "RB+RT button", "LB targeting picture",
+        "RB targeting picture", "quest tracker", "chat", "buffs and debuffs", "XP bars", "round button" }) do
+        check(r[name], "no rectangle for " .. name)
+    end
+    -- 0.13.0: nothing overlaps (the quest tracker left the right side).
     for i = 1, #names do
         local a = r[names[i]]
         check(a[1] >= -W / 2 and a[3] <= W / 2 and a[2] >= 0 and a[4] <= H, names[i] .. " is off screen")
@@ -239,19 +316,38 @@ test("plan: no piece overlaps another", function()
             local b = r[names[j]]
             local w = math.min(a[3], b[3]) - math.max(a[1], b[1])
             local h = math.min(a[4], b[4]) - math.max(a[2], b[2])
-            if w > 0 and h > 0 then
-                local limit = allowed[names[i] .. "|" .. names[j]]
-                check(limit and w <= limit, names[i] .. " overlaps " .. names[j] .. " (" .. w .. " by " .. h .. ")")
-            end
+            check(not (w > 0 and h > 0), names[i] .. " overlaps " .. names[j] .. " (" .. w .. " by " .. h .. ")")
         end
     end
 end)
 
-test("plan: the bars and frames clear the two wheel circles", function()
+test("plan: the quest tracker top left, clear of the round button at every size and of the quest arrow", function()
+    local Plan = plan()
+    local t = Plan.Rects()["quest tracker"]
+    local W, H = 1365.33, 768
+    eq({ t[1], t[2], t[3], t[4] }, { -W / 2 + 92, H - 5 - 400, -W / 2 + 92 + 260, H - 5 })
+    -- The round button (Hub.lua): LEFT of the screen, 10 px in, 56 / 60 / 72 px (UI.lua), 768 / 720 units a pixel,
+    -- at the left middle or the upper left (0.24 of the screen's height above the middle).
+    local px = 768 / 720
+    for _, size in ipairs({ 56, 60, 72 }) do
+        for _, up in ipairs({ 0, 0.24 * H }) do
+            local s = size * px
+            local hub = { -W / 2 + 10 * px, H / 2 + up - s / 2, -W / 2 + 10 * px + s, H / 2 + up + s / 2 }
+            local w = math.min(hub[3], t[3]) - math.max(hub[1], t[1])
+            local h = math.min(hub[4], t[4]) - math.max(hub[2], t[2])
+            check(not (w > 0 and h > 0), "the tracker overlaps the round button (" .. size .. " px, " .. up .. " up)")
+        end
+    end
+    -- The quest arrow at its "top" spot: TOP 0, -40 px, 400 px wide (QuestArrow.lua:103, 110), up to 150%.
+    local arrowHalf = 400 * px * 1.5 / 2
+    check(t[3] < -arrowHalf, "the tracker reaches the quest arrow")
+end)
+
+test("plan: the frames clear the two wheel circles; the wheels may cover the face", function()
     local Plan = plan()
     local r = Plan.Rects()
     for _, wheel in ipairs(Plan.Wheels()) do
-        for _, name in ipairs({ "left bar", "top bar", "right bar", "both bar", "player", "pet", "target", "target of target" }) do
+        for _, name in ipairs({ "player", "pet", "target", "target of target", "target auras" }) do
             local b = r[name]
             local nx = math.max(b[1], math.min(wheel.x, b[3]))
             local ny = math.max(b[2], math.min(wheel.y, b[4]))
@@ -345,8 +441,8 @@ test("layout: a piece with an index only changes the entry with that index", fun
           anchorInfo = { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", offsetX = 0, offsetY = 0 } },
     } }
     eq(Plan.Apply(layout, Plan.Pieces(with(Plan.DEFAULTS)), e), 2)
-    eq(layout.systems[1].anchorInfo.offsetY, 226)
-    eq(layout.systems[2].anchorInfo.offsetY, 351)
+    eq(layout.systems[1].anchorInfo.offsetY, 56)
+    eq(layout.systems[2].anchorInfo.offsetY, 181)
     eq(layout.systems[2].isInDefaultPosition, false)
 end)
 
@@ -433,7 +529,7 @@ test("plan: buffs, debuffs, tracker spots", function()
     eq(piece(list, "AuraFrame", "DebuffFrame").anchor,
         { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -30, y = -330 })
     local quest = piece(list, "ObjectiveTracker")
-    eq(quest.anchor, { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = 0, y = -375 })
+    eq(quest.anchor, { point = "TOPLEFT", relativeTo = "UIParent", relativePoint = "TOPLEFT", x = 92, y = -5 })
     eq(quest.settings, { Height = 0 })
     -- The chat box keeps its spot and size.
     local chat = piece(list, "ChatFrame")
@@ -986,13 +1082,13 @@ test("layout: on with ours active places the bar anchors and the both-triggers b
     switchOn(c, PE)
     local f = barFrames(c)
     placedAt(c, f.left, spots.left, "left")
-    near(frameState(c, f.left).scale, 1, "left scale (default size 100)")
+    near(frameState(c, f.left).scale, 0.9, "left scale")
     placedAt(c, f.right, spots.right, "right")
     placedAt(c, f.top, spots.top, "top")
     placedAt(c, f.bottom, spots.bottom, "bottom")
     eq(frameState(c, f.bottom).scale, 1)
     placedAt(c, f.both, spots.both, "both-triggers bar")
-    near(frameState(c, f.both).scale, 1, "both-triggers scale")
+    near(frameState(c, f.both).scale, 0.9, "both-triggers scale")
     c:assertClean()
 end)
 
@@ -1758,8 +1854,8 @@ end)
 test("migrate: old prev moved or dropped once", function()
     -- A 0.11.0 saved file: one layout to go back to for the whole account.
     local function oldFile(on)
-        -- (template 2: only the migration is tested here; the rebuild of an older layout has its own tests)
-        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { template = 2, prev = { name = "Mine", layoutType = 2 } } } }
+        -- (template 3: only the migration is tested here; the rebuild of an older layout has its own tests)
+        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { template = 3, prev = { name = "Mine", layoutType = 2 } } } }
     end
     local ours = saved(NAME)
     -- Ours active on the character logging in: it becomes this character's entry.
@@ -1791,7 +1887,7 @@ end)
 
 test("migrate: a 0.11.1 entry by name moves into this character's own file once", function()
     local function namedFile(on)
-        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { template = 2, prevs = {
+        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { template = 3, prevs = {
             [KEY] = { name = "Mine", layoutType = 2 }, ["Bee-Camelot"] = { preset = 0 } } } } }
     end
     local ours = saved(NAME)
@@ -2192,14 +2288,14 @@ test("template: a new layout saves the version", function()
     local c, PE = layoutClient({}, 3)
     switchOn(c, PE)
     eq(opts(PE).template, PE.LayoutPlan.TEMPLATE)
-    eq(PE.LayoutPlan.TEMPLATE, 2)
+    eq(PE.LayoutPlan.TEMPLATE, 3)
     -- Start over saves it too.
     opts(PE).template = nil
     PE:GetModule("ctrlLayout"):CancelReload()
     tapStartOver(c, PE)
     c:advance(1)
     tapStartOver(c, PE)
-    eq(opts(PE).template, 2)
+    eq(opts(PE).template, 3)
     c:assertClean()
 end)
 
@@ -2223,7 +2319,7 @@ test("template: the rebuild failing logs it and tries again next login", functio
     -- The next login, the game taking it: rebuilt.
     local c3, PE3 = login(db(c), c.world.layouts.layouts, 4, { char = charDB(c) })
     eq(checkSaves(c3), 1)
-    eq(opts(PE3).template, 2)
+    eq(opts(PE3).template, 3)
     eq(saidIn(c3, UPDATED), 1)
     c3:assertClean()
 end)
@@ -2245,7 +2341,7 @@ test("layout: on writes the target's auras on top; a game without that setting s
     switchOn(c, PE)
     local entry = targetEntry(c)
     eq(entry.settings, { { setting = 2, value = 1 } })
-    eq(entry.anchorInfo.offsetY, 226)
+    eq(entry.anchorInfo.offsetY, 56)
     c:assertClean()
     local cases = {
         { what = "no BuffsOnTop", setup = function(c2) rawset(c2.env.Enum.EditModeUnitFrameSetting, "BuffsOnTop", nil) end },
@@ -2259,9 +2355,291 @@ test("layout: on writes the target's auras on top; a game without that setting s
         check(PE2:IsModuleEnabled("ctrlLayout"), case.what .. ": not on")
         local e2 = targetEntry(c2)
         eq(#e2.settings, 0, case.what .. ": a setting was written")
-        eq(e2.anchorInfo.offsetY, 226, case.what)
+        eq(e2.anchorInfo.offsetY, 56, case.what)
         eq(#PE2.errors, 0, case.what .. ": errors logged")
     end
+end)
+
+---------------------------------------------------------------------------
+-- 0.13.0: the game's controller hint box (spec "Where everything goes", "Game's hint box")
+---------------------------------------------------------------------------
+
+local HINTS = "GamepadShowPersistentInputLegend"
+
+-- A layout client whose game has the hint box setting at `value` ("1" unless given).
+local function hintsClient(value, list, active, setup)
+    return layoutClient(list or {}, active or 3, { setup = function(c)
+        c.world.cvars[HINTS] = value or "1"
+        if setup then setup(c) end
+    end })
+end
+
+local function hintWrites(c) return #c:callsTo("C_CVar.SetCVar") end
+
+test("hints: on hides the game's hint box and keeps the player's value; off puts it back", function()
+    local c, PE = hintsClient("1")
+    switchOn(c, PE)
+    eq(c.world.cvars[HINTS], "0")
+    eq(opts(PE).hintsWas, "1")
+    switchOff(c, PE)
+    eq(c.world.cvars[HINTS], "1")
+    eq(opts(PE).hintsWas, nil)
+    c:assertClean()
+    -- A player who had it off gets it off again.
+    local c2, PE2 = hintsClient("0")
+    switchOn(c2, PE2)
+    eq(opts(PE2).hintsWas, "0")
+    switchOff(c2, PE2)
+    eq(c2.world.cvars[HINTS], "0")
+    c2:assertClean()
+end)
+
+test("hints: turned back on by the player while on, it is left alone, also at the next login", function()
+    local c, PE = hintsClient("1")
+    switchOn(c, PE)
+    c.world.cvars[HINTS] = "1" -- the player ticks the game's own option again
+    local writes = hintWrites(c)
+    c:fire("EDIT_MODE_LAYOUTS_UPDATED")
+    c:fire("PLAYER_ENTERING_WORLD")
+    eq(c.world.cvars[HINTS], "1")
+    eq(hintWrites(c), writes)
+    local c2, PE2 = login(db(c), c.world.layouts.layouts, 4, { char = charDB(c), setup = function(c2) c2.world.cvars[HINTS] = "1" end })
+    eq(c2.world.cvars[HINTS], "1")
+    eq(hintWrites(c2), 0)
+    eq(opts(PE2).hintsWas, "1")
+    -- Off puts back the value from before the layout.
+    switchOff(c2, PE2)
+    eq(c2.world.cvars[HINTS], "1")
+    eq(opts(PE2).hintsWas, nil)
+    c2:assertClean()
+end)
+
+test("hints: another layout picked brings the box back; ours picked again hides it", function()
+    local c, PE = hintsClient("1")
+    switchOn(c, PE)
+    c.world.layouts.activeLayout = 1
+    c:fire("EDIT_MODE_LAYOUTS_UPDATED")
+    eq(c.world.cvars[HINTS], "1")
+    eq(opts(PE).hintsWas, nil)
+    c.world.layouts.activeLayout = 4
+    c:fire("EDIT_MODE_LAYOUTS_UPDATED")
+    eq(c.world.cvars[HINTS], "0")
+    c:assertClean()
+end)
+
+test("hints: nothing is written in a fight; it waits for the fight to end", function()
+    local c, PE = hintsClient("1")
+    c:enterCombat()
+    switchOn(c, PE)
+    eq(hintWrites(c), 0)
+    c:leaveCombat()
+    c:advance(0.1)
+    eq(c.world.cvars[HINTS], "0")
+    c:enterCombat()
+    switchOff(c, PE)
+    eq(c.world.cvars[HINTS], "0", "written in a fight")
+    c:leaveCombat()
+    c:advance(0.1)
+    eq(c.world.cvars[HINTS], "1")
+    c:assertClean()
+end)
+
+test("hints: a game whose setting is missing, cannot be read or refuses the change: nothing changes, nothing fails", function()
+    -- Missing: no write at all.
+    local c, PE = layoutClient({}, 3)
+    switchOn(c, PE)
+    eq(hintWrites(c), 0)
+    eq(opts(PE).hintsWas, nil)
+    switchOff(c, PE)
+    eq(hintWrites(c), 0)
+    c:assertClean()
+    local cases = {
+        { what = "reading raises", api = { GetCVar = function() error("no") end, SetCVar = function() return true end } },
+        { what = "writing raises", api = { GetCVar = function() return "1" end, SetCVar = function() error("no") end } },
+        { what = "writing refused", api = { GetCVar = function() return "1" end, SetCVar = function() return false end } },
+        { what = "no functions", api = {} },
+    }
+    for _, case in ipairs(cases) do
+        local c2, PE2 = layoutClient({}, 3, { setup = function(c2) rawset(c2.env, "C_CVar", case.api) end })
+        switchOn(c2, PE2)
+        check(PE2:IsModuleEnabled("ctrlLayout"), case.what .. ": not on")
+        eq(opts(PE2).hintsWas, nil, case.what)
+        switchOff(c2, PE2)
+        eq(#PE2.errors, 0, case.what .. ": errors logged")
+        eq(#c2.errors, 0, case.what .. ": Lua errors")
+    end
+    -- A value saved that cannot be written back is kept for the next try.
+    local c3, PE3 = hintsClient("1")
+    switchOn(c3, PE3)
+    rawset(c3.env, "C_CVar", { GetCVar = function() return "0" end, SetCVar = function() return false end })
+    switchOff(c3, PE3)
+    eq(opts(PE3).hintsWas, "1")
+    c3:assertClean()
+end)
+
+---------------------------------------------------------------------------
+-- 0.13.0: our spell pictures (PE.FaceBars, FaceBars.lua) started and stopped here
+-- (plan "The contract between the two halves"). A stand-in records each call and
+-- whether the real bars were placed at that moment.
+---------------------------------------------------------------------------
+
+local USING_LINE = "Using the Pocket Essentials layout. Move the map, chat or frames in Edit Mode; it is kept."
+
+local function faceStub(c, PE)
+    local s = { calls = {}, reason = nil }
+    local function placedNow() return frameState(c, barFrames(c).left).scale == 0.9 end
+    function s:Start()
+        s.calls[#s.calls + 1] = { "Start", placed = placedNow(), combat = c.world.inCombat }
+        if s.startFails then error("face start failed") end
+        if s.refuse then return false, s.refuse end
+        return true
+    end
+    function s:Stop()
+        s.calls[#s.calls + 1] = { "Stop", placed = placedNow(), combat = c.world.inCombat }
+        if s.stopFails then error("face stop failed") end
+    end
+    function s:Status()
+        if s.statusFails then error("face status failed") end
+        return s.reason
+    end
+    PE.FaceBars = s
+    return s
+end
+
+local function count(stub, name)
+    local n = 0
+    for _, call in ipairs(stub.calls) do if call[1] == name then n = n + 1 end end
+    return n
+end
+
+test("face: started after the bars are placed, out of a fight only", function()
+    local c, PE = layoutClient({}, 3)
+    local face = faceStub(c, PE)
+    switchOn(c, PE)
+    check(count(face, "Start") >= 1, "not started")
+    for _, call in ipairs(face.calls) do
+        if call[1] == "Start" then
+            check(call.placed, "started before the bars were placed")
+            check(not call.combat, "started in a fight")
+        end
+    end
+    eq(face.calls[#face.calls][1], "Start")
+    c:assertClean()
+    -- Switched on in a fight: nothing until it ends.
+    local c2, PE2 = layoutClient({}, 3)
+    local face2 = faceStub(c2, PE2)
+    c2:enterCombat()
+    switchOn(c2, PE2)
+    eq(count(face2, "Start"), 0)
+    c2:leaveCombat()
+    c2:advance(0.1)
+    check(count(face2, "Start") >= 1, "not started after the fight")
+    check(face2.calls[#face2.calls].placed, "started before the bars were placed")
+    c2:assertClean()
+end)
+
+test("face: stopped at once when switched off, also in a fight, and before the bars go back", function()
+    local c, PE = layoutClient({}, 3)
+    local face = faceStub(c, PE)
+    switchOn(c, PE)
+    face.calls = {}
+    switchOff(c, PE)
+    check(count(face, "Stop") >= 1, "not stopped")
+    eq(face.calls[1][1], "Stop")
+    check(face.calls[1].placed, "stopped only after the bars went back")
+    eq(count(face, "Start"), 0)
+    eq(frameState(c, barFrames(c).left).scale, 1, "bars not put back")
+    c:assertClean()
+    -- In a fight: stopped at once; the bars go back once it ends.
+    local c2, PE2 = layoutClient({}, 3)
+    local face2 = faceStub(c2, PE2)
+    switchOn(c2, PE2)
+    face2.calls = {}
+    c2:enterCombat()
+    PE2:SetModuleEnabled("ctrlLayout", false)
+    eq(count(face2, "Stop"), 1)
+    check(face2.calls[1].combat and face2.calls[1].placed, "not stopped in the fight")
+    c2:leaveCombat()
+    c2:advance(0.1)
+    eq(frameState(c2, barFrames(c2).left).scale, 1, "bars not put back after the fight")
+    c2:assertClean()
+end)
+
+test("face: another layout picked stops it before the bars go back; ours again starts it", function()
+    local c, PE = layoutClient({}, 3)
+    local face = faceStub(c, PE)
+    switchOn(c, PE)
+    face.calls = {}
+    c.world.layouts.activeLayout = 1
+    c:fire("EDIT_MODE_LAYOUTS_UPDATED")
+    eq(face.calls[1][1], "Stop")
+    check(face.calls[1].placed, "stopped after the bars went back")
+    eq(count(face, "Start"), 0)
+    face.calls = {}
+    c.world.layouts.activeLayout = 4
+    c:fire("EDIT_MODE_LAYOUTS_UPDATED")
+    eq(count(face, "Start"), 1)
+    check(face.calls[#face.calls].placed, "started before the bars were placed")
+    c:assertClean()
+end)
+
+test("face: not started when the bars cannot be placed", function()
+    local c, PE = layoutClient({}, 3, { setup = function(c)
+        c.barParts[c.env.GamepadMainActionBarFrame].PageUnit = nil
+    end })
+    local face = faceStub(c, PE)
+    switchOn(c, PE)
+    eq(count(face, "Start"), 0)
+    c:assertClean()
+end)
+
+test("face: the status line says when and why the game's own spell bars are showing", function()
+    local c, PE = layoutClient({}, 3)
+    local face = faceStub(c, PE)
+    switchOn(c, PE)
+    PE:GetModule("ctrlLayout"):CancelReload()
+    eq(statusText(PE), USING_LINE)
+    face.reason = "the game's bars were not found"
+    eq(PE:GetModule("ctrlLayout"):status(), { USING_LINE, "Showing the game's own spell bars: the game's bars were not found." })
+    face.reason = "Pocket Essentials' spell pictures hit an error."
+    eq(PE:GetModule("ctrlLayout"):status(), { USING_LINE, "Showing the game's own spell bars: Pocket Essentials' spell pictures hit an error." })
+    -- A status that raises or is not text: the usual line only.
+    face.statusFails = true
+    eq(statusText(PE), USING_LINE)
+    face.statusFails, face.reason = false, 7
+    eq(statusText(PE), USING_LINE)
+    -- Another layout active: only that line.
+    face.reason = "the game's bars were not found"
+    c.world.layouts.activeLayout = 1
+    eq(statusText(PE), ANOTHER)
+    c:assertClean()
+end)
+
+test("face: a start or stop that fails or refuses is logged, and the layout carries on", function()
+    local c, PE = layoutClient({}, 3)
+    local face = faceStub(c, PE)
+    face.refuse = "the game's bars were not found"
+    switchOn(c, PE)
+    check(count(face, "Start") >= 1, "not started")
+    eq(frameState(c, barFrames(c).left).scale, 0.9, "bars not placed")
+    c:assertClean()
+    local c2, PE2 = layoutClient({}, 3)
+    local face2 = faceStub(c2, PE2)
+    face2.startFails, face2.stopFails = true, true
+    switchOn(c2, PE2)
+    check(#PE2.errors >= 1, "the failed start was not logged")
+    check(PE2:IsModuleEnabled("ctrlLayout"), "the feature switched off")
+    eq(frameState(c2, barFrames(c2).left).scale, 0.9, "bars not placed")
+    switchOff(c2, PE2)
+    eq(frameState(c2, barFrames(c2).left).scale, 1, "bars not put back after a failed stop")
+    eq(#c2.errors, 0)
+    -- A FaceBars without the functions (an older one): nothing happens, nothing fails.
+    local c3, PE3 = layoutClient({}, 3)
+    PE3.FaceBars = { Start = true, Stop = "no", Status = 1 }
+    switchOn(c3, PE3)
+    eq(statusText(PE3), USING_LINE)
+    switchOff(c3, PE3)
+    c3:assertClean()
 end)
 
 return { known = KNOWN_FAILURES }
