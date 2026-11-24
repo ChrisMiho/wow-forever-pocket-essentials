@@ -1701,6 +1701,14 @@ function Client.new(opts)
         end
         rawset(frame, "oldAlpha", alpha or 0.25)
     end)
+    -- GetChatWindowInfo(id): the window's saved settings, the see-through sixth
+    -- (FloatingChatFrame.lua:461, read by FloatingChatFrame_Update at 488). Here the
+    -- see-through is what SetChatWindowAlpha last saved, else the game's default 0.25.
+    rawset(env, "GetChatWindowInfo", function(id)
+        local f = chatWindows[id]
+        if not f then return nil end
+        return "Chat " .. id, 14, 0, 0, 0, c.chatAlphas[id] or 0.25, f:IsShown(), false, false, false
+    end)
     -- FCF_FadeInChatFrame's box part (FloatingChatFrame.lua:1237-1246): each shown box texture
     -- goes to max(oldAlpha, DEFAULT_CHATFRAME_ALPHA) when the chat is opened or pointed at
     -- (at once here; the game fades over CHAT_FRAME_FADE_TIME).

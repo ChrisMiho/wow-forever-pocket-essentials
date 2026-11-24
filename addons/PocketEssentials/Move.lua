@@ -19,6 +19,9 @@
 --   apply() lays the real piece out again (its own layout adds the offset);
 --   reset() (optional) also puts back the piece's chosen preset spot when the
 --   window's Reset is pressed;
+--   seed() (optional), asked before the first step while no offset is saved:
+--   the offset in pixels the piece sits at now (a spot other than its preset,
+--   such as the round button's controller layout spot), so the step starts there;
 --   outline(box) places and sizes `box` exactly over where the piece sits,
 --   whether the piece is showing or not.
 -- A piece reads its offset in its own layout code, and works without this
@@ -105,6 +108,7 @@ function Move:Register(def)
         available = type(def.available) == "function" and def.available or nil,
         apply = type(def.apply) == "function" and def.apply or nil,
         reset = type(def.reset) == "function" and def.reset or nil,
+        seed = type(def.seed) == "function" and def.seed or nil,
         outline = def.outline,
     }
     local old = byKey[entry.key]
@@ -269,7 +273,13 @@ local function Step(pixels)
     local moved = MovedTable(false)
     local hadEntry = moved and moved[key] ~= nil
     local before = Overflow() or 0
-    WritePixels(key, min(max(ox + holdDX * pixels, -LIMIT), LIMIT), min(max(oy + holdDY * pixels, -LIMIT), LIMIT))
+    -- No offset yet: start from where the piece sits now (seed, see the top of this file).
+    local sx, sy = ox, oy
+    if ox == 0 and oy == 0 and piece.seed then
+        local ok, x, y = PE:Safe("core", piece.seed)
+        if ok and GoodNumber(x) and GoodNumber(y) then sx, sy = x, y end
+    end
+    WritePixels(key, min(max(sx + holdDX * pixels, -LIMIT), LIMIT), min(max(sy + holdDY * pixels, -LIMIT), LIMIT))
     local placed = PlaceOutline()
     local after = placed and Overflow()
     if not after then

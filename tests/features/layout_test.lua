@@ -614,7 +614,7 @@ test("layout: registered, off, with its defaults, a Controller tab and no work w
     local mod = PE:GetModule("ctrlLayout")
     check(mod ~= nil, "the feature did not register")
     eq(mod.label, "Controller layout")
-    eq(mod.desc, "Map bottom middle, a spell panel each side (hold LT or RT to swap), chat top right.")
+    eq(mod.desc, "Map bottom middle, a spell panel each side (hold LT or RT to swap), chat on the left above the PE button.")
     eq(mod.order, 60)
     eq(mod.experimental, true)
     eq(mod.statusWhenOff, true)
@@ -3250,6 +3250,7 @@ end)
 test("0.16.0: the chat's box is see-through while placed and the player's value comes back", function()
     local c, PE = layoutClient({}, 3, { setup = function(c0)
         c0.env.FCF_SetWindowAlpha(c0.chatWindows[2], 0.6, true) -- the player's own see-through on window 2
+        c0.chatAlphas[2] = 0.6                                    -- as the game saved it
     end })
     local w1, w2 = c.chatWindows[1], c.chatWindows[2]
     local bg1, bg2 = c.env.ChatFrame1Background, c.env.ChatFrame2Background
@@ -3274,6 +3275,31 @@ test("0.16.0: the chat's box is see-through while placed and the player's value 
     for i, call in ipairs(calls) do eq(call.args[3], true, "call " .. i .. " saved the value") end
     eq(#c:callsTo("SetChatWindowAlpha"), 0, "the player's saved value was changed")
     c:assertClean()
+end)
+
+test("0.16.0: the chat's put-back uses the window's saved see-through, not what the game last left on the window", function()
+    local c, PE = layoutClient({}, 3, { setup = function(c0)
+        c0.chatAlphas[2] = 0.6                          -- the player's saved see-through on window 2
+        rawset(c0.chatWindows[2], "oldAlpha", 0.1)      -- the game left another value on the window
+    end })
+    local w2, bg2 = c.chatWindows[2], c.env.ChatFrame2Background
+    switchOn(c, PE)
+    eq(bg2:GetAlpha(), 0)
+    rawset(w2, "oldAlpha", 0.9)                         -- and rewrites it while the layout is on
+    switchOff(c, PE)
+    eq(bg2:GetAlpha(), 0.6, "the saved value came back")
+    eq(w2.oldAlpha, 0.6)
+    eq(c.chatWindows[1].oldAlpha, 0.25, "window 1: the game's default")
+    c:assertClean()
+    -- Without GetChatWindowInfo the value remembered before the first change comes back.
+    local c2, PE2 = layoutClient({}, 3, { setup = function(c0)
+        rawset(c0.env, "GetChatWindowInfo", nil)
+        rawset(c0.chatWindows[2], "oldAlpha", 0.4)
+    end })
+    switchOn(c2, PE2)
+    switchOff(c2, PE2)
+    eq(c2.env.ChatFrame2Background:GetAlpha(), 0.4)
+    c2:assertClean()
 end)
 
 test("0.16.0: the map's ring is hidden, the black border shown, and both survive the game redrawing the ring", function()

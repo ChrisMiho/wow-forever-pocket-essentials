@@ -1490,8 +1490,9 @@ do
     -- DEFAULT_CHATFRAME_ALPHA (0.25, line 22), whatever oldAlpha says, and
     -- FloatingChatFrame_Update (488-498) sets the saved value again. So each box texture is
     -- hidden as well: both fades skip a hidden texture (1243, 1276) and no chat code shows one
-    -- again. The see-through each window had (oldAlpha, or the game's default when the window
-    -- has none, as at 1239) is read before the first change and set back at the end.
+    -- again. At the end each window gets its saved see-through back (RestoreChat); the one it
+    -- had before the first change (oldAlpha, or the game's default when the window has none, as
+    -- at 1239) is kept only for when the saved one cannot be read.
     local chatFound = {}   -- [window] = its see-through before the first change
     local chatOrder = {}   -- the windows in chatFound, in order
     local chatHidden = {}  -- box textures hidden by the addon, in order
@@ -1539,8 +1540,21 @@ do
         chatHidden, chatHiddenSet = {}, {}
         local setAlpha = FCF_SetWindowAlpha
         if type(setAlpha) == "function" then
+            -- The game rewrites frame.oldAlpha itself, so the value put back is the window's
+            -- saved see-through, read now from GetChatWindowInfo (its sixth answer), the same
+            -- source FloatingChatFrame_Update uses (FloatingChatFrame.lua:461 and 488). The value
+            -- remembered before the first change is used only when that cannot be read.
+            local info = GetChatWindowInfo
             for _, f in ipairs(chatOrder) do
-                local ok, err = pcall(setAlpha, f, chatFound[f], true)
+                local alpha = chatFound[f]
+                if type(info) == "function" and type(f.GetID) == "function" then
+                    local okId, id = pcall(f.GetID, f)
+                    if okId and type(id) == "number" then
+                        local okInfo, _, _, _, _, _, saved = pcall(info, id)
+                        if okInfo and type(saved) == "number" and saved >= 0 and saved <= 1 then alpha = saved end
+                    end
+                end
+                local ok, err = pcall(setAlpha, f, alpha, true)
                 if not ok then PE:LogError("ctrlLayout", "The chat's box could not be put back: " .. tostring(err)) end
             end
         end
@@ -2374,7 +2388,7 @@ defaults.prev = false -- the 0.11.0 file's single layout to go back to; read onc
 mod = PE:RegisterModule({
     key = "ctrlLayout",
     label = "Controller layout",
-    desc = "Map bottom middle, a spell panel each side (hold LT or RT to swap), chat top right.",
+    desc = "Map bottom middle, a spell panel each side (hold LT or RT to swap), chat on the left above the PE button.",
     order = 60,
     experimental = true,
     statusWhenOff = true,

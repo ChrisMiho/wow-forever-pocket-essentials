@@ -255,13 +255,17 @@ local function firstLine(toks, name)
     for _, t in ipairs(toks) do if t.t == "name" and t.v == name then return t.line end end
     return 0
 end
+-- The map's frames the code names, listed one by one (not every global starting with Minimap).
+local MINIMAP_FRAMES = {
+    Minimap = true, MinimapCluster = true, MinimapCompassTexture = true, MinimapCompassTextureUnderlay = true,
+}
 for _, f in ipairs(files) do
     local toks = parsed[f]
     for name in listing(dir .. f):gmatch('GGET[^\n]-; "([^"]+)"') do
         if not STD[name] and not isOwnGlobal(name) then
             if not name:match("^C_") and name ~= "Enum" then
                 local isFrame = not name:match("%l") or name:match("Frame$") or name:match("Manager$")
-                    or name:match("Util$") or name:match("^GameFont") or name:match("^Minimap")
+                    or name:match("Util$") or name:match("^GameFont") or MINIMAP_FRAMES[name]
                     or name == "Constants" or name == "SlashCmdList" or name == "UIParent"
                     or name == "UISpecialFrames"
                 if name == "CreateFrame" then isFrame = false end

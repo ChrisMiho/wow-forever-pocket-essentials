@@ -213,4 +213,75 @@ test("hub: without the layout the spot is as before", function()
     eq(real(PE.ControllerLayout), nil, "the layout is off: no spot")
 end)
 
+-- Move on screen's arrow buttons (Move.lua), tapped by touch.
+local function arrow(c, label)
+    local found
+    for _, rec in ipairs(c:frames()) do
+        local f = rec.frame
+        if c._state(f).type == "Button" and f:IsVisible() and T.labelOf(f) == label then found = f end
+    end
+    check(found, "no shown button " .. label)
+    return found
+end
+
+local function tap(c, btn)
+    c:script(btn, "OnMouseDown", "LeftButton")
+    c:script(btn, "OnMouseUp", "LeftButton")
+    c:script(btn, "OnClick", "LeftButton", false)
+end
+
+local function corner(c, PE)
+    local l, _, _, b = c._rect(PE.Hub.button)
+    return { x = l, y = b }
+end
+
+test("hub: the first nudge from the layout's spot moves the button one step from that spot", function()
+    local c, PE = T.new({})
+    stubSpot(PE, "BOTTOMLEFT", 10, 162)
+    PE.Hub:Refresh()
+    local at = corner(c, PE)
+    PE.Move:Open()
+    c:advance(0.1)
+    tap(c, arrow(c, "Up"))
+    local now = corner(c, PE)
+    same(now, { x = at.x, y = at.y + PE.UI:Px(2) }, "not one step up from the layout's spot")
+    tap(c, arrow(c, "Right"))
+    same(corner(c, PE), { x = at.x + PE.UI:Px(2), y = at.y + PE.UI:Px(2) }, "the second step")
+    -- The saved offset is from the old default spot, so a button moved before 0.16.0 reads the same.
+    local p = point(PE)
+    eq(p, "LEFT", "the offset is not from the old default")
+    -- The layout goes off: the button stays where the player left it.
+    local left = corner(c, PE)
+    PE.Move:Close("test")
+    stubSpot(PE)
+    PE.Hub:Refresh()
+    same(corner(c, PE), left, "the button moved when the layout went off")
+    c:assertClean("nudge from the layout's spot")
+end)
+
+test("hub: Reset with the layout on puts the button back on the layout's spot", function()
+    local c, PE = T.new({})
+    stubSpot(PE, "BOTTOMLEFT", 10, 162)
+    PE.Hub:Refresh()
+    local at = corner(c, PE)
+    PE.Move:Open()
+    c:advance(0.1)
+    tap(c, arrow(c, "Down"))
+    tap(c, arrow(c, "Reset"))
+    same(corner(c, PE), at, "not back on the layout's spot")
+end)
+
+test("hub: a button moved before 0.16.0 takes one step from where it is, with the layout on", function()
+    local saved = { version = 1, enabled = {}, options = {}, ui = { size = "medium", hubPos = "LEFT", moved = { hub = { x = 30, y = -20 } } }, errors = {} }
+    local c, PE = T.new({ saved = saved })
+    stubSpot(PE, "BOTTOMLEFT", 10, 162)
+    PE.Hub:Refresh()
+    local at = corner(c, PE)
+    PE.Move:Open()
+    c:advance(0.1)
+    tap(c, arrow(c, "Left"))
+    same(corner(c, PE), { x = at.x - PE.UI:Px(2), y = at.y }, "not one step left of its own spot")
+    eq(PE.db.ui.moved.hub.x, 28); eq(PE.db.ui.moved.hub.y, -20)
+end)
+
 return { known = KNOWN_FAILURES }

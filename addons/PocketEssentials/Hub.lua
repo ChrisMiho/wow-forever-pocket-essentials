@@ -138,6 +138,38 @@ local function Placement()
     return pos.point, x + dx, y + dy, size
 end
 
+-- Where on the screen each anchor point is, as a share of its width and height.
+local SHARE = {
+    LEFT = { 0, 0.5 }, RIGHT = { 1, 0.5 }, TOP = { 0.5, 1 }, BOTTOM = { 0.5, 0 }, CENTER = { 0.5, 0.5 },
+    TOPLEFT = { 0, 1 }, TOPRIGHT = { 1, 1 }, BOTTOMLEFT = { 0, 0 }, BOTTOMRIGHT = { 1, 0 },
+}
+
+-- The middle of a button of `size` anchored at `point` with offset x, y (UI units).
+local function Middle(point, x, y, size, width, height)
+    local s = SHARE[point] or SHARE.CENTER
+    return s[1] * width + x + (0.5 - s[1]) * size, s[2] * height + y + (0.5 - s[2]) * size
+end
+
+-- For Move on screen's first nudge (Move.lua, seed): while the button sits on the
+-- controller layout's spot (no offset saved), the offset in pixels from the old
+-- default spot to where it is, so the nudge starts from there. The saved offset
+-- stays one from the old default, so a button moved before 0.16.0 is unchanged
+-- and one moved now stays put when the layout goes off. 0, 0 off the layout's spot.
+local function SeedOffset()
+    local point, x, y, size = Placement()
+    local key = PE.db and PE.db.ui and PE.db.ui.hubPos
+    if not (key == nil or key == "LEFT") then return 0, 0 end
+    local pos = POSITIONS.LEFT
+    local UI = PE.UI
+    local margin = UI:Px(10)
+    local width, height = UIParent:GetWidth() or 1024, UIParent:GetHeight() or 768
+    local bx, by = Middle(pos.point, pos.x * margin, pos.y * height, size, width, height)
+    local nx, ny = Middle(point, x, y, size, width, height)
+    local unit = UI:Px(1)
+    if not (type(unit) == "number" and unit > 0) then return 0, 0 end
+    return (nx - bx) / unit, (ny - by) / unit
+end
+
 -- The map's book icon, while the map is open and the book is shown (not full
 -- screen). Blizzard_SharedXML/PortraitFrame.lua:34; Blizzard_WorldMap.lua:18, :49-50, :64-65.
 local function MapPortrait()
@@ -303,6 +335,7 @@ if PE.Move and PE.Move.Register then
         available = function() return true end,
         apply = function() Hub:Refresh() end,
         reset = function() PE:SetUISetting("hubPos", "LEFT") end,
+        seed = SeedOffset,
         outline = function(box)
             local point, x, y, size = Placement()
             box:ClearAllPoints()
