@@ -850,8 +850,11 @@ local function DebugCard(y, width)
         ty = ty + M.gap * 0.3
         ty = ty + list:Text("small", WithCommas(PE:DebugCount()) .. " of " .. WithCommas(PE.DEBUG_CAP) .. " lines",
             ix, ty, tw, COLOR.status) + M.gap * 0.3
-        list:Switch(ix + iw - sw, iy, on and "on" or "off", PE:Wrap("core", function() PE:SetDebug(not PE.debugOn) end))
-        local yy = max(iy + M.button, ty) + M.gap
+        -- Centred on the header, as a feature card's switch is.
+        local headerHeight = max(M.button, ty - iy)
+        list:Switch(ix + iw - sw, iy + (headerHeight - M.button) * 0.5, on and "on" or "off",
+            PE:Wrap("core", function() PE:SetDebug(not PE.debugOn) end))
+        local yy = iy + headerHeight + M.gap
         list:Divider(ix, yy - M.gap * 0.5, iw)
         yy = yy + M.gap * 0.5
         -- A reload is what writes the file. Called straight from the tap, in
@@ -1035,7 +1038,8 @@ local function BuildErrors(width)
     local catcher = PE.ErrorCatcher
     if catcher and PE:GetModule("errors") then
         local ok, nextY = PE:Safe("errors", list.FeatureCard, list, catcher, 0, y, width)
-        y = (ok and type(nextY) == "number") and nextY or (max(y, list.lowest) + M.gap)
+        -- Two gaps after it, as between the cards on every other tab.
+        y = ((ok and type(nextY) == "number") and nextY or (max(y, list.lowest) + M.gap)) + M.gap
     end
     local ok, nextY = PE:Safe("core", ViewerCard, y, width)
     if ok and type(nextY) == "number" then return nextY end

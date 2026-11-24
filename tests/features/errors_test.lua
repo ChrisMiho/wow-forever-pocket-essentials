@@ -669,6 +669,63 @@ test("viewer: d-pad paging keeps the highlight on the same button, Previous or N
     c:assertClean("paging focus")
 end)
 
+-- 0.15.0 (B7): the Debug log switch sits in the middle of its card's header,
+-- as every feature switch does, not at the top.
+test("debug tab: the switch is centred on the card's header", function()
+    local c, PE = T.new({})
+    for _, size in ipairs({ "small", "medium", "large" }) do
+        PE:SetUISetting("size", size)
+        PE:OpenSettings("debug")
+        c:advance(0.2)
+        local M = PE.UI:Metrics()
+        local sw
+        walkAll(c, settingsPanel(c), function(w)
+            if w.peSwitchState and w:IsVisible() then sw = w end
+        end)
+        check(sw, size .. ": no switch")
+        local name, count -- in the page, not the tab of the same name
+        for _, r in ipairs(c._state(settingsPanel(c).peNavArea.child).regions) do
+            local st = c._state(r)
+            if st.type == "FontString" and st.text and r:IsVisible() then
+                if st.text == "Debug log" then name = r end
+                if st.text:find(" lines$") then count = r end
+            end
+        end
+        check(name and count, size .. ": no name or line count")
+        local _, _, top = c._rect(name)
+        local _, _, countTop = c._rect(count)
+        local countBottom = countTop - PE.UI:TextHeight(count, "small")
+        local header = math.max(M.button, top - countBottom + M.gap * 0.3)
+        local _, _, st, sb = c._rect(sw)
+        check(near((st + sb) / 2, top - header / 2), size .. ": the switch is not centred on the header ("
+            .. (st + sb) / 2 .. ", not " .. (top - header / 2) .. ")")
+    end
+    c:assertClean("debug switch")
+end)
+
+-- 0.15.0 (B7): two gaps between the Errors page's cards, as on every other tab.
+test("errors tab: two gaps between the Catch all errors card and the viewer", function()
+    local c, PE = on()
+    openErrors(c, PE)
+    local M = PE.UI:Metrics()
+    local want = PE.UI.COLORS.card
+    local fills = {}
+    for _, r in ipairs(c._state(settingsPanel(c).peNavArea.child).regions) do
+        local st = c._state(r)
+        local col = st.color
+        if st.type == "Texture" and r:IsShown() and col and near(col[1], want[1], 1e-6)
+            and near(col[2], want[2], 1e-6) and near(col[3], want[3], 1e-6) then
+            local _, _, top, bottom = c._rect(r)
+            fills[#fills + 1] = { top = top, bottom = bottom }
+        end
+    end
+    table.sort(fills, function(a, b) return a.top > b.top end)
+    eq(#fills, 2, "cards on the Errors page")
+    local gap = fills[1].bottom - fills[2].top
+    check(near(gap, 2 * M.gap), "the gap between the cards is " .. gap .. ", not " .. 2 * M.gap)
+    c:assertClean("errors gaps")
+end)
+
 -- Review fix 4: a repeat of an error already listed redraws the open viewer.
 test("viewer: a repeat of a listed error shows its new count in the open viewer", function()
     local c, PE = on()
