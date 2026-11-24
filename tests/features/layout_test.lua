@@ -1302,20 +1302,24 @@ local function ours(c)
     return nil
 end
 
-test("rows: only the three timer rows and Start over", function()
+test("rows: Spell panel size, the three timer rows and Start over", function()
     local _, PE = layoutClient({}, 3)
     local list = PE:GetModule("ctrlLayout").options
     local labels = {}
     for i, o in ipairs(list) do labels[i] = o.label end
-    eq(labels, { "Ranged timer", "Main hand timer", "Off hand timer", "Rebuild the layout" })
+    eq(labels, { "Spell panel size", "Ranged timer", "Main hand timer", "Off hand timer", "Rebuild the layout" })
+    eq(list[1].key, "panelSize")
+    local n = list[1].number
+    eq({ n.min, n.max, n.step, n.default, n.suffix }, { 80, 120, 10, 100, "%" })
+    eq(PE:GetModule("ctrlLayout").opts.panelSize, 100, "the default")
     for i, key in ipairs({ "ranged", "mainHand", "offHand" }) do
-        eq(list[i].key, key)
+        eq(list[i + 1].key, key)
         local out = {}
-        for j, ch in ipairs(list[i].choices) do out[j] = { ch.value, ch.label } end
+        for j, ch in ipairs(list[i + 1].choices) do out[j] = { ch.value, ch.label } end
         eq(out, { { 0, "Always" }, { 1, "In combat" }, { 2, "Hidden" } })
     end
-    eq(list[4].button, "Start over")
-    eq(type(list[4].action), "function")
+    eq(list[5].button, "Start over")
+    eq(type(list[5].action), "function")
 end)
 
 test("rows: old saved values for the removed rows change nothing", function()
@@ -1476,7 +1480,7 @@ test("layout: the settings window's Controller tab draws the rows while on, and 
             if rs.type == "FontString" and rs.text and r:IsVisible() then texts[rs.text] = true end
         end
     end)
-    for _, label in ipairs({ "Ranged timer", "Main hand timer", "Off hand timer", "Rebuild the layout" }) do
+    for _, label in ipairs({ "Spell panel size", "Ranged timer", "Main hand timer", "Off hand timer", "Rebuild the layout" }) do
         check(texts[label], "no row " .. label)
     end
     for _, gone in ipairs({ "Main bar", "Map size", "Player and target frames", "Spell button size", "Swing timers" }) do
@@ -2770,6 +2774,206 @@ test("face: the safety net turning the pictures off in a fight puts the bars at 
     switchOff(c, PE)
     eq(frameState(c, barFrames(c).left).scale, 1)
     eq(#c.errors, 0)
+end)
+
+---------------------------------------------------------------------------
+-- 0.15.0: Spell panel size (spec 2026-11-24-controller-layout-0.15.0-panel-size.md, with
+-- the corrections in 2026-11-24-0.15.0-polish.md E6)
+---------------------------------------------------------------------------
+
+local SIZES = { 80, 90, 100, 110, 120 }
+-- size: inner centre, outer centre, outer edge, frames' bottom
+local SIZE_NUMBERS = {
+    [80] = { 156.6, 275.8, 329.4, 56 },
+    [90] = { 163.3, 295.9, 356.2, 56 },
+    [100] = { 170, 316, 383, 56 },
+    [110] = { 176.7, 336.1, 409.8, 128 },
+    [120] = { 183.4, 356.2, 436.6, 133 },
+}
+
+local function overlapArea(a, b)
+    local w = math.min(a[3], b[3]) - math.max(a[1], b[1])
+    local h = math.min(a[4], b[4]) - math.max(a[2], b[2])
+    return w > 1e-9 and h > 1e-9, w, h
+end
+
+test("size: the plan's numbers at every Spell panel size", function()
+    local Plan = plan()
+    for _, size in ipairs(SIZES) do
+        local s, n, what = size / 100, SIZE_NUMBERS[size], size .. "%"
+        local face = Plan.Face(size)
+        near(face.button, 42 * s, what .. " picture")
+        near(face.dx, 46 * s, what .. " dx")
+        near(face.dy, 28 * s, what .. " dy")
+        local spots = Plan.FaceSpots(size)
+        for _, side in ipairs({ { "left", -1 }, { "right", 1 } }) do
+            near(spots.inner[side[1]].x, side[2] * n[1], what .. " inner " .. side[1])
+            near(spots.outer[side[1]].x, side[2] * n[2], what .. " outer " .. side[1])
+            eq(spots.inner[side[1]].y, 66)
+            eq(spots.outer[side[1]].y, 66)
+        end
+        local r = Plan.Rects(size)
+        near(r["outer right diamond"][3], n[3], what .. " outer edge")
+        near(r["outer left diamond"][1], -n[3], what .. " outer edge, left")
+        near(r["inner right diamond"][1], 103, what .. " inner edge")
+        near(r["inner right diamond"][4] - r["inner right diamond"][2], 98 * s, what .. " diamond height")
+        local bars = Plan.BarSpots(size)
+        for _, b in ipairs({ { "top", -1, 1 }, { "left", -1, -1 }, { "right", 1, 1 }, { "both", 1, -1 } }) do
+            near(bars[b[1]].x, b[2] * n[1], what .. " " .. b[1] .. " x")
+            near(bars[b[1]].y, 66 + b[3] * 21 * s, what .. " " .. b[1] .. " y")
+            near(bars[b[1]].s, 0.6 * s, what .. " " .. b[1] .. " scale")
+        end
+        eq(bars.bottom, { x = 0, y = 238, s = 1 }, what .. " sub-menu buttons")
+        local list = Plan.Pieces({ panelSize = size })
+        local p, pet, t = piece(list, "UnitFrame", "Player").anchor, piece(list, "UnitFrame", "Pet").anchor, piece(list, "UnitFrame", "Target").anchor
+        eq({ p.point, p.x, p.y }, { "BOTTOMRIGHT", -395, n[4] }, what .. " player")
+        eq({ t.point, t.x, t.y }, { "BOTTOMLEFT", 395, n[4] }, what .. " target")
+        eq({ pet.x, pet.y }, { -395, n[4] + 125 }, what .. " pet")
+        eq(Plan.TOT_SPOT, { point = "BOTTOMLEFT", relativePoint = "TOPLEFT", x = 0, y = 25 })
+        -- The rest of the template does not depend on the size.
+        local other, base = Plan.Pieces({ panelSize = size }), Plan.Pieces()
+        for i, x in ipairs(other) do
+            if x.system ~= "UnitFrame" then eq(x, base[i], what .. " " .. x.system) end
+        end
+    end
+    -- 100% is exactly 0.14.0's numbers: the template version stays 4.
+    eq(Plan.Pieces({ panelSize = 100 }), Plan.Pieces())
+    eq(Plan.Rects(100), Plan.Rects())
+    eq(Plan.TEMPLATE, 4)
+end)
+
+test("size: no piece overlaps another at every Spell panel size, and all stay on screen", function()
+    local Plan = plan()
+    local W, H = 1365.33, 768
+    for _, size in ipairs(SIZES) do
+        local r = Plan.Rects(size)
+        local names = {}
+        for name in pairs(r) do names[#names + 1] = name end
+        table.sort(names)
+        for i = 1, #names do
+            local a = r[names[i]]
+            check(a[1] >= -W / 2 and a[3] <= W / 2 and a[2] >= 0 and a[4] <= H, size .. "%: " .. names[i] .. " is off screen")
+            for j = i + 1, #names do
+                local hit, w, h = overlapArea(a, r[names[j]])
+                check(not hit, size .. "%: " .. names[i] .. " overlaps " .. names[j] .. " (" .. w .. " by " .. h .. ")")
+            end
+        end
+    end
+    -- The tightest spot: at 120% the inner diamonds reach 124.8, the LB / RB pictures start at 128.
+    local r = Plan.Rects(120)
+    near(r["inner left diamond"][4], 124.8, "inner diamond top at 120%")
+    eq(r["LB targeting picture"][2], 128)
+    check(r["inner right diamond"][4] < r["RB targeting picture"][2], "the inner diamond reaches the RB picture")
+    -- And the frames clear the wheels at every size.
+    for _, size in ipairs(SIZES) do
+        local rs = Plan.Rects(size)
+        for _, wheel in ipairs(Plan.Wheels()) do
+            for _, name in ipairs({ "player", "pet", "target", "target of target", "target auras" }) do
+                local b = rs[name]
+                local nx = math.max(b[1], math.min(wheel.x, b[3]))
+                local ny = math.max(b[2], math.min(wheel.y, b[4]))
+                check(math.sqrt((nx - wheel.x) ^ 2 + (ny - wheel.y) ^ 2) > wheel.r, size .. "%: " .. name .. " reaches a wheel")
+            end
+        end
+    end
+end)
+
+test("size: the real bars stay under the inner diamonds at every Spell panel size", function()
+    local Plan = plan()
+    local side = { main = "inner left diamond", lt = "inner left diamond", rt = "inner right diamond", both = "inner right diamond" }
+    for _, size in ipairs(SIZES) do
+        local r, real = Plan.Rects(size), Plan.RealBarRects(size)
+        for bar, b in pairs(real) do
+            local d = r[side[bar]]
+            check(b[1] >= d[1] and b[3] <= d[3] and b[2] >= d[2] and b[4] <= d[4], size .. "%: " .. bar .. " real bar is not under its diamond")
+            near(b[3] - b[1], 124.8 * size / 100, size .. "%: " .. bar .. " width")
+            near(b[4] - b[2], 40.8 * size / 100, size .. "%: " .. bar .. " height")
+            for name, a in pairs(r) do
+                if name ~= "inner left diamond" and name ~= "inner right diamond" then
+                    check(not overlapArea(a, b), size .. "%: " .. bar .. " real bar overlaps " .. name)
+                end
+            end
+        end
+        for _, pair in ipairs({ { "main", "lt" }, { "rt", "both" } }) do
+            check(not overlapArea(real[pair[1]], real[pair[2]]), size .. "%: " .. pair[1] .. " and " .. pair[2] .. " overlap")
+        end
+    end
+end)
+
+test("size: a saved size that is not one of the five reads as 100%; an old saved size is ignored", function()
+    local Plan = plan()
+    for _, v in ipairs({ 85, 130, 70, 0, "120", true }) do eq(Plan.PanelSize(v), 100, tostring(v)) end
+    eq(Plan.PanelSize(nil), 100)
+    eq(Plan.PanelSize({}), 100)
+    eq(Plan.PanelSize({ panelSize = 110 }), 110)
+    eq(Plan.PanelSize({ size = 80 }), 100, "0.11.x's size counts")
+    eq(Plan.BarSpots({ size = 80 }), Plan.BarSpots())
+    eq(Plan.Pieces({ panelSize = 85 }), Plan.Pieces())
+    -- In the saved file: an unknown value becomes 100 at login, the old `size` stays unused.
+    local file = { enabled = { ctrlLayout = false }, options = { ctrlLayout = { panelSize = 85, size = 70 } } }
+    local c, PE = T.new({ gamepadUI = true, saved = file, setup = function(c) c.world.layouts = { layouts = {}, activeLayout = 3 } end })
+    eq(opts(PE).panelSize, 100)
+    eq(opts(PE).size, 70, "the old value was changed")
+    switchOn(c, PE)
+    placedAt(c, barFrames(c).left, Plan.BarSpots(100).left, "left")
+    c:assertClean()
+end)
+
+test("size: a change rewrites the frames and asks for a reload; after it the bars and the pictures are at the new size", function()
+    local c, PE = onClient()
+    local f = barFrames(c)
+    choose(c, PE, "panelSize", 120)
+    eq(checkSaves(c), 2, "the layout was not rewritten")
+    eq(systemEntry(ours(c), SYS.UnitFrame, 1).anchorInfo.offsetY, 133, "the player frame did not rise")
+    eq(systemEntry(ours(c), SYS.UnitFrame, 2).anchorInfo.offsetY, 133, "the target frame did not rise")
+    eq(systemEntry(ours(c), SYS.UnitFrame, 8).anchorInfo.offsetY, 258, "the pet did not rise")
+    eq(systemEntry(ours(c), SYS.SwingTimer, SWING.Ranged).anchorInfo.offsetY, 3, "a timer moved")
+    eq(reloadReason(PE), RELOAD)
+    -- Until the reload the bars stay with the pictures, at the size they were built at.
+    c:fire("EDIT_MODE_LAYOUTS_UPDATED")
+    placedAt(c, f.left, PE.LayoutPlan.BarSpots(100).left, "before the reload")
+    c:assertClean()
+    -- The reload: bars, pictures and the frames under them at 120%.
+    local c2, PE2 = login(db(c), c.world.layouts.layouts, 4, { char = charDB(c) })
+    eq(layoutCalls(c2), 0)
+    eq(reloadReason(PE2), nil)
+    local spots = PE2.LayoutPlan.BarSpots(120)
+    local f2 = barFrames(c2)
+    for _, spot in ipairs({ "top", "left", "right", "both", "bottom" }) do placedAt(c2, f2[spot], spots[spot], "after the reload: " .. spot) end
+    local Face = PE2.FaceBars
+    eq(Face:Status(), nil)
+    local h = Face.view[1].halves[1]
+    near(h:GetScale(), 1.2, "the pictures' scale")
+    local _, _, _, x, y = h:GetPoint(1)
+    near(x * 1.2, -183.4, "inner left diamond x")
+    near(y * 1.2, 66, "inner left diamond y")
+    near(Face.view[1].pics[1].frame:GetWidth() * h:GetScale(), 50.4, "a picture on screen")
+    eq(statusText(PE2), USING)
+    c2:assertClean()
+end)
+
+test("size: a change in a fight waits for it to end, and the card says so", function()
+    local c, PE = onClient()
+    c:enterCombat()
+    choose(c, PE, "panelSize", 80)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), 1, "a save in combat")
+    eq(statusText(PE), "Updating the layout after this fight.")
+    c:leaveCombat()
+    c:advance(0.1)
+    eq(checkSaves(c), 2)
+    eq(reloadReason(PE), RELOAD)
+    eq(statusText(PE), USING)
+    c:assertClean()
+end)
+
+test("size: refused while Edit Mode is open, and put back", function()
+    local c, PE = onClient()
+    c.world.editMode = true
+    choose(c, PE, "panelSize", 110)
+    eq(opts(PE).panelSize, 100)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), 1)
+    c.world.editMode = false
+    c:assertClean()
 end)
 
 return { known = KNOWN_FAILURES }

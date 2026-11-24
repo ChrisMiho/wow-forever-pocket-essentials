@@ -17,11 +17,14 @@ local ADDON_NAME, PE = ...
 -- quiet. The swap is ClearAllPoints, SetPoint, Show, Hide and SetAlpha on those plain
 -- frames only, which a fight allows; no frame of the game's is touched by it.
 --
---   PE.FaceBars:Start(whenOff)  out of a fight; builds once, binds to the real
---                         buttons, shows the pictures, then makes the real bars
+--   PE.FaceBars:Start(whenOff, size)  out of a fight; builds once, binds to the
+--                         real buttons, shows the pictures, then makes the real bars
 --                         invisible. Returns true, or false and a plain reason.
 --                         whenOff (optional) is called when the safety net below
 --                         turns the pictures off later (the real bars show again).
+--                         size (optional): the Spell panel size in percent (80, 90,
+--                         100, 110 or 120; anything else 100), used by the first
+--                         Start, which builds; a change applies after a reload.
 --   PE.FaceBars:Stop()    any time, also in a fight: the real bars back to full
 --                         strength, the pictures hidden, events dropped.
 --   PE.FaceBars:Status()  nil while fine or stopped; else why the game's own bars
@@ -152,6 +155,10 @@ local REAL_DEFAULT = { main = BarRect(-170, 87), lt = BarRect(-170, 45), rt = Ba
 -- 0.14.0 numbers they end at 241, so the cut is only a guard.
 local BACKING_MARGIN = 4
 local FRAME_EDGE = 395
+-- 0.15.0: and never over the LB / RB targeting pictures, whose bottom is 128 up
+-- (ControllerLayout.lua, Plan.SHOULDERS). At 120% the inner diamonds reach 124.8, so the
+-- margin above them is cut to 3.2 there; below that size the cut is only a guard.
+local SHOULDER_BOTTOM = 128
 
 -- The four groups, each tied to one of the game's bar anchors; state is the
 -- Plan.FaceStates key used while that group's bar is the active one.
@@ -198,6 +205,7 @@ local rootFrame           -- GamepadMainActionBarFrame, the game's bars' own par
 local barsHidden = false  -- the game hides its bars now: nothing is drawn until they are back
 local groups = {}         -- [1..4] = { def, halves = { [1] d-pad, [2] face }, pics = { [1..8] = picture }, anchor, bar, tags }
 local centres = {}        -- [spot name] = { x, y }: the four spots, read at Build
+local panelScale = 1      -- the Spell panel size as a fraction, read at Build: each half's scale
 local states              -- Plan.FaceStates (or the default), read at Build
 local backings = {}       -- [1] left, [2] right: the plain frames under the pictures that take a tap
 local buttonPic = {}      -- [real button] = picture, for the buttons bound now
@@ -506,26 +514,35 @@ local function GoodStates(t)
     return true
 end
 
--- One of ControllerLayout.lua's functions called, its answer when good() takes it.
-local function FromPlan(name, good)
+-- One of ControllerLayout.lua's functions called (with arg), its answer when good() takes it.
+local function FromPlan(name, good, arg)
     local plan = PE.LayoutPlan
     local fn = type(plan) == "table" and plan[name]
     if type(fn) ~= "function" then return nil end
-    local ok, v = pcall(fn)
+    local ok, v = pcall(fn, arg)
     if ok and good(v) then return v end
     return nil
 end
 
--- The picture sizes, the four spots and the states: ControllerLayout.lua's, when it
--- has them, else the copies above.
-local function FaceNumbers()
+-- The Spell panel size in percent: one of the five, else 100.
+local function PanelSize(v)
+    if v == 80 or v == 90 or v == 110 or v == 120 then return v end
+    return 100
+end
+
+-- The picture sizes at 100%, the four spots and the states, and the size the spots were
+-- worked out for: ControllerLayout.lua's, when it has them, else the copies above (at
+-- 100%: without its spots the pictures are drawn at 100%).
+local function FaceNumbers(size)
     local plan = PE.LayoutPlan
     local face = FACE_DEFAULT
     if type(plan) == "table" and type(plan.FACE) == "table" and type(plan.FACE.button) == "number"
         and type(plan.FACE.dx) == "number" and type(plan.FACE.dy) == "number" then
         face = plan.FACE
     end
-    return face, FromPlan("FaceSpots", GoodSpots) or SPOTS_DEFAULT, FromPlan("FaceStates", GoodStates) or STATES_DEFAULT
+    local spots = FromPlan("FaceSpots", GoodSpots, size)
+    if not spots then spots, size = SPOTS_DEFAULT, 100 end
+    return face, spots, FromPlan("FaceStates", GoodStates) or STATES_DEFAULT, size
 end
 
 local function IsRect(r)
@@ -533,11 +550,12 @@ local function IsRect(r)
         and type(r[3]) == "number" and type(r[4]) == "number"
 end
 
--- The four real bars' rectangles: ControllerLayout.lua's, when it has them.
-local function RealBars()
+-- The four real bars' rectangles at that size: ControllerLayout.lua's, when it has them
+-- (the copy is at 100%).
+local function RealBars(size)
     return FromPlan("RealBarRects", function(r)
         return type(r) == "table" and IsRect(r.main) and IsRect(r.lt) and IsRect(r.rt) and IsRect(r.both)
-    end) or REAL_DEFAULT
+    end, size) or REAL_DEFAULT
 end
 
 local function Grow(box, l, b, r, t)
@@ -547,28 +565,33 @@ end
 -- The two frames under the pictures, { left, bottom, right, top } each from the
 -- screen's bottom centre: [1] the inner-left diamond and the real bars left of the
 -- centre, [2] the inner-right diamond and the real bars right of it, each grown by
--- the margin and cut at the player and target frames.
-local function BackingRects(face, spots)
+-- the margin and cut at the player and target frames and under the targeting pictures.
+-- face is at 100%, s the Spell panel size as a fraction; spots are at that size.
+local function BackingRects(face, spots, s, size)
     local boxes = { { huge, huge, -huge, -huge }, { huge, huge, -huge, -huge } }
-    local hw, hh = face.dx + face.button / 2, face.dy + face.button / 2
+    local hw, hh = (face.dx + face.button / 2) * s, (face.dy + face.button / 2) * s
     for side, c in ipairs({ spots.inner.left, spots.inner.right }) do
         Grow(boxes[side], c.x - hw, c.y - hh, c.x + hw, c.y + hh)
     end
-    for _, r in pairs(RealBars()) do
+    for _, r in pairs(RealBars(size)) do
         Grow(boxes[(r[1] + r[3]) < 0 and 1 or 2], r[1], r[2], r[3], r[4])
     end
     for side, box in ipairs(boxes) do
         box[1], box[2], box[3], box[4] = box[1] - BACKING_MARGIN, box[2] - BACKING_MARGIN, box[3] + BACKING_MARGIN, box[4] + BACKING_MARGIN
         if side == 1 then box[1] = max(box[1], -FRAME_EDGE) else box[3] = min(box[3], FRAME_EDGE) end
+        box[4] = min(box[4], SHOULDER_BOTTOM)
     end
     return boxes
 end
 
 local OnEvent -- below
 
--- Makes every frame, once. Returns true, or false and the reason. Every half starts
--- hidden; the first Flush places the ones the state shows (ApplyState).
-local function Build()
+-- Makes every frame, once, at the Spell panel size given (in percent). Returns true, or
+-- false and the reason. Every half starts hidden; the first Flush places the ones the
+-- state shows (ApplyState). The pictures are made at 100% and each half is scaled, so
+-- everything in it (pictures, glyphs, counts, tags) grows with it; a scaled frame's
+-- offsets count in its own scale, so its spot is divided by the scale.
+local function Build(size)
     holder = CreateFrame("Frame", nil, UIParent)
     holder:SetAllPoints(UIParent)
     holder:SetFrameStrata("MEDIUM")
@@ -576,14 +599,15 @@ local function Build()
     driver = CreateFrame("Frame")
     driver:SetScript("OnEvent", Guard(function(_, event) OnEvent(event) end))
     local face, spots
-    face, spots, states = FaceNumbers()
+    face, spots, states, size = FaceNumbers(PanelSize(size))
+    panelScale = size / 100
     for name, key in pairs(SPOT_KEYS) do
         local c = spots[key[1]][key[2]]
         centres[name] = { x = c.x, y = c.y }
     end
     -- Under the pictures (the same strata, a lower level): takes a tap, draws nothing,
     -- has no script.
-    for side, r in ipairs(BackingRects(face, spots)) do
+    for side, r in ipairs(BackingRects(face, spots, panelScale, size)) do
         local f = CreateFrame("Frame", nil, holder)
         f:SetFrameStrata("MEDIUM")
         f:SetFrameLevel(holder:GetFrameLevel() + 1)
@@ -598,7 +622,8 @@ local function Build()
         for half = 1, 2 do
             local hf = CreateFrame("Frame", nil, holder)
             hf:SetSize(w, h)
-            hf:SetPoint("CENTER", UIParent, "BOTTOM", centres.innerLeft.x, centres.innerLeft.y)
+            hf:SetScale(panelScale)
+            hf:SetPoint("CENTER", UIParent, "BOTTOM", centres.innerLeft.x / panelScale, centres.innerLeft.y / panelScale)
             hf:SetFrameLevel(holder:GetFrameLevel() + 2) -- the pictures above the frames that take a tap
             hf:Hide()
             g.halves[half] = hf
@@ -841,7 +866,7 @@ local function ApplyState()
             local c = e and centres[e.spot]
             if c then
                 f:ClearAllPoints()
-                f:SetPoint("CENTER", UIParent, "BOTTOM", c.x, c.y)
+                f:SetPoint("CENTER", UIParent, "BOTTOM", c.x / panelScale, c.y / panelScale)
                 f:SetAlpha(e.quiet and QUIET_ALPHA or 1)
                 f:Show()
             else
@@ -1156,7 +1181,7 @@ StopNow = function()
 end
 
 -- Raises only on a bug; Start counts it.
-local function StartNow()
+local function StartNow(size)
     if running then
         bindDirty = true
         Schedule()
@@ -1181,7 +1206,7 @@ local function StartNow()
     if type(api) ~= "table" or type(api.GetActionCooldownDuration) ~= "function" then return Fail(TEXT_NO_COOLDOWN) end
     pageUnit = pu
     if not holder then
-        local ok, made, why = pcall(Build)
+        local ok, made, why = pcall(Build, size)
         if not ok or not made then
             buildFailed = (ok and why) or TEXT_BUILD
             if not ok then PE:LogError(KEY, "The spell pictures could not be made: " .. tostring(made)) end
@@ -1215,11 +1240,11 @@ end
 -- name this addon defines as its own, and "Stop" is also the game's animation call.
 local Public = {}
 
-function Public.Start(whenOff)
+function Public.Start(whenOff, size)
     if type(whenOff) == "function" then onOff = whenOff end
     if broken then return false, status end
     if PE:InCombat() then return false, TEXT_FIGHT end
-    local ok, started, reason = PE:Safe(KEY, StartNow)
+    local ok, started, reason = PE:Safe(KEY, StartNow, size)
     if ok then return started, reason end
     pcall(StopNow)
     starting = true
@@ -1239,6 +1264,6 @@ function Public.Reason()
     return status
 end
 
-Face["Start"] = function(_, whenOff) return Public.Start(whenOff) end
+Face["Start"] = function(_, whenOff, size) return Public.Start(whenOff, size) end
 Face["Stop"] = function() Public.Halt() end
 Face["Status"] = function() return Public.Reason() end

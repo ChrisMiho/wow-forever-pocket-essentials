@@ -1134,4 +1134,70 @@ test("face: started while the whole interface is hidden, the pictures wait for i
     c:assertClean()
 end)
 
+---------------------------------------------------------------------------
+-- 0.15.0: Spell panel size (spec 2026-11-24-controller-layout-0.15.0-panel-size.md):
+-- built at the size the first Start is given
+---------------------------------------------------------------------------
+
+test("face: built at the Spell panel size given; every half scaled and on its spot, the frames under them to match", function()
+    for _, size in ipairs({ 80, 90, 100, 110, 120 }) do
+        local c, PE = new()
+        local Face = PE.FaceBars
+        local ok, why = Face:Start(nil, size)
+        check(ok == true, "Start failed: " .. tostring(why))
+        local s, what = size / 100, size .. "%"
+        local spots = PE.LayoutPlan.FaceSpots(size)
+        local want = { innerLeft = spots.inner.left, outerLeft = spots.outer.left, innerRight = spots.inner.right, outerRight = spots.outer.right }
+        local function at(f, spot, label)
+            near(f:GetScale(), s, label .. " scale")
+            local _, _, _, x, y = f:GetPoint(1)
+            near(x * s, want[spot].x, label .. " x")
+            near(y * s, want[spot].y, label .. " y")
+        end
+        -- Every picture is made at 42 in its half, so on screen it is 42 times the size.
+        near(pic(Face, 1, 1).frame:GetWidth(), 42, what .. " picture")
+        at(half(Face, 1, 1), "innerLeft", what .. " rest d-pad")
+        at(half(Face, 1, 2), "innerRight", what .. " rest face")
+        c:pressTriggers(true, false)
+        c:advance(0.1)
+        at(half(Face, 2, 1), "outerLeft", what .. " LT d-pad")
+        at(half(Face, 2, 2), "innerLeft", what .. " LT face")
+        c:pressTriggers(false, true)
+        c:advance(0.1)
+        at(half(Face, 3, 2), "outerRight", what .. " RT face")
+        c:pressTriggers(false, false)
+        c:advance(0.1)
+        -- The frames under the pictures: each side's inner diamond and both real bars, plus
+        -- 4 (cut under the targeting pictures at 128), clear of everything else.
+        local real = PE.LayoutPlan.RealBarRects(size)
+        local rects = PE.LayoutPlan.Rects(size)
+        for side, f in ipairs(Face.backing) do
+            local r = rectOf(f)
+            local d = rects[side == 1 and "inner left diamond" or "inner right diamond"]
+            near(r[2], d[2] - 4, what .. " backing bottom")
+            near(r[4], math.min(d[4] + 4, 128), what .. " backing top")
+            near(side == 1 and r[1] or r[3], side == 1 and d[1] - 4 or d[3] + 4, what .. " backing outer edge")
+            for _, bar in ipairs(side == 1 and { "main", "lt" } or { "rt", "both" }) do
+                check(inside(real[bar], r), what .. ": the " .. bar .. " bar is not under a frame that takes a tap")
+            end
+            for name, o in pairs(rects) do
+                if name ~= "inner left diamond" and name ~= "inner right diamond" then
+                    check(not overlaps(r, o), what .. ": the frame on side " .. side .. " covers the " .. name)
+                end
+            end
+        end
+        c:assertClean()
+    end
+    -- A size that is not one of the five builds at 100%.
+    local c, PE, Face = new()
+    eq(Face:Start(nil, 85), true)
+    near(half(Face, 1, 1):GetScale(), 1, "unknown size")
+    checkState(c, Face, REST, "unknown size")
+    -- Only the first Start builds: a later one with another size changes nothing.
+    Face:Stop()
+    eq(Face:Start(nil, 120), true)
+    near(half(Face, 1, 1):GetScale(), 1, "built once")
+    c:assertClean()
+end)
+
 return { known = KNOWN_FAILURES }

@@ -23,7 +23,7 @@ local ADDON_NAME, PE = ...
 --     for two events until that check has run, then for nothing.
 --
 -- Sizes come from Blizzard's source and the probe's measurements (see MAP,
--- TIMER, FRAMES, BAR below); every spot is the mockup's, moved only where a real
+-- TIMER, UNIT, BAR below); every spot is the mockup's, moved only where a real
 -- size does not fit (0.12.0 spec, "As built").
 --
 -- 0.11.1 (spec 2026-11-23-controller-layout-0.11.1.md): the XP bars top middle,
@@ -152,18 +152,14 @@ local TARGET_CAST = { x = 123, y = -46, w = 150, h = 10 }
 -- The player side is the mirror. The
 -- pet and the target of target sit above the target's two aura rows (25 over the frames'
 -- tops), the pet right-aligned and the target of target left-aligned with the frames'
--- inner edges.
+-- inner edges. 0.15.0: at a Spell panel size whose outer diamonds pass 383 (110% and
+-- 120%) the frames rise instead of moving out (see Geometry).
 local FRAME_X = 395
 local FRAME_Y = 56
-local SMALL_Y = FRAME_Y + UNIT.h + 25
-local FRAMES = {
-    Player = { "BOTTOMRIGHT", UI, "BOTTOM", -FRAME_X, FRAME_Y },
-    Pet = { "BOTTOMRIGHT", UI, "BOTTOM", -FRAME_X, SMALL_Y },
-    Target = { "BOTTOMLEFT", UI, "BOTTOM", FRAME_X, FRAME_Y },
-}
+local SMALL_GAP = 25 -- the pet and the target of target over the frames' tops
 
 -- The target of target, placed by the module on the target frame (see EXTRAS).
-Plan.TOT_SPOT = { point = "BOTTOMLEFT", relativePoint = "TOPLEFT", x = 0, y = SMALL_Y - FRAME_Y - UNIT.h }
+Plan.TOT_SPOT = { point = "BOTTOMLEFT", relativePoint = "TOPLEFT", x = 0, y = SMALL_GAP }
 -- The two LB / RB targeting pictures, placed by the module on UIParent's bottom (see EXTRAS).
 -- 0.14.0: beside the map, above the inner diamonds (which reach 115 up) and right of the
 -- clear of the round map (69 either side of the centre): 76 to 112 either side, 128 to
@@ -180,20 +176,19 @@ local BAR = { w = 208, h = 68 }
 
 -- 0.14.0: our own spell pictures. A picture is 42 across (0.13.0: 28, too small to read
 -- on the device); a diamond puts its four 46 left / right and 28 up / down of its
--- centre, so a diamond is 134 by 98.
-Plan.FACE = { button = 42, dx = 46, dy = 28 }
-local FACE_W = 2 * Plan.FACE.dx + Plan.FACE.button
-local FACE_H = 2 * Plan.FACE.dy + Plan.FACE.button
+-- centre, so a diamond is 134 by 98. These are the 100% numbers; Plan.Face(size) gives
+-- them at a Spell panel size.
+local FACE = { button = 42, dx = 46, dy = 28 }
+Plan.FACE = { button = FACE.button, dx = FACE.dx, dy = FACE.dy }
 
--- The four spots a diamond can be drawn at: their centres, in UI units from the screen's
--- bottom centre. The inner ones span 103 to 237 either side of the centre and 17 to 115
--- up: clear of the swing timers (85 either side, 3 to 43 up), the title strip (-87 to 65)
--- and the round map (69 either side, 87 to 226 up). The outer ones 249 to 383, 12 apart
--- from the inner ones and 12 short of the frames (FRAME_X).
-local FACE_SPOTS = {
-    inner = { left = { x = -170, y = 66 }, right = { x = 170, y = 66 } },
-    outer = { left = { x = -316, y = 66 }, right = { x = 316, y = 66 } },
-}
+-- The four spots a diamond can be drawn at (Plan.FaceSpots): their centres, in UI units
+-- from the screen's bottom centre. At 100% the inner ones span 103 to 237 either side of
+-- the centre and 17 to 115 up: clear of the swing timers (85 either side, 3 to 43 up),
+-- the title strip (-87 to 65) and the round map (69 either side, 87 to 226 up). The outer
+-- ones 249 to 383, 12 apart from the inner ones and 12 short of the frames (FRAME_X).
+local INNER_EDGE = 103 -- the inner diamonds' inner edge, at every size
+local RING_GAP = 12    -- between an inner and an outer diamond, and an outer one and the frames
+local FACE_Y = 66      -- every diamond's centre, at every size
 
 -- Which bar half is drawn at which spot for each state of the triggers (spec, "The new
 -- arrangement"). The d-pad half always left of its own face half, the way the controller
@@ -220,18 +215,17 @@ local FACE_STATES = {
 }
 
 -- The game's four bars, whole and invisible under the two inner diamonds, at 60% (124.8
--- by 40.8 each): the main and LT bars under the left one, RT and LT+RT under the right
--- one, centred on it (x -170 / +170), one above the other (87 and 45 up; the diamond
--- spans 17 to 115). Put divides the spot by the scale, since a frame's offsets count in
--- its own scale. The bottom anchor carries the two sub-menu buttons (at -138 / +138, -50
--- from it: Blizzard_GamepadActionBars/MainActionBarFrame.xml:94-112), so they sit 138
--- either side of the centre, 188 up.
+-- by 40.8 each) at 100%: the main and LT bars under the left one, RT and LT+RT under the
+-- right one, centred on it (x -170 / +170), one above the other (87 and 45 up; the
+-- diamond spans 17 to 115). At another Spell panel size s they are at 60% times s, 21s
+-- above and under the diamond's centre (Plan.BarSpots). Put divides the spot by the
+-- scale, since a frame's offsets count in its own scale. The bottom anchor carries the
+-- two sub-menu buttons (at -138 / +138, -50 from it:
+-- Blizzard_GamepadActionBars/MainActionBarFrame.xml:94-112), so they sit 138 either side
+-- of the centre, 188 up.
 local REAL_BAR_SCALE = 0.6
+local REAL_BAR_STEP = 21 -- each bar's centre above or under the diamond's, at 100%
 local SPOTS = {
-    top = { x = -170, y = 87, s = REAL_BAR_SCALE },    -- main bar (no trigger)
-    left = { x = -170, y = 45, s = REAL_BAR_SCALE },   -- LT bar
-    right = { x = 170, y = 87, s = REAL_BAR_SCALE },   -- RT bar
-    both = { x = 170, y = 45, s = REAL_BAR_SCALE },    -- LT + RT bar
     bottom = { x = 0, y = 238, s = 1 },                -- sub-menu buttons at (±138, 188)
 }
 -- Which face group each real bar spot is.
@@ -283,22 +277,91 @@ local function DeepCopy(v)
     return out
 end
 
--- Where each real bar group's centre goes, and its scale. x and y are UI units from
--- the screen's bottom centre.
-function Plan.BarSpots()
-    return DeepCopy(SPOTS)
+-- 0.15.0 (spec 2026-11-24-controller-layout-0.15.0-panel-size.md): the Spell panel
+-- size, saved as opts.panelSize (not opts.size: 0.11.x left an unused `size` in saved
+-- files). Fill keeps only 0, 1 and 2, so this one is checked on its own.
+Plan.PANEL_SIZES = { 80, 90, 100, 110, 120 }
+Plan.PANEL_SIZE_DEFAULT = 100
+
+-- The Spell panel size in percent: one of the five, else 100. `v` is the options table,
+-- a size, or nil.
+function Plan.PanelSize(v)
+    if type(v) == "table" then v = v.panelSize end
+    for _, size in ipairs(Plan.PANEL_SIZES) do
+        if v == size then return size end
+    end
+    return Plan.PANEL_SIZE_DEFAULT
 end
+
+-- Every number the Spell panel size changes, for size v (as Plan.PanelSize takes it), s
+-- the size as a fraction:
+--   face        the picture 42s and its steps 46s / 28s; w, h the diamond (134s by 98s)
+--   inner, outer  the diamonds' centres' distance from the screen's centre: the inner
+--               edge stays at 103, inner = 103 + 67s, outer = inner + 134s + 12
+--   frameY      the player and target frames' bottom: 56 while the outer diamonds end
+--               12 short of the frames (up to 100%); else just above the diamonds,
+--               66 + 49s + 8 rounded up (128 at 110%, 133 at 120%), so the frames stay
+--               at 395 across and the target's cast bar (123 to 273 right of the
+--               frame) stays on the screen
+--   barScale, barStep  the real bars at 60% times s, 21s above and under the diamonds'
+--               centre
+local function Geometry(v)
+    local s = Plan.PanelSize(v) / 100
+    local face = { button = FACE.button * s, dx = FACE.dx * s, dy = FACE.dy * s }
+    local w, h = 2 * face.dx + face.button, 2 * face.dy + face.button
+    local inner = INNER_EDGE + w / 2
+    local outer = inner + w + RING_GAP
+    local frameY = FRAME_Y
+    if outer + w / 2 > FRAME_X - RING_GAP + 1e-9 then frameY = math.ceil(FACE_Y + h / 2 + 8 - 1e-9) end
+    return { s = s, face = face, w = w, h = h, inner = inner, outer = outer, frameY = frameY,
+        barScale = REAL_BAR_SCALE * s, barStep = REAL_BAR_STEP * s }
+end
+
+-- The player, pet and target frames' spots for size v.
+local function Frames(v)
+    local y = Geometry(v).frameY
+    return {
+        Player = { "BOTTOMRIGHT", UI, "BOTTOM", -FRAME_X, y },
+        Pet = { "BOTTOMRIGHT", UI, "BOTTOM", -FRAME_X, y + UNIT.h + SMALL_GAP },
+        Target = { "BOTTOMLEFT", UI, "BOTTOM", FRAME_X, y },
+    }
+end
+
+-- The picture sizes for size v: { button, dx, dy }, a fresh table.
+function Plan.Face(v)
+    return Geometry(v).face
+end
+
+-- Where each real bar group's centre goes, and its scale, for size v (nil: 100%). x and
+-- y are UI units from the screen's bottom centre.
+local function BarSpots(v)
+    local g = Geometry(v)
+    local up, down = FACE_Y + g.barStep, FACE_Y - g.barStep
+    return {
+        top = { x = -g.inner, y = up, s = g.barScale },     -- main bar (no trigger)
+        left = { x = -g.inner, y = down, s = g.barScale },  -- LT bar
+        right = { x = g.inner, y = up, s = g.barScale },    -- RT bar
+        both = { x = g.inner, y = down, s = g.barScale },   -- LT + RT bar
+        bottom = DeepCopy(SPOTS.bottom),
+    }
+end
+Plan.BarSpots = BarSpots
 
 -- The same for when our pictures are off (see FULL_SPOTS).
 function Plan.FullBarSpots()
     return DeepCopy(FULL_SPOTS)
 end
 
--- The four spots a diamond can be drawn at (see FACE_SPOTS): { inner = { left, right },
--- outer = { left, right } }, each { x, y }, a fresh copy.
-function Plan.FaceSpots()
-    return DeepCopy(FACE_SPOTS)
+-- The four spots a diamond can be drawn at, for size v (nil: 100%; see Geometry):
+-- { inner = { left, right }, outer = { left, right } }, each { x, y }, a fresh table.
+local function FaceSpots(v)
+    local g = Geometry(v)
+    return {
+        inner = { left = { x = -g.inner, y = FACE_Y }, right = { x = g.inner, y = FACE_Y } },
+        outer = { left = { x = -g.outer, y = FACE_Y }, right = { x = g.outer, y = FACE_Y } },
+    }
 end
+Plan.FaceSpots = FaceSpots
 
 -- Which half of which bar is drawn where, per state (see FACE_STATES): { rest, lt, rt,
 -- both }, each a list of { group = "main"|"lt"|"rt"|"both", half = "dpad"|"face",
@@ -334,12 +397,15 @@ local AURAS = { right = -30, top = -292, w = 11 * 40 + 15, bottom = -330 - 50 }
 -- are not (Plan.RealBarRects). The quest tracker is taken at
 -- its least height (400). The target's two aura rows are the part above the
 -- frame; its cast bar is the spot it takes with the target of target shown.
-function Plan.Rects()
+-- v: the Spell panel size (as Plan.PanelSize takes it; nil is 100%).
+function Plan.Rects(v)
     local r = {}
     local function box(name, cx, cy, w, h) r[name] = { cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2 } end
-    for ring, sides in pairs(FACE_SPOTS) do
-        for side, c in pairs(sides) do box(ring .. " " .. side .. " diamond", c.x, c.y, FACE_W, FACE_H) end
+    local g = Geometry(v)
+    for ring, sides in pairs(FaceSpots(v)) do
+        for side, c in pairs(sides) do box(ring .. " " .. side .. " diamond", c.x, c.y, g.w, g.h) end
     end
+    local FRAMES = Frames(v)
     local roundCentre = MAP.y + MAP.frameUp + MAP.frame * MAP.size / 100 / 2
     local round = MAP.round * MAP.size / 100
     box("map", MAP.x + MAP.frameRight, roundCentre, round, round)
@@ -380,12 +446,13 @@ function Plan.Rects()
 end
 
 -- The game's four real bars, invisible under the inner diamonds: { main, lt, rt,
--- both } each { left, bottom, right, top }. Not part of Plan.Rects: they sit under
--- the face by design.
-function Plan.RealBarRects()
+-- both } each { left, bottom, right, top }, at Spell panel size v. Not part of
+-- Plan.Rects: they sit under the face by design.
+function Plan.RealBarRects(v)
     local r = {}
+    local spots = BarSpots(v)
     for spot, bar in pairs(SPOT_FACE) do
-        local s = SPOTS[spot]
+        local s = spots[spot]
         local w, h = BAR.w * s.s, BAR.h * s.s
         r[bar] = { s.x - w / 2, s.y - h / 2, s.x + w / 2, s.y + h / 2 }
     end
@@ -412,6 +479,7 @@ end
 -- must be told the piece is no longer in its default position.
 function Plan.Pieces(opts)
     local o = Fill(opts)
+    local FRAMES = Frames(opts) -- they rise at the larger Spell panel sizes
     local list = {}
     local function add(system, index, anchor, settings)
         list[#list + 1] = { system = system, index = index, anchor = anchor, settings = settings, moved = anchor and true or nil }
@@ -1270,12 +1338,21 @@ end
 local SyncBars   -- below
 local onFaceOff  -- made once: FaceBars.lua's safety net turned the pictures off
 
+-- The Spell panel size the bars and the pictures use this session: read at the first
+-- placement, then kept (the pictures are built once). A change rewrites the frames and
+-- asks for a reload, after which all of them are at the new size together.
+local sessionSize
+local function SessionSize()
+    if not sessionSize then sessionSize = Plan.PanelSize(mod and mod.opts) end
+    return sessionSize
+end
+
 local function StartFace()
     local face, start = FaceCall("Start")
     if not face then return end
     -- The bars go to full size once our pictures are off (PlaceNow), out of a fight.
     onFaceOff = onFaceOff or PE:Wrap("ctrlLayout", function() if wanted then SyncBars() end end)
-    local ok, started, why = PE:Safe("ctrlLayout", start, face, onFaceOff)
+    local ok, started, why = PE:Safe("ctrlLayout", start, face, onFaceOff, SessionSize())
     if ok and not started and PE.debugOn then
         PE:Debug("ctrlLayout", "spell pictures not shown: " .. tostring(why))
     end
@@ -1352,7 +1429,7 @@ local function PlaceNow()
             return
         end
     end
-    local spots = Plan.BarSpots()
+    local spots = Plan.BarSpots(SessionSize())
     placed = true
     for _, b in ipairs(BAR_FRAMES) do
         local spot = spots[b.spot]
@@ -1666,15 +1743,20 @@ local function Now() return (GetTime and GetTime()) or 0 end
 local function RememberApplied(opts)
     local o = Fill(opts)
     for k in pairs(Plan.DEFAULTS) do applied[k] = o[k] end
+    applied.panelSize = Plan.PanelSize(opts)
 end
 
 -- Which pieces of Plan.Pieces each row rewrites: its own swing timer only (one
--- setup since 0.12.0: the stack's spots no longer depend on what is shown).
+-- setup since 0.12.0: the stack's spots no longer depend on what is shown); the Spell
+-- panel size the three unit frames.
 local function Timer(index) return function(p) return p.system == "SwingTimer" and p.index == index end end
 local REWRITES = {
     ranged = Timer("Ranged"),
     mainHand = Timer("MainHand"),
     offHand = Timer("OffHand"),
+    -- The Spell panel size: the player, pet and target frames (they rise at 110% and 120%).
+    -- The pictures and the real bars take the new size after the reload asked for.
+    panelSize = function(p) return p.system == "UnitFrame" end,
 }
 
 local function RunRewrites()
@@ -1776,6 +1858,8 @@ local VISIBILITY = { { value = 0, label = "Always" }, { value = 1, label = "In c
 -- One setup (0.12.0 spec, "One setup"): the rows that made other arrangements are
 -- gone; values older versions saved for them stay in the file, unused.
 local OPTIONS = {
+    { key = "panelSize", label = "Spell panel size", OnChange = LayoutRow("panelSize"),
+      number = { min = 80, max = 120, step = 10, default = Plan.PANEL_SIZE_DEFAULT, suffix = "%", unit = "of normal" } },
     { key = "ranged", label = "Ranged timer", choices = VISIBILITY, OnChange = LayoutRow("ranged") },
     { key = "mainHand", label = "Main hand timer", choices = VISIBILITY, OnChange = LayoutRow("mainHand") },
     { key = "offHand", label = "Off hand timer", choices = VISIBILITY, OnChange = LayoutRow("offHand") },
@@ -1844,6 +1928,7 @@ local function WatchLateGamepadUI()
 end
 
 local defaults = DeepCopy(Plan.DEFAULTS)
+defaults.panelSize = Plan.PANEL_SIZE_DEFAULT
 defaults.prev = false -- the 0.11.0 file's single layout to go back to; read once, then false
 -- (opts.prevs, 0.11.1's entries by character name, is only read: Migrate. Each
 -- character's entry now lives in its own saved file, PE.charDB.ctrlLayoutPrev.)
@@ -1873,6 +1958,8 @@ mod = PE:RegisterModule({
         local waitText
         if pending then
             if PE:InCombat() then waitText = TEXT_WAIT_FIGHT elseif not EditModeReady() then waitText = TEXT_WAIT_LAYOUTS end
+        elseif wanted and #pendingRewrites > 0 and PE:InCombat() then
+            waitText = TEXT_WAIT_FIGHT -- an option change waiting for the fight to end
         end
         if not m:IsEnabled() then
             local lines = {}
@@ -1902,6 +1989,8 @@ mod = PE:RegisterModule({
     -- With the feature on, OnEnable (right after) does the same check.
     OnLoad = function(self)
         if type(self.opts) ~= "table" then return end
+        -- A Spell panel size that is not one of the five shows and reads as 100%.
+        self.opts.panelSize = Plan.PanelSize(self.opts)
         if PE:IsModuleSavedOn("ctrlLayout") then
             -- Blocked at this login only because the game does not report its Gamepad UI
             -- yet: one more try at the next PLAYER_ENTERING_WORLD.
