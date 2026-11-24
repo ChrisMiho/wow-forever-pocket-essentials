@@ -35,7 +35,7 @@ scripts/check.sh
 qdb_zip="$(scripts/fetch-questiedb.sh)"
 
 # --- Stage everything -----------------------------------------------------------
-stage="$(mktemp -d)"
+stage="$(mktemp -d "${TMPDIR:-/tmp}/pe-build.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
 
 if [ ! -f addons/PocketEssentials/PocketEssentials.toc ]; then
@@ -129,7 +129,7 @@ probe_dir=probe/PocketProbe
 probe_out="$PWD/dist/PocketProbe.zip"
 rm -f "$probe_out"
 if [ -f "$probe_dir/PocketProbe.toc" ]; then
-    probe_stage="$(mktemp -d)"
+    probe_stage="$(mktemp -d "${TMPDIR:-/tmp}/pe-probe.XXXXXX")"
     trap 'rm -rf "$stage" "$probe_stage"' EXIT
     mkdir "$probe_stage/PocketProbe"
     cp "$probe_dir/PocketProbe.toc" "$probe_stage/PocketProbe/"
