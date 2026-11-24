@@ -231,30 +231,33 @@ local function Create()
     label:SetText("PE")
     Hub.ring, Hub.fill, Hub.label = ring, fill, label
 
-    button:SetScript("OnMouseDown", function()
+    button:SetScript("OnMouseDown", PE:Wrap("hub", function()
         pressedAt = GetTime and GetTime() or nil
         pressSerial = pressSerial + 1
         SetPressed(true)
-    end)
-    button:SetScript("OnMouseUp", function()
+    end))
+    button:SetScript("OnMouseUp", PE:Wrap("hub", function()
         -- Keep the pressed colour a moment so a quick tap is still visible.
         local serial = pressSerial
         if C_Timer and C_Timer.After then
-            C_Timer.After(0.15, function()
+            C_Timer.After(0.15, PE:Wrap("hub", function()
                 if serial == pressSerial then SetPressed(false) end
-            end)
+            end))
         else
             SetPressed(false)
         end
-    end)
-    button:SetScript("OnHide", function() SetPressed(false) end)
+    end))
+    button:SetScript("OnHide", PE:Wrap("hub", function() SetPressed(false) end))
     button:SetScript("OnClick", PE:Wrap("hub", OnClick))
 
     Hub.button = button
     if not HookMap() then
-        -- The map addon may load later.
+        -- The map addon may load later; once its hook is on, nothing more to wait for.
         PE:RegisterCoreEvent("ADDON_LOADED", "hub", function(_, name)
-            if name == "Blizzard_WorldMap" and HookMap() then Hub:Refresh() end
+            if name == "Blizzard_WorldMap" and HookMap() then
+                PE:UnregisterCoreEvent("ADDON_LOADED", "hub")
+                Hub:Refresh()
+            end
         end)
     end
     Hub:Refresh()
