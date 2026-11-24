@@ -1,7 +1,7 @@
 /* Shared look for the CurseForge images (1.0.0 set).
    The frame is the brand: near-black indigo with the round button's gold.
    The mock windows use the addon's own colours, shapes and wording
-   (UI.lua, Settings.lua, docs/ui-review/mockup-0.8.1.html, "Proposed").
+   (UI.lua, Settings.lua).
    Original art only: no game art, no game logo, system fonts. */
 :root {
 	--bg-0: #06070d;

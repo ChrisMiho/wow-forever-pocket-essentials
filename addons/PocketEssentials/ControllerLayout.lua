@@ -70,8 +70,7 @@ PE.LayoutPlan = Plan
 Plan.NAME = "Pocket Essentials"
 
 -- 0.12.0 (spec 2026-11-23-controller-layout-0.12.0-mockup-setup.md): one setup,
--- the mockup's "Face bars (one setup)" (docs/ui-review/mockup-0.8.1.html,
--- drawFace) with the game's real bars. The only options left are the three
+-- the mockup's "Face bars (one setup)" with the game's real bars. The only options left are the three
 -- swing timers' visibility. Every spot below is in UI units at UI scale 1
 -- (1365 by 768): x from the screen's centre, y ("up") from its bottom edge.
 -- How each number follows from the Camelot source is in

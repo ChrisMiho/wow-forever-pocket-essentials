@@ -1170,7 +1170,7 @@ Install the 0.8.1 zip (only the `PocketEssentials` folder) and log in.
 
 Install the 0.9.0 zip (delete the old `PocketEssentials` folder first, keep
 `QuestieDB`) and log in. Compare each window with the "Proposed" mockups
-(`docs/ui-review/mockup-0.8.1.html`, 720p, your button size). Report anything
+(720p, your button size; the mockup page was removed on 2026-11-24, see DECISIONS). Report anything
 that looks different from the mockup, cut-off text, or controls that do not
 respond, plus the Errors tab.
 
@@ -1638,8 +1638,8 @@ To go back to your own layout: Controller tab, switch Off, **Reload now**.
 **What this is for.** The Controller layout now draws your spells itself:
 d-pad spells left of the map, face-button spells right of it, in one low
 band at the bottom. The game's bars are still there, invisible, and do the
-casting. Picture of the plan: `docs/ui-review/mockup-0.8.1.html`, "Face bars
-(one setup)", Show "0.13.0: split face". Download: the GitHub pre-release
+casting. Picture of the plan: the mockup page's "Face bars
+(one setup)", Show "0.13.0: split face" (removed on 2026-11-24, see DECISIONS). Download: the GitHub pre-release
 **v0.13.0** (both zips; Pocket Probe is unchanged, you don't need it).
 
 1. In `AddOns`, delete the old `PocketEssentials` folder (keep `QuestieDB`)

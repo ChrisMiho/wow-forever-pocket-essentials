@@ -397,3 +397,12 @@ instruction ("without asking questions, apply polish"). Spec
 - Full Questie, TomTom, Bagnon, BetterBags and ForeverLazy were also
   considered and rejected (too heavy, unverifiable build, or no licence).
   The only third-party addon in the bundle is QuestieDB.
+
+## 2026-11-24: in-progress notes removed before the first public post
+
+The owner asked for a tidy repo. The play-session notes (`docs/11-22-playsession/`,
+`docs/11-23-face-bars/`, `docs/11-23-playsession/`, `docs/11-23-ui-debug/`) and the UI planning
+folder (`docs/ui-review/`, with the mockup page) were deleted. Older specs, plans, the PRD and
+the CHANGELOG still name them; they are in git history at commit ca84a19
+(`git show ca84a19:docs/11-23-face-bars/SOURCE-BRIEF.md`, for example). The only branch is
+`main`; new work starts on a fresh branch per feature.

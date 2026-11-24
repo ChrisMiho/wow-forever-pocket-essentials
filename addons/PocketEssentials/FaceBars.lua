@@ -2,7 +2,7 @@ local ADDON_NAME, PE = ...
 
 -- Face bars: our own spell pictures for the game's four controller bars
 -- (Controller layout 0.13.0, spec 2026-11-23-controller-layout-0.13.0-face-bars.md;
--- the Blizzard facts are in docs/11-23-face-bars/SOURCE-BRIEF.md).
+-- the Blizzard facts are cited line by line below).
 --
 -- The game's real bars stay whole and keep taking every press; they are made
 -- invisible by setting their four anchors' see-through to 0, and this file draws
@@ -47,7 +47,7 @@ local ADDON_NAME, PE = ...
 -- see-through 0 (enableMouse,
 -- G/ActionBarTemplates.xml:606-699). Nothing is ever written into Blizzard's tables or
 -- frames except the four anchors' see-through (SetAlpha is not a protected call:
--- device-proven on the bars, docs/11-23-face-bars/EVIDENCE.md) and the hooks.
+-- device-proven on the bars in the Pocket Probe tests of 2026-11-23) and the hooks.
 --
 -- Where the numbers come from (paths under Interface/AddOns/ of the forever branch;
 -- G/ = Blizzard_GamepadActionBars/, AB/ = Blizzard_ActionBar/Shared/,
