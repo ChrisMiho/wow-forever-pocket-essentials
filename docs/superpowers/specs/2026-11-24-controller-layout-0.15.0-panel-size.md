@@ -32,10 +32,10 @@ Controller layout options. A saved value that is not one of the five reads as 10
 
 ## When it applies
 
-- Pictures, backings and positions are redrawn on the change.
-- The real bars' scale and spot, and the frames (an Edit Mode layout rewrite, the same path as
-  the timer rows), change out of a fight only. During a fight the change waits, with the
-  tab's existing "Updating the layout after this fight." line. No reload.
+- A change rewrites the layout (an Edit Mode layout rewrite, the same path as the timer rows)
+  out of a fight and asks for a reload; after it, the pictures, backings, real bars and frames
+  are all at the new size. During a fight the change waits, with the tab's "Updating the layout
+  after this fight." line.
 
 ## Tests
 
@@ -43,7 +43,8 @@ Controller layout options. A saved value that is not one of the five reads as 10
 - No overlaps at every size (Plan.Rects takes the size).
 - The real bars stay under the inner diamonds at every size.
 - A change during a fight waits for the fight to end.
-- FaceBars redraws at the new size and keeps its trigger states.
+- FaceBars builds at the saved size.
+- The inner diamonds clear the LB / RB pictures at 120%.
 
 ## Device test (TESTING 29)
 
