@@ -1696,7 +1696,7 @@ function Client.new(opts)
         -- EditModeManagerConstantsDocumentation.lua (build 1.60.1.70938): the systems, settings and
         -- indices Controller layout writes.
         EditModeSystem = { ActionBar = 0, CastBar = 1, Minimap = 2, UnitFrame = 3, AuraFrame = 6, ChatFrame = 8,
-            ObjectiveTracker = 12, StatusTrackingBar = 15, SwingTimer = 29, GamepadMainActionBar = 30 },
+            HudTooltip = 11, ObjectiveTracker = 12, StatusTrackingBar = 15, SwingTimer = 29, GamepadMainActionBar = 30 },
         EditModeMinimapSetting = { HeaderUnderneath = 0, RotateMinimap = 1, Size = 2, IconScale = 3 },
         EditModeUnitFrameSetting = { HidePortrait = 0, CastBarUnderneath = 1, BuffsOnTop = 2, UseLargerFrame = 3 },
         EditModeChatFrameSetting = { WidthHundreds = 0, WidthTensAndOnes = 1, HeightHundreds = 2, HeightTensAndOnes = 3 },
@@ -1743,6 +1743,9 @@ function Client.new(opts)
               anchorInfo = { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", offsetX = 0, offsetY = -215 } },
             { system = 29, systemIndex = 3, isInDefaultPosition = true, settings = { { setting = 2, value = 0 } },
               anchorInfo = { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", offsetX = 0, offsetY = -230 } },
+            -- the tooltip's default spot (Mainline/EditModePresetLayouts.lua:543-553)
+            { system = 11, isInDefaultPosition = true, settings = {},
+              anchorInfo = { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOMRIGHT", offsetX = -9, offsetY = 85 } },
         } },
     }
     -- EditModePresetLayoutsManager.lua:46: a fresh copy of the three presets on each call.

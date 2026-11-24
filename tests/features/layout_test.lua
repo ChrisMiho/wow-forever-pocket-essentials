@@ -65,6 +65,36 @@ local function settingValue(entry, settingNumber)
     return nil
 end
 
+local function overlapArea(a, b)
+    local w = math.min(a[3], b[3]) - math.max(a[1], b[1])
+    local h = math.min(a[4], b[4]) - math.max(a[2], b[2])
+    return w > 1e-9 and h > 1e-9, w, h
+end
+
+-- Blizzard draws each sub-menu button with its "LB + LT" / "RB + RT" prompt under it, the
+-- prompt 1 unit into the button (MainActionBarFrame.xml:94-135: the button 38 across at 188
+-- up, ActionBarStyles.lua:20; the prompt 72 by 24 at 158 up). The two are one piece of the
+-- game's, so that one pair is not checked against each other.
+local ONE_PIECE = { ["LB+LT button|LB+LT prompt"] = true, ["RB+RT button|RB+RT prompt"] = true }
+
+-- Every rectangle of r is on screen and no two overlap.
+local function checkClear(r, what)
+    local W, H = 1365.33, 768
+    local names = {}
+    for name in pairs(r) do names[#names + 1] = name end
+    table.sort(names)
+    for i = 1, #names do
+        local a = r[names[i]]
+        check(a[1] >= -W / 2 and a[3] <= W / 2 and a[2] >= 0 and a[4] <= H, what .. ": " .. names[i] .. " is off screen")
+        for j = i + 1, #names do
+            if not ONE_PIECE[names[i] .. "|" .. names[j]] then
+                local hit, w, h = overlapArea(a, r[names[j]])
+                check(not hit, what .. ": " .. names[i] .. " overlaps " .. names[j] .. " (" .. w .. " by " .. h .. ")")
+            end
+        end
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Sizes
 ---------------------------------------------------------------------------
@@ -78,17 +108,21 @@ test("layout: Pieces for the defaults carry the template's anchors and settings"
     local list = Plan.Pieces(with(Plan.DEFAULTS))
     local map = piece(list, "Minimap")
     check(map, "no Minimap piece")
-    eq(map.anchor, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -10, y = 38 })
+    eq(map.anchor, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -6, y = 0 })
     eq(map.settings, { Size = 2, HeaderUnderneath = 1 })
     eq(map.moved, true)
     local chat = piece(list, "ChatFrame")
-    eq(chat.anchor, { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -30, y = -40 })
-    eq(chat.settings, { WidthHundreds = 4, WidthTensAndOnes = 30, HeightHundreds = 2, HeightTensAndOnes = 10 })
-    eq(piece(list, "AuraFrame", "BuffFrame").anchor.y, -292)
-    eq(piece(list, "AuraFrame", "DebuffFrame").anchor.y, -330)
+    eq(chat.anchor, { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOMLEFT", x = 17, y = 245 })
+    eq(chat.settings, { WidthHundreds = 4, WidthTensAndOnes = 50, HeightHundreds = 1, HeightTensAndOnes = 70 })
+    eq(piece(list, "AuraFrame", "BuffFrame").anchor.y, -40)
+    eq(piece(list, "AuraFrame", "DebuffFrame").anchor.y, -78)
     local quest = piece(list, "ObjectiveTracker")
-    eq(quest.anchor, { point = "TOPLEFT", relativeTo = "UIParent", relativePoint = "TOPLEFT", x = 92, y = -5 })
+    eq(quest.anchor, { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -5, y = -5 })
     eq(quest.settings, { Height = 0 })
+    local tip = piece(list, "HudTooltip")
+    eq(tip.anchor, { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOMRIGHT", x = -10, y = 236 })
+    eq(tip.settings, nil)
+    eq(tip.moved, true)
     for _, name in ipairs({ "MainHand", "OffHand", "Ranged" }) do
         local t = piece(list, "SwingTimer", name)
         eq({ t.settings.Scale, t.settings.Width, t.settings.Height }, { 3, 0, 0 }, name)
@@ -111,33 +145,37 @@ end)
 test("plan: map bottom middle at 70% with its title under it", function()
     local Plan = plan()
     local map = piece(Plan.Pieces(), "Minimap")
-    eq(map.anchor, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -10, y = 38 })
+    eq(map.anchor, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -6, y = 0 })
     eq(map.settings, { Size = 2, HeaderUnderneath = 1 })
-    -- The round map: 30 up and 10 right of the map's bottom, its 253 frame at 70%.
+    -- The round map: 30 up and 10 right of the map's bottom, its 253 frame at 70%. 0.16.0: 4 right
+    -- of the centre, so the magnifier left of the strip stays clear of the inner left diamond.
     local r = Plan.Rects()
-    near((r.map[1] + r.map[3]) / 2, 0, "round map centred")
-    near((r.map[2] + r.map[4]) / 2, 38 + 30 + 253 * 0.7 / 2, "round map centre up")
+    near((r.map[1] + r.map[3]) / 2, 4, "round map 4 right of the centre")
+    near((r.map[2] + r.map[4]) / 2, 0 + 30 + 253 * 0.7 / 2, "round map centre up")
     near(r.map[3] - r.map[1], 198 * 0.7, "round map width")
-    -- The title strip right under it.
-    eq(r["title strip"], { -10 - 1 - 76, 46, -10 - 1 + 76, 69 })
+    -- The title strip right under it, where the swing timers were.
+    eq(r["title strip"], { -6 - 1 - 76, 8, -6 - 1 + 76, 31 })
     check(r["title strip"][4] < r.map[2], "the strip reaches the round map")
 end)
 
-test("plan: swing timers stacked under the title strip", function()
+test("plan: swing timers stacked above the round map, Main Hand lowest", function()
     local Plan = plan()
     local list = Plan.Pieces()
-    eq(piece(list, "SwingTimer", "MainHand").anchor, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 0, y = 31 })
-    eq(piece(list, "SwingTimer", "OffHand").anchor.y, 17)
-    eq(piece(list, "SwingTimer", "Ranged").anchor.y, 3)
+    -- The round map's top is 187.85 up: Main Hand 6 over it (rounded up), 2 between the timers.
+    eq(piece(list, "SwingTimer", "MainHand").anchor, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 4, y = 194 })
+    eq(piece(list, "SwingTimer", "OffHand").anchor.y, 208)
+    eq(piece(list, "SwingTimer", "Ranged").anchor.y, 222)
     local r = Plan.Rects()
     near(r["MainHand timer"][3] - r["MainHand timer"][1], 170.4, "timer width")
     near(r["MainHand timer"][4] - r["MainHand timer"][2], 12, "timer height")
-    check(r["MainHand timer"][4] < r["title strip"][2], "the top timer reaches the strip")
-    check(r["Ranged timer"][2] >= 0, "the bottom timer is off screen")
-    -- Order from the top: Main Hand, Off Hand, Ranged, whatever is shown.
+    near((r["MainHand timer"][1] + r["MainHand timer"][3]) / 2, (r.map[1] + r.map[3]) / 2, "centred on the round map")
+    near(r["MainHand timer"][2] - r.map[4], 194 - 187.85, "6 over the round map")
+    near(r["OffHand timer"][2] - r["MainHand timer"][4], 2, "2 between")
+    near(r["Ranged timer"][2] - r["OffHand timer"][4], 2, "2 between")
+    -- Order from the bottom: Main Hand, Off Hand, Ranged, whatever is shown.
     for _, o in ipairs({ { offHand = 0 }, { ranged = 2, mainHand = 2 } }) do
         local l = Plan.Pieces(o)
-        eq({ piece(l, "SwingTimer", "MainHand").anchor.y, piece(l, "SwingTimer", "OffHand").anchor.y, piece(l, "SwingTimer", "Ranged").anchor.y }, { 31, 17, 3 })
+        eq({ piece(l, "SwingTimer", "MainHand").anchor.y, piece(l, "SwingTimer", "OffHand").anchor.y, piece(l, "SwingTimer", "Ranged").anchor.y }, { 194, 208, 222 })
     end
 end)
 
@@ -150,7 +188,7 @@ test("plan: player, pet and target frames", function()
     for _, i in ipairs({ "Player", "Pet", "Target" }) do eq(piece(list, "UnitFrame", i).moved, true, i) end
     -- The target of target, placed by the module: above the two aura rows, left edges lined up.
     eq(Plan.TOT_SPOT, { point = "BOTTOMLEFT", relativePoint = "TOPLEFT", x = 0, y = 25 })
-    eq(Plan.SHOULDERS, { left = { "BOTTOMRIGHT", -76, 128 }, right = { "BOTTOMLEFT", 76, 128 } })
+    eq(Plan.SHOULDERS, { left = { "BOTTOMRIGHT", -178, 155 }, right = { "BOTTOMLEFT", 178, 155 } })
 end)
 
 test("plan: the target gets its auras on top", function()
@@ -330,50 +368,42 @@ end)
 test("plan: no piece overlaps another", function()
     local Plan = plan()
     local r = Plan.Rects()
-    local names = {}
-    for name in pairs(r) do names[#names + 1] = name end
-    table.sort(names)
-    local W, H = 1365.33, 768
     -- Every piece the spec names is in the check.
     for _, name in ipairs({ "inner left diamond", "outer left diamond", "inner right diamond", "outer right diamond",
         "player", "pet", "target", "target of target", "target auras", "target cast bar", "map", "title strip",
         "MainHand timer", "OffHand timer", "Ranged timer", "LB+LT button", "RB+RT button", "LB targeting picture",
-        "RB targeting picture", "quest tracker", "chat", "buffs and debuffs", "XP bars", "round button" }) do
+        "RB targeting picture", "quest tracker", "chat", "buffs and debuffs", "XP bars", "round button",
+        "LB+LT prompt", "RB+RT prompt", "tooltip" }) do
         check(r[name], "no rectangle for " .. name)
     end
-    -- 0.14.0: nothing overlaps (the quest tracker left the right side in 0.13.0).
-    for i = 1, #names do
-        local a = r[names[i]]
-        check(a[1] >= -W / 2 and a[3] <= W / 2 and a[2] >= 0 and a[4] <= H, names[i] .. " is off screen")
-        for j = i + 1, #names do
-            local b = r[names[j]]
-            local w = math.min(a[3], b[3]) - math.max(a[1], b[1])
-            local h = math.min(a[4], b[4]) - math.max(a[2], b[2])
-            check(not (w > 0 and h > 0), names[i] .. " overlaps " .. names[j] .. " (" .. w .. " by " .. h .. ")")
-        end
-    end
+    check(r["hint box"] == nil, "the hint box is listed while it is off")
+    checkClear(r, "defaults")
 end)
 
-test("plan: the quest tracker top left, clear of the round button at every size and of the quest arrow", function()
+test("plan: the quest tracker top right, the round button bottom left at every size, the tracker clear of the quest arrow", function()
     local Plan = plan()
-    local t = Plan.Rects()["quest tracker"]
+    local r = Plan.Rects()
+    local t = r["quest tracker"]
     local W, H = 1365.33, 768
-    eq({ t[1], t[2], t[3], t[4] }, { -W / 2 + 92, H - 5 - 400, -W / 2 + 92 + 260, H - 5 })
-    -- The round button (Hub.lua): LEFT of the screen, 10 px in, 56 / 60 / 72 px (UI.lua), 768 / 720 units a pixel,
-    -- at the left middle or the upper left (0.24 of the screen's height above the middle).
+    eq({ t[1], t[2], t[3], t[4] }, { W / 2 - 5 - 260, H - 5 - 400, W / 2 - 5, H - 5 })
+    -- The round button (Hub.lua) at the layout's spot, 10 in, 6 over the player frame's top, at its
+    -- three sizes (56 / 60 / 72 px, UI.lua; 768 / 720 units a pixel): clear of the frames and the chat.
     local px = 768 / 720
-    for _, size in ipairs({ 56, 60, 72 }) do
-        for _, up in ipairs({ 0, 0.24 * H }) do
-            local s = size * px
-            local hub = { -W / 2 + 10 * px, H / 2 + up - s / 2, -W / 2 + 10 * px + s, H / 2 + up + s / 2 }
-            local w = math.min(hub[3], t[3]) - math.max(hub[1], t[1])
-            local h = math.min(hub[4], t[4]) - math.max(hub[2], t[2])
-            check(not (w > 0 and h > 0), "the tracker overlaps the round button (" .. size .. " px, " .. up .. " up)")
+    for _, size in ipairs(Plan.PANEL_SIZES) do
+        local rs = Plan.Rects(size)
+        local point, x, y = Plan.HubSpot({ panelSize = size })
+        eq({ point, x, y }, { "BOTTOMLEFT", 10, rs.player[4] + 6 }, size .. "%: the round button's spot")
+        for _, hub in ipairs({ 56, 60, 72 }) do
+            local s = hub * px
+            local b = { -W / 2 + x, y, -W / 2 + x + s, y + s }
+            for _, name in ipairs({ "player", "pet", "chat", "quest tracker", "LB targeting picture" }) do
+                check(not overlapArea(b, rs[name]), size .. "%: the " .. hub .. " px round button overlaps the " .. name)
+            end
         end
     end
     -- The quest arrow at its "top" spot: TOP 0, -40 px, 400 px wide (QuestArrow.lua:103, 110), up to 150%.
     local arrowHalf = 400 * px * 1.5 / 2
-    check(t[3] < -arrowHalf, "the tracker reaches the quest arrow")
+    check(t[1] > arrowHalf, "the tracker reaches the quest arrow")
 end)
 
 test("plan: the frames clear the two wheel circles; the wheels may cover the face", function()
@@ -441,12 +471,12 @@ test("layout: Build changes the template's pieces, leaves the rest and the base 
     eq(layout.systems[3], base.systems[3], "an unrelated system changed")
     local map = layout.systems[1]
     eq(map.isInDefaultPosition, false)
-    eq(map.anchorInfo, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = -10, offsetY = 38 })
+    eq(map.anchorInfo, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = -6, offsetY = 0 })
     eq(settingValue(map, e.setting.Minimap.Size), 2)
     -- A setting missing from the entry is appended.
     local chat = layout.systems[2]
     eq(settingValue(chat, e.setting.ChatFrame.WidthHundreds), 4)
-    eq(settingValue(chat, e.setting.ChatFrame.HeightTensAndOnes), 10)
+    eq(settingValue(chat, e.setting.ChatFrame.HeightTensAndOnes), 70)
     eq(#chat.settings, 4)
     -- A piece whose system is absent adds nothing.
     eq(#layout.systems, 3)
@@ -459,7 +489,7 @@ test("layout: Apply changes only the pieces given and reports how many it change
     local list = Plan.Pieces(with(Plan.DEFAULTS))
     local only = { piece(list, "Minimap"), piece(list, "UnitFrame", "Pet") }
     eq(Plan.Apply(layout, only, e), 1, "only the Minimap is in this layout")
-    eq(layout.systems[1].anchorInfo.offsetY, 38)
+    eq(layout.systems[1].anchorInfo.offsetY, 0)
     eq(layout.systems[2].isInDefaultPosition, true)
     eq(Plan.Apply(layout, {}, e), 0)
 end)
@@ -551,23 +581,28 @@ test("plan: no HeaderUnderneath enum leaves it out", function()
     local map = layout.systems[1]
     eq(#map.settings, 1, "only Size")
     eq(settingValue(map, e.setting.Minimap.Size), 2)
-    eq(map.anchorInfo.offsetY, 38)
+    eq(map.anchorInfo.offsetY, 0)
 end)
 
 test("plan: buffs, debuffs, tracker spots", function()
     local Plan = plan()
     local list = Plan.Pieces(with(Plan.DEFAULTS))
+    -- 0.16.0: the buffs 10 left of the tracker, their top 4 under the XP bars' bottom (36 down),
+    -- the debuff row 38 under them.
     eq(piece(list, "AuraFrame", "BuffFrame").anchor,
-        { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -30, y = -292 })
+        { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -275, y = -40 })
     eq(piece(list, "AuraFrame", "DebuffFrame").anchor,
-        { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -30, y = -330 })
+        { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -275, y = -78 })
     local quest = piece(list, "ObjectiveTracker")
-    eq(quest.anchor, { point = "TOPLEFT", relativeTo = "UIParent", relativePoint = "TOPLEFT", x = 92, y = -5 })
+    eq(quest.anchor, { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -5, y = -5 })
     eq(quest.settings, { Height = 0 })
-    -- The chat box keeps its spot and size.
+    local r = Plan.Rects()
+    near(r["buffs and debuffs"][3], r["quest tracker"][1] - 10, "10 left of the tracker")
+    near(r["XP bars"][2] - r["buffs and debuffs"][4], 4, "4 under the XP bars")
+    -- The chat bottom left, 450 by 170, 6 over the round button (higher than the pet frame).
     local chat = piece(list, "ChatFrame")
-    eq(chat.anchor, { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -30, y = -40 })
-    eq(chat.settings, { WidthHundreds = 4, WidthTensAndOnes = 30, HeightHundreds = 2, HeightTensAndOnes = 10 })
+    eq(chat.anchor, { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOMLEFT", x = 17, y = 245 })
+    eq(chat.settings, { WidthHundreds = 4, WidthTensAndOnes = 50, HeightHundreds = 1, HeightTensAndOnes = 70 })
 end)
 
 ---------------------------------------------------------------------------
@@ -698,7 +733,7 @@ test("layout: on from the Gamepad preset saves a new account-wide Gamepad layout
     eq(ours.interfaceStyle, 1, "Gamepad")
     eq(ours.layoutIndex, nil, "the preset-only field was kept")
     -- Built from the Gamepad preset: its map moved, its action bar entry untouched.
-    eq(ours.systems[1].anchorInfo, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = -10, offsetY = 38 })
+    eq(ours.systems[1].anchorInfo, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = -6, offsetY = 0 })
     eq(ours.systems[1].isInDefaultPosition, false)
     eq(ours.systems[2].isInDefaultPosition, true)
     local added = c:callsTo("C_EditMode.OnLayoutAdded")
@@ -741,7 +776,7 @@ test("layout: the template starts from the active layout when that one is a Game
     local ours = list[5]
     eq(ours.layoutName, NAME)
     eq(#ours.systems, 1, "not built from the Gamepad preset")
-    eq(ours.systems[1].anchorInfo.offsetY, 38)
+    eq(ours.systems[1].anchorInfo.offsetY, 0)
     eq(list[4].layoutName, "Mine")
     eq(list[4].systems[1].anchorInfo.offsetY, 2, "the player's own layout changed")
     eq(prev(PE), { name = "Mine", layoutType = 1 })
@@ -1284,7 +1319,7 @@ local function entryOf(layout, system, index)
     return nil
 end
 
-local SYS = { Minimap = 2, UnitFrame = 3, ChatFrame = 8, SwingTimer = 29 }
+local SYS = { Minimap = 2, UnitFrame = 3, ChatFrame = 8, HudTooltip = 11, SwingTimer = 29 }
 local SWING = { MainHand = 1, OffHand = 2, Ranged = 3 }
 local VISIBILITY = 2 -- Enum.EditModeSwingTimerSetting.Visibility in the stand-in
 
@@ -1332,7 +1367,7 @@ test("rows: old saved values for the removed rows change nothing", function()
     placedAt(c, f.left, spots.left, "left")
     placedAt(c, f.both, spots.both, "both")
     local map = entryOf(ours(c), SYS.Minimap)
-    eq(map.anchorInfo.offsetY, 38)
+    eq(map.anchorInfo.offsetY, 0)
     eq(opts(PE).map, 60, "the old value no longer stays in the file")
     c:assertClean()
 end)
@@ -1425,7 +1460,7 @@ test("layout: Start over asks for a second tap within 20 seconds, then rebuilds 
     eq(after.layoutType, 1)
     eq(after.interfaceStyle, 1)
     eq(after.layoutIndex, nil)
-    eq(entryOf(after, SYS.Minimap).anchorInfo.offsetX, -10)
+    eq(entryOf(after, SYS.Minimap).anchorInfo.offsetX, -6)
     eq(entryOf(after, 99), nil, "a system not in the template stayed")
     eq(#after.systems, #c.env.EditModePresetLayoutManager:GetCopyOfPresetLayouts()[3].systems)
     eq(c.world.layouts.activeLayout, 4, "ours is still the active one")
@@ -1893,7 +1928,7 @@ test("migrate: old prev moved or dropped once", function()
     -- A 0.11.0 saved file: one layout to go back to for the whole account.
     local function oldFile(on)
         -- (template 4: only the migration is tested here; the rebuild of an older layout has its own tests)
-        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { template = 4, prev = { name = "Mine", layoutType = 2 } } } }
+        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { template = 5, prev = { name = "Mine", layoutType = 2 } } } }
     end
     local ours = saved(NAME)
     -- Ours active on the character logging in: it becomes this character's entry.
@@ -1925,7 +1960,7 @@ end)
 
 test("migrate: a 0.11.1 entry by name moves into this character's own file once", function()
     local function namedFile(on)
-        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { template = 4, prevs = {
+        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { template = 5, prevs = {
             [KEY] = { name = "Mine", layoutType = 2 }, ["Bee-Camelot"] = { preset = 0 } } } } }
     end
     local ours = saved(NAME)
@@ -2112,11 +2147,11 @@ local function totCalls(c)
     return n
 end
 
-test("bars: the targeting pictures go beside the map", function()
+test("bars: the targeting pictures go beside the LB + LT / RB + RT prompts", function()
     local c = onClient()
     local l, r = extras(c)
-    eq(pointsOf(c, l), { { "BOTTOMRIGHT", c.env.UIParent, "BOTTOM", -76, 128 } })
-    eq(pointsOf(c, r), { { "BOTTOMLEFT", c.env.UIParent, "BOTTOM", 76, 128 } })
+    eq(pointsOf(c, l), { { "BOTTOMRIGHT", c.env.UIParent, "BOTTOM", -178, 155 } })
+    eq(pointsOf(c, r), { { "BOTTOMLEFT", c.env.UIParent, "BOTTOM", 178, 155 } })
     c:assertClean()
 end)
 
@@ -2169,8 +2204,8 @@ test("bars: a missing, nil or failing targeting picture or target of target plac
         local c, PE = layoutClient({}, 3, { setup = case.setup })
         local l, r, t = extras(c)
         local want = {
-            { "BOTTOMRIGHT", c.env.UIParent, "BOTTOM", -76, 128 },
-            { "BOTTOMLEFT", c.env.UIParent, "BOTTOM", 76, 128 },
+            { "BOTTOMRIGHT", c.env.UIParent, "BOTTOM", -178, 155 },
+            { "BOTTOMLEFT", c.env.UIParent, "BOTTOM", 178, 155 },
             { "BOTTOMLEFT", rawget(c.env, "TargetFrame"), "TOPLEFT", 0, 25 },
         }
         switchOn(c, PE)
@@ -2254,7 +2289,7 @@ test("template: an older layout is rebuilt once at login, asks the reload and sa
     eq(checkSaves(c), 1)
     eq(c.world.layouts.activeLayout, 4, "ours is not the active one any more")
     local map = systemEntry(ours(c), SYS.Minimap)
-    eq(map.anchorInfo.offsetY, 38, "not rebuilt from the template")
+    eq(map.anchorInfo.offsetY, 0, "not rebuilt from the template")
     eq(c.world.layouts.layouts[2], mine, "the player's own layout changed")
     eq(opts(PE).template, PE.LayoutPlan.TEMPLATE)
     eq(reloadReason(PE), RELOAD)
@@ -2281,7 +2316,7 @@ test("template: in a fight it waits and the status line says so", function()
     c:leaveCombat()
     c:advance(0.1)
     eq(checkSaves(c), 1)
-    eq(systemEntry(ours(c), SYS.Minimap).anchorInfo.offsetY, 38)
+    eq(systemEntry(ours(c), SYS.Minimap).anchorInfo.offsetY, 0)
     eq(saidIn(c, UPDATED), 1)
     eq(statusText(PE), USING)
     c:assertClean()
@@ -2335,7 +2370,7 @@ test("template: a tap that makes an older layout of ours active rebuilds it firs
     eq(checkSaves(c), 1, "rebuilt before it was made active")
     eq(#c:callsTo("C_EditMode.SetActiveLayout"), 1)
     eq(c.world.layouts.activeLayout, 4)
-    eq(systemEntry(ours(c), SYS.Minimap).anchorInfo.offsetY, 38, "not rebuilt from the template")
+    eq(systemEntry(ours(c), SYS.Minimap).anchorInfo.offsetY, 0, "not rebuilt from the template")
     eq(opts(PE).template, PE.LayoutPlan.TEMPLATE)
     eq(reloadReason(PE), RELOAD)
     c:assertClean()
@@ -2352,14 +2387,14 @@ test("template: a new layout saves the version", function()
     local c, PE = layoutClient({}, 3)
     switchOn(c, PE)
     eq(opts(PE).template, PE.LayoutPlan.TEMPLATE)
-    eq(PE.LayoutPlan.TEMPLATE, 4)
+    eq(PE.LayoutPlan.TEMPLATE, 5)
     -- Start over saves it too.
     opts(PE).template = nil
     PE:GetModule("ctrlLayout"):CancelReload()
     tapStartOver(c, PE)
     c:advance(1)
     tapStartOver(c, PE)
-    eq(opts(PE).template, 4)
+    eq(opts(PE).template, 5)
     c:assertClean()
 end)
 
@@ -2383,7 +2418,7 @@ test("template: the rebuild failing logs it and tries again next login", functio
     -- The next login, the game taking it: rebuilt.
     local c3, PE3 = login(db(c), c.world.layouts.layouts, 4, { char = charDB(c) })
     eq(checkSaves(c3), 1)
-    eq(opts(PE3).template, 4)
+    eq(opts(PE3).template, 5)
     eq(saidIn(c3, UPDATED), 1)
     c3:assertClean()
 end)
@@ -2729,7 +2764,10 @@ test("face: the real bars at full size, two a side, clear of everything but the 
             local r = { b.x - 104, b.y - 34, b.x + 104, b.y + 34 }
             check(r[2] >= 0, spot .. " below the screen")
             for name, o in pairs(rects) do
-                if not name:find("diamond") then
+                -- The game's own LB + LT / RB + RT prompts (158 up, 24 high) reach 9 into the top
+                -- full bars (87 to 155): where the game puts them, as in 0.15.0, and only while our
+                -- pictures are off.
+                if not name:find("diamond") and not name:find(" prompt$") then
                     check(r[3] <= o[1] or o[3] <= r[1] or r[4] <= o[2] or o[4] <= r[2], spot .. " bar overlaps " .. name)
                 end
             end
@@ -2791,12 +2829,6 @@ local SIZE_NUMBERS = {
     [120] = { 183.4, 356.2, 436.6, 133 },
 }
 
-local function overlapArea(a, b)
-    local w = math.min(a[3], b[3]) - math.max(a[1], b[1])
-    local h = math.min(a[4], b[4]) - math.max(a[2], b[2])
-    return w > 1e-9 and h > 1e-9, w, h
-end
-
 test("size: the plan's numbers at every Spell panel size", function()
     local Plan = plan()
     for _, size in ipairs(SIZES) do
@@ -2830,40 +2862,31 @@ test("size: the plan's numbers at every Spell panel size", function()
         eq({ t.point, t.x, t.y }, { "BOTTOMLEFT", 395, n[4] }, what .. " target")
         eq({ pet.x, pet.y }, { -395, n[4] + 125 }, what .. " pet")
         eq(Plan.TOT_SPOT, { point = "BOTTOMLEFT", relativePoint = "TOPLEFT", x = 0, y = 25 })
-        -- The rest of the template does not depend on the size.
+        -- The rest of the template does not depend on the size (0.16.0: the chat and the
+        -- tooltip rise with the frames).
         local other, base = Plan.Pieces({ panelSize = size }), Plan.Pieces()
+        local follows = { UnitFrame = true, ChatFrame = true, HudTooltip = true }
         for i, x in ipairs(other) do
-            if x.system ~= "UnitFrame" then eq(x, base[i], what .. " " .. x.system) end
+            if not follows[x.system] then eq(x, base[i], what .. " " .. x.system) end
         end
     end
-    -- 100% is exactly 0.14.0's numbers: the template version stays 4.
+    -- 100% is the default; a number is still taken as the size.
     eq(Plan.Pieces({ panelSize = 100 }), Plan.Pieces())
     eq(Plan.Rects(100), Plan.Rects())
-    eq(Plan.TEMPLATE, 4)
+    eq(Plan.Rects(120), Plan.Rects({ panelSize = 120 }))
+    eq(Plan.TEMPLATE, 5)
 end)
 
 test("size: no piece overlaps another at every Spell panel size, and all stay on screen", function()
     local Plan = plan()
-    local W, H = 1365.33, 768
-    for _, size in ipairs(SIZES) do
-        local r = Plan.Rects(size)
-        local names = {}
-        for name in pairs(r) do names[#names + 1] = name end
-        table.sort(names)
-        for i = 1, #names do
-            local a = r[names[i]]
-            check(a[1] >= -W / 2 and a[3] <= W / 2 and a[2] >= 0 and a[4] <= H, size .. "%: " .. names[i] .. " is off screen")
-            for j = i + 1, #names do
-                local hit, w, h = overlapArea(a, r[names[j]])
-                check(not hit, size .. "%: " .. names[i] .. " overlaps " .. names[j] .. " (" .. w .. " by " .. h .. ")")
-            end
-        end
-    end
-    -- The tightest spot: at 120% the inner diamonds reach 124.8, the LB / RB pictures start at 128.
-    local r = Plan.Rects(120)
+    for _, size in ipairs(SIZES) do checkClear(Plan.Rects(size), size .. "%") end
+    -- The tightest spots: at 120% the inner diamonds reach 124.8 and 7.2, the LB / RB pictures start
+    -- at 155; the magnifier left of the place name ends at the inner left diamond's edge (103).
+    local r = Plan.Rects({ panelSize = 120, mapButtons = 1 })
     near(r["inner left diamond"][4], 124.8, "inner diamond top at 120%")
-    eq(r["LB targeting picture"][2], 128)
+    eq(r["LB targeting picture"][2], 155)
     check(r["inner right diamond"][4] < r["RB targeting picture"][2], "the inner diamond reaches the RB picture")
+    near(r["title strip"][1], -103, "the strip's left edge with the map buttons")
     -- And the frames clear the wheels at every size.
     for _, size in ipairs(SIZES) do
         local rs = Plan.Rects(size)
@@ -2927,7 +2950,7 @@ test("size: a change rewrites the frames and asks for a reload; after it the bar
     eq(systemEntry(ours(c), SYS.UnitFrame, 1).anchorInfo.offsetY, 133, "the player frame did not rise")
     eq(systemEntry(ours(c), SYS.UnitFrame, 2).anchorInfo.offsetY, 133, "the target frame did not rise")
     eq(systemEntry(ours(c), SYS.UnitFrame, 8).anchorInfo.offsetY, 258, "the pet did not rise")
-    eq(systemEntry(ours(c), SYS.SwingTimer, SWING.Ranged).anchorInfo.offsetY, 3, "a timer moved")
+    eq(systemEntry(ours(c), SYS.SwingTimer, SWING.Ranged).anchorInfo.offsetY, 222, "a timer moved")
     eq(reloadReason(PE), RELOAD)
     -- Until the reload the bars stay with the pictures, at the size they were built at.
     c:fire("EDIT_MODE_LAYOUTS_UPDATED")
@@ -2986,6 +3009,149 @@ test("size: refused while Edit Mode is open, and put back", function()
     eq(#c:callsTo("C_EditMode.SaveLayouts"), 1)
     c.world.editMode = false
     c:assertClean()
+end)
+
+---------------------------------------------------------------------------
+-- 0.16.0: the playing screen (spec 2026-11-24-playing-screen-layout-design.md, "0.16.0: the
+-- arrangement" and "Known pinches")
+---------------------------------------------------------------------------
+
+test("0.16.0: the template is 5 and the two new options default to 0", function()
+    local Plan = plan()
+    eq(Plan.TEMPLATE, 5)
+    eq(Plan.DEFAULTS.hints, 0)
+    eq(Plan.DEFAULTS.mapButtons, 0)
+end)
+
+test("0.16.0: the chat is bottom left, the tracker top right, the tooltip is a piece", function()
+    local Plan = plan()
+    local list = Plan.Pieces({})
+    eq(piece(list, "ChatFrame").anchor.point, "BOTTOMLEFT")
+    eq(piece(list, "ObjectiveTracker").anchor.point, "TOPRIGHT")
+    local tip = piece(list, "HudTooltip")
+    check(tip, "no HudTooltip piece")
+    eq(tip.anchor.point, "BOTTOMRIGHT")
+    -- At every size: the chat's bottom 6 over the higher of the pet frame and the round button
+    -- (rounded up); the tooltip's bottom 6 over the target of target, 10 in from the right edge
+    -- while the tracker is not in the way (up to 100%), else lined up with the buffs' right edge.
+    for _, size in ipairs(Plan.PANEL_SIZES) do
+        local o = { panelSize = size }
+        local l, r = Plan.Pieces(o), Plan.Rects(o)
+        local chat, t = piece(l, "ChatFrame").anchor, piece(l, "HudTooltip").anchor
+        eq({ chat.x, chat.y }, { 17, math.ceil(math.max(r.pet[4], r["round button"][4]) + 6) }, size .. "%: chat")
+        eq(t.y, r["target of target"][4] + 6, size .. "%: tooltip up")
+        eq(t.x, size <= 100 and -10 or -275, size .. "%: tooltip across")
+        eq(r.chat[2], chat.y, size .. "%: the chat's rectangle")
+        eq(r.tooltip[2], t.y, size .. "%: the tooltip's rectangle")
+    end
+    -- Nothing else in the list depends on the two new options.
+    eq(Plan.Pieces({ hints = 1, mapButtons = 1 }), Plan.Pieces({}))
+end)
+
+test("0.16.0: the timers are above the round map", function()
+    local Plan = plan()
+    local r = Plan.Rects({})
+    for _, name in ipairs({ "MainHand", "OffHand", "Ranged" }) do
+        check(r[name .. " timer"][2] >= r.map[4], name .. " timer is not above the round map")
+    end
+end)
+
+test("0.16.0: no piece overlaps another in any state", function()
+    local Plan = plan()
+    local W, H = 1365.33, 768
+    local px = 768 / 720
+    for _, size in ipairs(Plan.PANEL_SIZES) do
+        for _, hints in ipairs({ 0, 1 }) do
+            for _, mapButtons in ipairs({ 0, 1 }) do
+                local o = { panelSize = size, hints = hints, mapButtons = mapButtons }
+                local what = size .. "%, hints " .. hints .. ", map buttons " .. mapButtons
+                local r = Plan.Rects(o)
+                for _, name in ipairs({ "LB+LT prompt", "RB+RT prompt", "tooltip", "round button", "chat", "title strip" }) do
+                    check(r[name], what .. ": no rectangle for " .. name)
+                end
+                -- The prompts: 72 by 24, 138 either side, 158 up (MainActionBarFrame.xml:119-135).
+                eq(r["LB+LT prompt"], { -174, 146, -102, 170 }, what .. ": LB+LT prompt")
+                eq(r["RB+RT prompt"], { 102, 146, 174, 170 }, what .. ": RB+RT prompt")
+                -- The targeting pictures on the prompts' outer sides, clear of them.
+                check(r["LB targeting picture"][3] < r["LB+LT prompt"][1], what .. ": the LB picture is not left of its prompt")
+                check(r["RB targeting picture"][1] > r["RB+RT prompt"][3], what .. ": the RB picture is not right of its prompt")
+                -- The tooltip taken 200 by 100.
+                near(r.tooltip[3] - r.tooltip[1], 200, what .. ": tooltip width")
+                near(r.tooltip[4] - r.tooltip[2], 100, what .. ": tooltip height")
+                -- The round button at the layout's spot, at its largest size (72 px).
+                local point, x, y = Plan.HubSpot(o)
+                eq(point, "BOTTOMLEFT")
+                local s = 72 * px
+                for i, want in ipairs({ -W / 2 + x, y, -W / 2 + x + s, y + s }) do near(r["round button"][i], want, what .. ": round button " .. i) end
+                -- The hint box only while it is on: TOPLEFT 5, -5, 200 by 100.
+                if hints == 1 then
+                    eq(r["hint box"], { -W / 2 + 5, H - 5 - 100, -W / 2 + 5 + 200, H - 5 }, what .. ": hint box")
+                else
+                    eq(r["hint box"], nil, what .. ": hint box while off")
+                end
+                checkClear(r, what)
+            end
+        end
+    end
+end)
+
+test("0.16.0: the strip is wider with the map buttons shown", function()
+    local Plan = plan()
+    eq(Plan.STRIP_W[0], 152)
+    eq(Plan.STRIP_W[1], 191)
+    for _, mapButtons in ipairs({ 0, 1 }) do
+        local strip = Plan.Rects({ mapButtons = mapButtons })["title strip"]
+        near(strip[3] - strip[1], Plan.STRIP_W[mapButtons], "map buttons " .. mapButtons)
+        eq({ strip[2], strip[4] }, { 8, 31 })
+    end
+    -- An unknown value reads as hidden.
+    eq(Plan.Rects({ mapButtons = "yes" })["title strip"], Plan.Rects({ mapButtons = 0 })["title strip"])
+end)
+
+test("0.16.0: a size change that raises the frames rewrites the chat and the tooltip", function()
+    -- Every entry of ours moved by hand in Edit Mode (offsetX 222); a rewritten one loses that.
+    local function moveAll(c)
+        for _, e in ipairs(ours(c).systems) do if e.anchorInfo then e.anchorInfo.offsetX = 222 end end
+    end
+    local function rewritten(c)
+        local out = {}
+        for _, e in ipairs(ours(c).systems) do
+            if e.anchorInfo and e.anchorInfo.offsetX ~= 222 then out[e.system] = true end
+        end
+        return out
+    end
+    local c, PE = onClient()
+    check(systemEntry(ours(c), SYS.HudTooltip), "our layout has no tooltip entry")
+    eq(systemEntry(ours(c), SYS.HudTooltip).anchorInfo,
+        { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOMRIGHT", offsetX = -10, offsetY = 236 })
+    moveAll(c)
+    choose(c, PE, "panelSize", 110)
+    eq(rewritten(c), { [SYS.UnitFrame] = true, [SYS.ChatFrame] = true, [SYS.HudTooltip] = true })
+    eq(systemEntry(ours(c), SYS.ChatFrame).anchorInfo.offsetY, 317)
+    eq(systemEntry(ours(c), SYS.HudTooltip).anchorInfo.offsetY, 308)
+    eq(reloadReason(PE), RELOAD)
+    c:assertClean()
+    -- 80% to 100%: the frames stay at the same height, so nothing is rewritten.
+    local c2, PE2 = onClient()
+    choose(c2, PE2, "panelSize", 80)
+    moveAll(c2)
+    choose(c2, PE2, "panelSize", 100)
+    eq(rewritten(c2), {})
+    c2:assertClean()
+end)
+
+test("0.16.0: a layout without the tooltip system is still built", function()
+    local Plan = plan()
+    local e = fakeEnums()
+    check(e.system.HudTooltip == nil, "the stand-in enums have the tooltip")
+    local base = baseLayout(e)
+    base.systems[#base.systems + 1] = { system = 11, settings = {}, isInDefaultPosition = true,
+        anchorInfo = { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOMRIGHT", offsetX = -9, offsetY = 85 } }
+    local ok, layout = pcall(Plan.Build, base, {}, e)
+    check(ok, "Build raised: " .. tostring(layout))
+    check(type(layout) == "table", "no layout")
+    eq(layout.systems[1].anchorInfo.offsetY, 0, "the map was not placed")
+    eq(layout.systems[4].anchorInfo.offsetY, 85, "an entry of an unknown system was changed")
 end)
 
 return { known = KNOWN_FAILURES }

@@ -804,14 +804,14 @@ end
 
 -- The pieces the frames under the pictures must leave alone: the map, the two
 -- sub-menu buttons (138 either side, 188 up, about 19 round), the LB / RB targeting
--- pictures (76 to 112 either side, 128 to 160 up), the outer diamonds (249 to 383
+-- pictures (178 to 214 either side, 155 to 187 up since 0.16.0), the outer diamonds (249 to 383
 -- either side, 17 to 115 up: their pictures take a tap themselves) and the player
 -- and target frames (from 395 either side outwards).
 local KEEP_CLEAR = {
     { name = "LB+LT button", r = { -138 - 19, 188 - 19, -138 + 19, 188 + 19 } },
     { name = "RB+RT button", r = { 138 - 19, 188 - 19, 138 + 19, 188 + 19 } },
-    { name = "LB targeting picture", r = { -112, 128, -76, 160 } },
-    { name = "RB targeting picture", r = { 76, 128, 112, 160 } },
+    { name = "LB targeting picture", r = { -214, 155, -178, 187 } },
+    { name = "RB targeting picture", r = { 178, 155, 214, 187 } },
     { name = "outer left diamond", r = { -383, 17, -249, 115 } },
     { name = "outer right diamond", r = { 249, 17, 383, 115 } },
     { name = "player frame", r = { -395 - 232, 56, -395, 156 } },

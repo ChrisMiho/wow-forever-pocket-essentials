@@ -139,6 +139,35 @@ are the player's own chat windows; the addon creates none.
 The pet ring (the wheel on RB) is not moved in 0.16.0. Its place is looked at after the
 device test.
 
+### As built (0.16.0)
+
+In game units (UI units at scale 1, 1365.33 by 768, x from the centre, y up from the bottom),
+as `ControllerLayout.lua` has them; each number's source is cited there.
+
+- Map: at the bottom edge (y 0), so the strip is 8 to 31 up and the round map 49 to 188 up.
+  Moved 4 right of the centre (map spot x -6, was -10): with the map buttons shown the
+  magnifier would otherwise reach 4 into the inner left diamond; it now ends at its edge
+  (x -103) at every Spell panel size.
+- Place-name strip with its two buttons: 191 wide, not 185 (the magnifier's button reaches 20
+  past the strip's left edge, the calendar 19 past its right).
+- Swing timers: centred on the round map (x 4), 194, 208 and 222 up.
+- LB / RB targeting pictures: 178 to 214 either side, 4 outside the prompts, 155 to 187 up
+  (level with the prompts' top half rather than centred on them at 142): lower, they would
+  reach into the game's own bars at full size, which show while our pictures are off.
+- Tooltip: at 110% and 120% it sits 265 in from the right edge (lined up with the buffs' right
+  edge, 10 left of the quest list) instead of 10: over the risen target of target it would
+  reach the quest list, which ends 363 up.
+- Chat: its bottom 245 up (80% to 100%), 317 (110%), 322 (120%); the PE button at its largest
+  size is always higher than the pet frame, so the chat clears the button.
+- PE button: bottom left, 10 in, 162 up (80% to 100%), 234 (110%), 239 (120%).
+- Hint box: taken at 200 by 100, its background's size in the game's file; the game sizes it
+  to what it lists.
+- Left as the game has them: each "LB + LT" / "RB + RT" prompt reaches 1 into its own sub-menu
+  button (one piece of the game's), and 9 into the top two game bars while they show at full
+  size (only while our pictures are off; as in 0.15.0).
+- Not settled: a full row of 11 buffs reaches x -47, into the quest arrow's "top" spot (the
+  arrow is not part of the layout); a short row does not.
+
 ### 0.17.0: the slim bars
 
 Built on the probe's results from the 0.16.0 test; this part of the document is updated with

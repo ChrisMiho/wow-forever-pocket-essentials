@@ -60,6 +60,16 @@ local ADDON_NAME, PE = ...
 -- (Plan.FACE). The real bars sit at 60% under the two inner diamonds, two a side; the
 -- frames moved out past the outer diamonds (FRAME_X 395) and the LB / RB targeting
 -- pictures in beside the map (Plan.SHOULDERS).
+--
+-- 0.16.0 (spec 2026-11-24-playing-screen-layout-design.md, "0.16.0: the arrangement"): the
+-- playing screen. The map drops to the bottom edge, its place-name strip where the swing
+-- timers were, and the timers go above the round map. The chat moves bottom left, above the
+-- PE button and the pet frame; the quest tracker top right, the buffs beside it under the XP
+-- bars; the tooltip (a new piece) above the target of target. The LB / RB targeting pictures
+-- move off the "LB + LT" / "RB + RT" prompts. Plan.Rects also lists the prompts, the tooltip,
+-- the game's hint box (while the "Controls reminder" option shows it) and the place-name
+-- strip with its two buttons (while "Map buttons" shows them), so the overlap check covers
+-- every state.
 
 local type, pairs, ipairs = type, pairs, ipairs
 local sort = table.sort
@@ -80,14 +90,16 @@ Plan.DEFAULTS = {
     ranged = 1,         -- timer visibility: 0 Always, 1 In combat, 2 Hidden
     mainHand = 1,
     offHand = 2,
+    hints = 0,          -- 0.16.0: the game's hint box ("Controls reminder"): 0 Off, 1 On
+    mapButtons = 0,     -- 0.16.0: the magnifier and calendar beside the place name: 0 Hidden, 1 Shown
 }
 
 -- The template's version, saved with our layout whenever it is built
 -- (opts.template). A login that finds an older one rebuilds our layout once.
 -- 1: 0.11.x (no number saved). 2: 0.12.0, the mockup's one setup. 3: 0.13.0, the
 -- face bars (frames and the quest tracker moved). 4: 0.14.0, the console (frames moved
--- out past the outer diamonds).
-Plan.TEMPLATE = 4
+-- out past the outer diamonds). 5: 0.16.0, the playing screen.
+Plan.TEMPLATE = 5
 
 -- An XP bar: 17 high (STATUS_BAR_CONTAINER_HEIGHT,
 -- Blizzard_StatusTrackingBar/Camelot/StatusTrackingBarConstants.lua:2), 596 wide at 100%
@@ -101,24 +113,39 @@ local XP_H = 17
 local XP_TOP_Y = -2 -- the first XP bar's top edge, from the screen's top
 
 local UI = "UIParent"
+local SCREEN_W, SCREEN_H = 1365.33, 768
 
 -- The map: Edit Mode Size 2 (70%; the stored Size counts in steps of 10% from 50%),
 -- its title strip underneath. With the strip underneath, the Forever map code puts
 -- the round map's frame 30 up and 10 right of the map's own bottom
 -- (Blizzard_Minimap/Camelot/Minimap.lua:72-73), scaled to 70%: a 253 frame (probe,
 -- 2026-11-23) holding the 198 round map at its centre (Mainline/Minimap.xml:60-62).
--- Its spot is 10 left of the centre so the round map itself is centred.
-local MAP = { size = 70, x = -10, y = 38, frame = 253, round = 198, frameUp = 30, frameRight = 10 }
+-- 0.16.0: at the screen's bottom edge (y 0), so the strip sits 8 to 31 up, where the swing
+-- timers were, and the round map 49 to 188 up. 6 left of the centre (until 0.15.0: 10, the
+-- round map centred): with the map buttons shown the magnifier then ends at x -103, the inner
+-- left diamond's edge at every Spell panel size (see STRIP_OUT); the round map is 4 right of
+-- the centre.
+local MAP = { size = 70, x = -6, y = 0, frame = 253, round = 198, frameUp = 30, frameRight = 10 }
 -- The title strip (zone, clock): 152 by 23, 8 up and 1 left of the map's bottom
 -- (Camelot/MinimapZoneTextButton.xml:9, Camelot/Minimap.lua:75-76).
 local STRIP = { w = 152, h = 23, up = 8, x = -1 }
+-- 0.16.0: the two buttons beside it. The magnifier: a 17 wide holder whose right edge is the
+-- strip's left (Mainline/Minimap.xml:25-31, the file Camelot loads, Blizzard_Minimap.toc), the
+-- 23 by 23 button centred on it (Mainline/Minimap.xml:39-41, Camelot/MinimapTrackingButton.xml:11):
+-- 20 out past the strip's left edge. The calendar: 23 by 23, its left edge 4 inside the strip's
+-- right (Camelot/GameTimeFrameTemplate.xml:8-10): 19 out past the right edge. Both 23 high, level
+-- with the strip.
+local STRIP_OUT = { left = 20, right = 19 }
+-- The strip's width without and with its two buttons ("Map buttons" Hidden / Shown).
+Plan.STRIP_W = { [0] = STRIP.w, [1] = STRIP.w + STRIP_OUT.left + STRIP_OUT.right }
 
 -- Swing timers: Scale 3 (80%), Width 0 (213), Height 0 (15): 170.4 by 12 each
 -- (Blizzard_EditMode/Shared/EditModeSystemTemplates.lua:2784-2804, settings at
 -- EditModeSettingDisplayInfo.lua:777-830). Edit Mode places a frame's spot in UI
--- units whatever its scale (EditModeSystemTemplates.lua:373-375). Stacked under the
--- title strip, Main Hand on top as the mockup draws them.
-local TIMER = { w = 213 * 0.8, h = 15 * 0.8, y = { MainHand = 31, OffHand = 17, Ranged = 3 } }
+-- units whatever its scale (EditModeSystemTemplates.lua:373-375). 0.16.0: stacked
+-- directly above the round map and centred on it, Main Hand lowest, 6 over the round
+-- map's top (187.85, rounded up to 194) and 2 between: 194, 208 and 222 up.
+local TIMER = { w = 213 * 0.8, h = 15 * 0.8, over = 6, gap = 2, order = { "MainHand", "OffHand", "Ranged" } }
 
 -- The unit frames: player and target 232 by 100
 -- (Blizzard_UnitFrame/Mainline/PlayerFrame.xml:14), pet and target of target 120 by
@@ -159,11 +186,17 @@ local SMALL_GAP = 25 -- the pet and the target of target over the frames' tops
 
 -- The target of target, placed by the module on the target frame (see EXTRAS).
 Plan.TOT_SPOT = { point = "BOTTOMLEFT", relativePoint = "TOPLEFT", x = 0, y = SMALL_GAP }
+-- The game's "LB + LT" / "RB + RT" prompts under the two sub-menu buttons: 72 by 24, centred
+-- 138 either side of the centre and 80 under the bottom anchor (238 up), so 158 up
+-- (Blizzard_GamepadActionBars/MainActionBarFrame.xml:119-135): 102 to 174 either side, 146 to
+-- 170 up. Not moved by the addon.
+local PROMPT = { x = 138, y = 238 - 80, w = 72, h = 24 }
 -- The two LB / RB targeting pictures, placed by the module on UIParent's bottom (see EXTRAS).
--- 0.14.0: beside the map, above the inner diamonds (which reach 115 up) and right of the
--- clear of the round map (69 either side of the centre): 76 to 112 either side, 128 to
--- 160 up.
-Plan.SHOULDERS = { left = { "BOTTOMRIGHT", -76, 128 }, right = { "BOTTOMLEFT", 76, 128 } }
+-- 0.16.0: off the prompts they covered in 0.14.0 and 0.15.0 (76 to 112, 128 to 160 up), on the
+-- prompts' outer sides, 4 clear of them: 178 to 214 either side. 155 to 187 up, level with the
+-- prompts' top half: centred on the prompts (142 up) they would reach 13 into the game's own
+-- bars at full size (FULL_SPOTS, up to 155), which show while our pictures are off.
+Plan.SHOULDERS = { left = { "BOTTOMRIGHT", -178, 155 }, right = { "BOTTOMLEFT", 178, 155 } }
 -- Their size: 36 by 32, as measured on the device photos (the pictures use their atlas
 -- size, gamepad-targeting-left/right-shoulder-bg, MainActionBarFrame.xml:18-26; the atlas
 -- itself is not in this source).
@@ -182,8 +215,8 @@ Plan.FACE = { button = FACE.button, dx = FACE.dx, dy = FACE.dy }
 
 -- The four spots a diamond can be drawn at (Plan.FaceSpots): their centres, in UI units
 -- from the screen's bottom centre. At 100% the inner ones span 103 to 237 either side of
--- the centre and 17 to 115 up: clear of the swing timers (85 either side, 3 to 43 up),
--- the title strip (-87 to 65) and the round map (69 either side, 87 to 226 up). The outer
+-- the centre and 17 to 115 up: clear of the title strip (0.16.0: -83 to 69, 8 to 31 up;
+-- -103 to 88 with the map buttons) and the round map (-65 to 73, 49 to 188 up). The outer
 -- ones 249 to 383, 12 apart from the inner ones and 12 short of the frames (FRAME_X).
 local INNER_EDGE = 103 -- the inner diamonds' inner edge, at every size
 local RING_GAP = 12    -- between an inner and an outer diamond, and an outer one and the frames
@@ -233,9 +266,10 @@ local SPOT_FACE = { top = "main", left = "lt", right = "rt", both = "both" }
 -- 0.15.0: the four bars when our pictures are off (FaceBars.lua could not make them, or
 -- its safety net turned them off): the game's bars show again, so at full size (208 by
 -- 68), two a side, 8 apart: 116 to 324 either side of the centre, 11 to 79 and 87 to 155
--- up. Clear of the LB / RB targeting pictures (76 to 112), the timers, the map, the
--- sub-menu buttons (169 up) and the frames (395); only the diamonds, hidden then, share
--- the place.
+-- up. Clear of the LB / RB targeting pictures (0.16.0: 155 up and higher), the timers, the
+-- map, the sub-menu buttons (169 up) and the frames (395); only the diamonds, hidden then,
+-- share the place, and the game's own "LB + LT" / "RB + RT" prompts (146 to 170 up, see
+-- PROMPT) reach 9 into the top two.
 local FULL_SPOTS = {
     top = { x = -220, y = 121, s = 1 },
     left = { x = -220, y = 45, s = 1 },
@@ -244,18 +278,25 @@ local FULL_SPOTS = {
     bottom = SPOTS.bottom,
 }
 
--- Pocket Essentials' own round button at its default spot (Hub.lua:30-37, 115-127: LEFT
--- of the screen, 10 px in, centred up and down), for the size presets of UI.lua:22-24 (56,
--- 60 and 72 px on a 720 px screen, 768 / 720 UI units each). The largest one is used.
-local HUB = { margin = 10 * 768 / 720, size = 72 * 768 / 720 }
+-- Pocket Essentials' own round button. 0.16.0: its default spot while the layout is placed
+-- (Plan.HubSpot): BOTTOMLEFT, 10 in, its bottom 6 over the player frame's top, left of the
+-- pet frame (the corner itself is inside the player frame's rectangle). The size presets of
+-- UI.lua:22-24 are 56, 60 and 72 px on a 720 px screen, 768 / 720 UI units each; the
+-- largest one is used.
+local HUB = { x = 10, over = 6, size = 72 * 768 / 720 }
 
--- The quest tracker, top left where the game's controller hint box was (TOPLEFT 5, -5,
--- Blizzard_Gamepad/UI/PersistentInputLegend/GamepadPersistentInputLegend.xml), moved 87
--- right so it clears that round button at any size: with Height 0 the tracker is 400
--- tall (the Edit Mode setting's least, EditModeSettingDisplayInfo.lua:609-618, and
--- Blizzard_ObjectiveTracker/Blizzard_ObjectiveTrackerContainer.lua:206-217) and would
--- reach down past the round button (352 to 416 up at the medium size). 260 wide (probe).
-local TRACKER = { x = 92, y = -5, w = 260, h = 400 }
+-- The quest tracker. 0.16.0: top right, TOPRIGHT -5, -5 (until 0.15.0 top left, where the
+-- game's controller hint box is). With Height 0 the tracker is 400 tall (the Edit Mode
+-- setting's least, EditModeSettingDisplayInfo.lua:609-618, and
+-- Blizzard_ObjectiveTracker/Blizzard_ObjectiveTrackerContainer.lua:206-217): 363 to 763 up.
+-- 260 wide (probe).
+local TRACKER = { x = -5, y = -5, w = 260, h = 400 }
+
+-- The game's controller hint box ("Controls reminder", shown only while opts.hints is 1):
+-- TOPLEFT 5, -5 (Blizzard_Gamepad/UI/PersistentInputLegend/GamepadPersistentInputLegend.xml:40-42),
+-- taken at its background's size, 200 by 100 (same file, line 5; the game sizes it to what it
+-- lists, GamepadPersistentInputLegend.lua:119-123).
+local HINTS = { x = 5, y = -5, w = 200, h = 100 }
 
 -- The options with every missing or unusable value replaced by its default.
 -- Values saved by older versions for rows that are gone are ignored.
@@ -264,7 +305,7 @@ local function Fill(opts)
     opts = type(opts) == "table" and opts or {}
     for k, default in pairs(Plan.DEFAULTS) do
         local v = opts[k]
-        if v == 0 or v == 1 or v == 2 then out[k] = v else out[k] = default end
+        if v == 0 or v == 1 or (v == 2 and k ~= "hints" and k ~= "mapButtons") then out[k] = v else out[k] = default end
     end
     return out
 end
@@ -376,18 +417,65 @@ local function RectAt(point, x, y, w, h)
     return { left, bottom, left + w, bottom + h }
 end
 
-local SCREEN_W, SCREEN_H = 1365.33, 768
-
--- The chat box: 430 by 210 (its Edit Mode width and height settings below), TOPRIGHT
--- -30, -40.
-local CHAT = { x = -30, y = -40, w = 430, h = 210 }
--- The buffs and debuffs under it, as one area: the game's default rows of 11 buffs and 8
+-- 0.16.0: the chat box bottom left, BOTTOMLEFT 17 in, 450 by 170 (its Edit Mode width and
+-- height, 250 to 800 and 120 to 800: Blizzard_EditMode/Shared/EditModeSettingDisplayInfo.lua:
+-- 564-584, stored as hundreds and the rest: EditModeSystemTemplates.lua:2237-2290). Its bottom
+-- 6 over the higher of the pet frame's top and the round button's top, rounded up, so it rises
+-- with the frames (see Rising).
+local CHAT = { x = 17, w = 450, h = 170, over = 6 }
+-- The buffs and debuffs, as one area: the game's default rows of 11 buffs and 8
 -- debuffs, each icon 30 by 40 (Blizzard_BuffFrame/BuffFrameTemplates.xml:5) with 10
 -- between (IconPadding 5, EditModeSettingDisplayInfo.lua:496-503;
 -- Mainline/EditModePresetLayouts.lua:434-458), the frame (icon + 10) a slot
--- (BuffFrame.lua:289-302), plus the 15 wide fold-out button (BuffFrame.xml:15). About:
--- from the buffs' top (292 down) to the debuff row's bottom (330 + 50 down), 455 wide.
-local AURAS = { right = -30, top = -292, w = 11 * 40 + 15, bottom = -330 - 50 }
+-- (BuffFrame.lua:289-302), plus the 15 wide fold-out button (BuffFrame.xml:15), 455 wide.
+-- 0.16.0: TOPRIGHT, 10 left of the quest tracker's left edge (x -275); the buff row's top 4
+-- under the XP bars' bottom (36 down, so 40 down), the debuff row 38 under it (78 down) as
+-- before; the area reaches the debuff row's bottom, 78 + 50 down.
+local AURA_X = TRACKER.x - TRACKER.w - 10
+local AURA_TOP = XP_TOP_Y - 2 * XP_H - 4
+local AURA_DEBUFF_GAP = 38
+local AURAS = { right = AURA_X, top = AURA_TOP, w = 11 * 40 + 15, bottom = AURA_TOP - AURA_DEBUFF_GAP - 50 }
+
+-- 0.16.0: the tooltip, the Edit Mode system HudTooltip
+-- (Blizzard_APIDocumentationGenerated/EditModeManagerConstantsDocumentation.lua:749), whose
+-- frame is GameTooltipDefaultContainer (Blizzard_GameTooltip/Mainline/GameTooltip.xml:242-247,
+-- 250 by 150, the game's spot BOTTOMRIGHT -9, 85). The tooltip is pinned by the container's
+-- own corner (GameTooltip_SetDefaultAnchor, Blizzard_SharedXML/SharedTooltipTemplates.lua:87-113),
+-- so BOTTOMRIGHT puts the tooltip's bottom right corner on the spot and it grows up and left.
+-- The spot: 10 in from the right edge, 6 over the target of target's top. Taken at 200 by 100
+-- for the overlap check. Where that would reach the quest tracker (at 110% and 120%, where the
+-- frames rise), it moves left and lines up with the buffs' right edge, 10 clear of the tracker.
+local TOOLTIP = { x = -10, over = 6, w = 200, h = 100 }
+
+-- 0.16.0: the spots that follow the frames' height at Spell panel size v (as Plan.PanelSize
+-- takes it): the round button's bottom (hubY), the chat's bottom (chatY) and the tooltip's
+-- corner (tipX, tipY).
+local function Rising(v)
+    local frameY = Geometry(v).frameY
+    local hubY = frameY + UNIT.h + HUB.over
+    local petTop = frameY + UNIT.h + SMALL_GAP + SMALL.h
+    local chatY = math.ceil(math.max(petTop, hubY + HUB.size) + CHAT.over - 1e-9)
+    local tipY = frameY + UNIT.h + Plan.TOT_SPOT.y + SMALL.h + TOOLTIP.over
+    local tipX = TOOLTIP.x
+    if tipY + TOOLTIP.h > SCREEN_H + TRACKER.y - TRACKER.h then tipX = AURA_X end
+    return { hubY = hubY, chatY = chatY, tipX = tipX, tipY = tipY }
+end
+
+-- The PE button's default spot while the layout is placed: point, x, y on UIParent, in UI
+-- units, for the options (or a Spell panel size, or nil).
+function Plan.HubSpot(opts)
+    return "BOTTOMLEFT", HUB.x, Rising(opts).hubY
+end
+
+-- The swing timers' spots: { x, y = { MainHand, OffHand, Ranged } }, each timer's bottom.
+local function Timers()
+    local s = MAP.size / 100
+    local mapTop = MAP.y + MAP.frameUp + MAP.frame * s / 2 + MAP.round * s / 2
+    local y, step = {}, math.floor(TIMER.h + 0.5) + TIMER.gap -- 12 + 2
+    local bottom = math.ceil(mapTop + TIMER.over - 1e-9)
+    for i, name in ipairs(TIMER.order) do y[name] = bottom + (i - 1) * step end
+    return { x = MAP.x + MAP.frameRight, y = y }
+end
 
 -- The rectangles the template puts on screen, for the overlap check:
 -- { name = { left, bottom, right, top } } in UI units from the bottom centre,
@@ -396,8 +484,12 @@ local AURAS = { right = -30, top = -292, w = 11 * 40 + 15, bottom = -330 - 50 }
 -- are not (Plan.RealBarRects). The quest tracker is taken at
 -- its least height (400). The target's two aura rows are the part above the
 -- frame; its cast bar is the spot it takes with the target of target shown.
--- v: the Spell panel size (as Plan.PanelSize takes it; nil is 100%).
+-- v: the options (panelSize, hints, mapButtons), or a Spell panel size (as
+-- Plan.PanelSize takes it); nil is the defaults. The hint box is listed only while
+-- hints is 1; the title strip includes its two buttons while mapButtons is 1.
 function Plan.Rects(v)
+    local o = Fill(type(v) == "table" and v or nil)
+    local rise = Rising(v)
     local r = {}
     local function box(name, cx, cy, w, h) r[name] = { cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2 } end
     local g = Geometry(v)
@@ -408,8 +500,11 @@ function Plan.Rects(v)
     local roundCentre = MAP.y + MAP.frameUp + MAP.frame * MAP.size / 100 / 2
     local round = MAP.round * MAP.size / 100
     box("map", MAP.x + MAP.frameRight, roundCentre, round, round)
-    r["title strip"] = { MAP.x + STRIP.x - STRIP.w / 2, MAP.y + STRIP.up, MAP.x + STRIP.x + STRIP.w / 2, MAP.y + STRIP.up + STRIP.h }
-    for name, y in pairs(TIMER.y) do r[name .. " timer"] = { -TIMER.w / 2, y, TIMER.w / 2, y + TIMER.h } end
+    local out = o.mapButtons == 1 and STRIP_OUT or { left = 0, right = 0 }
+    r["title strip"] = { MAP.x + STRIP.x - STRIP.w / 2 - out.left, MAP.y + STRIP.up,
+        MAP.x + STRIP.x + STRIP.w / 2 + out.right, MAP.y + STRIP.up + STRIP.h }
+    local timers = Timers()
+    for name, y in pairs(timers.y) do r[name .. " timer"] = { timers.x - TIMER.w / 2, y, timers.x + TIMER.w / 2, y + TIMER.h } end
     local function frame(spot, size) return RectAt(spot[1], spot[4], spot[5], size.w, size.h) end
     r.player = frame(FRAMES.Player, UNIT)
     r.pet = frame(FRAMES.Pet, SMALL)
@@ -426,21 +521,30 @@ function Plan.Rects(v)
     r["target auras"] = { pictureLeft + a.startX, target[4], pictureLeft + a.startX + a.rowWidth, aurasTop }
     local castTop = target[2] + TARGET_CAST.y
     r["target cast bar"] = { target[1] + TARGET_CAST.x, castTop - TARGET_CAST.h, target[1] + TARGET_CAST.x + TARGET_CAST.w, castTop }
+    -- The sub-menu buttons, 38 across (CIRCULAR_BUTTON_EXPANDED_SIZE,
+    -- Blizzard_GamepadActionBars/ActionBarStyles.lua:20), and their prompts under them.
     for _, side in ipairs({ -1, 1 }) do
         box(side < 0 and "LB+LT button" or "RB+RT button", side * 138, SPOTS.bottom.y - 50, 38, 38)
+        box(side < 0 and "LB+LT prompt" or "RB+RT prompt", side * PROMPT.x, PROMPT.y, PROMPT.w, PROMPT.h)
     end
     local sl, sr = Plan.SHOULDERS.left, Plan.SHOULDERS.right
     r["LB targeting picture"] = RectAt(sl[1], sl[2], sl[3], SHOULDER.w, SHOULDER.h)
     r["RB targeting picture"] = RectAt(sr[1], sr[2], sr[3], SHOULDER.w, SHOULDER.h)
     local W, H = SCREEN_W, SCREEN_H
-    local tl = -W / 2 + TRACKER.x
-    r["quest tracker"] = { tl, H + TRACKER.y - TRACKER.h, tl + TRACKER.w, H + TRACKER.y }
-    local cr = W / 2 + CHAT.x
-    r.chat = { cr - CHAT.w, H + CHAT.y - CHAT.h, cr, H + CHAT.y }
+    local tr = W / 2 + TRACKER.x
+    r["quest tracker"] = { tr - TRACKER.w, H + TRACKER.y - TRACKER.h, tr, H + TRACKER.y }
+    local cl = -W / 2 + CHAT.x
+    r.chat = { cl, rise.chatY, cl + CHAT.w, rise.chatY + CHAT.h }
     r["buffs and debuffs"] = { W / 2 + AURAS.right - AURAS.w, H + AURAS.bottom, W / 2 + AURAS.right, H + AURAS.top }
     r["XP bars"] = { -596 / 2, H + XP_TOP_Y - 2 * XP_H, 596 / 2, H + XP_TOP_Y }
-    local hubLeft = -W / 2 + HUB.margin
-    r["round button"] = { hubLeft, H / 2 - HUB.size / 2, hubLeft + HUB.size, H / 2 + HUB.size / 2 }
+    local tipRight = W / 2 + rise.tipX
+    r.tooltip = { tipRight - TOOLTIP.w, rise.tipY, tipRight, rise.tipY + TOOLTIP.h }
+    local _, hubX, hubY = Plan.HubSpot(v)
+    r["round button"] = { -W / 2 + hubX, hubY, -W / 2 + hubX + HUB.size, hubY + HUB.size }
+    if o.hints == 1 then
+        local hl = -W / 2 + HINTS.x
+        r["hint box"] = { hl, H + HINTS.y - HINTS.h, hl + HINTS.w, H + HINTS.y }
+    end
     return r
 end
 
@@ -479,6 +583,7 @@ end
 function Plan.Pieces(opts)
     local o = Fill(opts)
     local FRAMES = Frames(opts) -- they rise at the larger Spell panel sizes
+    local rise = Rising(opts)   -- and the chat and the tooltip with them (0.16.0)
     local list = {}
     local function add(system, index, anchor, settings)
         list[#list + 1] = { system = system, index = index, anchor = anchor, settings = settings, moved = anchor and true or nil }
@@ -486,13 +591,15 @@ function Plan.Pieces(opts)
     -- HeaderUnderneath 1 puts the map's title strip under the map (0.11.1 spec, 3); left
     -- out by Plan.Apply when the game has no such setting.
     add("Minimap", nil, Spot("BOTTOM", "BOTTOM", MAP.x, MAP.y), { Size = (MAP.size - 50) / 10, HeaderUnderneath = 1 })
-    add("ChatFrame", nil, Spot("TOPRIGHT", "TOPRIGHT", CHAT.x, CHAT.y),
-        { WidthHundreds = 4, WidthTensAndOnes = 30, HeightHundreds = 2, HeightTensAndOnes = 10 })
-    -- Buffs and debuffs under the chat's last lines (0.11.1 spec, 4). The quest tracker
-    -- top left, where the game's controller hint box was (0.13.0, see TRACKER).
-    add("AuraFrame", "BuffFrame", Spot("TOPRIGHT", "TOPRIGHT", -30, -292), nil)
-    add("AuraFrame", "DebuffFrame", Spot("TOPRIGHT", "TOPRIGHT", -30, -330), nil)
-    add("ObjectiveTracker", nil, Spot("TOPLEFT", "TOPLEFT", TRACKER.x, TRACKER.y), { Height = 0 })
+    -- 0.16.0: the chat bottom left, over the PE button and the pet frame (see CHAT).
+    add("ChatFrame", nil, Spot("BOTTOMLEFT", "BOTTOMLEFT", CHAT.x, rise.chatY),
+        { WidthHundreds = math.floor(CHAT.w / 100), WidthTensAndOnes = CHAT.w % 100,
+          HeightHundreds = math.floor(CHAT.h / 100), HeightTensAndOnes = CHAT.h % 100 })
+    -- 0.16.0: the buffs and debuffs under the XP bars, left of the quest tracker, which is
+    -- top right (see AURAS and TRACKER).
+    add("AuraFrame", "BuffFrame", Spot("TOPRIGHT", "TOPRIGHT", AURAS.right, AURAS.top), nil)
+    add("AuraFrame", "DebuffFrame", Spot("TOPRIGHT", "TOPRIGHT", AURAS.right, AURAS.top - AURA_DEBUFF_GAP), nil)
+    add("ObjectiveTracker", nil, Spot("TOPRIGHT", "TOPRIGHT", TRACKER.x, TRACKER.y), { Height = 0 })
     -- The XP bars along the top edge, centred, at 100% (0.11.1 spec, 1).
     add("StatusTrackingBar", "StatusTrackingBar1", Spot("TOP", "TOP", 0, XP_TOP_Y), { Size = 10 })
     add("StatusTrackingBar", "StatusTrackingBar2", Spot("TOP", "TOP", 0, XP_TOP_Y - XP_H), { Size = 10 })
@@ -503,9 +610,13 @@ function Plan.Pieces(opts)
     -- the cast bar keeps its spot under the frame. Left out by Plan.Apply when the game has
     -- no such setting.
     add("UnitFrame", "Target", Anchor(FRAMES.Target), { BuffsOnTop = 1 })
+    -- 0.16.0: the tooltip above the target of target (see TOOLTIP). Left out by Plan.Apply
+    -- when the game has no such system.
+    add("HudTooltip", nil, Spot("BOTTOMRIGHT", "BOTTOMRIGHT", rise.tipX, rise.tipY), nil)
     local visibility = { Ranged = o.ranged, MainHand = o.mainHand, OffHand = o.offHand }
-    for _, name in ipairs({ "MainHand", "OffHand", "Ranged" }) do
-        add("SwingTimer", name, Spot("BOTTOM", "BOTTOM", 0, TIMER.y[name]),
+    local timers = Timers()
+    for _, name in ipairs(TIMER.order) do
+        add("SwingTimer", name, Spot("BOTTOM", "BOTTOM", timers.x, timers.y[name]),
             { Scale = 3, Width = 0, Height = 0, Visibility = visibility[name] })
     end
     return list
@@ -706,6 +817,9 @@ local function ReadEnums()
             GamepadMainActionBar = Enum.EditModeSystem.GamepadMainActionBar,
             UnitFrame = Enum.EditModeSystem.UnitFrame,
             SwingTimer = Enum.EditModeSystem.SwingTimer,
+            -- 0.16.0 (EditModeManagerConstantsDocumentation.lua:749): may be missing on another
+            -- client: Plan.Apply then leaves the tooltip out.
+            HudTooltip = Optional(function() return Enum.EditModeSystem.HudTooltip end),
         },
         setting = {
             -- HeaderUnderneath may be nil (an older client): Plan.Apply then leaves it out.
@@ -1193,8 +1307,9 @@ end
 -- (Blizzard_GamepadActionBars/MainActionBarFrame.xml:18-26). Moving the main bar to
 -- its corner would take them along, so they are anchored on the screen's bottom instead:
 -- until 0.13.0 where that anchor held them (the main bar centred, 42 up: -108, 84 and
--- 108, 84), since 0.14.0 beside the map (Plan.SHOULDERS, BOTTOMRIGHT at -76, 128 and
--- BOTTOMLEFT at 76, 128).
+-- 108, 84), in 0.14.0 and 0.15.0 beside the map (BOTTOMRIGHT at -76, 128 and BOTTOMLEFT
+-- at 76, 128), since 0.16.0 beside the "LB + LT" / "RB + RT" prompts (Plan.SHOULDERS,
+-- BOTTOMRIGHT at -178, 155 and BOTTOMLEFT at 178, 155).
 -- No game code re-anchors them (MainActionBarFrame.lua:631-649 only sets their
 -- pictures and the pressed highlight, which is anchored on them).
 --
@@ -1747,15 +1862,17 @@ end
 
 -- Which pieces of Plan.Pieces each row rewrites: its own swing timer only (one
 -- setup since 0.12.0: the stack's spots no longer depend on what is shown); the Spell
--- panel size the three unit frames.
+-- panel size the three unit frames, and since 0.16.0 the chat and the tooltip, which
+-- rise with them.
 local function Timer(index) return function(p) return p.system == "SwingTimer" and p.index == index end end
 local REWRITES = {
     ranged = Timer("Ranged"),
     mainHand = Timer("MainHand"),
     offHand = Timer("OffHand"),
-    -- The Spell panel size: the player, pet and target frames (they rise at 110% and 120%).
-    -- The pictures and the real bars take the new size after the reload asked for.
-    panelSize = function(p) return p.system == "UnitFrame" end,
+    -- The Spell panel size: the player, pet and target frames (they rise at 110% and 120%),
+    -- the chat over them and the tooltip over the target of target. The pictures and the
+    -- real bars take the new size after the reload asked for.
+    panelSize = function(p) return p.system == "UnitFrame" or p.system == "ChatFrame" or p.system == "HudTooltip" end,
 }
 
 local function RunRewrites()
