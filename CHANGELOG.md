@@ -4,6 +4,44 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.14.0] - 2026-11-24
+
+Thirtieth test build. Controller layout shows one bigger panel each side of
+the map, and holding a trigger swaps what it shows. Spec
+`docs/superpowers/specs/2026-11-23-controller-layout-0.14.0-console.md`.
+Not yet tested on a device. Your saved choices carry over. Pocket Probe is
+unchanged (0.7.0).
+
+### Changed
+
+- **Only two diamonds at rest:** your main bar's d-pad spells left of the
+  map, its face-button spells right of it. The other bars are hidden until
+  you hold their trigger.
+- **The triggers swap the panel:** hold LT and the left side opens into two
+  diamonds (LT d-pad on the outside, LT face buttons next to the map); the
+  main face buttons on the right stay, dimmed. Hold RT and the right side
+  does the same (RT d-pad next to the map, RT face buttons outside); the
+  main d-pad on the left stays, dimmed. Hold both and the two diamonds next
+  to the map show the LT+RT bar. Let go and the main bar is back. The d-pad
+  diamond is always left of its face diamond, the way you hold the
+  controller. The swap is instant and works in a fight.
+- **Bigger pictures:** each spell picture is half as big again (42 instead
+  of 28), and the button picture, range dot and stack count grew with it.
+- **Frames further out:** your frame and your target's moved out past the
+  outer diamonds; the target's cast bar and buffs moved with it and stay on
+  screen. The LB / RB targeting pictures sit beside the map.
+- The game's bars, still invisible and still doing the casting, sit smaller
+  (60%) under the two diamonds next to the map.
+- Your next login rebuilds the layout once (as 0.13.0 did); tap Reload now.
+
+### Known
+
+- A wheel or the "new spell" picture opened from a spell button shows where
+  the game's hidden button is (under a diamond next to the map), which is
+  not always where that spell's picture is drawn.
+- The game's page number can show near the left pictures while you hold the
+  page button.
+
 ## [0.13.0] - 2026-11-23
 
 Twenty-ninth test build. Controller layout draws its own spell pictures,

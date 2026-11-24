@@ -43,13 +43,23 @@ local ADDON_NAME, PE = ...
 -- 0.13.0 (spec 2026-11-23-controller-layout-0.13.0-face-bars.md): Pocket Essentials draws
 -- its own spell pictures (the "face", FaceBars.lua) and the game's four bars sit invisible
 -- under them. Split the way the controller is held: the d-pad halves of all four bars left
--- of the map, the face-button halves right of it, in two 2 by 2 grids (Plan.FaceSpots).
+-- of the map, the face-button halves right of it, in two 2 by 2 grids.
 -- The real bars sit under the grids at 90%, two a side; the frames moved down beside the
 -- grids, so frames, spells and map share one low band and the middle of the screen is free.
 -- The quest tracker moved top left, where the game's controller hint box was; that box is
 -- hidden while the layout is placed (the game's own setting, put back when off).
 -- This file places everything; FaceBars.lua draws the pictures and fades the real bars.
 -- It is started after a placement and stopped before a put-back (see StartFace).
+--
+-- 0.14.0 (spec 2026-11-23-controller-layout-0.14.0-console.md): one panel a side, the
+-- triggers swap it. At rest only the main bar shows: its d-pad diamond inner-left of the
+-- map, its face diamond inner-right. Holding a trigger opens that trigger's bar into two
+-- diamonds on its own side (LT: outer-left and inner-left; RT: inner-right and
+-- outer-right) and the main diamond left on the other side goes quiet; both triggers
+-- show the LT+RT bar in the two inner spots (Plan.FaceStates). The pictures grew to 42
+-- (Plan.FACE). The real bars sit at 60% under the two inner diamonds, two a side; the
+-- frames moved out past the outer diamonds (FRAME_X 395) and the LB / RB targeting
+-- pictures in beside the map (Plan.SHOULDERS).
 
 local type, pairs, ipairs = type, pairs, ipairs
 local sort = table.sort
@@ -76,8 +86,9 @@ Plan.DEFAULTS = {
 -- The template's version, saved with our layout whenever it is built
 -- (opts.template). A login that finds an older one rebuilds our layout once.
 -- 1: 0.11.x (no number saved). 2: 0.12.0, the mockup's one setup. 3: 0.13.0, the
--- face bars (frames and the quest tracker moved).
-Plan.TEMPLATE = 3
+-- face bars (frames and the quest tracker moved). 4: 0.14.0, the console (frames moved
+-- out past the outer diamonds).
+Plan.TEMPLATE = 4
 
 -- An XP bar: 17 high (STATUS_BAR_CONTAINER_HEIGHT,
 -- Blizzard_StatusTrackingBar/Camelot/StatusTrackingBarConstants.lua:2), 596 wide at 100%
@@ -112,9 +123,9 @@ local TIMER = { w = 213 * 0.8, h = 15 * 0.8, y = { MainHand = 31, OffHand = 17, 
 
 -- The unit frames: player and target 232 by 100
 -- (Blizzard_UnitFrame/Mainline/PlayerFrame.xml:14), pet and target of target 120 by
--- 49 (probe; TargetofTargetFrameTemplate, Mainline/TargetFrame.xml:398). Since 0.13.0
--- they sit beside the face grids, their inner edges at x -345 and +345 (the grids end at
--- -341 and +341).
+-- 49 (probe; TargetofTargetFrameTemplate, Mainline/TargetFrame.xml:398). Since 0.14.0
+-- they sit out past the outer diamonds, their inner edges at x -395 and +395 (the outer
+-- diamonds end at -383 and +383).
 local UNIT = { w = 232, h = 100 }
 local SMALL = { w = 120, h = 49 }
 
@@ -135,13 +146,14 @@ local SMALL = { w = 120, h = 49 }
 local TARGET_AURAS = { picture = { w = 192, h = 67 }, startX = 5, startY = -6, rowWidth = 122, rows = 2, size = 21, spacing = 3 }
 local TARGET_CAST = { x = 123, y = -46, w = 150, h = 10 }
 
--- 0.13.0: player and target 56 up, beside the face grids (x -345 / +345). The target's
--- cast bar, with the target of target shown, then takes 468 to 618 across and 0 to 10 up:
--- on screen, in the free corner right of the face. The player side is the mirror. The
+-- 0.14.0: player and target 56 up, out past the outer diamonds (x -395 / +395). The
+-- target's cast bar, with the target of target shown, then takes 518 to 668 across and 0
+-- to 10 up: on screen (the edge is 682.7), in the free corner right of the outer diamond.
+-- The player side is the mirror. The
 -- pet and the target of target sit above the target's two aura rows (25 over the frames'
 -- tops), the pet right-aligned and the target of target left-aligned with the frames'
 -- inner edges.
-local FRAME_X = 345
+local FRAME_X = 395
 local FRAME_Y = 56
 local SMALL_Y = FRAME_Y + UNIT.h + 25
 local FRAMES = {
@@ -153,7 +165,10 @@ local FRAMES = {
 -- The target of target, placed by the module on the target frame (see EXTRAS).
 Plan.TOT_SPOT = { point = "BOTTOMLEFT", relativePoint = "TOPLEFT", x = 0, y = SMALL_Y - FRAME_Y - UNIT.h }
 -- The two LB / RB targeting pictures, placed by the module on UIParent's bottom (see EXTRAS).
-Plan.SHOULDERS = { left = { "BOTTOMRIGHT", -108, 84 }, right = { "BOTTOMLEFT", 108, 84 } }
+-- 0.14.0: beside the map, above the inner diamonds (which reach 115 up) and right of the
+-- clear of the round map (69 either side of the centre): 76 to 112 either side, 128 to
+-- 160 up.
+Plan.SHOULDERS = { left = { "BOTTOMRIGHT", -76, 128 }, right = { "BOTTOMLEFT", 76, 128 } }
 -- Their size: 36 by 32, as measured on the device photos (the pictures use their atlas
 -- size, gamepad-targeting-left/right-shoulder-bg, MainActionBarFrame.xml:18-26; the atlas
 -- itself is not in this source).
@@ -163,37 +178,60 @@ local SHOULDER = { w = 36, h = 32 }
 -- the template switches growing off, ShouldExpand 0).
 local BAR = { w = 208, h = 68 }
 
--- 0.13.0: our own spell pictures. A picture is 28 across; a diamond puts its four 30
--- left / right and 19 up / down of its centre, so a diamond is 88 by 66.
-Plan.FACE = { button = 28, dx = 30, dy = 19 }
+-- 0.14.0: our own spell pictures. A picture is 42 across (0.13.0: 28, too small to read
+-- on the device); a diamond puts its four 46 left / right and 28 up / down of its
+-- centre, so a diamond is 134 by 98.
+Plan.FACE = { button = 42, dx = 46, dy = 28 }
 local FACE_W = 2 * Plan.FACE.dx + Plan.FACE.button
 local FACE_H = 2 * Plan.FACE.dy + Plan.FACE.button
 
--- Where each bar's two halves are drawn: the centre of each diamond, in UI units from
--- the screen's bottom centre. The d-pad halves on the left, the face-button halves on
--- the right, each side a 2 by 2 grid whose inner edge is 155 from the centre, 186 wide
--- (two diamonds 10 apart) and 6 to 146 up (two rows 8 apart): inner bottom the main bar,
--- inner top LT, outer bottom RT, outer top LT+RT ("up is LT, out is RT").
+-- The four spots a diamond can be drawn at: their centres, in UI units from the screen's
+-- bottom centre. The inner ones span 103 to 237 either side of the centre and 17 to 115
+-- up: clear of the swing timers (85 either side, 3 to 43 up), the title strip (-87 to 65)
+-- and the round map (69 either side, 87 to 226 up). The outer ones 249 to 383, 12 apart
+-- from the inner ones and 12 short of the frames (FRAME_X).
 local FACE_SPOTS = {
-    main = { dpad = { x = -199, y = 39 }, face = { x = 199, y = 39 } },
-    lt = { dpad = { x = -199, y = 113 }, face = { x = 199, y = 113 } },
-    rt = { dpad = { x = -297, y = 39 }, face = { x = 297, y = 39 } },
-    both = { dpad = { x = -297, y = 113 }, face = { x = 297, y = 113 } },
+    inner = { left = { x = -170, y = 66 }, right = { x = 170, y = 66 } },
+    outer = { left = { x = -316, y = 66 }, right = { x = 316, y = 66 } },
 }
 
--- The game's four bars, whole and invisible under the face grids, at 90% (187.2 by
--- 61.2 each): the main and LT bars under the left grid, RT and LT+RT under the right
--- one, each centred on its grid (x -248 / +248) on the row of its own pictures. Put
--- divides the spot by the scale, since a frame's offsets count in its own scale. The
--- bottom anchor carries the two sub-menu buttons (at -138 / +138, -50 from it:
--- Blizzard_GamepadActionBars/MainActionBarFrame.xml:94-112), so they sit 138 either
--- side of the centre, 188 up.
-local REAL_BAR_SCALE = 0.9
+-- Which bar half is drawn at which spot for each state of the triggers (spec, "The new
+-- arrangement"). The d-pad half always left of its own face half, the way the controller
+-- is held; quiet halves are drawn see-through (FaceBars.lua). Halves not listed hide.
+local FACE_STATES = {
+    rest = {
+        { group = "main", half = "dpad", spot = "innerLeft" },
+        { group = "main", half = "face", spot = "innerRight" },
+    },
+    lt = {
+        { group = "lt", half = "dpad", spot = "outerLeft" },
+        { group = "lt", half = "face", spot = "innerLeft" },
+        { group = "main", half = "face", spot = "innerRight", quiet = true },
+    },
+    rt = {
+        { group = "main", half = "dpad", spot = "innerLeft", quiet = true },
+        { group = "rt", half = "dpad", spot = "innerRight" },
+        { group = "rt", half = "face", spot = "outerRight" },
+    },
+    both = {
+        { group = "both", half = "dpad", spot = "innerLeft" },
+        { group = "both", half = "face", spot = "innerRight" },
+    },
+}
+
+-- The game's four bars, whole and invisible under the two inner diamonds, at 60% (124.8
+-- by 40.8 each): the main and LT bars under the left one, RT and LT+RT under the right
+-- one, centred on it (x -170 / +170), one above the other (87 and 45 up; the diamond
+-- spans 17 to 115). Put divides the spot by the scale, since a frame's offsets count in
+-- its own scale. The bottom anchor carries the two sub-menu buttons (at -138 / +138, -50
+-- from it: Blizzard_GamepadActionBars/MainActionBarFrame.xml:94-112), so they sit 138
+-- either side of the centre, 188 up.
+local REAL_BAR_SCALE = 0.6
 local SPOTS = {
-    top = { x = -248, y = 39, s = REAL_BAR_SCALE },    -- main bar (no trigger)
-    left = { x = -248, y = 113, s = REAL_BAR_SCALE },  -- LT bar
-    right = { x = 248, y = 39, s = REAL_BAR_SCALE },   -- RT bar
-    both = { x = 248, y = 113, s = REAL_BAR_SCALE },   -- LT + RT bar
+    top = { x = -170, y = 87, s = REAL_BAR_SCALE },    -- main bar (no trigger)
+    left = { x = -170, y = 45, s = REAL_BAR_SCALE },   -- LT bar
+    right = { x = 170, y = 87, s = REAL_BAR_SCALE },   -- RT bar
+    both = { x = 170, y = 45, s = REAL_BAR_SCALE },    -- LT + RT bar
     bottom = { x = 0, y = 238, s = 1 },                -- sub-menu buttons at (±138, 188)
 }
 -- Which face group each real bar spot is.
@@ -237,10 +275,17 @@ function Plan.BarSpots()
     return DeepCopy(SPOTS)
 end
 
--- Where each bar's two halves are drawn (see FACE_SPOTS): { main, lt, rt, both } each
--- { dpad = { x, y }, face = { x, y } }, a fresh copy.
+-- The four spots a diamond can be drawn at (see FACE_SPOTS): { inner = { left, right },
+-- outer = { left, right } }, each { x, y }, a fresh copy.
 function Plan.FaceSpots()
     return DeepCopy(FACE_SPOTS)
+end
+
+-- Which half of which bar is drawn where, per state (see FACE_STATES): { rest, lt, rt,
+-- both }, each a list of { group = "main"|"lt"|"rt"|"both", half = "dpad"|"face",
+-- spot = "innerLeft"|"outerLeft"|"innerRight"|"outerRight", quiet = true|nil }, a fresh copy.
+function Plan.FaceStates()
+    return DeepCopy(FACE_STATES)
 end
 
 -- A frame's rectangle from its anchor point (on UIParent's bottom) and its size.
@@ -265,15 +310,16 @@ local AURAS = { right = -30, top = -292, w = 11 * 40 + 15, bottom = -330 - 50 }
 
 -- The rectangles the template puts on screen, for the overlap check:
 -- { name = { left, bottom, right, top } } in UI units from the bottom centre,
--- worked out from the spots and sizes above. The face diamonds are listed; the
--- real bars under them are not (Plan.RealBarRects). The quest tracker is taken at
+-- worked out from the spots and sizes above. Each of the four diamond spots is
+-- listed once (whichever bar is drawn there); the real bars under the inner ones
+-- are not (Plan.RealBarRects). The quest tracker is taken at
 -- its least height (400). The target's two aura rows are the part above the
 -- frame; its cast bar is the spot it takes with the target of target shown.
 function Plan.Rects()
     local r = {}
     local function box(name, cx, cy, w, h) r[name] = { cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2 } end
-    for bar, halves in pairs(FACE_SPOTS) do
-        for half, c in pairs(halves) do box(bar .. " " .. half, c.x, c.y, FACE_W, FACE_H) end
+    for ring, sides in pairs(FACE_SPOTS) do
+        for side, c in pairs(sides) do box(ring .. " " .. side .. " diamond", c.x, c.y, FACE_W, FACE_H) end
     end
     local roundCentre = MAP.y + MAP.frameUp + MAP.frame * MAP.size / 100 / 2
     local round = MAP.round * MAP.size / 100
@@ -314,9 +360,9 @@ function Plan.Rects()
     return r
 end
 
--- The game's four real bars, invisible under the face grids: { main, lt, rt, both }
--- each { left, bottom, right, top }. Not part of Plan.Rects: they sit under the
--- face by design.
+-- The game's four real bars, invisible under the inner diamonds: { main, lt, rt,
+-- both } each { left, bottom, right, top }. Not part of Plan.Rects: they sit under
+-- the face by design.
 function Plan.RealBarRects()
     local r = {}
     for spot, bar in pairs(SPOT_FACE) do
@@ -941,7 +987,7 @@ end
 -- only the Top, Left and Right anchors, in PageUnit:RefreshCompactLayout
 -- (PageUnit.lua:292-315). The both-triggers bar is moved itself, because the
 -- sub-menu buttons follow the bottom anchor (ClassActionFlyout.lua:24-25).
--- Since 0.13.0 the four bars are placed at 90% under the face grids; FaceBars.lua
+-- Since 0.14.0 the four bars are placed at 60% under the inner diamonds; FaceBars.lua
 -- makes them invisible (their anchors' alpha) once its pictures show.
 --
 -- These frames hold protected spell buttons: nothing here runs in combat
@@ -1059,9 +1105,10 @@ end
 -- RightShoulderBackground textures (the friendly and hostile icons sit on them),
 -- anchored to the main bar's anchor at -108 / +108, 42
 -- (Blizzard_GamepadActionBars/MainActionBarFrame.xml:18-26). Moving the main bar to
--- its corner would take them along, so they are anchored where that anchor held them
--- (the main bar centred, 42 up): Plan.SHOULDERS, BOTTOMRIGHT at -108, 84 and BOTTOMLEFT
--- at 108, 84.
+-- its corner would take them along, so they are anchored on the screen's bottom instead:
+-- until 0.13.0 where that anchor held them (the main bar centred, 42 up: -108, 84 and
+-- 108, 84), since 0.14.0 beside the map (Plan.SHOULDERS, BOTTOMRIGHT at -76, 128 and
+-- BOTTOMLEFT at 76, 128).
 -- No game code re-anchors them (MainActionBarFrame.lua:631-649 only sets their
 -- pictures and the pressed highlight, which is anchored on them).
 --

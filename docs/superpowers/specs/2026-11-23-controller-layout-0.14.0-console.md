@@ -88,3 +88,39 @@ FaceBars.lua keeps its own copies of these numbers as defaults (as now) and:
 4. Hold both: the two main diamonds show the LT+RT bar. Release: back to the main bar.
 5. Cast from each state; the spell cast must match the picture lit at that spot.
 6. In a fight: the same, no errors; frames, cast bar and auras not on top of the pictures.
+
+## As built (2026-11-24)
+
+One builder on `setup-options`, reviewed against this text. Differences, and why:
+
+- **No differences in the numbers or the states.** Plan.FACE 42 / 46 / 28;
+  spots inner (±170, 66), outer (±316, 66); real bars at 60% at (-170, 87),
+  (-170, 45), (170, 87), (170, 45); FRAME_X 395; SHOULDERS (-76, 128) and
+  (76, 128); TEMPLATE 4; quiet 0.3.
+- **Plan.Rects names** the four spots "inner left diamond", "outer left
+  diamond", "inner right diamond", "outer right diamond". With FRAME_X 395
+  the target's cast bar takes 518 to 668 across, 0 to 10 up, and the aura
+  rows 420 to 542 across, 156 to 178.5 up: on screen and clear of the outer
+  diamond (383).
+- **The frames that take a tap** cover each side's inner diamond plus 4:
+  left -241, 13 to -99, 119 (the right side the mirror). The two real bars and
+  all their buttons fit inside the diamond (the d-pad's left button reaches
+  -234.8 of its -237), so the old 0.2 unit gap at the player frame is gone.
+  The cut at the frames' edge stays, at 395, as a guard only (nothing reaches
+  it). They stay put whatever trigger is held.
+- **Grown with the picture** (sizes drawn for 28, times 42 / 28, rounded to
+  a whole unit): the button glyph 17 (was 11), its dots 5 (3) and 5 apart (3),
+  the range dot 6 (4), the count font 14 (9), the trigger tag font 12 (8),
+  the glow 5 outside the picture (3); the icon's inset 2.25 (1.5) is not
+  rounded.
+- **Each group's halves** are two plain frames, 134 by 98, in the pictures'
+  holder; each picture sits CENTER on its half's centre. Every half starts
+  hidden, and the first draw after Start places the halves for the state.
+  The swap runs where the old strength change ran (on a change of the active
+  group, in the next frame's update).
+- **Fallbacks:** FaceBars.lua keeps copies of FACE, the spots, the states and
+  the real bars. A FaceSpots or FaceStates answer that is missing, raises,
+  or names an unknown group, half or spot (or has the 0.13.0 shape) is
+  replaced by the copy.
+- **No active-bar callback, or an unreadable active bar:** the "nothing
+  held" state (0.13.0 showed every bar at full strength).

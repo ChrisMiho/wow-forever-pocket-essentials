@@ -430,8 +430,21 @@ per objective". The owner has more Quest icons ideas to bring after testing.
 Spec `docs/superpowers/specs/2026-11-18-tidier-settings.md`; device steps
 `docs/TESTING.md` 14.
 
-**0.13.0 (2026-11-23, untested):** face bars. Controller layout draws its
-own spell pictures (display only) for all four bars, split like the
+**0.14.0 (2026-11-24, untested):** the console. Controller layout shows
+one panel a side: at rest the main bar's d-pad diamond inner-left of the map
+and its face diamond inner-right; holding LT or RT opens that bar into two
+diamonds on its side and dims the main diamond across; both triggers show
+the LT+RT bar in the two inner spots. Pictures 42 (were 28); the real bars at
+60% under the inner diamonds; frames out past the outer diamonds (395); the
+targeting pictures beside the map. The swap is plain frame calls, fine in a
+fight. Spec
+`docs/superpowers/specs/2026-11-23-controller-layout-0.14.0-console.md`;
+device steps `docs/TESTING.md` 28; pre-release `v0.14.0` with both zips.
+
+**0.13.0 (2026-11-23, seen on the device):** face bars. Device screenshots
+`docs/progress2/` (23:29): the split worked; eight diamonds at once were
+hard to follow and the pictures too small to read (led to 0.14.0).
+Controller layout draws its own spell pictures (display only) for all four bars, split like the
 controller (d-pad halves left of the map, face-button halves right), the
 bar in use bright and the others at half; the game's real bars stay whole and
 invisible (the four bar anchors at alpha 0) and still cast; frames beside the

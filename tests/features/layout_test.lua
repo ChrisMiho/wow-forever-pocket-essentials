@@ -144,13 +144,13 @@ end)
 test("plan: player, pet and target frames", function()
     local Plan = plan()
     local list = Plan.Pieces()
-    eq(piece(list, "UnitFrame", "Player").anchor, { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -345, y = 56 })
-    eq(piece(list, "UnitFrame", "Pet").anchor, { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -345, y = 181 })
-    eq(piece(list, "UnitFrame", "Target").anchor, { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 345, y = 56 })
+    eq(piece(list, "UnitFrame", "Player").anchor, { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -395, y = 56 })
+    eq(piece(list, "UnitFrame", "Pet").anchor, { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = -395, y = 181 })
+    eq(piece(list, "UnitFrame", "Target").anchor, { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 395, y = 56 })
     for _, i in ipairs({ "Player", "Pet", "Target" }) do eq(piece(list, "UnitFrame", i).moved, true, i) end
     -- The target of target, placed by the module: above the two aura rows, left edges lined up.
     eq(Plan.TOT_SPOT, { point = "BOTTOMLEFT", relativePoint = "TOPLEFT", x = 0, y = 25 })
-    eq(Plan.SHOULDERS, { left = { "BOTTOMRIGHT", -108, 84 }, right = { "BOTTOMLEFT", 108, 84 } })
+    eq(Plan.SHOULDERS, { left = { "BOTTOMRIGHT", -76, 128 }, right = { "BOTTOMLEFT", 76, 128 } })
 end)
 
 test("plan: the target gets its auras on top", function()
@@ -176,48 +176,90 @@ test("plan: the target's cast bar lands on screen in the free corner, the aura r
     local Plan = plan()
     local r = Plan.Rects()
     -- Cast bar with the target of target shown (Gamepad UI): 123 right, 46 under the frame's bottom left.
-    eq(r["target cast bar"], { 345 + 123, 56 - 46 - 10, 345 + 123 + 150, 56 - 46 })
+    eq(r["target cast bar"], { 395 + 123, 56 - 46 - 10, 395 + 123 + 150, 56 - 46 })
     local cast = r["target cast bar"]
     check(cast[1] >= -682.6 and cast[3] <= 682.6 and cast[2] >= 0 and cast[4] <= 768, "the cast bar is off screen")
-    for _, half in ipairs({ "main face", "lt face", "rt face", "both face" }) do
-        check(cast[1] > r[half][3], "the cast bar reaches the face's " .. half)
+    for _, spot in ipairs({ "inner right diamond", "outer right diamond" }) do
+        check(cast[1] > r[spot][3], "the cast bar reaches the " .. spot)
     end
     -- Two rows of 21 with 3 between, up from 6 inside the frame picture's top (192 by 67, centred).
     local pictureTop = 56 + 50 + 33.5
-    eq(r["target auras"], { 345 + 20 + 5, 156, 345 + 20 + 5 + 122, pictureTop - 6 + 45 })
+    eq(r["target auras"], { 395 + 20 + 5, 156, 395 + 20 + 5 + 122, pictureTop - 6 + 45 })
     check(r["target auras"][4] < r["target of target"][2], "the aura rows reach the target of target")
+    check(r["target auras"][3] <= 682.6, "the aura rows are off screen")
+    check(r["target auras"][1] > r["outer right diamond"][3], "the aura rows reach the outer diamond")
 end)
 
-test("plan: the face, four bars of two diamonds, split d-pad left and face buttons right", function()
+test("plan: the face, four diamond spots beside the map, picture 42", function()
     local Plan = plan()
-    eq(Plan.FACE, { button = 28, dx = 30, dy = 19 })
+    eq(Plan.FACE, { button = 42, dx = 46, dy = 28 })
     local s = Plan.FaceSpots()
     eq(s, {
-        main = { dpad = { x = -199, y = 39 }, face = { x = 199, y = 39 } },
-        lt = { dpad = { x = -199, y = 113 }, face = { x = 199, y = 113 } },
-        rt = { dpad = { x = -297, y = 39 }, face = { x = 297, y = 39 } },
-        both = { dpad = { x = -297, y = 113 }, face = { x = 297, y = 113 } },
+        inner = { left = { x = -170, y = 66 }, right = { x = 170, y = 66 } },
+        outer = { left = { x = -316, y = 66 }, right = { x = 316, y = 66 } },
     })
     -- A fresh copy each time.
-    s.main.dpad.x = 0
-    eq(Plan.FaceSpots().main.dpad.x, -199)
-    -- A diamond is 88 by 66; each side's grid is 155 to 341 from the centre and 6 to 146 up.
+    s.inner.left.x = 0
+    eq(Plan.FaceSpots().inner.left.x, -170)
+    -- A diamond is 134 by 98; the inner ones span 103 to 237 from the centre, the outer 249 to 383, 17 to 115 up.
     local r = Plan.Rects()
-    near(r["main dpad"][3] - r["main dpad"][1], 88, "diamond width")
-    near(r["main dpad"][4] - r["main dpad"][2], 66, "diamond height")
-    for _, side in ipairs({ { "dpad", -1 }, { "face", 1 } }) do
-        local l, b, rr, t = math.huge, math.huge, -math.huge, -math.huge
-        for _, bar in ipairs({ "main", "lt", "rt", "both" }) do
-            local d = r[bar .. " " .. side[1]]
-            check(d, "no diamond " .. bar .. " " .. side[1])
-            check((d[1] + d[3]) / 2 * side[2] > 0, bar .. " " .. side[1] .. " on the wrong side")
-            l, b, rr, t = math.min(l, d[1]), math.min(b, d[2]), math.max(rr, d[3]), math.max(t, d[4])
-        end
-        eq({ math.min(math.abs(l), math.abs(rr)), math.max(math.abs(l), math.abs(rr)), b, t }, { 155, 341, 6, 146 }, side[1] .. " grid")
+    for _, name in ipairs({ "inner left diamond", "outer left diamond", "inner right diamond", "outer right diamond" }) do
+        check(r[name], "no rectangle for " .. name)
+        near(r[name][3] - r[name][1], 134, name .. " width")
+        near(r[name][4] - r[name][2], 98, name .. " height")
     end
-    -- Up is LT, out is RT.
-    check(s.lt.face.y > s.main.face.y and s.both.face.y > s.rt.face.y, "LT rows are not on top")
-    check(math.abs(s.rt.dpad.x) > math.abs(s.main.dpad.x) and math.abs(s.both.face.x) > math.abs(s.lt.face.x), "RT is not outside")
+    eq(r["inner left diamond"], { -237, 17, -103, 115 })
+    eq(r["inner right diamond"], { 103, 17, 237, 115 })
+    eq(r["outer left diamond"], { -383, 17, -249, 115 })
+    eq(r["outer right diamond"], { 249, 17, 383, 115 })
+    -- Only the four spots are listed, once each (no per-bar halves).
+    for name in pairs(r) do
+        check(not name:find(" dpad$") and not name:find(" face$"), "a bar half is listed: " .. name)
+    end
+end)
+
+test("plan: the states, one panel a side, the triggers swap it", function()
+    local Plan = plan()
+    local st = Plan.FaceStates()
+    eq(st, {
+        rest = {
+            { group = "main", half = "dpad", spot = "innerLeft" },
+            { group = "main", half = "face", spot = "innerRight" },
+        },
+        lt = {
+            { group = "lt", half = "dpad", spot = "outerLeft" },
+            { group = "lt", half = "face", spot = "innerLeft" },
+            { group = "main", half = "face", spot = "innerRight", quiet = true },
+        },
+        rt = {
+            { group = "main", half = "dpad", spot = "innerLeft", quiet = true },
+            { group = "rt", half = "dpad", spot = "innerRight" },
+            { group = "rt", half = "face", spot = "outerRight" },
+        },
+        both = {
+            { group = "both", half = "dpad", spot = "innerLeft" },
+            { group = "both", half = "face", spot = "innerRight" },
+        },
+    })
+    -- A fresh copy each time.
+    st.rest[1].spot = "outerLeft"
+    eq(Plan.FaceStates().rest[1].spot, "innerLeft")
+    -- In every state: each spot used at most once, each half at most once, and a bar's d-pad left of its own face.
+    local spots = Plan.FaceSpots()
+    local function x(spot) local ring, side = spot:match("^(%l+)(%u%l+)$") return spots[ring][side:lower()].x end
+    for key, list in pairs(Plan.FaceStates()) do
+        local usedSpot, usedHalf, at = {}, {}, {}
+        for _, e in ipairs(list) do
+            check(not usedSpot[e.spot], key .. ": " .. e.spot .. " used twice")
+            check(not usedHalf[e.group .. e.half], key .. ": " .. e.group .. " " .. e.half .. " drawn twice")
+            usedSpot[e.spot], usedHalf[e.group .. e.half] = true, true
+            at[e.group] = at[e.group] or {}
+            at[e.group][e.half] = x(e.spot)
+        end
+        for group, halves in pairs(at) do
+            if halves.dpad and halves.face then check(halves.dpad < halves.face, key .. ": " .. group .. " d-pad not left of its face") end
+        end
+    end
 end)
 
 test("plan: the rectangles follow the frames' spots", function()
@@ -235,50 +277,41 @@ test("plan: the rectangles follow the frames' spots", function()
     eq({ -r.pet[3], r.pet[2], -r.pet[1], r.pet[4] }, r["target of target"])
 end)
 
-test("plan: the four real bars at 90%, two under each face grid", function()
+test("plan: the four real bars at 60%, two under each inner diamond", function()
     local Plan = plan()
     local s = Plan.BarSpots()
-    eq(s.top, { x = -248, y = 39, s = 0.9 })
-    eq(s.left, { x = -248, y = 113, s = 0.9 })
-    eq(s.right, { x = 248, y = 39, s = 0.9 })
-    eq(s.both, { x = 248, y = 113, s = 0.9 })
+    eq(s.top, { x = -170, y = 87, s = 0.6 })
+    eq(s.left, { x = -170, y = 45, s = 0.6 })
+    eq(s.right, { x = 170, y = 87, s = 0.6 })
+    eq(s.both, { x = 170, y = 45, s = 0.6 })
     -- Old saved values change nothing.
     eq(Plan.BarSpots({ size = 70, fineBoth = 0.85, main = "under", map = 60 }), s)
-    -- 187.2 by 61.2 each.
+    -- 124.8 by 40.8 each.
     local real = Plan.RealBarRects()
     for _, bar in ipairs({ "main", "lt", "rt", "both" }) do
-        near(real[bar][3] - real[bar][1], 187.2, bar .. " width")
-        near(real[bar][4] - real[bar][2], 61.2, bar .. " height")
+        near(real[bar][3] - real[bar][1], 124.8, bar .. " width")
+        near(real[bar][4] - real[bar][2], 40.8, bar .. " height")
     end
 end)
 
-test("plan: each real bar lies under its own side's face grid, clear of everything else", function()
+test("plan: each real bar lies under its own side's inner diamond, clear of everything else", function()
     local Plan = plan()
     local r, real = Plan.Rects(), Plan.RealBarRects()
-    -- The grid each real bar sits under (main and LT left, RT and LT+RT right), from the diamonds.
-    local function grid(sideKey)
-        local g = { math.huge, math.huge, -math.huge, -math.huge }
-        for _, bar in ipairs({ "main", "lt", "rt", "both" }) do
-            local d = r[bar .. " " .. sideKey]
-            g = { math.min(g[1], d[1]), math.min(g[2], d[2]), math.max(g[3], d[3]), math.max(g[4], d[4]) }
-        end
-        return g
-    end
-    local side = { main = grid("dpad"), lt = grid("dpad"), rt = grid("face"), both = grid("face") }
-    -- Each real bar is 1.2 wider than the grid (187.2 against 186): 0.6 either side.
+    local side = { main = "inner left diamond", lt = "inner left diamond", rt = "inner right diamond", both = "inner right diamond" }
     for bar, b in pairs(real) do
-        local g = side[bar]
-        check(b[1] >= g[1] - 0.61 and b[3] <= g[3] + 0.61 and b[2] >= g[2] and b[4] <= g[4], bar .. " real bar is not under its grid")
-        local cx, cy = (b[1] + b[3]) / 2, (b[2] + b[4]) / 2
-        local own = Plan.FaceSpots()[bar]
-        local row = (own.dpad.y == cy) or (own.face.y == cy)
-        check(row, bar .. " real bar is not on its own row")
-        check(cx * ((bar == "main" or bar == "lt") and -1 or 1) > 0, bar .. " real bar on the wrong side")
+        local d = r[side[bar]]
+        check(b[1] >= d[1] and b[3] <= d[3] and b[2] >= d[2] and b[4] <= d[4], bar .. " real bar is not under its diamond")
+        near((b[1] + b[3]) / 2, (d[1] + d[3]) / 2, bar .. " real bar centred on its diamond")
     end
-    -- Clear of the frames, the map, the targeting pictures and every other piece but the face.
+    -- The two a side do not overlap each other.
+    for _, pair in ipairs({ { "main", "lt" }, { "rt", "both" } }) do
+        local a, b = real[pair[1]], real[pair[2]]
+        check(math.min(a[4], b[4]) - math.max(a[2], b[2]) <= 0, pair[1] .. " and " .. pair[2] .. " real bars overlap")
+    end
+    -- Clear of the frames, the map, the targeting pictures and every other piece but the inner diamonds.
     for bar, b in pairs(real) do
         for name, a in pairs(r) do
-            if not name:find(" dpad$") and not name:find(" face$") then
+            if name ~= "inner left diamond" and name ~= "inner right diamond" then
                 local w = math.min(a[3], b[3]) - math.max(a[1], b[1])
                 local h = math.min(a[4], b[4]) - math.max(a[2], b[2])
                 check(not (w > 0 and h > 0), bar .. " real bar overlaps " .. name)
@@ -302,13 +335,13 @@ test("plan: no piece overlaps another", function()
     table.sort(names)
     local W, H = 1365.33, 768
     -- Every piece the spec names is in the check.
-    for _, name in ipairs({ "main dpad", "main face", "lt dpad", "lt face", "rt dpad", "rt face", "both dpad", "both face",
+    for _, name in ipairs({ "inner left diamond", "outer left diamond", "inner right diamond", "outer right diamond",
         "player", "pet", "target", "target of target", "target auras", "target cast bar", "map", "title strip",
         "MainHand timer", "OffHand timer", "Ranged timer", "LB+LT button", "RB+RT button", "LB targeting picture",
         "RB targeting picture", "quest tracker", "chat", "buffs and debuffs", "XP bars", "round button" }) do
         check(r[name], "no rectangle for " .. name)
     end
-    -- 0.13.0: nothing overlaps (the quest tracker left the right side).
+    -- 0.14.0: nothing overlaps (the quest tracker left the right side in 0.13.0).
     for i = 1, #names do
         local a = r[names[i]]
         check(a[1] >= -W / 2 and a[3] <= W / 2 and a[2] >= 0 and a[4] <= H, names[i] .. " is off screen")
@@ -1082,13 +1115,13 @@ test("layout: on with ours active places the bar anchors and the both-triggers b
     switchOn(c, PE)
     local f = barFrames(c)
     placedAt(c, f.left, spots.left, "left")
-    near(frameState(c, f.left).scale, 0.9, "left scale")
+    near(frameState(c, f.left).scale, 0.6, "left scale")
     placedAt(c, f.right, spots.right, "right")
     placedAt(c, f.top, spots.top, "top")
     placedAt(c, f.bottom, spots.bottom, "bottom")
     eq(frameState(c, f.bottom).scale, 1)
     placedAt(c, f.both, spots.both, "both-triggers bar")
-    near(frameState(c, f.both).scale, 0.9, "both-triggers scale")
+    near(frameState(c, f.both).scale, 0.6, "both-triggers scale")
     c:assertClean()
 end)
 
@@ -1854,8 +1887,8 @@ end)
 test("migrate: old prev moved or dropped once", function()
     -- A 0.11.0 saved file: one layout to go back to for the whole account.
     local function oldFile(on)
-        -- (template 3: only the migration is tested here; the rebuild of an older layout has its own tests)
-        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { template = 3, prev = { name = "Mine", layoutType = 2 } } } }
+        -- (template 4: only the migration is tested here; the rebuild of an older layout has its own tests)
+        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { template = 4, prev = { name = "Mine", layoutType = 2 } } } }
     end
     local ours = saved(NAME)
     -- Ours active on the character logging in: it becomes this character's entry.
@@ -1887,7 +1920,7 @@ end)
 
 test("migrate: a 0.11.1 entry by name moves into this character's own file once", function()
     local function namedFile(on)
-        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { template = 3, prevs = {
+        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { template = 4, prevs = {
             [KEY] = { name = "Mine", layoutType = 2 }, ["Bee-Camelot"] = { preset = 0 } } } } }
     end
     local ours = saved(NAME)
@@ -2074,11 +2107,11 @@ local function totCalls(c)
     return n
 end
 
-test("bars: the targeting pictures go where the main bar used to hold them", function()
+test("bars: the targeting pictures go beside the map", function()
     local c = onClient()
     local l, r = extras(c)
-    eq(pointsOf(c, l), { { "BOTTOMRIGHT", c.env.UIParent, "BOTTOM", -108, 84 } })
-    eq(pointsOf(c, r), { { "BOTTOMLEFT", c.env.UIParent, "BOTTOM", 108, 84 } })
+    eq(pointsOf(c, l), { { "BOTTOMRIGHT", c.env.UIParent, "BOTTOM", -76, 128 } })
+    eq(pointsOf(c, r), { { "BOTTOMLEFT", c.env.UIParent, "BOTTOM", 76, 128 } })
     c:assertClean()
 end)
 
@@ -2131,8 +2164,8 @@ test("bars: a missing, nil or failing targeting picture or target of target plac
         local c, PE = layoutClient({}, 3, { setup = case.setup })
         local l, r, t = extras(c)
         local want = {
-            { "BOTTOMRIGHT", c.env.UIParent, "BOTTOM", -108, 84 },
-            { "BOTTOMLEFT", c.env.UIParent, "BOTTOM", 108, 84 },
+            { "BOTTOMRIGHT", c.env.UIParent, "BOTTOM", -76, 128 },
+            { "BOTTOMLEFT", c.env.UIParent, "BOTTOM", 76, 128 },
             { "BOTTOMLEFT", rawget(c.env, "TargetFrame"), "TOPLEFT", 0, 25 },
         }
         switchOn(c, PE)
@@ -2288,14 +2321,14 @@ test("template: a new layout saves the version", function()
     local c, PE = layoutClient({}, 3)
     switchOn(c, PE)
     eq(opts(PE).template, PE.LayoutPlan.TEMPLATE)
-    eq(PE.LayoutPlan.TEMPLATE, 3)
+    eq(PE.LayoutPlan.TEMPLATE, 4)
     -- Start over saves it too.
     opts(PE).template = nil
     PE:GetModule("ctrlLayout"):CancelReload()
     tapStartOver(c, PE)
     c:advance(1)
     tapStartOver(c, PE)
-    eq(opts(PE).template, 3)
+    eq(opts(PE).template, 4)
     c:assertClean()
 end)
 
@@ -2319,7 +2352,7 @@ test("template: the rebuild failing logs it and tries again next login", functio
     -- The next login, the game taking it: rebuilt.
     local c3, PE3 = login(db(c), c.world.layouts.layouts, 4, { char = charDB(c) })
     eq(checkSaves(c3), 1)
-    eq(opts(PE3).template, 3)
+    eq(opts(PE3).template, 4)
     eq(saidIn(c3, UPDATED), 1)
     c3:assertClean()
 end)
@@ -2487,7 +2520,7 @@ local USING_LINE = "Using the Pocket Essentials layout. Move the map, chat or fr
 
 local function faceStub(c, PE)
     local s = { calls = {}, reason = nil }
-    local function placedNow() return frameState(c, barFrames(c).left).scale == 0.9 end
+    local function placedNow() return frameState(c, barFrames(c).left).scale == 0.6 end
     function s:Start()
         s.calls[#s.calls + 1] = { "Start", placed = placedNow(), combat = c.world.inCombat }
         if s.startFails then error("face start failed") end
@@ -2621,7 +2654,7 @@ test("face: a start or stop that fails or refuses is logged, and the layout carr
     face.refuse = "the game's bars were not found"
     switchOn(c, PE)
     check(count(face, "Start") >= 1, "not started")
-    eq(frameState(c, barFrames(c).left).scale, 0.9, "bars not placed")
+    eq(frameState(c, barFrames(c).left).scale, 0.6, "bars not placed")
     c:assertClean()
     local c2, PE2 = layoutClient({}, 3)
     local face2 = faceStub(c2, PE2)
@@ -2629,7 +2662,7 @@ test("face: a start or stop that fails or refuses is logged, and the layout carr
     switchOn(c2, PE2)
     check(#PE2.errors >= 1, "the failed start was not logged")
     check(PE2:IsModuleEnabled("ctrlLayout"), "the feature switched off")
-    eq(frameState(c2, barFrames(c2).left).scale, 0.9, "bars not placed")
+    eq(frameState(c2, barFrames(c2).left).scale, 0.6, "bars not placed")
     switchOff(c2, PE2)
     eq(frameState(c2, barFrames(c2).left).scale, 1, "bars not put back after a failed stop")
     eq(#c2.errors, 0)

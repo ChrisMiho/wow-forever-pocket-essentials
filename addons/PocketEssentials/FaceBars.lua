@@ -6,8 +6,16 @@ local ADDON_NAME, PE = ...
 --
 -- The game's real bars stay whole and keep taking every press; they are made
 -- invisible by setting their four anchors' see-through to 0, and this file draws
--- one picture per real button where the layout wants it: the d-pad halves left of
--- the map, the face-button halves right of it.
+-- one picture per real button where the layout wants it.
+--
+-- 0.14.0 (spec 2026-11-23-controller-layout-0.14.0-console.md): each bar's two halves
+-- (d-pad, face buttons) are two frames of our own, each holding its four pictures placed
+-- on its centre. Which halves show, where and how see-through follows the trigger held
+-- (ControllerLayout.lua, Plan.FaceStates): at rest only the main bar, its d-pad diamond
+-- inner-left of the map and its face diamond inner-right; holding a trigger opens that
+-- trigger's bar into two diamonds on its side and leaves the other side's main diamond
+-- quiet. The swap is ClearAllPoints, SetPoint, Show, Hide and SetAlpha on those plain
+-- frames only, which a fight allows; no frame of the game's is touched by it.
 --
 --   PE.FaceBars:Start()   out of a fight; builds once, binds to the real buttons,
 --                         shows the pictures, then makes the real bars invisible.
@@ -28,9 +36,10 @@ local ADDON_NAME, PE = ...
 --
 -- Display only: plain frames on UIParent, no secure templates, no click handler.
 -- Each picture takes the mouse, and under the pictures one plain frame per side
--- (left grid, right grid) takes the mouse over the whole grid and both real bars
--- under it, so a tap between two pictures (or the game's cursor) never reaches a
--- hidden button: the real bars take taps at see-through 0 (enableMouse,
+-- takes the mouse over that side's inner diamond and both real bars under it, so a
+-- tap between two pictures (or the game's cursor) never reaches a hidden button
+-- (the outer diamonds have no real bar under them): the real bars take taps at
+-- see-through 0 (enableMouse,
 -- G/ActionBarTemplates.xml:606-699). Nothing is ever written into Blizzard's tables or
 -- frames except the four anchors' see-through (SetAlpha is not a protected call:
 -- device-proven on the bars, docs/11-23-face-bars/EVIDENCE.md) and the hooks.
@@ -96,36 +105,65 @@ PE.FaceBars = Face
 local KEY = "ctrlLayout"
 local CALLBACK_NAME = "PocketEssentialsFace"   -- a string: a number is refused (CallbackRegistry.lua:121-122)
 local ERROR_LIMIT = 3                          -- errors in a session before the pictures turn off
-local QUIET_ALPHA = 0.5                        -- the bars not in use
+local QUIET_ALPHA = 0.3                        -- a half drawn quiet (the main diamond across from a held trigger)
+local BASE_BUTTON = 28                         -- the picture size the glyph, range dot and count were drawn for
 
--- The contract's numbers (plan "The contract between the two halves"), used when
--- PE.LayoutPlan does not carry them: a picture 28 units, a diamond's buttons 30
--- left and right and 19 up and down of its centre (88 by 66).
-local FACE_DEFAULT = { button = 28, dx = 30, dy = 19 }
+-- The contract's numbers (spec 0.14.0, "The contract between the two files"), used
+-- when PE.LayoutPlan does not carry them: a picture 42 units, a diamond's buttons 46
+-- left and right and 28 up and down of its centre (134 by 98); the four spots; the
+-- states.
+local FACE_DEFAULT = { button = 42, dx = 46, dy = 28 }
 local SPOTS_DEFAULT = {
-    main = { dpad = { x = -199, y = 39 },  face = { x = 199, y = 39 } },
-    lt   = { dpad = { x = -199, y = 113 }, face = { x = 199, y = 113 } },
-    rt   = { dpad = { x = -297, y = 39 },  face = { x = 297, y = 39 } },
-    both = { dpad = { x = -297, y = 113 }, face = { x = 297, y = 113 } },
+    inner = { left = { x = -170, y = 66 }, right = { x = 170, y = 66 } },
+    outer = { left = { x = -316, y = 66 }, right = { x = 316, y = 66 } },
+}
+local STATES_DEFAULT = {
+    rest = {
+        { group = "main", half = "dpad", spot = "innerLeft" },
+        { group = "main", half = "face", spot = "innerRight" },
+    },
+    lt = {
+        { group = "lt", half = "dpad", spot = "outerLeft" },
+        { group = "lt", half = "face", spot = "innerLeft" },
+        { group = "main", half = "face", spot = "innerRight", quiet = true },
+    },
+    rt = {
+        { group = "main", half = "dpad", spot = "innerLeft", quiet = true },
+        { group = "rt", half = "dpad", spot = "innerRight" },
+        { group = "rt", half = "face", spot = "outerRight" },
+    },
+    both = {
+        { group = "both", half = "dpad", spot = "innerLeft" },
+        { group = "both", half = "face", spot = "innerRight" },
+    },
 }
 -- The game's four real bars, used when PE.LayoutPlan.RealBarRects is missing: 208 by
--- 68 at 90%, the main and LT bars centred at x -248, RT and LT+RT at +248, on the rows
--- 39 and 113 up ({ left, bottom, right, top } from the screen's bottom centre).
-local function BarRect(x, y) return { x - 93.6, y - 30.6, x + 93.6, y + 30.6 } end
-local REAL_DEFAULT = { main = BarRect(-248, 39), lt = BarRect(-248, 113), rt = BarRect(248, 39), both = BarRect(248, 113) }
--- The frames under the pictures that take a tap: each side's grid and real bars plus
--- this margin, but never past the player and target frames, whose boxes start 345
--- either side of the centre (ControllerLayout.lua, FRAME_X).
+-- 68 at 60%, the main and LT bars centred at x -170, RT and LT+RT at +170, 87 and 45
+-- up ({ left, bottom, right, top } from the screen's bottom centre).
+local function BarRect(x, y) return { x - 62.4, y - 20.4, x + 62.4, y + 20.4 } end
+local REAL_DEFAULT = { main = BarRect(-170, 87), lt = BarRect(-170, 45), rt = BarRect(170, 87), both = BarRect(170, 45) }
+-- The frames under the pictures that take a tap: each side's inner diamond and real
+-- bars plus this margin, but never past the player and target frames, whose boxes
+-- start 395 either side of the centre (ControllerLayout.lua, FRAME_X). With the
+-- 0.14.0 numbers they end at 241, so the cut is only a guard.
 local BACKING_MARGIN = 4
-local FRAME_EDGE = 345
+local FRAME_EDGE = 395
 
--- The four groups, each tied to one of the game's bar anchors.
+-- The four groups, each tied to one of the game's bar anchors; state is the
+-- Plan.FaceStates key used while that group's bar is the active one.
 local GROUPS = {
-    { key = "main", anchor = "TopCenteredAnchor" },
-    { key = "lt", anchor = "LeftCenteredAnchor", tag = "LT" },
-    { key = "rt", anchor = "RightCenteredAnchor", tag = "RT" },
-    { key = "both", anchor = "BottomCenteredAnchor", tag = "LT+RT" },
+    { key = "main", anchor = "TopCenteredAnchor", state = "rest" },
+    { key = "lt", anchor = "LeftCenteredAnchor", tag = "LT", state = "lt" },
+    { key = "rt", anchor = "RightCenteredAnchor", tag = "RT", state = "rt" },
+    { key = "both", anchor = "BottomCenteredAnchor", tag = "LT+RT", state = "both" },
 }
+local GROUP_INDEX = { main = 1, lt = 2, rt = 3, both = 4 }
+-- A group's two halves: [1] the d-pad (pictures 1-4), [2] the face buttons (5-8).
+local HALF_INDEX = { dpad = 1, face = 2 }
+-- The four spots by name, as { ring, side } in Plan.FaceSpots.
+local SPOT_KEYS = { innerLeft = { "inner", "left" }, outerLeft = { "outer", "left" },
+    innerRight = { "inner", "right" }, outerRight = { "outer", "right" } }
+local STATE_KEYS = { "rest", "lt", "rt", "both" }
 -- The bars that can take an anchor's place, in the order they win.
 local OVERRIDES = { "friendlyTargetingBar", "hostileTargetingBar", "shortcutsBar", "possessBar", "stanceBar" }
 -- A diamond's four spots in press order (left, up, right, down), in steps of dx and dy.
@@ -154,21 +192,23 @@ local holder, driver      -- the pictures' parent, and the frame for events and 
 local pageUnit
 local rootFrame           -- GamepadMainActionBarFrame, the game's bars' own parent
 local barsHidden = false  -- the game hides its bars now: nothing is drawn until they are back
-local groups = {}         -- [1..4] = { def, frame, pics = { [1..8] = picture }, anchor, bar, tags }
+local groups = {}         -- [1..4] = { def, halves = { [1] d-pad, [2] face }, pics = { [1..8] = picture }, anchor, bar, tags }
+local centres = {}        -- [spot name] = { x, y }: the four spots, read at Build
+local states              -- Plan.FaceStates (or the default), read at Build
 local backings = {}       -- [1] left, [2] right: the plain frames under the pictures that take a tap
 local buttonPic = {}      -- [real button] = picture, for the buttons bound now
 local hooked = {}         -- [real button or Blizzard frame] = true: its hooks are on
 local callbackSet, alertsHooked, pageHooked, mainHooked = false, false, false, false
 local settingAlpha = false
 local lastActive          -- the bar the game last named active (false: none or unreadable)
-local activeGroup         -- index of the group in use, or nil (all at full strength)
+local activeGroup         -- index of the group in use, or nil (the "nothing held" state)
 
 local pending = false     -- the OnUpdate is set
-local bindDirty, picsDirty, stateDirty, cooldownDirty, alphaDirty = false, false, false, false, false
+local bindDirty, picsDirty, stateDirty, cooldownDirty, swapDirty = false, false, false, false, false
 local Flush, OnUpdate     -- set below
 
--- Read only, for the offline tests and for looking around in /dump: the groups and
--- their pictures, and the two frames under them. Never written from outside.
+-- Read only, for the offline tests and for looking around in /dump: the groups, their
+-- halves and pictures, and the two frames under them. Never written from outside.
 Face.view = groups
 Face.backing = backings
 
@@ -341,19 +381,27 @@ local function NewCooldown(parent)
     return cd
 end
 
--- One picture, centred at (x, y) UI units from the screen's bottom centre. quad is
--- its spot in the diamond (1 left, 2 up, 3 right, 4 down); dpad draws the glyph as
--- a plus, else as four dots.
+-- A size drawn for a 28 unit picture, grown with the picture and rounded to a whole
+-- unit (at least 1): 11 becomes 17 at 42.
+local function Scaled(n, size)
+    return max(1, math.floor(n * size / BASE_BUTTON + 0.5))
+end
+
+-- One picture, centred (x, y) UI units from its half's centre (parent is the half's
+-- frame). quad is its spot in the diamond (1 left, 2 up, 3 right, 4 down); dpad draws
+-- the glyph as a plus, else as four dots. The glow, inset, glyph, range dot and count
+-- grow with the picture (drawn for 28).
 local function MakePicture(parent, x, y, size, quad, dpad)
     local p = CreateFrame("Frame", nil, parent)
     p:SetSize(size, size)
-    p:SetPoint("CENTER", UIParent, "BOTTOM", x, y)
+    p:SetPoint("CENTER", parent, "CENTER", x, y)
     p:EnableMouse(true) -- takes a tap and does nothing with it
     local pic = { frame = p }
+    local glowOut, inset = Scaled(3, size), size * 1.5 / BASE_BUTTON
 
     pic.glow = p:CreateTexture(nil, "BACKGROUND", nil, -8)
-    pic.glow:SetPoint("TOPLEFT", p, "TOPLEFT", -3, 3)
-    pic.glow:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", 3, -3)
+    pic.glow:SetPoint("TOPLEFT", p, "TOPLEFT", -glowOut, glowOut)
+    pic.glow:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", glowOut, -glowOut)
     pic.glow:SetColorTexture(1, 0.82, 0.2, 0.6)
     pic.glow:Hide()
     pic.back = p:CreateTexture(nil, "BACKGROUND")
@@ -364,8 +412,8 @@ local function MakePicture(parent, x, y, size, quad, dpad)
     pic.checked:SetColorTexture(1, 0.82, 0, 1)
     pic.checked:Hide()
     pic.icon = p:CreateTexture(nil, "ARTWORK")
-    pic.icon:SetPoint("TOPLEFT", p, "TOPLEFT", 1.5, -1.5)
-    pic.icon:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -1.5, 1.5)
+    pic.icon:SetPoint("TOPLEFT", p, "TOPLEFT", inset, -inset)
+    pic.icon:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -inset, inset)
     pic.icon:Hide()
     pic.dim = p:CreateTexture(nil, "OVERLAY")
     pic.dim:SetAllPoints(pic.icon)
@@ -380,45 +428,85 @@ local function MakePicture(parent, x, y, size, quad, dpad)
     local over = CreateFrame("Frame", nil, p)
     over:SetAllPoints(p)
     over:SetFrameLevel(p:GetFrameLevel() + 2)
+    local glyphSize, dotSize, dotStep = Scaled(11, size), Scaled(3, size), Scaled(3, size)
     local glyph = over:CreateTexture(nil, "ARTWORK")
-    glyph:SetSize(11, 11)
+    glyph:SetSize(glyphSize, glyphSize)
     glyph:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
     glyph:SetColorTexture(0, 0, 0, 0.7)
     if dpad then
         local mid = over:CreateTexture(nil, "OVERLAY")
-        mid:SetSize(3, 3)
+        mid:SetSize(dotSize, dotSize)
         mid:SetPoint("CENTER", glyph, "CENTER", 0, 0)
         mid:SetColorTexture(1, 1, 1, 0.35)
     end
     for k, step in ipairs(SPOT_STEPS) do
         local dot = over:CreateTexture(nil, "OVERLAY")
-        dot:SetSize(3, 3)
-        dot:SetPoint("CENTER", glyph, "CENTER", step[1] * 3, step[2] * 3)
+        dot:SetSize(dotSize, dotSize)
+        dot:SetPoint("CENTER", glyph, "CENTER", step[1] * dotStep, step[2] * dotStep)
         dot:SetColorTexture(1, 1, 1, k == quad and 1 or 0.35)
     end
+    local rangeSize, rangeIn = Scaled(4, size), Scaled(2, size)
     pic.range = over:CreateTexture(nil, "OVERLAY")
-    pic.range:SetSize(4, 4)
-    pic.range:SetPoint("TOPRIGHT", p, "TOPRIGHT", -2, -2)
+    pic.range:SetSize(rangeSize, rangeSize)
+    pic.range:SetPoint("TOPRIGHT", p, "TOPRIGHT", -rangeIn, -rangeIn)
     pic.range:SetColorTexture(1, 1, 1, 1)
     pic.range:Hide()
-    pic.count = SmallText(over, 9)
-    pic.count:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -1, 1)
+    local countIn = Scaled(1, size)
+    pic.count = SmallText(over, Scaled(9, size))
+    pic.count:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -countIn, countIn)
     pic.count:SetJustifyH("RIGHT")
     return pic
 end
 
-local function FaceNumbers()
-    local plan = PE.LayoutPlan
-    local face, spots = FACE_DEFAULT, SPOTS_DEFAULT
-    if type(plan) == "table" then
-        if type(plan.FACE) == "table" and type(plan.FACE.button) == "number" then face = plan.FACE end
-        local faceSpots = plan.FaceSpots -- ControllerLayout.lua's, when it has it
-        if type(faceSpots) == "function" then
-            local ok, s = pcall(faceSpots)
-            if ok and type(s) == "table" and type(s.main) == "table" then spots = s end
+local function IsPoint(c)
+    return type(c) == "table" and type(c.x) == "number" and type(c.y) == "number"
+end
+
+-- Plan.FaceSpots' answer when it has all four spots.
+local function GoodSpots(s)
+    if type(s) ~= "table" then return false end
+    for _, key in pairs(SPOT_KEYS) do
+        local ring = s[key[1]]
+        if type(ring) ~= "table" or not IsPoint(ring[key[2]]) then return false end
+    end
+    return true
+end
+
+-- Plan.FaceStates' answer when every state is a list of known groups, halves and spots.
+local function GoodStates(t)
+    if type(t) ~= "table" then return false end
+    for _, key in ipairs(STATE_KEYS) do
+        local list = t[key]
+        if type(list) ~= "table" then return false end
+        for _, e in ipairs(list) do
+            if type(e) ~= "table" or not GROUP_INDEX[e.group] or not HALF_INDEX[e.half] or not SPOT_KEYS[e.spot] then
+                return false
+            end
         end
     end
-    return face, spots
+    return true
+end
+
+-- One of ControllerLayout.lua's functions called, its answer when good() takes it.
+local function FromPlan(name, good)
+    local plan = PE.LayoutPlan
+    local fn = type(plan) == "table" and plan[name]
+    if type(fn) ~= "function" then return nil end
+    local ok, v = pcall(fn)
+    if ok and good(v) then return v end
+    return nil
+end
+
+-- The picture sizes, the four spots and the states: ControllerLayout.lua's, when it
+-- has them, else the copies above.
+local function FaceNumbers()
+    local plan = PE.LayoutPlan
+    local face = FACE_DEFAULT
+    if type(plan) == "table" and type(plan.FACE) == "table" and type(plan.FACE.button) == "number"
+        and type(plan.FACE.dx) == "number" and type(plan.FACE.dy) == "number" then
+        face = plan.FACE
+    end
+    return face, FromPlan("FaceSpots", GoodSpots) or SPOTS_DEFAULT, FromPlan("FaceStates", GoodStates) or STATES_DEFAULT
 end
 
 local function IsRect(r)
@@ -428,13 +516,9 @@ end
 
 -- The four real bars' rectangles: ControllerLayout.lua's, when it has them.
 local function RealBars()
-    local plan = PE.LayoutPlan
-    local fn = type(plan) == "table" and plan.RealBarRects
-    if type(fn) == "function" then
-        local ok, r = pcall(fn)
-        if ok and type(r) == "table" and IsRect(r.main) and IsRect(r.lt) and IsRect(r.rt) and IsRect(r.both) then return r end
-    end
-    return REAL_DEFAULT
+    return FromPlan("RealBarRects", function(r)
+        return type(r) == "table" and IsRect(r.main) and IsRect(r.lt) and IsRect(r.rt) and IsRect(r.both)
+    end) or REAL_DEFAULT
 end
 
 local function Grow(box, l, b, r, t)
@@ -442,18 +526,14 @@ local function Grow(box, l, b, r, t)
 end
 
 -- The two frames under the pictures, { left, bottom, right, top } each from the
--- screen's bottom centre: [1] the left grid (every d-pad diamond) and the real bars
--- left of the centre, [2] the right grid and the real bars right of it, each grown by
+-- screen's bottom centre: [1] the inner-left diamond and the real bars left of the
+-- centre, [2] the inner-right diamond and the real bars right of it, each grown by
 -- the margin and cut at the player and target frames.
 local function BackingRects(face, spots)
     local boxes = { { huge, huge, -huge, -huge }, { huge, huge, -huge, -huge } }
     local hw, hh = face.dx + face.button / 2, face.dy + face.button / 2
-    for _, def in ipairs(GROUPS) do
-        local spot = spots[def.key] or SPOTS_DEFAULT[def.key]
-        for half = 0, 1 do
-            local c = (half == 0) and spot.dpad or spot.face
-            Grow(boxes[c.x < 0 and 1 or 2], c.x - hw, c.y - hh, c.x + hw, c.y + hh)
-        end
+    for side, c in ipairs({ spots.inner.left, spots.inner.right }) do
+        Grow(boxes[side], c.x - hw, c.y - hh, c.x + hw, c.y + hh)
     end
     for _, r in pairs(RealBars()) do
         Grow(boxes[(r[1] + r[3]) < 0 and 1 or 2], r[1], r[2], r[3], r[4])
@@ -467,7 +547,8 @@ end
 
 local OnEvent -- below
 
--- Makes every frame, once. Returns true, or false and the reason.
+-- Makes every frame, once. Returns true, or false and the reason. Every half starts
+-- hidden; the first Flush places the ones the state shows (ApplyState).
 local function Build()
     holder = CreateFrame("Frame", nil, UIParent)
     holder:SetAllPoints(UIParent)
@@ -475,7 +556,12 @@ local function Build()
     holder:Hide()
     driver = CreateFrame("Frame")
     driver:SetScript("OnEvent", Guard(function(_, event) OnEvent(event) end))
-    local face, spots = FaceNumbers()
+    local face, spots
+    face, spots, states = FaceNumbers()
+    for name, key in pairs(SPOT_KEYS) do
+        local c = spots[key[1]][key[2]]
+        centres[name] = { x = c.x, y = c.y }
+    end
     -- Under the pictures (the same strata, a lower level): takes a tap, draws nothing,
     -- has no script.
     for side, r in ipairs(BackingRects(face, spots)) do
@@ -487,22 +573,24 @@ local function Build()
         f:EnableMouse(true)
         backings[side] = f
     end
+    local w, h = 2 * face.dx + face.button, 2 * face.dy + face.button
     for gi, def in ipairs(GROUPS) do
-        local gf = CreateFrame("Frame", nil, holder)
-        gf:SetAllPoints(holder)
-        gf:SetFrameLevel(holder:GetFrameLevel() + 2) -- the pictures above the frames that take a tap
-        local g = { def = def, frame = gf, pics = {}, tags = {} }
-        local spot = spots[def.key] or SPOTS_DEFAULT[def.key]
-        for half = 0, 1 do
-            local centre = (half == 0) and spot.dpad or spot.face
+        local g = { def = def, halves = {}, pics = {}, tags = {} }
+        for half = 1, 2 do
+            local hf = CreateFrame("Frame", nil, holder)
+            hf:SetSize(w, h)
+            hf:SetPoint("CENTER", UIParent, "BOTTOM", centres.innerLeft.x, centres.innerLeft.y)
+            hf:SetFrameLevel(holder:GetFrameLevel() + 2) -- the pictures above the frames that take a tap
+            hf:Hide()
+            g.halves[half] = hf
             for q, step in ipairs(SPOT_STEPS) do
-                local pic = MakePicture(gf, centre.x + step[1] * face.dx, centre.y + step[2] * face.dy, face.button, q, half == 0)
+                local pic = MakePicture(hf, step[1] * face.dx, step[2] * face.dy, face.button, q, half == 1)
                 if not pic then return false, TEXT_NO_COOLDOWN end
-                g.pics[half * 4 + q] = pic
+                g.pics[(half - 1) * 4 + q] = pic
             end
             if def.tag then
-                local tag = SmallText(gf, 8)
-                tag:SetPoint("CENTER", UIParent, "BOTTOM", centre.x, centre.y)
+                local tag = SmallText(hf, Scaled(8, face.button))
+                tag:SetPoint("CENTER", hf, "CENTER", 0, 0)
                 tag:SetText(def.tag)
                 g.tags[#g.tags + 1] = tag
             end
@@ -716,9 +804,26 @@ local function RefreshCooldown(pic)
     pic.dim:SetShown(pic.dimOn == true)
 end
 
-local function ApplyGroupAlpha()
-    for i, g in ipairs(groups) do
-        g.frame:SetAlpha((activeGroup == nil or activeGroup == i) and 1 or QUIET_ALPHA)
+-- Places the halves for the trigger held now (Plan.FaceStates; no active bar known is
+-- the "nothing held" state): each listed half to its spot, at full strength or quiet,
+-- shown; every other half hidden. Plain calls on our own frames, fine in a fight.
+local function ApplyState()
+    local list = states and states[activeGroup and GROUPS[activeGroup].state or "rest"] or {}
+    local want = {}
+    for _, e in ipairs(list) do want[(GROUP_INDEX[e.group] - 1) * 2 + HALF_INDEX[e.half]] = e end
+    for gi, g in ipairs(groups) do
+        for half, f in ipairs(g.halves) do
+            local e = want[(gi - 1) * 2 + half]
+            local c = e and centres[e.spot]
+            if c then
+                f:ClearAllPoints()
+                f:SetPoint("CENTER", UIParent, "BOTTOM", c.x, c.y)
+                f:SetAlpha(e.quiet and QUIET_ALPHA or 1)
+                f:Show()
+            else
+                f:Hide()
+            end
+        end
     end
 end
 
@@ -837,8 +942,8 @@ local function Rebind()
     HookOverrides()
 end
 
--- Which group the game's active bar belongs to; a change re-binds and sets the
--- groups' strength. Called on every trigger check, so nothing happens without a change.
+-- Which group the game's active bar belongs to; a change re-binds and swaps the
+-- halves shown. Called on every trigger check, so nothing happens without a change.
 local function ReadActive()
     local bar = false
     if pageUnit and type(pageUnit.GetActiveBar) == "function" then
@@ -850,7 +955,7 @@ local function ReadActive()
     local group = callbackSet and bar and GroupOfBar(bar) or nil
     if group ~= activeGroup then
         activeGroup = group
-        alphaDirty = true
+        swapDirty = true
     end
     bindDirty = true
     return true
@@ -890,9 +995,9 @@ Flush = function()
             for _, pic in ipairs(g.pics) do RefreshChecked(pic) end
         end
     end
-    if alphaDirty then
-        alphaDirty = false
-        ApplyGroupAlpha()
+    if swapDirty then
+        swapDirty = false
+        ApplyState()
     end
 end
 OnUpdate = Guard(function() Flush() end)
@@ -1008,7 +1113,7 @@ StopNow = function()
         driver:UnregisterAllEvents()
     end
     pending = false
-    bindDirty, picsDirty, stateDirty, cooldownDirty, alphaDirty = false, false, false, false, false
+    bindDirty, picsDirty, stateDirty, cooldownDirty, swapDirty = false, false, false, false, false
     if holder then holder:Hide() end
     for b in pairs(buttonPic) do buttonPic[b] = nil end
     for _, g in ipairs(groups) do
@@ -1066,7 +1171,7 @@ local function StartNow()
     for _, event in ipairs(EVENTS) do pcall(driver.RegisterEvent, driver, event) end
     lastActive, activeGroup = nil, nil
     ReadActive()
-    bindDirty, alphaDirty = true, true
+    bindDirty, swapDirty = true, true
     MarkAll()
     -- The pictures are right before the real bars go invisible; while the game hides
     -- its bars they wait (drawn when the bars come back).
@@ -1075,7 +1180,7 @@ local function StartNow()
     holder:SetShown(not barsHidden)
     faded = true
     SetAnchorsAlpha(0)
-    Note("on" .. (callbackSet and "" or " (no active-bar callback: every bar at full strength)"))
+    Note("on" .. (callbackSet and "" or " (no active-bar callback: the main bar only)"))
     return true
 end
 

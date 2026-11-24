@@ -1,8 +1,10 @@
--- Rules for the face pictures of Controller layout 0.13.0 (FaceBars.lua).
+-- Rules for the face pictures of Controller layout 0.13.0 and 0.14.0 (FaceBars.lua).
 -- Source: docs/superpowers/specs/2026-11-23-controller-layout-0.13.0-face-bars.md
 -- ("The face", "The real bars", "When the face cannot work", "Layers and taps",
--- "Tests") and the plan's contract (PE.FaceBars:Start / Stop / Status). Fresh client
--- and addon per test; PE.FaceBars is started directly (ControllerLayout calls it in the game).
+-- "Tests"), the plan's contract (PE.FaceBars:Start / Stop / Status), and
+-- docs/superpowers/specs/2026-11-23-controller-layout-0.14.0-console.md (one panel a
+-- side, the triggers swap it; picture 42). Fresh client and addon per test;
+-- PE.FaceBars is started directly (ControllerLayout calls it in the game).
 local T = ...
 local test, eq, check = T.test, T.eq, T.check
 
@@ -39,6 +41,9 @@ local function pu(c) return c.env.GamepadMainActionBarFrame.PageUnit end
 local function anchor(c, key) return pu(c)[key] end
 local function alphaOf(c, f) return c._state(f).alpha end
 local function pic(Face, g, n) return Face.view[g].pics[n] end
+local function half(Face, g, h) return Face.view[g].halves[h] end
+-- The frame every half, and the frames that take a tap, sit in.
+local function holderOf(c, Face) return c._state(half(Face, 1, 1)).parent end
 local function st(c, region) return c._state(region) end
 local function shown(c, region) return st(c, region).shown == true end
 
@@ -67,6 +72,40 @@ local function hookCount(c)
     return #c:callsTo("hooksecurefunc")
 end
 
+-- The spec's four spots and states (0.14.0, "The new arrangement").
+local SPOT_XY = { innerLeft = { -170, 66 }, outerLeft = { -316, 66 }, innerRight = { 170, 66 }, outerRight = { 316, 66 } }
+local GROUP_N = { main = 1, lt = 2, rt = 3, both = 4 }
+local HALF_N = { dpad = 1, face = 2 }
+local REST = { { "main", "dpad", "innerLeft" }, { "main", "face", "innerRight" } }
+local LT = { { "lt", "dpad", "outerLeft" }, { "lt", "face", "innerLeft" }, { "main", "face", "innerRight", true } }
+local RT = { { "main", "dpad", "innerLeft", true }, { "rt", "dpad", "innerRight" }, { "rt", "face", "outerRight" } }
+local BOTH = { { "both", "dpad", "innerLeft" }, { "both", "face", "innerRight" } }
+
+-- Every half against a state: the listed ones shown, CENTER on the screen's bottom at
+-- their spot, quiet (true) at 0.3 or else 1; every other half hidden.
+local function checkState(c, Face, want, what)
+    local wanted = {}
+    for _, w in ipairs(want) do wanted[GROUP_N[w[1]] * 10 + HALF_N[w[2]]] = w end
+    for g = 1, 4 do
+        for h = 1, 2 do
+            local f = half(Face, g, h)
+            local w = wanted[g * 10 + h]
+            local label = what .. ": group " .. g .. " half " .. h
+            if w then
+                eq(f:IsShown(), true, label .. " shown")
+                eq(f:GetNumPoints(), 1, label .. " points")
+                local point, rel, relPoint, x, y = f:GetPoint(1)
+                eq({ point, rel == c.UIParent, relPoint }, { "CENTER", true, "BOTTOM" }, label .. " anchor")
+                near(x, SPOT_XY[w[3]][1], label .. " x")
+                near(y, SPOT_XY[w[3]][2], label .. " y")
+                near(alphaOf(c, f), w[4] and 0.3 or 1, label .. " see-through")
+            else
+                eq(f:IsShown(), false, label .. " hidden")
+            end
+        end
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Off until started
 ---------------------------------------------------------------------------
@@ -86,26 +125,33 @@ end)
 -- The pictures
 ---------------------------------------------------------------------------
 
-test("face: Start builds 32 pictures at the contract's spots, then makes the four anchors invisible", function()
+test("face: Start builds 32 pictures, four per half, placed on their half's centre, then makes the four anchors invisible", function()
     local c, PE, Face = started()
     eq(Face:Status(), nil)
     eq(#Face.view, 4)
-    -- main dpad diamond at (-199, 39), face diamond at (199, 39); LT at y 113; RT at x 297; both at (297, 113).
-    local centres = { { -199, 39, 199, 39 }, { -199, 113, 199, 113 }, { -297, 39, 297, 39 }, { -297, 113, 297, 113 } }
-    local steps = { { -30, 0 }, { 0, 19 }, { 30, 0 }, { 0, -19 } }
+    -- Picture 42; a diamond's buttons 46 left / right and 28 up / down of its centre.
+    local steps = { { -46, 0 }, { 0, 28 }, { 46, 0 }, { 0, -28 } }
     for g = 1, 4 do
         eq(#Face.view[g].pics, 8, "group " .. g)
+        eq(#Face.view[g].halves, 2, "group " .. g .. " halves")
+        for h = 1, 2 do
+            near(half(Face, g, h):GetWidth(), 134, "half width")
+            near(half(Face, g, h):GetHeight(), 98, "half height")
+        end
         for n = 1, 8 do
             local p = pic(Face, g, n)
-            local half = n <= 4 and 0 or 1
+            local h = n <= 4 and 1 or 2
             local q = (n - 1) % 4 + 1
+            eq(st(c, p.frame).parent, half(Face, g, h), "group " .. g .. " picture " .. n .. " in its half")
             local point, rel, relPoint, x, y = p.frame:GetPoint(1)
-            eq({ point, rel == c.UIParent, relPoint }, { "CENTER", true, "BOTTOM" }, "group " .. g .. " picture " .. n)
-            near(x, centres[g][half * 2 + 1] + steps[q][1], "x of " .. g .. "/" .. n)
-            near(y, centres[g][half * 2 + 2] + steps[q][2], "y of " .. g .. "/" .. n)
-            near(p.frame:GetWidth(), 28)
+            eq({ point, rel == half(Face, g, h), relPoint }, { "CENTER", true, "CENTER" }, "group " .. g .. " picture " .. n)
+            near(x, steps[q][1], "x of " .. g .. "/" .. n)
+            near(y, steps[q][2], "y of " .. g .. "/" .. n)
+            near(p.frame:GetWidth(), 42)
         end
     end
+    -- At rest: only the main bar, d-pad inner-left and face inner-right.
+    checkState(c, Face, REST, "rest")
     for _, key in ipairs(ANCHORS) do eq(alphaOf(c, anchor(c, key)), 0, key .. " see-through") end
     eq(onUpdates(c), 0, "no OnUpdate left after Start")
     c:assertClean()
@@ -119,14 +165,23 @@ test("face: the trigger tags sit in each diamond's centre, none on the main bar"
         eq(#Face.view[g].tags, 2, "group " .. g)
         for _, tag in ipairs(Face.view[g].tags) do eq(tag:GetText(), want[g]) end
     end
-    local _, _, _, x, y = Face.view[4].tags[2]:GetPoint(1)
-    eq({ x, y }, { 297, 113 })
+    local point, rel, relPoint, x, y = Face.view[4].tags[2]:GetPoint(1)
+    eq({ point, rel == half(Face, 4, 2), relPoint, x, y }, { "CENTER", true, "CENTER", 0, 0 })
+end)
+
+test("face: the glyph, range dot and count grow with the picture (drawn for 28, now 42)", function()
+    local c, PE, Face = started()
+    local p = pic(Face, 2, 1)
+    near(p.range:GetWidth(), 6, "range dot")
+    local _, size = p.count:GetFont()
+    eq(size, 14, "count font")
+    local _, tagSize = Face.view[2].tags[1]:GetFont()
+    eq(tagSize, 12, "tag font")
 end)
 
 test("face: strata MEDIUM, between the bars (LOW) and the wheels (DIALOG)", function()
     local c, PE, Face = started()
-    local holder = c._state(Face.view[1].frame).parent
-    eq(holder:GetFrameStrata(), "MEDIUM")
+    eq(holderOf(c, Face):GetFrameStrata(), "MEDIUM")
 end)
 
 test("face: taps are taken and do nothing (mouse on, no click handler)", function()
@@ -307,52 +362,74 @@ test("face: a targeting bar held in the top anchor is mirrored by the main group
     c:showOverrideBar("friendlyTargetingBar", "TopCenteredAnchor")
     c:advance(0.1)
     eq(pic(Face, 1, 2).button, friendly:GetActionButtonByIndex(2))
-    eq(alphaOf(c, Face.view[1].frame), 1)
-    eq(alphaOf(c, Face.view[2].frame), 0.5)
+    checkState(c, Face, REST, "targeting bar")
     c:hideOverrideBar("friendlyTargetingBar")
     c:advance(0.1)
     eq(pic(Face, 1, 2).button, c.barButtons.TopCenteredAnchor[2])
 end)
 
-test("face: the active bar at full strength, the others at 50%, following the game's callback", function()
+test("face: the triggers swap the halves: rest, LT, RT, both, rest", function()
     local c, PE, Face = started()
-    local function alphas() local t = {} for g = 1, 4 do t[g] = alphaOf(c, Face.view[g].frame) end return t end
-    eq(alphas(), { 1, 0.5, 0.5, 0.5 })
+    checkState(c, Face, REST, "rest")
     c:pressTriggers(true, false)
+    checkState(c, Face, REST, "LT, before the next frame")
     c:advance(0.1)
-    eq(alphas(), { 0.5, 1, 0.5, 0.5 }, "LT")
+    checkState(c, Face, LT, "LT")
     c:pressTriggers(false, true)
     c:advance(0.1)
-    eq(alphas(), { 0.5, 0.5, 1, 0.5 }, "RT")
+    checkState(c, Face, RT, "RT")
     c:pressTriggers(true, true)
     c:advance(0.1)
-    eq(alphas(), { 0.5, 0.5, 0.5, 1 }, "LT+RT")
+    checkState(c, Face, BOTH, "LT+RT")
     -- The game calls back on every trigger check: no change, no work.
     c:pressTriggers(true, true)
     eq(onUpdates(c), 0, "an unchanged bar asks for nothing")
     c:pressTriggers(false, false)
     c:advance(0.1)
-    eq(alphas(), { 1, 0.5, 0.5, 0.5 })
+    checkState(c, Face, REST, "released")
+    -- The pictures follow their own bar wherever its half is drawn.
+    c:pressTriggers(true, false)
+    c:advance(0.1)
+    eq(pic(Face, 2, 1).button, c.barButtons.LeftCenteredAnchor[1])
+    eq(pic(Face, 2, 5).button, c.barButtons.LeftCenteredAnchor[5])
     c:assertClean()
 end)
 
-test("face: without the active-bar callback every bar stays at full strength", function()
+test("face: the swap works in a fight and changes no frame of the game's", function()
+    local c, PE, Face = started()
+    c:enterCombat()
+    eq(c.env.InCombatLockdown(), true)
+    local from = #c.calls
+    for _, step in ipairs({ { true, false, LT, "LT" }, { false, true, RT, "RT" }, { true, true, BOTH, "LT+RT" }, { false, false, REST, "rest" } }) do
+        c:pressTriggers(step[1], step[2])
+        c:advance(0.1)
+        checkState(c, Face, step[3], "in a fight, " .. step[4])
+    end
+    for i = from + 1, #c.calls do
+        local name = c.calls[i].name
+        check(not (name:match("^GamepadBar%.") and (name:match(":Set") or name:match(":Clear"))), "a game bar frame was changed in a fight: " .. name)
+    end
+    eq(#c.blocked, 0, "a blocked action")
+    c:assertClean()
+end)
+
+test("face: without the active-bar callback the main bar shows (the nothing-held state)", function()
     local c, PE, Face = started({ setup = function(cl)
         rawset(cl.env.GamepadMainActionBarFrame.PageUnit, "RegisterActiveActionBarUpdatedCallback", nil)
     end })
-    for g = 1, 4 do eq(alphaOf(c, Face.view[g].frame), 1, "group " .. g) end
+    checkState(c, Face, REST, "no callback")
     c:assertClean()
 end)
 
-test("face: GetActiveBar raising or missing: every bar at full strength, no error", function()
+test("face: GetActiveBar raising or missing: the main bar shows, no error", function()
     local c, PE, Face = started({ setup = function(cl) cl.world.activeBarError = true end })
-    for g = 1, 4 do eq(alphaOf(c, Face.view[g].frame), 1) end
+    checkState(c, Face, REST, "raising")
     c:pressTriggers(true, false)
     c:advance(0.1)
-    for g = 1, 4 do eq(alphaOf(c, Face.view[g].frame), 1) end
+    checkState(c, Face, REST, "raising, LT held")
     c:assertClean()
     local c2, PE2, Face2 = started({ setup = function(cl) rawset(cl.env.GamepadMainActionBarFrame.PageUnit, "GetActiveBar", nil) end })
-    for g = 1, 4 do eq(alphaOf(c2, Face2.view[g].frame), 1) end
+    checkState(c2, Face2, REST, "missing")
     c2:assertClean()
 end)
 
@@ -369,7 +446,7 @@ end)
 
 test("face: hidden while the game hides its bars (binding editor, Gamepad UI off)", function()
     local c, PE, Face = started()
-    local holder = c._state(Face.view[1].frame).parent
+    local holder = holderOf(c, Face)
     eq(holder:IsShown(), true)
     c.env.GamepadMainActionBarFrame:Hide()
     eq(holder:IsShown(), false)
@@ -381,7 +458,7 @@ end)
 test("face: started while the game's bars are hidden, the pictures wait for them", function()
     local c, PE, Face = new({ setup = function(cl) cl.env.GamepadMainActionBarFrame:Hide() end })
     eq(Face:Start(), true)
-    local holder = c._state(Face.view[1].frame).parent
+    local holder = holderOf(c, Face)
     eq(holder:IsShown(), false)
     c.env.GamepadMainActionBarFrame:Show()
     eq(holder:IsShown(), true)
@@ -405,7 +482,7 @@ test("face: Stop puts the bars back, hides the pictures, drops the events, and t
     c:fire("SPELL_UPDATE_COOLDOWN") -- an update waiting
     Face:Stop()
     for _, key in ipairs(ANCHORS) do eq(alphaOf(c, anchor(c, key)), 1, key) end
-    local holder = c._state(Face.view[1].frame).parent
+    local holder = holderOf(c, Face)
     eq(holder:IsShown(), false)
     eq(onUpdates(c), 0, "the waiting update was dropped")
     for _, rec in ipairs(faceFrames(c)) do eq(next(rec.events), nil, "events left on a frame") end
@@ -525,7 +602,7 @@ test("face: after 3 errors the pictures turn off, the bars come back, one chat l
     c:advance(0.1)
     eq(Face:Status(), TEXT_ERROR)
     for _, key in ipairs(ANCHORS) do eq(alphaOf(c, anchor(c, key)), 1, key) end
-    eq(c._state(Face.view[1].frame).parent:IsShown(), false)
+    eq(holderOf(c, Face):IsShown(), false)
     local lines = 0
     for _, line in ipairs(T.chatLines(c)) do if line == CHAT_ERROR then lines = lines + 1 end end
     eq(lines, 1)
@@ -640,15 +717,44 @@ test("face: the contract's numbers come from PE.LayoutPlan when it has them", fu
     local plan = PE.LayoutPlan
     rawset(plan, "FACE", { button = 20, dx = 25, dy = 15 })
     rawset(plan, "FaceSpots", function() return {
-        main = { dpad = { x = -100, y = 50 }, face = { x = 100, y = 50 } },
-        lt = { dpad = { x = -100, y = 120 }, face = { x = 100, y = 120 } },
-        rt = { dpad = { x = -200, y = 50 }, face = { x = 200, y = 50 } },
-        both = { dpad = { x = -200, y = 120 }, face = { x = 200, y = 120 } },
+        inner = { left = { x = -100, y = 50 }, right = { x = 100, y = 50 } },
+        outer = { left = { x = -200, y = 50 }, right = { x = 200, y = 50 } },
+    } end)
+    rawset(plan, "FaceStates", function() return {
+        rest = { { group = "rt", half = "face", spot = "outerLeft", quiet = true } },
+        lt = {}, rt = {}, both = {},
     } end)
     eq(Face:Start(), true)
     local _, _, _, x, y = pic(Face, 1, 1).frame:GetPoint(1)
-    eq({ x, y }, { -125, 50 })
+    eq({ x, y }, { -25, 0 })
     near(pic(Face, 1, 1).frame:GetWidth(), 20)
+    local f = half(Face, 3, 2)
+    eq(f:IsShown(), true)
+    local _, _, _, hx, hy = f:GetPoint(1)
+    eq({ hx, hy }, { -200, 50 })
+    near(alphaOf(c, f), 0.3)
+    eq(half(Face, 1, 1):IsShown(), false)
+    c:assertClean()
+end)
+
+test("face: an unusable FaceStates or FaceSpots answer falls back to the built-in copies", function()
+    for _, case in ipairs({
+        { what = "states missing", set = function(plan) rawset(plan, "FaceStates", nil) end },
+        { what = "states with an unknown spot", set = function(plan) rawset(plan, "FaceStates", function()
+            return { rest = { { group = "main", half = "dpad", spot = "middle" } }, lt = {}, rt = {}, both = {} } end) end },
+        { what = "states raising", set = function(plan) rawset(plan, "FaceStates", function() error("no") end) end },
+        { what = "spots with the old 0.13.0 shape", set = function(plan) rawset(plan, "FaceSpots", function()
+            return { main = { dpad = { x = -199, y = 39 }, face = { x = 199, y = 39 } } } end) end },
+    }) do
+        local c, PE, Face = new()
+        case.set(PE.LayoutPlan)
+        eq(Face:Start(), true, case.what)
+        checkState(c, Face, REST, case.what)
+        c:pressTriggers(false, true)
+        c:advance(0.1)
+        checkState(c, Face, RT, case.what .. ", RT")
+        c:assertClean(case.what)
+    end
 end)
 
 ---------------------------------------------------------------------------
@@ -675,17 +781,17 @@ end
 -- Every rectangle of the game's that takes a tap under the face, worked out from
 -- Blizzard's numbers rather than ours: each real bar (208 by 68, enableMouse,
 -- Blizzard_GamepadActionBars/ActionBarTemplates.xml:606-699; ActionBarStyles.lua:172)
--- at 90%, centred at x -248 (main, LT) and +248 (RT, LT+RT) on the rows 39 and 113, and
--- its eight buttons where the collapsed style puts them (ActionBarStyles.lua:158-195:
--- the d-pad group square, 32; the face group round, 30).
+-- at 60%, centred at x -170 (main, LT) and +170 (RT, LT+RT), 87 (main, RT) and 45 (LT,
+-- LT+RT) up, and its eight buttons where the collapsed style puts them
+-- (ActionBarStyles.lua:158-195: the d-pad group square, 32; the face group round, 30).
 local function realTapRects()
     local out = {}
-    local s = 0.9
+    local s = 0.6
     local buttons = {
         { -92, 0, 32 }, { -58, 17, 32 }, { -24, 0, 32 }, { -58, -17, 32 },
         { 25, 0, 30 }, { 55, 18, 30 }, { 85, 0, 30 }, { 55, -18, 30 },
     }
-    for _, bar in ipairs({ { "main", -248, 39 }, { "LT", -248, 113 }, { "RT", 248, 39 }, { "LT+RT", 248, 113 } }) do
+    for _, bar in ipairs({ { "main", -170, 87 }, { "LT", -170, 45 }, { "RT", 170, 87 }, { "LT+RT", 170, 45 } }) do
         local cx, cy = bar[2], bar[3]
         out[#out + 1] = { name = bar[1] .. " bar", r = { cx - 104 * s, cy - 34 * s, cx + 104 * s, cy + 34 * s } }
         for i, b in ipairs(buttons) do
@@ -698,22 +804,26 @@ end
 
 -- The pieces the frames under the pictures must leave alone: the map, the two
 -- sub-menu buttons (138 either side, 188 up, about 19 round), the LB / RB targeting
--- pictures (108 to 144 either side, 84 to 116 up) and the player and target frames
--- (from 345 either side outwards).
+-- pictures (76 to 112 either side, 128 to 160 up), the outer diamonds (249 to 383
+-- either side, 17 to 115 up: their pictures take a tap themselves) and the player
+-- and target frames (from 395 either side outwards).
 local KEEP_CLEAR = {
     { name = "LB+LT button", r = { -138 - 19, 188 - 19, -138 + 19, 188 + 19 } },
     { name = "RB+RT button", r = { 138 - 19, 188 - 19, 138 + 19, 188 + 19 } },
-    { name = "LB targeting picture", r = { -144, 84, -108, 116 } },
-    { name = "RB targeting picture", r = { 108, 84, 144, 116 } },
-    { name = "player frame", r = { -345 - 232, 56, -345, 156 } },
-    { name = "target frame", r = { 345, 56, 345 + 232, 156 } },
+    { name = "LB targeting picture", r = { -112, 128, -76, 160 } },
+    { name = "RB targeting picture", r = { 76, 128, 112, 160 } },
+    { name = "outer left diamond", r = { -383, 17, -249, 115 } },
+    { name = "outer right diamond", r = { 249, 17, 383, 115 } },
+    { name = "player frame", r = { -395 - 232, 56, -395, 156 } },
+    { name = "target frame", r = { 395, 56, 395 + 232, 156 } },
 }
 
 local function checkBacking(c, PE, Face, what)
     eq(#Face.backing, 2, what .. ": two frames, one per side")
-    local holder = c._state(Face.view[1].frame).parent
+    local holder = holderOf(c, Face)
     local lowestPicture = math.huge
     for g = 1, 4 do
+        for h = 1, 2 do lowestPicture = math.min(lowestPicture, half(Face, g, h):GetFrameLevel()) end
         for n = 1, 8 do lowestPicture = math.min(lowestPicture, pic(Face, g, n).frame:GetFrameLevel()) end
     end
     local rects = {}
@@ -728,17 +838,15 @@ local function checkBacking(c, PE, Face, what)
         check(f:IsVisible(), what .. ": shown with the pictures")
         rects[side] = rectOf(f)
     end
-    -- The d-pad's left button on the main and LT bars pokes 0.2 past -345 (-248 - 92 * 0.9
-    -- - 16 * 0.9 = -345.2), into the player frame's box, where our frames stop: under a
-    -- fifth of a pixel at 720p. Only the part inside 345 either side is checked.
+    -- Every real bar and button, whole (the d-pad's left button pokes 4.8 past its bar,
+    -- -170 - 108 * 0.6 = -234.8, still inside the inner diamond's -237).
     for _, t in ipairs(realTapRects()) do
-        local r = { math.max(t.r[1], -345), t.r[2], math.min(t.r[3], 345), t.r[4] }
-        check(inside(r, rects[1]) or inside(r, rects[2]), what .. ": " .. t.name .. " is not under a frame of ours that takes a tap")
+        check(inside(t.r, rects[1]) or inside(t.r, rects[2]), what .. ": " .. t.name .. " is not under a frame of ours that takes a tap")
     end
     local clear = {}
     for _, k in ipairs(KEEP_CLEAR) do clear[#clear + 1] = k end
     for name, r in pairs(PE.LayoutPlan.Rects()) do
-        if not name:find(" dpad$") and not name:find(" face$") then clear[#clear + 1] = { name = name, r = r } end
+        if name ~= "inner left diamond" and name ~= "inner right diamond" then clear[#clear + 1] = { name = name, r = r } end
     end
     for side, r in ipairs(rects) do
         for _, k in ipairs(clear) do
@@ -748,21 +856,33 @@ local function checkBacking(c, PE, Face, what)
     return rects
 end
 
-test("face: a tap between the pictures never reaches a hidden button; the frames under them clear the map, sub-menus, targeting pictures and unit frames", function()
+test("face: a tap between the pictures never reaches a hidden button; the frames under them clear the map, sub-menus, targeting pictures, outer diamonds and unit frames", function()
     local c, PE, Face = started()
     local rects = checkBacking(c, PE, Face, "with the layout's numbers")
-    -- The left grid and the main and LT bars, 4 more each way, cut at the player frame; the right side its mirror.
-    for i, want in ipairs({ -345, 2, -150.4, 150 }) do near(rects[1][i], want, "left " .. i) end
-    for i, want in ipairs({ 150.4, 2, 345, 150 }) do near(rects[2][i], want, "right " .. i) end
+    -- The inner diamond (with the main and LT bars under it), 4 more each way; the right side its mirror.
+    for i, want in ipairs({ -241, 13, -99, 119 }) do near(rects[1][i], want, "left " .. i) end
+    for i, want in ipairs({ 99, 13, 241, 119 }) do near(rects[2][i], want, "right " .. i) end
+    -- The frames under the pictures stay put whatever trigger is held.
+    for _, held in ipairs({ { true, false }, { false, true }, { true, true } }) do
+        c:pressTriggers(held[1], held[2])
+        c:advance(0.1)
+        for side = 1, 2 do for i = 1, 4 do near(rectOf(Face.backing[side])[i], rects[side][i], "held " .. side .. "/" .. i) end end
+    end
     c:assertClean()
-    -- Without ControllerLayout's numbers the fallback gives the same frames.
+    -- Without ControllerLayout's numbers the fallback gives the same frames and states.
     local c2, PE2, Face2 = new()
     rawset(PE2.LayoutPlan, "RealBarRects", nil)
     rawset(PE2.LayoutPlan, "FaceSpots", nil)
+    rawset(PE2.LayoutPlan, "FaceStates", nil)
     rawset(PE2.LayoutPlan, "FACE", nil)
     eq(Face2:Start(), true)
     local rects2 = checkBacking(c2, PE2, Face2, "with the fallback numbers")
     for side = 1, 2 do for i = 1, 4 do near(rects2[side][i], rects[side][i], "fallback " .. side .. "/" .. i) end end
+    checkState(c2, Face2, REST, "fallback rest")
+    c2:pressTriggers(true, false)
+    c2:advance(0.1)
+    checkState(c2, Face2, LT, "fallback LT")
+    for _, n in ipairs({ 1, 8 }) do near(pic(Face2, 1, n).frame:GetWidth(), 42, "fallback picture size") end
     c2:assertClean()
 end)
 
@@ -957,7 +1077,7 @@ test("face: while the game hides its bars nothing is drawn; all is drawn again w
     eq(st(c, p1.cd).cooldown.duration, 4)
     eq(shown(c, p1.dim), true)
     eq(shown(c, p2.dim), false)
-    eq(alphaOf(c, Face.view[2].frame), 1, "LT active")
+    checkState(c, Face, LT, "LT active")
     eq(onUpdates(c), 0)
     c:assertClean()
 end)
@@ -966,7 +1086,7 @@ test("face: started while the whole interface is hidden, the pictures wait for i
     local c, PE, Face = new()
     c.UIParent:Hide()
     eq(Face:Start(), true)
-    local holder = c._state(Face.view[1].frame).parent
+    local holder = holderOf(c, Face)
     eq(holder:IsShown(), false)
     c.UIParent:Show()
     eq(holder:IsShown(), true)

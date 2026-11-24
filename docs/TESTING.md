@@ -1677,3 +1677,44 @@ Things to watch for (found in review, not fixed yet):
 
 To go back to your own layout: Controller tab, switch Off, **Reload now**
 (the hint box comes back too).
+
+### 28. Version 0.14.0: one panel a side, the triggers swap it
+
+**What this is for.** In 0.13.0 eight small diamonds were on screen at once
+and it was hard to see which ones a trigger lit. Now only two bigger
+diamonds sit beside the map, and holding a trigger swaps what they show.
+Spec `docs/superpowers/specs/2026-11-23-controller-layout-0.14.0-console.md`.
+Download: the GitHub pre-release **v0.14.0** (both zips; Pocket Probe is
+unchanged, you don't need it).
+
+1. In `AddOns`, delete the old `PocketEssentials` folder (keep `QuestieDB`)
+   and unzip the new one. Fully restart the game and log into your main.
+   A chat line says the controller layout was updated: open the settings and
+   tap **Reload now**.
+2. With Controller layout on, take a screenshot. You should see only two
+   diamonds beside the map, bigger than before: your main bar's d-pad
+   spells on the left, its face-button spells on the right. Your frame and
+   your target's sit further out, past where the outer diamonds will open.
+3. Hold LT: the left side opens into two diamonds (LT d-pad on the outside,
+   LT face buttons next to the map); the right side dims. Screenshot.
+4. Hold RT: the right side opens into two (RT d-pad next to the map, RT face
+   buttons on the outside); the left side dims. Screenshot.
+5. Hold both: the two diamonds next to the map show the LT+RT bar. Let go:
+   back to the main bar.
+6. Out of a fight, cast from each state (nothing, LT, RT, both). Does the
+   spell that casts match the picture lit at that spot?
+7. Fight a few mobs and do the same. Any "Interface action blocked" or
+   "failed because of an AddOn"? Do your frame, your target's frame, its
+   cast bar or its buffs ever sit on top of the pictures?
+8. Settings, tab **Errors**: screenshot it. Send me
+   `SavedVariables/PocketEssentials.lua` and the screenshots.
+
+Things to watch for (known, not fixed yet):
+- A wheel or the "new spell" picture opened from a spell button appears
+  where the game's hidden button is: under the diamond next to the map,
+  which is not always where that spell's picture is drawn (LT's d-pad and
+  RT's face buttons are drawn on the outside).
+- The game's page number shows near the left pictures while you hold the
+  page button.
+
+To go back to your own layout: Controller tab, switch Off, **Reload now**.
