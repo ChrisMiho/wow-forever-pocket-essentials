@@ -53,7 +53,7 @@ end
 -- Once full, the oldest line is at `next`.
 ---------------------------------------------------------------------------
 
-local DEBUG_CAP = 10000
+local DEBUG_CAP = 3000
 local DEBUG_LINE_MAX = 200
 PE.DEBUG_CAP = DEBUG_CAP
 PE.debugOn = false
@@ -161,9 +161,10 @@ local function DebugHeader()
         return math.floor(UIParent:GetWidth() + 0.5) .. "x" .. math.floor(UIParent:GetHeight() + 0.5)
             .. " scale " .. string.format("%.2f", UIParent:GetEffectiveScale())
     end)
+    -- The features running now: one saved on that stood aside or failed to start is not listed.
     local on = {}
     for _, mod in ipairs(PE.moduleList) do
-        if PE.db and PE.db.enabled[mod.key] == true then on[#on + 1] = mod.key end
+        if PE:IsModuleEnabled(mod.key) then on[#on + 1] = mod.key end
     end
     parts[#parts + 1] = "features=" .. (#on > 0 and table.concat(on, ",") or "none")
     return table.concat(parts, " ")
@@ -171,11 +172,30 @@ end
 
 local DebugWatchFights -- set below, once the event frame exists
 
--- Called when the saved settings are loaded and at login.
+local SESSION_MARK = "---- session ---- "
+local headerSlot, headerLine -- this session's header, until the features have started
+
+-- Called at login, before any feature starts.
 local function DebugSessionStart()
     ResetDebugSession()
-    if not PE.debugOn then return end
-    PE:Debug("core", "---- session ---- " .. DebugHeader())
+    headerSlot, headerLine = nil, nil
+    if not PE.debugOn or not debugStore then return end
+    local slot = debugStore.next
+    PE:Debug("core", SESSION_MARK .. DebugHeader())
+    headerSlot, headerLine = slot, debugStore.lines[slot]
+end
+
+-- Called at login once the features saved on have started: the header gets
+-- the ones running, in its own slot, so it stays the first line of its session.
+local function DebugSessionFeatures()
+    local slot, line = headerSlot, headerLine
+    headerSlot, headerLine = nil, nil
+    if not (slot and debugStore and type(line) == "string" and debugStore.lines[slot] == line) then return end
+    local stamp = line:match("^(%S+) ")
+    if not stamp then return end
+    local text = stamp .. " core: " .. SESSION_MARK .. DebugHeader()
+    if #text > DEBUG_LINE_MAX then text = text:sub(1, DEBUG_LINE_MAX) end
+    debugStore.lines[slot] = text
 end
 
 function PE:SetDebug(on)
@@ -521,7 +541,10 @@ local function FlushCombatQueue()
     combatOrder, combatFns = {}, {}
     for i = 1, #order do
         local key = order[i]
+        -- A key can be listed twice (run at once between the lockdown ending and
+        -- this event, then queued again in a new fight): it runs once.
         local fn = fns[key]
+        fns[key] = nil
         if fn then
             if PE.debugOn and type(key) == "string" then PE:Debug("core", "fight over, running: " .. key) end
             xpcall(fn, ErrorHandlerFor(KeyOwner(key)))
@@ -734,11 +757,20 @@ local function InitDB()
         dbg = {}
         db.debug = dbg
     end
-    if type(dbg.lines) ~= "table" or #dbg.lines > DEBUG_CAP then dbg.lines = {} end
-    local nextSlot = dbg.next
-    if type(nextSlot) ~= "number" or nextSlot < 1 or nextSlot > DEBUG_CAP or nextSlot % 1 ~= 0
-            or nextSlot > #dbg.lines + 1 then
-        nextSlot = #dbg.lines % DEBUG_CAP + 1
+    if type(dbg.lines) ~= "table" then dbg.lines = {} end
+    local lines, nextSlot = dbg.lines, dbg.next
+    local valid = type(nextSlot) == "number" and nextSlot >= 1 and nextSlot % 1 == 0 and nextSlot <= #lines + 1
+    if #lines > DEBUG_CAP then
+        -- Saved with a larger cap (10,000 before 0.15.0): the newest lines are
+        -- kept, oldest first. The oldest is at `next` when the ring wrapped.
+        local n = #lines
+        local oldest = (valid and nextSlot <= n) and nextSlot or 1
+        local kept = {}
+        for age = n - DEBUG_CAP, n - 1 do kept[#kept + 1] = lines[(oldest - 1 + age) % n + 1] end
+        dbg.lines = kept
+        nextSlot = #kept % DEBUG_CAP + 1
+    elseif not valid or nextSlot > DEBUG_CAP then
+        nextSlot = #lines % DEBUG_CAP + 1
     end
     dbg.next = nextSlot
     dbg.on = dbg.on == true
@@ -1133,6 +1165,7 @@ local function Login()
     for _, mod in ipairs(list) do
         if PE.db.enabled[mod.key] == true then EnableModule(mod) end
     end
+    xpcall(DebugSessionFeatures, coreHandler)
 
     local fns = loginFns
     loginFns = {}
@@ -1423,7 +1456,7 @@ local function SlashCommand(msg)
         PE:SetDebug(msg == "debug on")
         PE:Print(PE.debugOn
             and "Debug log on. Play until the problem happens, then use Save on Settings > Debug log (or /reload)."
-            or "Debug log off. The lines so far are kept until you clear them.")
+            or "Debug log off. The lines so far are kept until you empty them.")
     elseif msg == "reset" then
         PE:SetUISetting("size", "medium")
         PE:SetUISetting("hubPos", "LEFT")

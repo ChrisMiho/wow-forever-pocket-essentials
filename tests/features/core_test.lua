@@ -281,6 +281,25 @@ test("core: PE:RunOutOfCombat defers while in combat and runs once after PLAYER_
     c:assertClean("combat queue")
 end)
 
+-- Spec 0.15.0 A2: a job queued twice under one key runs once. The lockdown can end
+-- before PLAYER_REGEN_ENABLED, so a call in between runs at once while its key is
+-- still in the queue's order; a second fight then lists that key again.
+test("core: PE:RunOutOfCombat runs a key once even when it was listed twice", function()
+    local c, PE = T.new({})
+    local ran = {}
+    c:enterCombat()
+    PE:RunOutOfCombat("probe:job", function() ran[#ran + 1] = "first" end)
+    c.world.inCombat = false                  -- the lockdown is over, the event has not come yet
+    PE:RunOutOfCombat("probe:job", function() ran[#ran + 1] = "now" end)
+    eq(ran, { "now" })
+    c.world.inCombat = true                   -- a new fight before the event
+    PE:RunOutOfCombat("probe:job", function() ran[#ran + 1] = "after" end)
+    c:leaveCombat()
+    c:advance(2)
+    eq(ran, { "now", "after" }, "the job ran a second time")
+    c:assertClean("combat queue")
+end)
+
 
 ---------------------------------------------------------------------------
 -- /pe, saved errors, one line per feature
@@ -507,11 +526,11 @@ test("debug: a line is cut at 200 characters", function()
     check(#lines[3] < 200, "a short line was padded")
 end)
 
--- Spec "Size": "10,000 lines ... When full, the oldest lines are replaced (a ring ...)".
+-- Spec "Size": "3,000 lines ... When full, the oldest lines are replaced (a ring ...)".
 -- Core.lua: "Once full, the oldest line is at `next`". The saved table is filled to two
 -- short of the cap before load so the test makes only a few real calls across the wrap.
 test("debug: the ring keeps at most DEBUG_CAP lines, and after wrapping the oldest is at next", function()
-    local cap = 10000
+    local cap = 3000
     local lines = {}
     for i = 1, cap - 2 do lines[i] = "old " .. i end
     local db = saved()
@@ -535,6 +554,43 @@ test("debug: the ring keeps at most DEBUG_CAP lines, and after wrapping the olde
     check(store.lines[2]:find("probe: and the one after", 1, true), "slot 2 holds: " .. store.lines[2])
     eq(store.lines[store.next], "old 3", "the oldest line is not at next")
     eq(store.lines[cap - 2], "old " .. (cap - 2))
+end)
+
+-- Spec 0.15.0 A1: a saved log longer than the cap (10,000 lines before 0.15.0) keeps
+-- its newest lines in order, oldest first, and is never emptied.
+test("debug: a saved log longer than the cap keeps its newest lines in order", function()
+    local cap = 3000
+    -- 5000 lines in a ring that wrapped: the oldest is at next (slot 1201).
+    local n, nextSlot = 5000, 1201
+    local lines = {}
+    for i = 1, n do lines[i] = "line " .. ((i - nextSlot) % n + 1) end   -- "line 1" is the oldest
+    local db = saved()
+    db.debug = { on = false, lines = lines, next = nextSlot }
+    local c, PE = T.new({ saved = db })
+    local store = debugOf(c)
+    eq(#store.lines, cap)
+    eq(PE:DebugCount(), cap)
+    eq(store.lines[1], "line " .. (n - cap + 1), "the oldest kept line is not first")
+    eq(store.lines[cap], "line " .. n, "the newest line is not last")
+    for i = 2, cap do
+        if store.lines[i] ~= "line " .. (n - cap + i) then error("out of order at " .. i .. ": " .. store.lines[i]) end
+    end
+    eq(store.next, 1, "the next line does not replace the oldest")
+    -- The same size never wrapped (next past the end), with the log on: the session
+    -- header replaces the oldest kept line.
+    local flat = {}
+    for i = 1, n do flat[i] = "line " .. i end
+    local db2 = saved()
+    db2.debug = { on = true, lines = flat, next = n + 1 }
+    local c2, PE2 = T.new({ saved = db2 })
+    local store2 = debugOf(c2)
+    eq(#store2.lines, cap)
+    eq(PE2:DebugCount(), cap)
+    check(store2.lines[1]:find("---- session ----", 1, true), "the session header is not in the oldest slot: " .. store2.lines[1])
+    local written = store2.next - 1                 -- this session's lines so far, from slot 1
+    check(written >= 1 and written < 50, "unexpected next: " .. store2.next)
+    eq(store2.lines[written + 1], "line " .. (n - cap + written + 1), "the oldest line left is not at next")
+    eq(store2.lines[cap], "line " .. n)
 end)
 
 -- Core.lua InitDB: a damaged saved log is put right instead of being trusted.
@@ -616,6 +672,27 @@ test("debug: a saved on survives a reload, and the new session starts with a hea
     local c2, PE2 = T.new({ saved = db2 })
     eq(PE2.debugOn, false)
     eq(debugOf(c2).lines, { "12:00:00.000 probe: old" })
+end)
+
+-- Spec 0.15.0 A10: the header lists the features that are running, not the ones saved on.
+-- Catch all errors saved on beside BugSack stands aside, so it is not running. The
+-- session header stays the first line of its session.
+test("debug: the header lists the running features, not the ones saved on", function()
+    local db = saved({ sellJunk = true, errors = true })
+    db.debug = { on = true, lines = { "12:00:00.000 probe: from the last session" }, next = 2 }
+    local c, PE = T.new({ saved = db, setup = function(cl) cl.world.addons.BugSack = true end })
+    eq(PE:IsModuleEnabled("errors"), false, "Catch all errors runs beside BugSack")
+    eq(PE:IsModuleEnabled("sellJunk"), true)
+    local store = debugOf(c)
+    check(store.lines[2]:find("---- session ----", 1, true), "the session header is not the session's first line: " .. store.lines[2])
+    check(store.lines[2]:find("features=sellJunk$"), "the session header does not list the running features: " .. store.lines[2])
+    check(store.lines[2]:find(LINE .. "core: "), "the session header lost its time: " .. store.lines[2])
+    eq(#debugLines(c, "---- session ----"), 1)
+    PE:SetDebug(false)
+    PE:SetDebug(true)
+    local header = debugLines(c, "---- debug log switched on ----")[1]
+    check(header and header:find("features=sellJunk$"), "the switched-on header does not list the running features: " .. tostring(header))
+    c:assertClean("header")
 end)
 
 -- Spec table, Core: "every error and every blocked action (the same text as the Errors page)".
@@ -826,7 +903,7 @@ test("debug: the Debug log tab has the switch (off), the line count, Save and Em
     check(buttons["Save"], "no Save button")
     check(buttons["Empty"], "no Empty button")
     check(hasText(texts, "Debug log"), "no Debug log title")
-    check(hasText(texts, "0 of 10,000 lines"), "no line count")
+    check(hasText(texts, "0 of 3,000 lines"), "no line count")
     check(hasText(texts, "SavedVariables/PocketEssentials.lua"), "the page does not name the file to send")
     check(not hasText(texts, "No errors recorded."), "the error list is on the Debug log page")
     check(hasText(texts, "Save the log (reloads)") and hasText(texts, "Empty the log"), "the debug rows are missing")
@@ -836,7 +913,7 @@ test("debug: the Debug log tab has the switch (off), the line count, Save and Em
     eq(debugOf(c).on, true)
     buttons, texts = pageOf(c, panel)
     check(buttons["On"] and not buttons["Off"], "the switch does not read On after the tap")
-    check(hasText(texts, "1 of 10,000 lines"), "the count was not redrawn after the switch")
+    check(hasText(texts, "1 of 3,000 lines"), "the count was not redrawn after the switch")
     c:click(buttons["On"])
     c:advance(0.1)
     eq(PE.debugOn, false)
@@ -852,7 +929,7 @@ test("debug: Save reloads once; Empty empties the log and the count, and leaves 
     PE:LogError("bags", "a recorded problem")
     local panel = debugPage(c, PE)
     local buttons, texts = pageOf(c, panel)
-    check(hasText(texts, "3 of 10,000 lines"), "the count is not the number of lines held")
+    check(hasText(texts, "3 of 3,000 lines"), "the count is not the number of lines held")
     local before = #c:callsTo("C_UI.Reload")
     c:click(buttons["Save"])
     eq(#c:callsTo("C_UI.Reload") - before, 1, "reloads from one tap")
@@ -862,7 +939,7 @@ test("debug: Save reloads once; Empty empties the log and the count, and leaves 
     eq(PE.debugOn, true, "Clear log switched the log off")
     eq(#PE.errors, 1, "Clear log removed the errors")
     buttons, texts = pageOf(c, panel)
-    check(hasText(texts, "0 of 10,000 lines"), "the count was not redrawn after Clear log")
+    check(hasText(texts, "0 of 3,000 lines"), "the count was not redrawn after Clear log")
     panel = debugPage(c, PE, "errors")
     check(hasText(select(2, pageOf(c, panel)), "a recorded problem"), "the error is no longer shown")
 end)
@@ -872,17 +949,17 @@ test("debug: a logged line does not redraw the settings window; the count is fre
     local c, PE = T.new({})
     PE:SetDebug(true)
     local panel = debugPage(c, PE)
-    check(hasText(select(2, pageOf(c, panel)), "1 of 10,000 lines"), "unexpected count at first")
+    check(hasText(select(2, pageOf(c, panel)), "1 of 3,000 lines"), "unexpected count at first")
     local asked = 0
     local refresh = PE.RefreshSettings
     PE.RefreshSettings = function(...) asked = asked + 1 return refresh(...) end
     for i = 1, 20 do PE:Debug("probe", "line " .. i) end
     c:advance(1)
     eq(asked, 0, "PE:Debug asked for a redraw")
-    check(hasText(select(2, pageOf(c, panel)), "1 of 10,000 lines"), "the page was redrawn for a logged line")
+    check(hasText(select(2, pageOf(c, panel)), "1 of 3,000 lines"), "the page was redrawn for a logged line")
     PE:CloseSettings()
     panel = debugPage(c, PE)
-    check(hasText(select(2, pageOf(c, panel)), "21 of 10,000 lines"), "the count is stale after reopening the page")
+    check(hasText(select(2, pageOf(c, panel)), "21 of 3,000 lines"), "the count is stale after reopening the page")
 end)
 
 return { known = KNOWN_FAILURES }
