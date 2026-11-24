@@ -26,4 +26,5 @@ Chat.lua
 MenuBackground.lua
 LootSparkles.lua
 ControllerLayout.lua
+FaceBars.lua
 ErrorCatcher.lua

@@ -72,8 +72,8 @@ local M_OBJECT = list("GetParent IsForbidden")
 local M_SCRIPT_REGION = list([[Show Hide SetShown IsShown IsVisible GetWidth GetHeight GetCenter GetTop
     GetBottom GetLeft GetRight EnableMouse EnableMouseWheel SetMouseMotionEnabled SetScript GetScript HookScript IsProtected
     SetPoint ClearAllPoints SetAllPoints SetSize SetWidth SetHeight GetPoint GetNumPoints]])
-local M_REGION = list("GetAlpha SetAlpha GetScale SetScale GetEffectiveScale SetVertexColor CreateAnimationGroup")
-local M_TEXTURE = list("SetColorTexture SetTexture SetAtlas GetAtlas SetRotation SetTexCoord")
+local M_REGION = list("GetAlpha SetAlpha GetScale SetScale GetEffectiveScale SetVertexColor GetVertexColor CreateAnimationGroup")
+local M_TEXTURE = list("SetColorTexture SetTexture GetTexture SetAtlas GetAtlas SetRotation SetTexCoord GetTexCoord SetDesaturated IsDesaturated")
 local M_LINE = list("SetColorTexture SetTexture SetStartPoint SetEndPoint SetThickness")
 local M_FONT_INSTANCE = list("SetFont GetFont SetFontObject SetTextColor SetShadowColor SetShadowOffset SetJustifyH SetJustifyV")
 local M_FONTSTRING = list("SetText GetText SetWordWrap SetMaxLines GetStringHeight GetUnboundedStringWidth SetRotation")
@@ -86,6 +86,9 @@ local M_EDITBOX = list("SetText GetText IsEnabled SetFont GetFont SetFontObject 
 local M_MESSAGEFRAME = list("AddMessage SetFont GetFont SetFontObject")
 local M_MINIMAP = list([[GetZoom SetQuestBlobInsideAlpha SetQuestBlobOutsideAlpha SetQuestBlobRingAlpha
     SetQuestBlobRingScalar SetTaskBlobInsideAlpha SetTaskBlobOutsideAlpha SetTaskBlobRingAlpha SetTaskBlobRingScalar]])
+-- FrameAPICooldownDocumentation.lua (SetCooldown is added to each Cooldown frame by
+-- CreateFrame below, so that a call is recorded rather than raising).
+local M_COOLDOWN = list("SetCooldownFromDurationObject Clear SetHideCountdownNumbers")
 local M_ANIMGROUP = list("CreateAnimation Play Stop SetToFinalAlpha SetScript GetScript HookScript GetParent IsForbidden")
 local M_ANIM = list("SetFromAlpha SetToAlpha SetDuration Play Stop SetScript GetScript HookScript GetParent IsForbidden")
 local M_FONT = list("SetFont GetFont SetFontObject SetTextColor SetShadowColor SetShadowOffset SetJustifyH SetJustifyV GetAlpha SetAlpha IsForbidden")
@@ -106,12 +109,14 @@ local TYPE_METHODS = {
     EditBox = concat(M_OBJECT, M_SCRIPT_REGION, M_FRAME, M_EDITBOX),
     ScrollingMessageFrame = concat(M_OBJECT, M_SCRIPT_REGION, M_FRAME, M_MESSAGEFRAME),
     Minimap = concat(M_OBJECT, M_SCRIPT_REGION, M_FRAME, M_MINIMAP),
+    Cooldown = concat(M_OBJECT, M_SCRIPT_REGION, M_FRAME, M_COOLDOWN),
     AnimationGroup = M_ANIMGROUP,
     Alpha = M_ANIM,
     Font = M_FONT,
 }
-local IS_FRAME = { Frame = true, Button = true, ScrollFrame = true, EditBox = true, ScrollingMessageFrame = true, Minimap = true }
-local CREATABLE = { Frame = true, Button = true, ScrollFrame = true } -- what CreateFrame accepts here
+local IS_FRAME = { Frame = true, Button = true, ScrollFrame = true, EditBox = true, ScrollingMessageFrame = true, Minimap = true,
+    Cooldown = true }
+local CREATABLE = { Frame = true, Button = true, ScrollFrame = true, Cooldown = true } -- what CreateFrame accepts here
 
 local FRAME_SCRIPTS = list([[OnEvent OnUpdate OnShow OnHide OnMouseDown OnMouseUp OnMouseWheel OnEnter OnLeave
     OnSizeChanged OnLoad OnAttributeChanged OnDragStart OnDragStop OnReceiveDrag OnKeyDown OnKeyUp
@@ -123,6 +128,7 @@ local SCRIPTS = {
     EditBox = concat(FRAME_SCRIPTS, list("OnTextChanged OnEnterPressed OnEscapePressed OnEditFocusGained OnEditFocusLost OnChar")),
     ScrollingMessageFrame = concat(FRAME_SCRIPTS, list("OnHyperlinkClick OnHyperlinkEnter OnHyperlinkLeave")),
     Minimap = FRAME_SCRIPTS,
+    Cooldown = concat(FRAME_SCRIPTS, list("OnCooldownDone")),
     AnimationGroup = list("OnPlay OnFinished OnStop OnLoop OnPause OnUpdate"),
     Alpha = list("OnPlay OnFinished OnStop OnLoop OnPause OnUpdate"),
     Texture = {}, Line = {}, FontString = {},
@@ -600,6 +606,10 @@ function Client.new(opts)
     end
     function METHODS:GetEffectiveScale() return EffScale(self) end
     function METHODS:SetVertexColor(r, g, b, a) St(self).vertexColor = { r, g, b, a or 1 } end
+    function METHODS:GetVertexColor()
+        local v = St(self).vertexColor or { 1, 1, 1, 1 }
+        return v[1], v[2], v[3], v[4]
+    end
 
     -- Textures and lines
     function METHODS:SetColorTexture(r, g, b, a)
@@ -619,6 +629,15 @@ function Client.new(opts)
         st.atlas, st.texture, st.color = atlas, nil, nil
     end
     function METHODS:GetAtlas() return St(self).atlas end
+    function METHODS:GetTexture() return St(self).texture end
+    -- SimpleTextureBaseAPIDocumentation.lua:185: eight numbers, the four corners.
+    function METHODS:GetTexCoord()
+        local t = St(self).texCoord or { 0, 1, 0, 1 }
+        local l, r, top, b = t[1], t[2], t[3], t[4]
+        return l, top, l, b, r, top, r, b
+    end
+    function METHODS:SetDesaturated(v) St(self).desaturated = v and true or false end
+    function METHODS:IsDesaturated() return St(self).desaturated == true end
     function METHODS:SetRotation(r) CheckNumber(r, "SetRotation()"); St(self).rotation = r end
     function METHODS:SetTexCoord(left, right, top, bottom)
         CheckNumber(left, "SetTexCoord()"); CheckNumber(right, "SetTexCoord()")
@@ -805,6 +824,35 @@ function Client.new(opts)
         end
     end
     for _, n in ipairs(M_MINIMAP) do if n ~= "GetZoom" then BlobSetter(n) end end
+
+    -- Cooldown frames (FrameAPICooldownDocumentation.lua). A duration object here is
+    -- { duration = seconds } (what C_ActionBar.GetActionCooldownDuration returns below);
+    -- with clearIfZero (default true) a zero duration clears the frame. Every call is
+    -- kept in c.cdCalls = { { frame =, method =, args = }, ... }.
+    -- world.durationObjectRefused: SetCooldownFromDurationObject raises, as the game
+    -- does for a secret value from tainted code.
+    c.cdCalls = {}
+    function METHODS:SetCooldownFromDurationObject(object, clearIfZero)
+        c.cdCalls[#c.cdCalls + 1] = { frame = self, method = "SetCooldownFromDurationObject", args = Pack(object, clearIfZero) }
+        if world.durationObjectRefused then
+            error("SetCooldownFromDurationObject(): Secret values are only allowed during untainted execution", 2)
+        end
+        if type(object) ~= "table" then error("SetCooldownFromDurationObject(): duration object expected", 2) end
+        local st = St(self)
+        if (object.duration or 0) <= 0 and clearIfZero ~= false then
+            st.cooldown = nil
+            SetShownState(self, false)
+        else
+            st.cooldown = object
+            SetShownState(self, true)
+        end
+    end
+    function METHODS:Clear()
+        c.cdCalls[#c.cdCalls + 1] = { frame = self, method = "Clear", args = Pack() }
+        St(self).cooldown = nil
+        SetShownState(self, false)
+    end
+    function METHODS:SetHideCountdownNumbers(v) St(self).hideNumbers = v and true or false end
 
     -- Animation groups (the button flash): played by c:advance().
     function METHODS:CreateAnimation(kind)
@@ -1220,27 +1268,248 @@ function Client.new(opts)
     -- 5-8 the face buttons). Each has its action slot (.action, ActionButton.lua:545) and its
     -- controller-button picture (.ButtonIcon, InputIconTextureFrameTemplate: .mappedButtonKey and a
     -- .NormalTexture holding the picture's atlas, InputIconTexture.lua:607-613).
+    --
+    -- 0.13.0 face pictures: each button also carries the regions the game draws on: icon and
+    -- Count (Blizzard_ActionBar/Mainline/ActionButtonTemplate.xml:23, 92), SpecialActionIcon and
+    -- RangeIndicator (Blizzard_GamepadActionBars/ActionBarButton.xml:7, 78), and GetChecked
+    -- (SimpleCheckboxAPIDocumentation.lua:10), UpdateAction and UpdateState (ActionButton.lua:539,
+    -- 715). UpdateAction does what the game's Update does with world.actions[button.action]: the
+    -- icon's texture and Show / Hide (ActionButton.lua:574, 633-635), its usable colour (:721-734:
+    -- 1,1,1; .5,.5,1 with a.noMana; .4,.4,.4 with a.usable == false) and the Count text (:852-854).
+    -- GetChecked reads world.actions[slot].checked. The main bar's four face buttons hold no spell
+    -- (ActionBarButton.lua:871-878): their icon is hidden and SpecialActionIcon shows the game's
+    -- picture (MainActionBarFrame.lua:423-628). Their .action stays 5-8 here (the probe's tests
+    -- count those slots); the game's is 0. Every bar has GetActionButtonByIndex (ActionBar.lua:296).
     local PROMPT_KEYS = { "PADDLEFT", "PADDUP", "PADDRIGHT", "PADDDOWN", "PAD3", "PAD4", "PAD2", "PAD1" }
+    local SPECIAL = { [5] = { texture = "Interface\\Cursor\\Interact" }, [6] = { atlas = "crosshair_unableinspect_32" },
+        [7] = { atlas = "128-redbutton-exit" }, [8] = { atlas = "gamepad-ability-icon-jump" } }
+    local buttonInfo = {}   -- [button] = { base = its slot on page 1, reserved =, pet = }
+    world.page = 1
+    local function ShowAction(b)
+        local info = buttonInfo[b]
+        local icon, count = rawget(b, "icon"), rawget(b, "Count")
+        if info.reserved then
+            icon:Hide()
+            count:SetText("")
+            return
+        end
+        local a = type(b.action) == "number" and world.actions[b.action] or nil
+        if a and a.texture then
+            icon:SetTexture(a.texture)
+            if a.usable == false then icon:SetVertexColor(0.4, 0.4, 0.4)
+            elseif a.noMana then icon:SetVertexColor(0.5, 0.5, 1)
+            else icon:SetVertexColor(1, 1, 1) end
+            icon:Show()
+        else
+            icon:Hide()
+        end
+        count:SetText(a and a.count or "")
+    end
+    local function MakeButton(bar, i, slot, opts)
+        local b = Blizz("Button", nil, bar)
+        b:SetSize(46, 46)
+        b:SetPoint("CENTER", bar, "CENTER", (i - 4.5) * 24, 0)
+        if slot then rawset(b, "action", slot) end
+        local prompt = Blizz("Frame", nil, b)
+        prompt:SetSize(20, 20)
+        local tex = prompt:CreateTexture(nil, "ARTWORK")
+        tex:SetAtlas("gamepad-" .. string.lower(world.iconSet) .. "-" .. PROMPT_KEYS[i])
+        rawset(prompt, "mappedButtonKey", PROMPT_KEYS[i])
+        rawset(prompt, "NormalTexture", tex)
+        rawset(b, "ButtonIcon", prompt)
+        local icon = b:CreateTexture(nil, "ARTWORK")
+        icon:SetAllPoints(b)
+        rawset(b, "icon", icon)
+        local count = b:CreateFontString(nil, "OVERLAY")
+        count:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0)
+        rawset(b, "Count", count)
+        local range = b:CreateFontString(nil, "OVERLAY")
+        range:SetPoint("TOPRIGHT", b, "TOPRIGHT", 0, 0)
+        range:Hide()
+        rawset(b, "RangeIndicator", range)
+        local special = b:CreateTexture(nil, "BACKGROUND")
+        special:SetAllPoints(b)
+        special:Hide()
+        rawset(b, "SpecialActionIcon", special)
+        buttonInfo[b] = { base = slot, reserved = opts.reserved, pet = opts.pet }
+        if opts.reserved then
+            local sp = SPECIAL[i]
+            if sp.atlas then special:SetAtlas(sp.atlas) else special:SetTexture(sp.texture) end
+            special:Show()
+        end
+        BlizzMethod(b, "GetChecked", function(self)
+            local a = type(self.action) == "number" and world.actions[self.action] or nil
+            return (a and a.checked) and true or false
+        end)
+        if not opts.pet then -- pet buttons (PetActionButtonMixin) have neither
+            BlizzMethod(b, "UpdateAction", function(self) ShowAction(self) end)
+            BlizzMethod(b, "UpdateState", function() end)
+        end
+        ShowAction(b)
+        return b
+    end
+    local function GiveButtons(bar, list)
+        c.barParts[bar].actionButtons = list
+        BlizzMethod(bar, "GetActionButtonByIndex", function(_, n) return list[n] end)
+    end
     c.barButtons = {}
     for n, a in ipairs(ANCHORS) do
         local bar = c.barParts[anchorFrames[a[1]]].Bar
         local list = {}
-        for i = 1, 8 do
-            local b = Blizz("Button", nil, bar)
-            b:SetSize(46, 46)
-            b:SetPoint("CENTER", bar, "CENTER", (i - 4.5) * 24, 0)
-            rawset(b, "action", (n - 1) * 8 + i)
-            local icon = Blizz("Frame", nil, b)
-            icon:SetSize(20, 20)
-            local tex = icon:CreateTexture(nil, "ARTWORK")
-            tex:SetAtlas("gamepad-" .. string.lower(world.iconSet) .. "-" .. PROMPT_KEYS[i])
-            rawset(icon, "mappedButtonKey", PROMPT_KEYS[i])
-            rawset(icon, "NormalTexture", tex)
-            rawset(b, "ButtonIcon", icon)
-            list[i] = b
-        end
-        c.barParts[bar].actionButtons = list
+        for i = 1, 8 do list[i] = MakeButton(bar, i, (n - 1) * 8 + i, { reserved = n == 1 and i >= 5 }) end
+        GiveButtons(bar, list)
         c.barButtons[a[1]] = list
+    end
+    -- The stance and possess bars (PageUnit.lua:115-116), on the top anchor and hidden until the
+    -- game swaps one in (c:showOverrideBar below); stance slots 201-208, possess buttons are pet
+    -- buttons with no action slot (PossessBar.lua:61-64, ActionBarTemplates.xml:375-386).
+    -- PageUnit.actionBars (PageUnit.lua:108-121) holds the six; c:addTargetingBars() adds the two
+    -- targeting bars (the code says they may be missing: PageUnit.lua:136-149).
+    local actionBars = {
+        topBar = c.barParts[anchorFrames.TopCenteredAnchor].Bar, leftBar = c.barParts[anchorFrames.LeftCenteredAnchor].Bar,
+        rightBar = c.barParts[anchorFrames.RightCenteredAnchor].Bar, bottomBar = c.barParts[anchorFrames.BottomCenteredAnchor].Bar,
+    }
+    c.actionBars = actionBars
+    local function MakeOverride(parent, label, slotBase)
+        local bar = Blizz("Frame", nil, parent)
+        bar:SetSize(208, 68)
+        bar:SetPoint("CENTER", parent, "CENTER", 0, 0)
+        W[bar].shown = false
+        local list = {}
+        for i = 1, 8 do list[i] = MakeButton(bar, i, slotBase and (slotBase + i), { pet = slotBase == nil }) end
+        raw[bar] = GuardBarFrame(bar, label)
+        GiveButtons(bar, list)
+        return bar
+    end
+    do
+        local top = anchorFrames.TopCenteredAnchor
+        actionBars.stanceBar = MakeOverride(top, "GamepadBar.TopCenteredAnchor.StanceBar", 200)
+        actionBars.possessBar = MakeOverride(top, "GamepadBar.TopCenteredAnchor.PossessBar", nil)
+        c.barParts[top].StanceBar = actionBars.stanceBar
+        c.barParts[top].PossessBar = actionBars.possessBar
+    end
+    c.barParts[pageUnit].actionBars = actionBars
+    -- A frame's new parent, as SetParent does (the stand-in's widgets have no SetParent method).
+    local function Reparent(w, parent)
+        local st = W[w]
+        local old = st.parent
+        if old == parent then return end
+        local before = IsVisible(w)
+        if old then
+            local list = W[old].children
+            for i = #list, 1, -1 do if list[i] == w then table.remove(list, i) end end
+        end
+        st.parent = parent
+        local plist = W[parent].children
+        plist[#plist + 1] = w
+        local after = IsVisible(w)
+        if before ~= after then VisibilityChanged(w, after) end
+    end
+    -- The active bar (PageUnit.lua:527-544, 705-707): one callback per name, called as fn(name)
+    -- (CallbackRegistry.lua:111-139, 207-211) on every trigger check, changed or not.
+    -- world.activeBarError: GetActiveBar raises.
+    world.activeBar = actionBars.topBar
+    local activeCallbacks = {}
+    BlizzMethod(pageUnit, "RegisterActiveActionBarUpdatedCallback", function(_, fn, owner)
+        if type(fn) ~= "function" then error("CallbackRegistryMixin::RegisterCallback 'func' requires function type.", 2) end
+        if type(owner) == "number" then error("CallbackRegistryMixin:RegisterCallback 'owner' as number is reserved internally.", 2) end
+        activeCallbacks[owner == nil and {} or owner] = fn
+    end)
+    BlizzMethod(pageUnit, "GetActiveBar", function()
+        if world.activeBarError then error("GetActiveBar failed", 2) end
+        return world.activeBar
+    end)
+    -- SetCurrentPage (PageUnit.lua:420): every button gets the page's slot (here base + 100 per page)
+    -- and runs UpdateAction (ActionBar.lua:242-250, ActionBarButton.lua:1093-1105).
+    BlizzMethod(pageUnit, "SetCurrentPage", function(_, n)
+        world.page = n
+        for b, info in pairs(buttonInfo) do
+            if info.base then rawset(b, "action", info.base + (n - 1) * 100) end
+            if not info.pet then b:UpdateAction() end
+        end
+    end)
+    -- Test helpers for the face pictures (instance functions, as they need the model's insides).
+    -- c:setActiveBar(bar)          the game names a bar active and calls every callback
+    -- c:pressTriggers(lt, rt)      PageUnit.lua:546-599: LT beats RT, both bring the LT+RT bar,
+    --                              none the main bar; a shown override bar in that anchor wins
+    -- c:showOverrideBar(key, anchorKey) / c:hideOverrideBar(key)
+    --                              GamepadOverrideBarMixin.lua:59-114: the bar moves to that anchor,
+    --                              the anchor's own bar hides, the triggers are checked again
+    -- c:addTargetingBars()         FriendlyTargetingActionBar and HostileTargetingActionBar on the
+    --                              top anchor, hidden (PageUnit.lua:118-149)
+    -- c:setPage(n), c:setAction(slot, fields) (ACTIONBAR_SLOT_CHANGED: UpdateAction, ActionButton.lua:981-984),
+    -- c:setRange(button, checksRange, inRange) (ActionBarButton.lua:533-564),
+    -- c:spellAlert(button, on) (ActionButtonSpellAlertManager ShowAlert / HideAlert)
+    local OVERRIDE_KEYS = { "friendlyTargetingBar", "hostileTargetingBar", "shortcutsBar", "possessBar", "stanceBar" }
+    function c:setActiveBar(bar)
+        world.activeBar = bar
+        for owner, fn in pairs(activeCallbacks) do Protect("active bar callback", fn, owner) end
+    end
+    world.triggers = { false, false }
+    function c:pressTriggers(lt, rt)
+        world.triggers = { lt and true or false, rt and true or false }
+        local function pick(bar)
+            for _, key in ipairs(OVERRIDE_KEYS) do
+                local o = actionBars[key]
+                if o and W[o].shown and W[o].parent == W[bar].parent then return o end
+            end
+            return bar
+        end
+        local target
+        if rt then target = pick(actionBars.rightBar) end
+        if lt then target = pick(actionBars.leftBar) end
+        if lt and rt then target = pick(actionBars.bottomBar) end
+        if not target then target = pick(actionBars.topBar) end
+        self:setActiveBar(target)
+    end
+    function c:showOverrideBar(key, anchorKey)
+        local bar, anchor = actionBars[key], anchorFrames[anchorKey]
+        Reparent(bar, anchor)
+        raw[bar](bar, "ClearAllPoints")(bar)
+        raw[bar](bar, "SetPoint")(bar, "CENTER", anchor, "CENTER", 0, 0)
+        SetShownState(c.barParts[anchor].Bar, false)
+        SetShownState(bar, true)
+        self:pressTriggers(world.triggers[1], world.triggers[2])
+    end
+    function c:hideOverrideBar(key)
+        local bar = actionBars[key]
+        SetShownState(bar, false)
+        local own = c.barParts[W[bar].parent] and c.barParts[W[bar].parent].Bar
+        if own then SetShownState(own, true) end
+        self:pressTriggers(world.triggers[1], world.triggers[2])
+    end
+    function c:addTargetingBars()
+        local top = anchorFrames.TopCenteredAnchor
+        for _, t in ipairs({ { "FriendlyTargetingActionBar", "friendlyTargetingBar", 300 },
+            { "HostileTargetingActionBar", "hostileTargetingBar", 310 } }) do
+            local bar = MakeOverride(top, "GamepadBar.PageUnit." .. t[1], t[3])
+            c.barParts[pageUnit][t[1]] = bar
+            actionBars[t[2]] = bar
+        end
+    end
+    function c:setPage(n)
+        Protect("SetCurrentPage", function() c.barParts[gamepadBar].PageUnit:SetCurrentPage(n) end)
+    end
+    function c:setAction(slot, fields)
+        world.actions[slot] = fields
+        for b, info in pairs(buttonInfo) do
+            if not info.pet and b.action == slot then Protect("UpdateAction", function() b:UpdateAction() end) end
+        end
+    end
+    function c:setRange(b, checksRange, inRange)
+        local range = rawget(b, "RangeIndicator")
+        if checksRange then
+            range:Show()
+            if inRange then range:SetVertexColor(0.6, 0.6, 0.6) else range:SetVertexColor(1, 0.1, 0.1) end
+        else
+            range:Hide()
+        end
+    end
+    function c:spellAlert(b, on)
+        local manager = rawget(env, "ActionButtonSpellAlertManager")
+        Protect("spell alert", function()
+            if on then manager:ShowAlert(b) else manager:HideAlert(b) end
+        end)
     end
     c.barParts[pageUnit].anchorPoints = anchorPoints
     GuardBarFrame(gamepadBar, "GamepadBar")
@@ -1289,14 +1558,37 @@ function Client.new(opts)
     Namespace("C_ActionBar", {
         HasAction = function(slot) return ActionAt(slot) ~= nil end,
         GetActionTexture = function(slot) local a = ActionAt(slot) return a and a.texture end,
+        -- world.cooldownInfoSecret: the answer comes back secret (the whole table).
         GetActionCooldown = function(slot)
             local a = ActionAt(slot) or { start = 0, duration = 0 }
-            return { startTime = a.start, duration = a.duration, isEnabled = true,
-                isActive = (a.duration or 0) > 0, modRate = 1 }
+            local info = { startTime = a.start, duration = a.duration, isEnabled = true,
+                isActive = (a.duration or 0) > 0, isOnGCD = a.gcd == true, modRate = 1 }
+            if world.cooldownInfoSecret then world.secrets[info] = true end
+            return info
+        end,
+        -- ActionBarFrameDocumentation.lua:181: a duration object, here { duration = seconds }
+        -- (0 when the slot is not on cooldown; with ignoreGCD a slot on the global cooldown, a.gcd,
+        -- reads 0). world.durationFails: it raises; world.durationNil: it returns nil.
+        GetActionCooldownDuration = function(slot, ignoreGCD)
+            local a = ActionAt(slot) or { duration = 0 }
+            if world.durationFails then error("GetActionCooldownDuration failed", 2) end
+            if world.durationNil then return nil end
+            return { duration = (ignoreGCD and a.gcd) and 0 or (a.duration or 0) }
         end,
         GetActionDisplayCount = function(slot) local a = ActionAt(slot) return a and a.count or "" end,
         IsUsableAction = function(slot) local a = ActionAt(slot) return a ~= nil and a.usable == true, false end,
     })
+    -- The proc glows (Blizzard_ActionBar/Shared/ActionButtonSpellAlerts.lua:1-8, 117-139): which
+    -- buttons have an alert. Plain functions on the table, so hooksecurefunc works on them.
+    if snap.frame.ActionButtonSpellAlertManager then
+        local alerts = {}
+        rawset(env, "ActionButtonSpellAlertManager", {
+            activeAlerts = alerts,
+            ShowAlert = function(_, b) alerts[b] = 1 end,
+            HideAlert = function(_, b) alerts[b] = nil end,
+            HasAlert = function(_, b) return alerts[b] ~= nil, alerts[b] end,
+        })
+    end
     -- The game's controller-button pictures (InputDeviceIconSetManager.lua, InputIconTexture.lua:565).
     Global("InputDeviceIconSetManager", { GetActiveInputDeviceIconSet = function() return world.iconSet end })
     Global("InputIconTextureSetUtility", { GetNormalActiveInputIconButtonTexture = function(key)
@@ -1808,11 +2100,31 @@ function Client.new(opts)
     -----------------------------------------------------------------------
     -- Global functions (each must be in the snapshot)
     -----------------------------------------------------------------------
+    -- The one template modelled: CooldownFrameTemplate (Blizzard_FrameXMLUtil/Mainline/Cooldown.xml:3:
+    -- hidden, all points on its parent). world.noCooldownFrames: this client has no
+    -- Cooldown frame type; world.noCooldownTemplate: it has no such template.
     Global("CreateFrame", function(kind, name, parent, template)
-        if not CREATABLE[kind] then error("CreateFrame(): Unknown frame type '" .. tostring(kind) .. "'", 2) end
-        if template ~= nil then error("CreateFrame(): templates are not modelled by the stand-in", 2) end
+        if not CREATABLE[kind] or (kind == "Cooldown" and world.noCooldownFrames) then
+            error("CreateFrame(): Unknown frame type '" .. tostring(kind) .. "'", 2)
+        end
+        local cooldownTemplate = kind == "Cooldown" and template == "CooldownFrameTemplate" and not world.noCooldownTemplate
+        if template ~= nil and not cooldownTemplate then
+            error("CreateFrame(): templates are not modelled by the stand-in (" .. tostring(template) .. ")", 2)
+        end
         if name ~= nil and type(name) ~= "string" then error("CreateFrame(): name must be a string", 2) end
-        return CreateWidget(kind, name, parent)
+        local w = CreateWidget(kind, name, parent)
+        if kind == "Cooldown" then
+            -- Present although the addon must never call it (it is refused with the game's
+            -- secret numbers): a call is recorded in c.cdCalls instead of raising.
+            rawset(w, "SetCooldown", function(self, start, duration)
+                c.cdCalls[#c.cdCalls + 1] = { frame = self, method = "SetCooldown", args = Pack(start, duration) }
+            end)
+            if cooldownTemplate then
+                W[w].shown = false
+                if parent then w:SetAllPoints(parent) end
+            end
+        end
+        return w
     end)
     Global("CreateFont", function(name)
         if type(name) ~= "string" then error("CreateFont(): name expected", 2) end
@@ -2009,7 +2321,9 @@ function Client.new(opts)
         if type(tbl) ~= "table" or type(name) ~= "string" or type(hook) ~= "function" then
             error("hooksecurefunc(): usage: hooksecurefunc([table,] \"name\", function)", 2)
         end
-        local orig = rawget(tbl, name)
+        -- The game reads the method the normal way (a widget's comes from its type) and
+        -- puts the wrapper on the table itself.
+        local orig = tbl[name]
         if type(orig) ~= "function" then error("hooksecurefunc(): " .. name .. " is not a function", 2) end
         rawset(tbl, name, function(...)
             local res = Pack(orig(...))
