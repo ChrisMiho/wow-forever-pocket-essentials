@@ -56,4 +56,51 @@ test("quest data: a map with more than 300 spots of one objective keeps 300", fu
     eq(count(PE.QuestData:GetPinsForQuest(BUSY), BUSY_MAP), MAX_PINS, "spots of quest 5150 kept on map 1449")
 end)
 
+---------------------------------------------------------------------------
+-- Debug line and the house rule for handlers (C1)
+---------------------------------------------------------------------------
+
+local function logLines(c, text)
+    local out = {}
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        if line:find(text, 1, true) then out[#out + 1] = line end
+    end
+    return out
+end
+
+-- Spec C1: "The debug line reports the work time (summed per step) and the number of steps, so the
+-- log stops showing waiting time as work." Each step reads the quest log count once; here that read
+-- costs 7 ms on the profiling clock, and the 0.05 s waits between steps cost nothing.
+test("quest data: the rebuild line counts the steps and only the time spent working", function()
+    local c, PE = newData({ QW.MANY, QW.SEVEN, QW.ONE, QW.ELSEWHERE, 889 })
+    PE:SetDebug(true)
+    c.profileMs = 0
+    local QL = rawget(c.env, "C_QuestLog")
+    local count = QL.GetNumQuestLogEntries
+    QL.GetNumQuestLogEntries = function(...)
+        c.profileMs = c.profileMs + 7
+        return count(...)
+    end
+    PE.QuestData.cluster = 5                               -- every quest is built again: 5 quests, 2 steps
+    PE.QuestData:RequestRebuild()
+    c:advance(1.5)
+    local lines = logLines(c, "questData: rebuild:")
+    eq(#lines, 1, "rebuild lines")
+    check(lines[1]:find("5 quests in log, 5 rebuilt in 2 steps, %d+ icons on %d+ maps, 14 ms work$"), lines[1])
+    QL.GetNumQuestLogEntries = count
+    c:assertClean("rebuild line")
+end)
+
+-- CLAUDE.md: "Event handlers and callbacks go through PE:Safe or PE:Wrap"; spec C1: "the performance
+-- recorder can then see them".
+test("quest data: its event handler and rebuild timer run through PE:Wrap (the recorder sees them)", function()
+    local c, PE = newData({ QW.MANY })
+    local counters = PE:StartMeasure()
+    c:fire("QUEST_LOG_UPDATE")
+    c:advance(1)
+    local entry = counters.questData
+    check(entry and entry.calls >= 2, "questData runs counted: " .. T.show(entry))
+    PE:StopMeasure()
+end)
+
 return { known = KNOWN_FAILURES }

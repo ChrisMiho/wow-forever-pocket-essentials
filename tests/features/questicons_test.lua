@@ -541,12 +541,12 @@ test("debug log: a rebuild of five quests writes one rebuild line, not one per q
     c:advance(1.5)
     local lines = logLines(c, "questData: rebuild:")
     eq(#lines, 1, "rebuild lines")
-    check(lines[1]:find("5 quests in log, 5 rebuilt, %d+ icons on %d+ maps, %d+ ms"), lines[1])
+    check(lines[1]:find("5 quests in log, 5 rebuilt in 2 steps, %d+ icons on %d+ maps, %d+ ms work"), lines[1])
     PE.QuestData:RequestRebuild()                          -- nothing to build again: one more line
     c:advance(1)
     lines = logLines(c, "questData: rebuild:")
     eq(#lines, 2, "rebuild lines after a second rebuild")
-    check(lines[2]:find("5 quests in log, 0 rebuilt", 1, true), lines[2])
+    check(lines[2]:find("5 quests in log, 0 rebuilt in 1 step, ", 1, true), lines[2])
     c:assertClean("rebuild line")
 end)
 
