@@ -1276,9 +1276,11 @@ local function NavCross(focus, step, byRow)
         end
         return focus
     end
-    -- The viewer's Previous and Next: Left and Right move between errors
-    -- while there is one that way (else the usual move).
-    if focus.peErrorStep and ViewerStep(step) then
+    -- The viewer's Previous and Next: Left on Previous and Right on Next
+    -- move between errors while there is one that way. The other way (Right
+    -- from Previous, Left from Next) is the usual move, so Next and Clear all
+    -- can be reached on any error.
+    if focus.peErrorStep == step and ViewerStep(step) then
         local role = focus.peErrorStep
         Draw()
         -- The button of the same role after the redraw (pooled buttons may
@@ -1294,7 +1296,12 @@ local function NavCross(focus, step, byRow)
     if step < 0 then
         local column = PageColumn()
         for i, btn in ipairs(column) do
-            if btn == focus then
+            if btn == focus and focus == panel.closeButton and tab == "errors" and i > 1 then
+                -- Left from Close on the Errors page undoes Right from its
+                -- last stop: back to Clear all (or the scroll tabs), whatever
+                -- error shows (Right on Next pages instead of reaching it).
+                return column[i - 1]
+            elseif btn == focus then
                 if i == 1 or not UI:NavSameRow(column[i - 1], focus) then return ChosenTabButton() end
                 return nil
             end
