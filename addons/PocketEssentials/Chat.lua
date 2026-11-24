@@ -758,6 +758,18 @@ local function Refresh()
     if built and panel:IsShown() then mod:Safe(DoRefresh) end
 end
 
+-- True if a target drawn earlier is still there now: the same kind, number
+-- and name. Channel numbers shift when a city channel is left, and Party goes
+-- when the group does.
+local function StillThere(target)
+    local now = GatherTargets()
+    for i = 1, #now do
+        local t = now[i]
+        if t.chatType == target.chatType and t.target == target.target and t.label == target.label then return true end
+    end
+    return false
+end
+
 local function TargetClicked(btn)
     local entry, target = btn.peChatEntry, btn.peChatTarget
     if not (entry or target) then return end
@@ -765,6 +777,12 @@ local function TargetClicked(btn)
         -- The kind only: never who a whisper is for.
         PE:Debug("chat", "tapped: " .. (entry and "whisper"
             or (PE.Plain(target.chatType) .. (target.target ~= nil and (" " .. PE.Plain(target.target)) or ""))))
+    end
+    if not entry and not StillThere(target) then
+        if PE.debugOn then PE:Debug("chat", "tapped target is gone: window redrawn") end
+        Refresh()
+        mod:Print("That channel is gone.")
+        return
     end
     if PE:CombatRestricted() and not PE:GamepadUI() then
         -- Opening the chat box from an addon during a fight is refused by the

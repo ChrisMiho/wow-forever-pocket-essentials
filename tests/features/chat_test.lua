@@ -612,6 +612,57 @@ test("chat: tapping a channel opens the chat box set to that channel number", fu
     eq(c.chatBox.channelTarget, 1)
 end)
 
+-- Spec 0.15.0 D3: a tapped channel that is gone (left a city, channel numbers shifted) is not
+-- used; the window redraws with what is there now and says so.
+test("chat: a channel that is gone since the window was drawn is not used, and the window redraws", function()
+    local c, PE = newChat(function(c)
+        c.world.channels = { { id = 1, name = "General" }, { id = 2, name = "Trade" } }
+    end)
+    openPicker(c, PE)
+    local trade = buttonLabelled(c, "2. Trade")
+    c.world.channels = { { id = 1, name = "General" } }   -- left the city
+    c:click(trade)
+    eq(chatCalls(c), {}, "the chat box was pointed at a channel that is gone")
+    check(panelOf(c):IsShown(), "the window closed")
+    eq(readPicker(c).targets, { "Say", "Yell", "1. General" })
+    eq(T.chatLines(c), { "That channel is gone." })
+end)
+
+test("chat: a channel whose number now names another channel is not used", function()
+    local c, PE = newChat(function(c)
+        c.world.channels = { { id = 1, name = "General" }, { id = 2, name = "Trade" } }
+    end)
+    openPicker(c, PE)
+    local trade = buttonLabelled(c, "2. Trade")
+    c.world.channels = { { id = 1, name = "General" }, { id = 2, name = "LookingForGroup" } }
+    c:click(trade)
+    eq(chatCalls(c), {})
+    eq(readPicker(c).targets, { "Say", "Yell", "1. General", "2. LookingForGroup" })
+    eq(T.chatLines(c), { "That channel is gone." })
+end)
+
+test("chat: Party after leaving the group is not used", function()
+    local c, PE = newChat(function(c) c.world.group = "party" end)
+    openPicker(c, PE)
+    local party = buttonLabelled(c, "Party")
+    c.world.group = "none"
+    c:click(party)
+    eq(chatCalls(c), {})
+    eq(readPicker(c).targets, { "Say", "Yell" })
+    eq(T.chatLines(c), { "That channel is gone." })
+end)
+
+test("chat: a channel still there is used as before", function()
+    local c, PE = newChat(function(c)
+        c.world.channels = { { id = 1, name = "General" }, { id = 2, name = "Trade" } }
+    end)
+    openPicker(c, PE)
+    c:click(buttonLabelled(c, "2. Trade"))
+    eq(c.chatBox.channelTarget, 2)
+    check(not panelOf(c):IsShown(), "the picker did not close after a tap")
+    eq(T.chatLines(c), {})
+end)
+
 -- Chat.lua TargetClicked: a whisper button addresses the sender exactly as the game delivered it.
 test("chat: tapping a whisperer opens the chat box set to a whisper to that person's full name", function()
     local c, PE = newChat()
