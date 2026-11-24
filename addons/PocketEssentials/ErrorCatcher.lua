@@ -60,6 +60,8 @@ local OTHER_CATCHERS = {
     { name = "BugGrabber", folders = { "!BugGrabber", "BugGrabber" }, global = "BugGrabber" },
     { name = "Swatter", folders = { "!Swatter", "Swatter" }, global = "Swatter" },
 }
+-- Stood aside for an error handler put in by an addon we cannot name.
+local UNNAMED_CATCHER = "another error addon"
 
 local mod
 local active = false          -- the feature is on: the listener records
@@ -161,8 +163,9 @@ local function Record(message, stack, count)
     count = tonumber(count) or 1
     local list = Store()
     if not list then return end
-    if lastEntry and list[1] == lastEntry and type(message) == "string" and message == lastMessage
-            and (stack == lastStack) and not IsSecret(message) and not IsSecret(stack) then
+    -- The secret checks come first: a hidden value is never compared.
+    if lastEntry and list[1] == lastEntry and not IsSecret(message) and not IsSecret(stack)
+            and type(message) == "string" and message == lastMessage and stack == lastStack then
         lastEntry.count = (tonumber(lastEntry.count) or 1) + count
         lastEntry.last = time()
         PE:RefreshSettings()
@@ -212,7 +215,8 @@ local function Record(message, stack, count)
     -- (by our Hide or by the setting itself).
     if isNew and not announced and not (mod and mod.opts and mod.opts.popup == "hide") and ReadSetting() ~= "0" then
         announced = true
-        PE:Print("An error from " .. source .. " was caught. See Settings > Errors.")
+        local from = source == MACRO and " from a macro or script" or (source == UNKNOWN and "" or (" from " .. source))
+        PE:Print("An error" .. from .. " was caught. See Settings > Errors.")
     end
     -- New or merged: the open viewer shows the new count.
     PE:RefreshSettings()
@@ -330,7 +334,7 @@ local function FindOtherCatcher()
     -- the listener on the error box still sees whatever it passes on.
     if not HookAvailable() then
         local now = CurrentHandler()
-        if handlerAtLoad ~= nil and now ~= nil and now ~= handlerAtLoad then return "another error addon" end
+        if handlerAtLoad ~= nil and now ~= nil and now ~= handlerAtLoad then return UNNAMED_CATCHER end
     end
     return nil
 end
@@ -410,7 +414,7 @@ end
 mod = PE:RegisterModule({
     key = KEY,
     label = "Catch all errors",
-    desc = "Keeps every Lua error, from the game and other addons, in one list here.",
+    desc = "Keeps every Lua error, from the game and other addons, in one list.",
     order = 90,
     defaults = { popup = "show" },
 
@@ -429,6 +433,10 @@ mod = PE:RegisterModule({
 
     blocked = function()
         if not standAside then return nil end
+        if standAside == UNNAMED_CATCHER then
+            return "Off while another addon handles errors first.\n|cff9e9e9e"
+                .. "Turn that addon off in the AddOns list to use this.|r"
+        end
         return "Off while " .. standAside .. " is loaded: " .. standAside
             .. " takes the errors before they reach this list.\n|cff9e9e9e"
             .. "To use this instead, turn " .. standAside .. " off in the AddOns list and restart.|r"

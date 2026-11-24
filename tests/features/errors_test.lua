@@ -84,7 +84,7 @@ test("catcher: off by default, with no listener, no warning event and the popup 
     local original = c.errorBox.DisplayMessageInternal
     eq(PE:IsModuleEnabled("errors"), false)
     eq(PE:GetModule("errors").label, "Catch all errors")
-    eq(PE:GetModule("errors").desc, "Keeps every Lua error, from the game and other addons, in one list here.")
+    eq(PE:GetModule("errors").desc, "Keeps every Lua error, from the game and other addons, in one list.")
     check(c.errorBox.DisplayMessageInternal == original, "the error box was hooked while off")
     eq(#c:callsTo("seterrorhandler"), 0, "the error handler was replaced while off")
     c:otherError("ExampleAddon", "Interface/AddOns/ExampleAddon/Main.lua:40: boom")
@@ -98,7 +98,7 @@ end)
 -- Standing aside
 ---------------------------------------------------------------------------
 
-local function standAsideCase(setup, name)
+local function standAsideCase(setup, name, amber, dim)
     local c, PE = T.new({ setup = setup, saved = { enabled = { errors = true } } })
     local setBefore = #c:callsTo("seterrorhandler")
     eq(PE:IsModuleEnabled("errors"), false, name .. ": switched on beside another error addon")
@@ -111,8 +111,8 @@ local function standAsideCase(setup, name)
     c:click(sw)
     c:advance(0.2)
     eq(PE:IsModuleEnabled("errors"), false, name .. ": a tap switched it on")
-    local amber = "Off while " .. name .. " is loaded: " .. name .. " takes the errors before they reach this list."
-    local dim = "To use this instead, turn " .. name .. " off in the AddOns list and restart."
+    amber = amber or ("Off while " .. name .. " is loaded: " .. name .. " takes the errors before they reach this list.")
+    dim = dim or ("To use this instead, turn " .. name .. " off in the AddOns list and restart.")
     local why = shownTexts(c, amber, true)[1]
     check(why, name .. ": no amber line")
     check(c._state(why).text:find(dim, 1, true), name .. ": no dim line under it")
@@ -149,7 +149,10 @@ test("stand aside: a handler replaced after this addon loaded counts as another 
     standAsideCase(function(c)
         rawset(c.env, "ScriptErrorsFrame", nil)
         replaceHandlerAfterUs(c)
-    end, "another error addon")
+    end, "another error addon",
+    -- Spec 0.15.0 A6: no name to give, so the line does not repeat one.
+    "Off while another addon handles errors first.",
+    "Turn that addon off in the AddOns list to use this.")
 end)
 
 test("stand aside: with the error box there, a handler chained in by another addon does not block", function()
@@ -358,6 +361,23 @@ test("chat: others' errors give one chat line per session", function()
     local lines = T.chatLines(c)
     eq(#lines, 1)
     check(lines[1]:find("ExampleAddon", 1, true) and lines[1]:find("Settings > Errors", 1, true), lines[1])
+end)
+
+-- Spec 0.15.0 A6: the line reads as a sentence for a macro and for an unknown source.
+test("chat: a macro's error and one from nowhere readable each give a plain sentence", function()
+    local c = on()
+    c:luaError("[string \"/run x()\"]:1: attempt to call a nil value")
+    local lines = T.chatLines(c)
+    eq(#lines, 1)
+    check(lines[1]:find("An error from a macro or script was caught. See Settings > Errors.", 1, true), lines[1])
+    local c2 = on()
+    local msg, stack = "a hidden message", "a hidden stack"
+    c2.world.secrets[msg], c2.world.secrets[stack] = true, true
+    c2:luaError(msg, stack)
+    lines = T.chatLines(c2)
+    eq(#lines, 1)
+    check(lines[1]:find("An error was caught. See Settings > Errors.", 1, true), lines[1])
+    check(not lines[1]:find("Unknown", 1, true), lines[1])
 end)
 
 ---------------------------------------------------------------------------
