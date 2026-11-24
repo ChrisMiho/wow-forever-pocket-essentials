@@ -853,7 +853,7 @@ function UI:CreatePanel(globalName, title, width, height)
     panel.peTitle:SetWordWrap(false)
 
     panel.closeButton = self:CreateButton(panel, "Close")
-    panel.closeButton:SetScript("OnClick", function() panel:Hide() end)
+    panel.closeButton:SetScript("OnClick", PE:Wrap("core", function() panel:Hide() end))
 
     panel.content = CreateFrame("Frame", nil, panel)
 
@@ -1045,8 +1045,8 @@ function UI:CreateScrollArea(parent)
         end
     end
     for name, fn in pairs(AreaMethods) do area[name] = fn end
-    area.upButton:SetScript("OnClick", function() area:PageUp() end)
-    area.downButton:SetScript("OnClick", function() area:PageDown() end)
+    area.upButton:SetScript("OnClick", PE:Wrap("core", function() area:PageUp() end))
+    area.downButton:SetScript("OnClick", PE:Wrap("core", function() area:PageDown() end))
     area.upButton:SetStyle("stepDim")
     area.downButton:SetStyle("stepDim")
 
@@ -1079,9 +1079,9 @@ function UI:CreateScrollArea(parent)
 
     -- No wheel on the handheld; this is for testing on a desktop.
     area.scrollFrame:EnableMouseWheel(true)
-    area.scrollFrame:SetScript("OnMouseWheel", function(_, delta)
+    area.scrollFrame:SetScript("OnMouseWheel", PE:Wrap("core", function(_, delta)
         area:ScrollBy(-(delta or 0) * AreaMetrics(area).row)
-    end)
+    end))
     return area
 end
 

@@ -1402,7 +1402,7 @@ local function QueueDraw()
     if drawQueued or not built or not panel:IsShown() then return end
     if C_Timer and C_Timer.After then
         drawQueued = true
-        C_Timer.After(0, QueuedDraw)
+        C_Timer.After(0, PE:Wrap("core", QueuedDraw))
     else
         Draw()
     end
