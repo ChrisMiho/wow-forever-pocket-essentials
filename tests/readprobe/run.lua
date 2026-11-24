@@ -40,7 +40,10 @@ end
 
 local temps = {}
 local function tempFile(text)
-    local path = os.tmpname()
+    -- $TMPDIR first: os.tmpname() always uses /tmp, which the command sandbox blocks.
+    local dir = os.getenv("TMPDIR")
+    local path = dir and string.format("%s/pe-test-%d-%d", (dir:gsub("/$", "")), os.time(), #temps + 1)
+        or os.tmpname()
     temps[#temps + 1] = path
     local f = assert(io.open(path, "wb"))
     f:write(text)
