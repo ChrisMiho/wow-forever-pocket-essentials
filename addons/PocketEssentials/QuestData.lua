@@ -61,7 +61,7 @@ local QUESTS_PER_STEP = 4      -- quests rebuilt in one step
 local ZONE_DELAY = 0.1
 local MAX_ITEM_SOURCES = 60    -- an item dropped by more kinds of creature than this "drops everywhere": not shown
 local MAX_SOURCE_POINTS = 1500 -- one creature or object with more spawn points than this is "everywhere": not shown
-local MAX_PINS = 300           -- most pins one objective may have; above it they are thinned evenly
+local MAX_PINS = 300           -- most pins one objective may have on one map; above it they are thinned evenly
 
 local type, pairs, ipairs, select, tostring, tonumber, pcall, xpcall = type, pairs, ipairs, select, tostring, tonumber, pcall, xpcall
 local floor = math.floor
@@ -307,31 +307,50 @@ local function Spread(pins, limit)
 end
 QD._Spread = Spread   -- test seam
 
--- This objective's surviving pins grouped by map (scratch, reused).
-local groups = {}
+-- This objective's surviving pins grouped by map, and per map: how many spots it
+-- has, how many of them were looked at, and the next one kept (scratch, reused).
+local groups, mapSpots, mapAt, mapNext = {}, {}, {}, {}
 
--- End of one objective: hand its pins over (thinned evenly if there are too many).
+-- End of one objective: hand its pins over. A map with more than MAX_PINS spots
+-- keeps MAX_PINS of them, spread evenly through its list; every other map keeps
+-- all of its own, however many the objective has on other maps.
 local function Flush(out)
     local n = bufN
-    local take = n > MAX_PINS and MAX_PINS or n
     local limit = limitCell
-    for i = 1, take do
-        local j = floor((i - 1) * n / take) + 1
+    for j = 1, n do
         local mapID = bufMap[j]
-        local pin = MakePin(j)
-        local list = out[mapID]
-        if not list then
-            list = {}
-            out[mapID] = list
-        end
-        list[#list + 1] = pin
-        if limit > 0 then
-            local g = groups[mapID]
-            if not g then
-                g = {}
-                groups[mapID] = g
+        mapSpots[mapID] = (mapSpots[mapID] or 0) + 1
+    end
+    for j = 1, n do
+        local mapID = bufMap[j]
+        local count = mapSpots[mapID]
+        local at = (mapAt[mapID] or 0) + 1
+        mapAt[mapID] = at
+        local keep = count <= MAX_PINS
+        if not keep then
+            -- Kept: spot floor((i - 1) * count / MAX_PINS) + 1 of this map, for i = 1 .. MAX_PINS.
+            local i = mapNext[mapID] or 1
+            if at == floor((i - 1) * count / MAX_PINS) + 1 then
+                keep = true
+                mapNext[mapID] = i + 1
             end
-            g[#g + 1] = pin
+        end
+        if keep then
+            local pin = MakePin(j)
+            local list = out[mapID]
+            if not list then
+                list = {}
+                out[mapID] = list
+            end
+            list[#list + 1] = pin
+            if limit > 0 then
+                local g = groups[mapID]
+                if not g then
+                    g = {}
+                    groups[mapID] = g
+                end
+                g[#g + 1] = pin
+            end
         end
     end
     local hook = QD._groupHook   -- test seam
@@ -347,6 +366,9 @@ local function Flush(out)
         bufQuest[j], bufText[j], bufTarget[j], bufInside[j], bufObjs[j] = nil, nil, nil, nil, nil
     end
     bufN = 0
+    wipe(mapSpots)
+    wipe(mapAt)
+    wipe(mapNext)
     wipe(seen)
     bufObj = nil
 end
