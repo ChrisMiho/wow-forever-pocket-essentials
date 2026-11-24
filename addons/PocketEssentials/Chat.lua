@@ -50,21 +50,27 @@ local function Escape(text)
 end
 
 ---------------------------------------------------------------------------
--- The saved whisper list: mod.opts.whispers, newest first, at most
--- MAX_WHISPERS long, so every counted mark has a button in the window.
+-- The saved whisper list: PE.charDB.chatWhispers, in this character's own
+-- saved file (PocketEssentialsCharDB), so an alt never sees the names and
+-- they stay out of the account-wide file that goes with a debug log. Newest
+-- first, at most MAX_WHISPERS long, so every counted mark has a button in
+-- the window.
 --   { name = "Thrall", target = "Thrall-Realm", unanswered = true, time = ... }
 -- `name` is the short form: the button label, and what an incoming and an
 -- outgoing whisper are matched by. `target` is the sender exactly as the game
--- delivered it, and is what the chat box gets addressed to.
+-- delivered it, and is what the chat box gets addressed to. The unanswered
+-- mark lives in the entry, so it moves with it.
 ---------------------------------------------------------------------------
 
+-- PE.charDB is read on every call: Core sets it again when the saved
+-- variables load.
 local function List()
-    local opts = mod and mod.opts
-    if type(opts) ~= "table" then return nil end
-    local list = opts.whispers
+    local charDB = PE.charDB
+    if type(charDB) ~= "table" then return nil end
+    local list = charDB.chatWhispers
     if type(list) ~= "table" then
         list = {}
-        opts.whispers = list
+        charDB.chatWhispers = list
     end
     return list
 end
@@ -447,7 +453,7 @@ end
 -- The window
 -- As big as its content and centred: a "Talk in" heading and the targets,
 -- then a "Whispers" heading and the names, in three columns of chips. Every
--- size in it is the shared size times the "Size of the chat picker window"
+-- size in it is the shared size times the "Chat picker size"
 -- setting (opts.scale, 70 to 150 per cent), except the border. So the window
 -- lays out its own title bar and has its own three fonts, set again only when
 -- it opens or redraws and a size has changed.
@@ -729,8 +735,9 @@ local function DoRefresh()
             btn.peChatTarget, btn.peChatEntry = nil, entry
             if entry.unanswered then SetDot(btn, true) end
         end
-        -- Always the last chip, so it is always in the same place.
-        PlaceChip(clearButton, "Clear marks", #shown + 1, y, "off")
+        -- Always the last chip, so it is always in the same place. Dimmed
+        -- (still tappable) while nothing is marked.
+        PlaceChip(clearButton, "Clear marks", #shown + 1, y, marked > 0 and "off" or "disabled")
         y = y + GridHeight(#shown + 1)
         used = used + #shown
     end
@@ -752,6 +759,18 @@ local function Refresh()
     if built and panel:IsShown() then mod:Safe(DoRefresh) end
 end
 
+-- True if a target drawn earlier is still there now: the same kind, number
+-- and name. Channel numbers shift when a city channel is left, and Party goes
+-- when the group does.
+local function StillThere(target)
+    local now = GatherTargets()
+    for i = 1, #now do
+        local t = now[i]
+        if t.chatType == target.chatType and t.target == target.target and t.label == target.label then return true end
+    end
+    return false
+end
+
 local function TargetClicked(btn)
     local entry, target = btn.peChatEntry, btn.peChatTarget
     if not (entry or target) then return end
@@ -759,6 +778,12 @@ local function TargetClicked(btn)
         -- The kind only: never who a whisper is for.
         PE:Debug("chat", "tapped: " .. (entry and "whisper"
             or (PE.Plain(target.chatType) .. (target.target ~= nil and (" " .. PE.Plain(target.target)) or ""))))
+    end
+    if not entry and not StillThere(target) then
+        if PE.debugOn then PE:Debug("chat", "tapped target is gone: window redrawn") end
+        Refresh()
+        mod:Print("That channel is gone.")
+        return
     end
     if PE:CombatRestricted() and not PE:GamepadUI() then
         -- Opening the chat box from an addon during a fight is refused by the
@@ -780,7 +805,8 @@ local function TargetClicked(btn)
         return
     end
     if opened == "set" then
-        local name = entry and "your whisper" or (type(target.label) == "string" and target.label or "that")
+        local name = entry and ("a whisper to " .. Escape(entry.name))
+            or (type(target.label) == "string" and target.label or "that")
         if TypeKeyArm(name) then
             mod:Print("Chat is set to " .. name .. ". Press A to type.")
         else
@@ -1095,14 +1121,21 @@ mod = PE:RegisterModule({
     label = "Chat picker",
     desc = "Tap the round button to pick who to talk to.",
     order = 60,
-    defaults = { whispers = {}, scale = SCALE_DEFAULT },
+    defaults = { scale = SCALE_DEFAULT },
 
     options = {
         { label = "Chat text size", value = TextSizeValue, stepper = TextSizeStepper, always = true,
-          help = "For every chat window, even with Chat picker off." },
-        { key = "scale", label = "Size of the chat picker window",
+          help = "All chat windows, even with Chat picker off." },
+        { key = "scale", label = "Chat picker size",
           number = { min = SCALE_MIN, max = SCALE_MAX, step = 10, default = SCALE_DEFAULT, suffix = "%", unit = "of normal" } },
     },
+
+    -- Before 0.15.0 the whisper list was in the account-wide file
+    -- (opts.whispers). It is dropped there, on or off, so names leave that
+    -- file; each character starts with an empty list once.
+    OnLoad = function(self)
+        if type(self.opts) == "table" then self.opts.whispers = nil end
+    end,
 
     OnEnable = function(self)
         CleanList()

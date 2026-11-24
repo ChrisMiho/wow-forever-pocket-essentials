@@ -1,6 +1,6 @@
 -- Pocket Essentials: two features in one file, sharing one engine.
 --   * "bags" (Bag sorting): a large Sort tab ("Sort button on the bag": Show /
---     Hide), a stick-click shortcut ("Click a stick in to sort": left or right)
+--     Hide), a stick-click shortcut ("Sort with a stick click": left or right)
 --     and, while the Sort tab shows, a d-pad route onto it.
 --   * "bagWindow" (Bigger bag): a size choice ("Bag size"), and the bag
 --     pictures always in one row at the top while it is on (controller style).
@@ -82,6 +82,7 @@ local bagFrame       -- ContainerFrameCombinedBags once found
 local hooksDone = false
 local layoutHooked = false
 local metricsHooked = false
+local bankHooked = false
 local sortButton     -- the big button (child of UIParent, anchored to the bag)
 local keyButton      -- hidden named button the chosen stick click is pointed at
 local confirmButton  -- hidden; holds the A button and is what A clicks while the cursor is on the tab
@@ -155,6 +156,22 @@ end
 local function BagShown()
     -- IsVisible: with the whole UI hidden (a cinematic) the bag does not count as open.
     return bagFrame ~= nil and bagFrame:IsVisible() and true or false
+end
+
+-- The game's bank window (Blizzard_UIPanels_Game/Camelot/BankFrame.xml), or nil.
+local function BankWindow()
+    local bank = BankFrame
+    if type(bank) ~= "table" or type(bank.IsShown) ~= "function" then return nil end
+    return bank
+end
+
+-- True while the bank window is open. The Sort tab sits outside the bag's
+-- left edge, which is where the bank's bag slots are, so it hides then.
+local function BankShown()
+    local bank = BankWindow()
+    if not bank then return false end
+    local ok, shown = pcall(bank.IsShown, bank)
+    return ok and shown == true
 end
 
 -- Blizzard always uses the combined bag in its gamepad style, whatever the
@@ -490,9 +507,15 @@ local function TabWanted()
     return not (opts and opts.showTab == false)
 end
 
+-- The tab is wanted and nothing covers its place: not while the bank is
+-- open (the stick click still sorts there).
+local function TabShowable()
+    return TabWanted() and not BankShown()
+end
+
 local function SyncButton()
     if not sortButton then return end
-    if active and BagShown() and TabWanted() then
+    if active and BagShown() and TabShowable() then
         LayoutButton()
         sortButton:Show()
     else
@@ -500,7 +523,7 @@ local function SyncButton()
     end
 end
 
--- The "Click a stick in to sort" choice: "l3" or "r3". Anything else reads as "l3".
+-- The "Sort with a stick click" choice: "l3" or "r3". Anything else reads as "l3".
 local function SortKeyChoice()
     local opts = Opts()
     local value = opts and opts.sortKey
@@ -643,7 +666,7 @@ end
 -- An override is only cleared if it is still ours, and one that is already
 -- there and not ours is left alone.
 local function ApplyRoute()
-    local wanted = TabWanted()
+    local wanted = TabShowable()
     local hadRoute = next(routed) ~= nil or tabRight ~= nil
     if not wanted and not hadRoute then
         navNote = nil
@@ -734,7 +757,7 @@ end
 -- feature, the tab or the bag is not there). Call it after anything that moves
 -- the bag's buttons. In a fight it waits for the fight to end.
 local function RefreshSortJump()
-    local wanted = TabWanted()
+    local wanted = TabShowable()
     if not wanted and next(routed) == nil and tabRight == nil then
         navNote = nil
         return
@@ -750,7 +773,7 @@ local function ConfirmKey()
 end
 
 local function ConfirmWanted()
-    return TabWanted() and tabFocused and BagShown()
+    return TabShowable() and tabFocused and BagShown()
         and sortButton ~= nil and sortButton:IsVisible() and true or false
 end
 
@@ -843,7 +866,7 @@ end
 -- Blizzard's cursor calls these two on the button it arrives on and leaves
 -- (SmartNavigation.lua, SelectButton), each behind its own taint barrier.
 local function OnTabFocused()
-    if not TabWanted() then return end
+    if not TabShowable() then return end
     tabFocused = true
     if PE.debugOn then PE:Debug("bags", "d-pad: on the Sort tab") end
     WatchBag(true)
@@ -1462,6 +1485,15 @@ local function OnBagHidden()
     RefreshSortJump()
 end
 
+-- The bank window opened or closed: the tab hides or comes back, and the
+-- d-pad route with it.
+local function OnBankChanged()
+    if not active then return end
+    SyncButton()
+    if not TabShowable() then DropFocus() end
+    RefreshSortJump()
+end
+
 local function OnMetricsChanged()
     if not active then return end
     SyncButton()
@@ -1485,6 +1517,14 @@ local function Setup()
     if not metricsHooked and PE.UI and PE.UI.OnMetricsChanged then
         metricsHooked = true
         PE.UI:OnMetricsChanged(mod:Wrap(OnMetricsChanged))
+    end
+    -- The bank window loads with the game's interface, before this addon.
+    -- Hooked, not its events: what counts is the window on screen.
+    local bank = BankWindow()
+    if not bankHooked and bank and type(bank.HookScript) == "function" then
+        bankHooked = true
+        bank:HookScript("OnShow", mod:Wrap(OnBankChanged))
+        bank:HookScript("OnHide", mod:Wrap(OnBankChanged))
     end
     return true
 end
@@ -1662,7 +1702,7 @@ mod = PE:RegisterModule({
               SyncConfirm()
               RefreshSortJump()
           end },
-        { key = "sortKey", label = "Click a stick in to sort", toggle = true,
+        { key = "sortKey", label = "Sort with a stick click", toggle = true,
           choices = {
               { value = "l3", label = "Left stick" },
               { value = "r3", label = "Right stick" },
@@ -1699,7 +1739,7 @@ mod = PE:RegisterModule({
 win = PE:RegisterModule({
     key = "bagWindow",
     label = "Bigger bag",
-    desc = "A bigger and better organized bag window.",
+    desc = "A bigger bag window, with your bags in one row at the top.",
     order = 31,
     -- 0.9.0: an old iconRow ("Bag icons") may still be in a saved table; it
     -- is left there and not read (the row is always on with the feature).

@@ -94,6 +94,7 @@ event	ZONE_CHANGED_NEW_AREA	Blizzard_APIDocumentationGenerated/MapDocumentation.
 frame	ActionButtonSpellAlertManager	Blizzard_ActionBar/Shared/ActionButtonSpellAlerts.lua used
 frame	BACKPACK_CONTAINER	Blizzard_FrameXMLBase/Constants.lua used
 frame	BAG_COMMAND_CONVERT_TO_COMBINED	Blizzard_UIPanels_Game/Mainline/ContainerFrame.lua used
+frame	BankFrame	Blizzard_UIPanels_Game/Camelot/BankFrame.xml used
 frame	BuffFrame	Blizzard_BuffFrame/BuffFrame.xml used
 frame	CHAT_FONT_HEIGHTS	Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua used
 frame	ChatFrame1	Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.xml used

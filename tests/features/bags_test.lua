@@ -274,6 +274,32 @@ test("bags: the Sort button choice hides the tab, the left stick still sorts, an
     check(btn:IsVisible(), "tab not shown again after Show")
 end)
 
+-- Spec 0.15.0 D4: the tab sits outside the bag's left edge, over the bank's bag slots, so it
+-- hides while the bank is open. The stick still sorts there.
+test("bags: the Sort tab hides while the bank is open, the stick still sorts, and it comes back after", function()
+    local c = newBags()
+    c:openBag()
+    local btn = sortButton(c)
+    check(btn:IsVisible(), "tab not shown")
+    c:openBank()
+    check(not btn:IsVisible(), "tab shown over the bank")
+    eq(bindings(c), { PADLSTICK = "PocketEssentialsBagSortKey" })
+    c:script(keyButton(c), "OnClick", "LeftButton", false)
+    eq(sorts(c), 1, "the stick did not sort at the bank")
+    c:closeBank()
+    check(btn:IsVisible(), "tab not back after the bank closed")
+    c:assertClean("bank")
+end)
+
+test("bags: the bag opened with the bank already open shows no Sort tab", function()
+    local c = newBags()
+    c:openBank()
+    c:openBag()
+    check(not sortButton(c):IsVisible(), "tab shown over the bank")
+    c:closeBank()
+    check(sortButton(c):IsVisible(), "tab not back after the bank closed")
+end)
+
 -- Bags.lua OnSortTapped -> DoSort: one C_Container.SortBags per tap while the bag is open.
 test("bags: tapping Sort with the bag open calls SortBags once", function()
     local c = newBags()
@@ -546,7 +572,7 @@ test("bags: the features are called Bag sorting and Bigger bag and no text of th
         eq(mod.desc, "Sort your bags with one press.")
         eq(mod.key, "bags")
         local win = c.PE:GetModule("bagWindow")
-        eq({ win.label, win.desc }, { "Bigger bag", "A bigger and better organized bag window." })
+        eq({ win.label, win.desc }, { "Bigger bag", "A bigger bag window, with your bags in one row at the top." })
         for _, text in ipairs(textsOf(c)) do
             check(not text:lower():find("big bag", 1, true), "old name in: " .. text)
         end
@@ -977,6 +1003,22 @@ test("d-pad to Sort: hiding the Sort button removes the route and showing it put
     is(rawget(sortButton(c), RIGHT), nil)
     chooseOption(c, "showTab", true)
     eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN)
+end)
+
+-- Spec 0.15.0 D4: with the bank open the tab is hidden, so the d-pad route treats it as gone.
+test("d-pad to Sort: the bank opening removes the route and A, and closing it puts the route back", function()
+    local c, grid = newPad()
+    c:openBag()
+    eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN)
+    focusTab(c, grid)
+    eq(confirmBindings(c), { PAD1 = CONFIRM })
+    c:openBank()
+    eq(leftJumps(grid, sortButton(c)), {})
+    is(rawget(sortButton(c), RIGHT), nil)
+    eq(next(confirmBindings(c) or {}), nil, "A still taken with the tab hidden")
+    c:closeBank()
+    eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN)
+    c:assertClean("bank route")
 end)
 
 -- 15. Plan: "clears overrides ... on switch-off"; in a fight, after it.
@@ -1958,7 +2000,7 @@ test("split: Bigger bag is its own feature with only Bag size", function()
     local c = newSplit()
     local win = c.PE:GetModule("bagWindow")
     check(win, "no bagWindow feature")
-    eq({ win.label, win.desc, win.order }, { "Bigger bag", "A bigger and better organized bag window.", 31 })
+    eq({ win.label, win.desc, win.order }, { "Bigger bag", "A bigger bag window, with your bags in one row at the top.", 31 })
     eq(#win.options, 1)
     local size = win.options[1]
     eq(size.key, "size")
@@ -1968,9 +2010,9 @@ test("split: Bigger bag is its own feature with only Bag size", function()
     eq(got, { "normal=Normal", "large=Large", "xlarge=Extra large" })
 end)
 
--- Spec 0.9.0, "Bag sorting": "Sort button on the bag: Show / Hide (showTab)"; "Click a stick in to
--- sort: Left stick / Right stick (sortKey l3 / r3)". The keys stay.
-test("split: Bag sorting has Sort button on the bag and Click a stick in to sort, and no How to sort or D-pad to Sort", function()
+-- Spec 0.9.0, "Bag sorting": "Sort button on the bag: Show / Hide (showTab)"; the stick row
+-- (spec 0.15.0 D5: "Sort with a stick click"): Left stick / Right stick (sortKey l3 / r3). The keys stay.
+test("split: Bag sorting has Sort button on the bag and Sort with a stick click, and no How to sort or D-pad to Sort", function()
     local c = newSplit()
     local mod = c.PE:GetModule("bags")
     eq(mod.label, "Bag sorting")
@@ -1979,7 +2021,7 @@ test("split: Bag sorting has Sort button on the bag and Click a stick in to sort
     eq({ tab.key, tab.label }, { "showTab", "Sort button on the bag" })
     eq({ tab.choices[1].value, tab.choices[1].label, tab.choices[2].value, tab.choices[2].label }, { true, "Show", false, "Hide" })
     eq(#tab.choices, 2)
-    eq({ stick.key, stick.label }, { "sortKey", "Click a stick in to sort" })
+    eq({ stick.key, stick.label }, { "sortKey", "Sort with a stick click" })
     eq({ stick.choices[1].value, stick.choices[1].label, stick.choices[2].value, stick.choices[2].label },
         { "l3", "Left stick", "r3", "Right stick" })
     eq(#stick.choices, 2)

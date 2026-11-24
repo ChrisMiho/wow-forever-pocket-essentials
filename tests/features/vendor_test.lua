@@ -300,7 +300,8 @@ test("sell junk: never calls a confirm function (only UseContainerItem and Repai
 end)
 
 -- DECISIONS "Vendor": 'e.g. "Sold 7 junk items for 1g 20s 5c."'. Vendor.lua SellReport.
-test("sell junk: the chat line reports the money gained (game coin text)", function()
+-- Spec 0.15.0 D2: N counts items, not stacks; the price is what was sold.
+test("sell junk: the chat line reports the price of what was sold (game coin text), items counted, not stacks", function()
     local c = visit({ on = { "sellJunk" } }, function(c)
         put(c, 0, 1, item(1401, 0, 12345))
         put(c, 0, 2, item(1402, 0, 250, { count = 3 }))   -- 750 for the stack
@@ -308,7 +309,49 @@ test("sell junk: the chat line reports the money gained (game coin text)", funct
     c:openMerchant()
     c:advance(5)
     eq(c.world.money, 100000 + 12345 + 750)
-    eq(T.chatLines(c), { "Sold 2 junk items for " .. coin(c, 13095) .. "." })
+    eq(T.chatLines(c), { "Sold 4 junk items for " .. coin(c, 13095) .. "." })
+end)
+
+-- Spec 0.15.0 D2: buying food during the visit does not skew the line.
+test("sell junk: money spent buying during the visit does not change the sell line", function()
+    local c = visit({ on = { "sellJunk" } }, function(c)
+        for slot = 1, 3 do put(c, 0, slot, item(1440 + slot, 0, 30)) end
+    end)
+    c:openMerchant()
+    c:advance(0.4)
+    eq(T.sold(c), { { 0, 1 } })
+    c.world.money = c.world.money - 5000   -- the player buys something
+    c:advance(5)
+    eq(#T.sold(c), 3)
+    eq(lineStartingWith(c, "Sold "), { "Sold 3 junk items for " .. coin(c, 90) .. "." })
+end)
+
+-- Spec 0.15.0 D2: closing the vendor before the money has come in does not report too little.
+test("sell junk: the sell line does not wait for the money to arrive", function()
+    local c = visit({ on = { "sellJunk" } }, function(c)
+        for slot = 1, 3 do put(c, 0, slot, item(1450 + slot, 0, 20)) end
+    end)
+    c:openMerchant()
+    c:advance(0.4)
+    eq(T.sold(c), { { 0, 1 } })
+    c.world.money = c.world.money - 20     -- the sale's money has not come in yet
+    c:closeMerchant()
+    eq(lineStartingWith(c, "Sold "), { "Sold 1 junk item for " .. coin(c, 20) .. "." })
+end)
+
+-- Spec 0.15.0 D2: a first sale that did not go is taken off the line.
+test("sell junk: a first sale that did not go is not counted", function()
+    local c = visit({ on = { "sellJunk" } }, function(c)
+        put(c, 0, 1, item(1461, 0, 20, { count = 2 }))
+        put(c, 0, 2, item(1462, 0, 20))
+    end)
+    local real = c.env.C_Container.UseContainerItem
+    c.env.C_Container.UseContainerItem = function() end   -- the game sells nothing and says nothing
+    c:openMerchant()
+    c:advance(5)
+    c.env.C_Container.UseContainerItem = real
+    eq(#lineStartingWith(c, "The first junk item did not sell"), 1)
+    eq(#lineStartingWith(c, "Sold "), 0, "reported a sale that did not happen")
 end)
 
 test("sell junk: the chat line uses the plain 'Xg Ys Zc' form when the game has no coin text", function()
@@ -319,7 +362,7 @@ test("sell junk: the chat line uses the plain 'Xg Ys Zc' form when the game has 
     rawset(c.env, "C_CurrencyInfo", nil)
     c:openMerchant()
     c:advance(5)
-    eq(T.chatLines(c), { "Sold 2 junk items for 1g 30s 95c." })
+    eq(T.chatLines(c), { "Sold 4 junk items for 1g 30s 95c." })
 end)
 
 test("sell junk: the chat line says 'item' for one and nothing is said when nothing sold", function()
@@ -339,7 +382,7 @@ test("sell junk: the chat line says 'item' for one and nothing is said when noth
     eq(T.sold(c2), {})
 end)
 
--- Vendor.lua line 78-80: the repair cost is added back, so the line is junk money only.
+-- Spec 0.15.0 D2: the line is the price of what was sold, so the repair bill is not in it.
 test("sell junk: the money line does not count the repair bill", function()
     local c = visit({ on = { "sellJunk", "repair" }, money = 10000, merchant = { canRepair = true, repairCost = 2000 } },
         function(c) put(c, 0, 1, item(1431, 0, 40)) end)
@@ -644,7 +687,7 @@ test("debug log: one vendor visit writes the sell junk and repair lines in order
         "first sale check: went",
         "selling bag 0 slot 3 item 1603",
         "stopped: list finished",
-        "money line: 2 tried, 11 copper gained",
+        "money line: 2 items, 11 copper",
     })
     eq(debugLines(c, "repair"), {
         "vendor opened, can repair: true",

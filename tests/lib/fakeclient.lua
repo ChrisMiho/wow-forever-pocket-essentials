@@ -1157,6 +1157,9 @@ function Client.new(opts)
     W[merchant].shown = false
     local trade = Blizz("Frame", "TradeFrame", UIParent)
     W[trade].shown = false
+    -- The bank window (Blizzard_UIPanels_Game/Camelot/BankFrame.xml), hidden until c:openBank().
+    local bank = Blizz("Frame", "BankFrame", UIParent)
+    W[bank].shown = false
     local editMode = Blizz("Frame", "EditModeManagerFrame", UIParent)
     W[editMode].shown = false
     BlizzMethod(editMode, "IsEditModeActive", function() return world.editMode and true or false end)
@@ -2912,6 +2915,15 @@ function Client:closeMerchant()
     self.world.merchant.open = false
     self.env.MerchantFrame:Hide()
     self:fire("MERCHANT_CLOSED")
+end
+
+-- The bank window shown and hidden (the game opens the bag beside it; open that with c:openBag()).
+function Client:openBank()
+    self.env.BankFrame:Show()
+end
+
+function Client:closeBank()
+    self.env.BankFrame:Hide()
 end
 
 -- The quest log's menu, opened the way the game does (by the global name, so a

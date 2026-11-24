@@ -88,14 +88,14 @@ end)
 test("core: new default options are added to old saved options without overwriting chosen values", function()
     local old = saved({}, {
         questIcons = { show = "all", size = "large", map = false },           -- an older version: no spots, cluster, mini ...
-        chat = { whispers = { { name = "Ann", target = "Ann", unanswered = true, time = 5 } } },
+        chat = { scale = 120 },
     })
     local c, PE = T.new({ saved = old })
     local opts = PE:GetModule("questIcons").opts
     check(opts == rawget(c.env, "PocketEssentialsDB").options.questIcons, "the saved table was not the one used")
     eq(opts.show, "all"); eq(opts.size, "large"); eq(opts.map, false)    -- chosen values kept (false is a choice too)
     eq(opts.spots, 5); eq(opts.cluster, 2); eq(opts.mini, true); eq(opts.hideHaze, true)  -- defaults added
-    eq(PE:GetModule("chat").opts.whispers[1].name, "Ann")
+    eq(PE:GetModule("chat").opts.scale, 120)
     eq(PE:GetModule("bagWindow").opts.size, "normal", "a feature with no saved options gets its defaults")
     eq(PE.db.ui, { size = "medium", hubPos = "LEFT", moved = {} })
 end)

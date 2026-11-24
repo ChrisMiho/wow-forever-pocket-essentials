@@ -94,9 +94,16 @@ local function badge(c, PE)
     return nil
 end
 
+-- The character's saved whisper list (spec 0.15.0 D1: PocketEssentialsCharDB.chatWhispers),
+-- or {} when nothing was written yet.
+local function whispers(PE)
+    local list = type(PE.charDB) == "table" and PE.charDB.chatWhispers
+    return type(list) == "table" and list or {}
+end
+
 local function savedList(PE)
     local out = {}
-    for i, e in ipairs(PE:GetModule("chat").opts.whispers) do
+    for i, e in ipairs(whispers(PE)) do
         out[i] = { name = e.name, unanswered = e.unanswered }
     end
     return out
@@ -182,7 +189,7 @@ test("chat: a seventh whisperer pushes out the oldest", function()
     local c, PE = newChat()
     for i = 1, 7 do c:whisperIn("W" .. i, "hi") end
     eq(openPicker(c, PE).whispers, { "W7", "W6", "W5", "W4", "W3", "W2" })
-    eq(#PE:GetModule("chat").opts.whispers, 6)
+    eq(#whispers(PE), 6)
     eq(badge(c, PE), "6", "the badge counts only the six that have buttons")
 end)
 
@@ -194,7 +201,7 @@ test("chat: a repeat whisperer moves to the front without being listed twice", f
     c:whisperIn("W3", "hi")
     c:whisperIn("W1", "again")
     eq(openPicker(c, PE).whispers, { "W1", "W3", "W2" })
-    eq(#PE:GetModule("chat").opts.whispers, 3)
+    eq(#whispers(PE), 3)
     eq(badge(c, PE), "3")
 end)
 
@@ -205,7 +212,7 @@ test("chat: a whisperer on our realm shows by short name, another realm by full 
     c:whisperIn("Jaina-Otherrealm", "hi")
     eq(openPicker(c, PE).whispers, { "Jaina-Otherrealm", "Thrall" })
     c:whisperOut("Thrall-Camelot", "hello")  -- our reply is matched to the same person
-    eq(#PE:GetModule("chat").opts.whispers, 2)
+    eq(#whispers(PE), 2)
 end)
 
 ---------------------------------------------------------------------------
@@ -279,7 +286,7 @@ test("chat: during chat lockdown nothing is recorded and nothing errors", functi
     c:whisperIn("Ann", "hi")
     c:whisperOut("Bob", "hello")
     c:advance(0.5)
-    eq(PE:GetModule("chat").opts.whispers, {})
+    eq(whispers(PE), {})
     eq(badge(c, PE), nil)
     c:assertClean("lockdown")
     -- and it records again once the lockdown ends
@@ -292,7 +299,7 @@ end)
 test("chat: with the feature off, whispers are not recorded and no whisper event is registered", function()
     local c, PE = T.new({})
     c:whisperIn("Ann", "hi")
-    eq(PE:GetModule("chat").opts.whispers, {})
+    eq(whispers(PE), {})
     eq(badge(c, PE), nil)
     for _, rec in ipairs(c:frames()) do
         if rec.addonFile then
@@ -440,7 +447,8 @@ test("chat: prompt: with the Gamepad UI on, a tap shows 'Press A to type' naming
     eq(#c:problems(), 0, table.concat(c:problems(), " / "))
 end)
 
-test("chat: prompt: a whisper prompt says 'your whisper', never the name", function()
+-- Spec 0.15.0 D5: "Chat is set to a whisper to <name>."
+test("chat: prompt: a whisper prompt names who the whisper is to", function()
     local c = T.new({ on = { "chat" }, gamepadUI = true })
     local PE = c.PE
     c:fire("CHAT_MSG_WHISPER", "hello", "Bobby-Realm", "", "", "Bobby-Realm", "", 0, 0, "", 0, 1, "guid")
@@ -452,7 +460,12 @@ test("chat: prompt: a whisper prompt says 'your whisper', never the name", funct
     check(btn, "no whisper button")
     c:click(btn)
     local _, lines = promptLines(c)
-    eq(lines[2], "Chat is set to your whisper")
+    eq(lines[2], "Chat is set to a whisper to Bobby-Realm")
+    local said = false
+    for _, line in ipairs(T.chatLines(c)) do
+        if line == "Chat is set to a whisper to Bobby-Realm. Press A to type." then said = true end
+    end
+    check(said, "the chat line does not name the whisper: " .. table.concat(T.chatLines(c), " / "))
 end)
 
 test("chat: prompt: no prompt when the A button could not be lent (in a fight)", function()
@@ -605,6 +618,57 @@ test("chat: tapping a channel opens the chat box set to that channel number", fu
     eq(c.chatBox.channelTarget, 1)
 end)
 
+-- Spec 0.15.0 D3: a tapped channel that is gone (left a city, channel numbers shifted) is not
+-- used; the window redraws with what is there now and says so.
+test("chat: a channel that is gone since the window was drawn is not used, and the window redraws", function()
+    local c, PE = newChat(function(c)
+        c.world.channels = { { id = 1, name = "General" }, { id = 2, name = "Trade" } }
+    end)
+    openPicker(c, PE)
+    local trade = buttonLabelled(c, "2. Trade")
+    c.world.channels = { { id = 1, name = "General" } }   -- left the city
+    c:click(trade)
+    eq(chatCalls(c), {}, "the chat box was pointed at a channel that is gone")
+    check(panelOf(c):IsShown(), "the window closed")
+    eq(readPicker(c).targets, { "Say", "Yell", "1. General" })
+    eq(T.chatLines(c), { "That channel is gone." })
+end)
+
+test("chat: a channel whose number now names another channel is not used", function()
+    local c, PE = newChat(function(c)
+        c.world.channels = { { id = 1, name = "General" }, { id = 2, name = "Trade" } }
+    end)
+    openPicker(c, PE)
+    local trade = buttonLabelled(c, "2. Trade")
+    c.world.channels = { { id = 1, name = "General" }, { id = 2, name = "LookingForGroup" } }
+    c:click(trade)
+    eq(chatCalls(c), {})
+    eq(readPicker(c).targets, { "Say", "Yell", "1. General", "2. LookingForGroup" })
+    eq(T.chatLines(c), { "That channel is gone." })
+end)
+
+test("chat: Party after leaving the group is not used", function()
+    local c, PE = newChat(function(c) c.world.group = "party" end)
+    openPicker(c, PE)
+    local party = buttonLabelled(c, "Party")
+    c.world.group = "none"
+    c:click(party)
+    eq(chatCalls(c), {})
+    eq(readPicker(c).targets, { "Say", "Yell" })
+    eq(T.chatLines(c), { "That channel is gone." })
+end)
+
+test("chat: a channel still there is used as before", function()
+    local c, PE = newChat(function(c)
+        c.world.channels = { { id = 1, name = "General" }, { id = 2, name = "Trade" } }
+    end)
+    openPicker(c, PE)
+    c:click(buttonLabelled(c, "2. Trade"))
+    eq(c.chatBox.channelTarget, 2)
+    check(not panelOf(c):IsShown(), "the picker did not close after a tap")
+    eq(T.chatLines(c), {})
+end)
+
 -- Chat.lua TargetClicked: a whisper button addresses the sender exactly as the game delivered it.
 test("chat: tapping a whisperer opens the chat box set to a whisper to that person's full name", function()
     local c, PE = newChat()
@@ -627,13 +691,13 @@ end)
 
 -- Chat.lua OnEnable line 594 (UpdateBadge) and CleanList lines 76-92.
 test("chat: saved unanswered whispers show the badge when chat is enabled at login", function()
-    local saved = { version = 1, enabled = { chat = true }, ui = { size = "medium", hubPos = "LEFT" }, errors = {},
-        options = { chat = { whispers = {
-            { name = "Ann", target = "Ann", unanswered = true, time = 1 },
-            { name = "Bob", target = "Bob", unanswered = false, time = 2 },
-            { name = "Cy", target = "Cy-Realm", unanswered = true, time = 3 },
-        } } } }
-    local c, PE = T.new({ saved = saved })
+    local saved = { version = 1, enabled = { chat = true }, ui = { size = "medium", hubPos = "LEFT" }, errors = {} }
+    local savedChar = { chatWhispers = {
+        { name = "Ann", target = "Ann", unanswered = true, time = 1 },
+        { name = "Bob", target = "Bob", unanswered = false, time = 2 },
+        { name = "Cy", target = "Cy-Realm", unanswered = true, time = 3 },
+    } }
+    local c, PE = T.new({ saved = saved, savedChar = savedChar })
     eq(badge(c, PE), "2")
     eq(openPicker(c, PE).whispers, { "Ann", "Bob", "Cy" })
 end)
@@ -642,11 +706,46 @@ test("chat: a saved list longer than six, with Battle.net or damaged entries, is
     local list = { { name = "A1", target = "A1", unanswered = true, time = 1 }, { bn = true, name = "BN", unanswered = true },
         { name = "", unanswered = true }, "junk" }
     for i = 2, 8 do list[#list + 1] = { name = "A" .. i, target = "A" .. i, unanswered = true, time = i } end
-    local saved = { version = 1, enabled = { chat = true }, ui = { size = "medium", hubPos = "LEFT" }, errors = {},
-        options = { chat = { whispers = list } } }
-    local c, PE = T.new({ saved = saved })
+    local saved = { version = 1, enabled = { chat = true }, ui = { size = "medium", hubPos = "LEFT" }, errors = {} }
+    local c, PE = T.new({ saved = saved, savedChar = { chatWhispers = list } })
     eq(openPicker(c, PE).whispers, { "A1", "A2", "A3", "A4", "A5", "A6" })
     eq(badge(c, PE), "6")
+end)
+
+-- Spec 0.15.0 D1: the whisper list belongs to the character, in PocketEssentialsCharDB,
+-- not the account-wide file players send with the debug log.
+test("chat: whispers are saved in the character's own file, not the shared one", function()
+    local c, PE = newChat()
+    c:whisperIn("Ann", "hi")
+    eq(savedList(PE), { { name = "Ann", unanswered = true } })
+    check(rawget(c.env, "PocketEssentialsCharDB").chatWhispers == PE.charDB.chatWhispers, "not in PocketEssentialsCharDB")
+    eq(rawget(c.env, "PocketEssentialsDB").options.chat.whispers, nil, "a name went into the shared file")
+end)
+
+test("chat: an alt does not see the main's whisperers", function()
+    local main, PEmain = newChat()
+    main:whisperIn("Ann", "hi")
+    local shared = rawget(main.env, "PocketEssentialsDB")
+    -- The alt logs in with the same account file and its own (empty) character file.
+    local alt, PEalt = T.new({ saved = shared, savedChar = {} })
+    eq(openPicker(alt, PEalt).whispers, {})
+    eq(badge(alt, PEalt), nil)
+end)
+
+test("chat: an old shared whisper list is removed at login and not shown", function()
+    local saved = { version = 1, enabled = { chat = true }, ui = { size = "medium", hubPos = "LEFT" }, errors = {},
+        options = { chat = { scale = 100, whispers = {
+            { name = "Ann", target = "Ann", unanswered = true, time = 1 },
+        } } } }
+    local c, PE = T.new({ saved = saved })
+    eq(rawget(c.env, "PocketEssentialsDB").options.chat.whispers, nil, "the old list is still in the shared file")
+    eq(openPicker(c, PE).whispers, {})
+    eq(badge(c, PE), nil)
+    -- With the feature off the old list goes too.
+    local saved2 = { version = 1, enabled = {}, ui = { size = "medium", hubPos = "LEFT" }, errors = {},
+        options = { chat = { whispers = { { name = "Bob", target = "Bob", unanswered = true, time = 1 } } } } }
+    local c2 = T.new({ saved = saved2 })
+    eq(rawget(c2.env, "PocketEssentialsDB").options.chat.whispers, nil, "the old list stayed with chat off")
 end)
 
 -- DECISIONS "What was left out": "Battle.net whispers ... Only ordinary character whispers are listed";
@@ -958,11 +1057,9 @@ test("chat size: nothing is called or saved until a button is tapped", function(
     settingsButton(c, PE, "+")
     eq(#sizeCalls(c), 0)
     local saved = rawget(c.env, "PocketEssentialsDB").options.chat
-    eq(saved.whispers, {})
     -- The window size (spec 0.9.0, key scale) is the picker's own setting, not the text size.
-    local keys = 0
-    for key in pairs(saved) do if key ~= "scale" then keys = keys + 1 end end
-    eq(keys, 1, "the chat feature saved something besides its whisper list")
+    -- The whisper list is in the character's file (spec 0.15.0 D1).
+    for key in pairs(saved) do eq(key, "scale", "the chat feature saved something besides its window size") end
 end)
 
 -- Spec 3 "Rules": the edit box is never touched; the game's own size list is not written to.
@@ -1198,7 +1295,7 @@ test("chat size: with the feature off nothing is saved and nothing is called unt
     local saved = rawget(c.env, "PocketEssentialsDB").options.chat
     for key in pairs(type(saved) == "table" and saved or {}) do
         -- scale: the picker window's size (spec 0.9.0), not the text size.
-        if key ~= "scale" then eq(key, "whispers", "the chat feature saved something besides its whisper list") end
+        eq(key, "scale", "the chat feature saved something besides its window size")
     end
 end)
 
@@ -1544,7 +1641,7 @@ test("chat window: the width is 3 chips of 3.4 buttons plus the gaps and padding
     near(t - b, M.button, "chip height")
 end)
 
-test("chat window: the size follows the Size of the chat picker window setting", function()
+test("chat window: the size follows the Chat picker size setting", function()
     local c, PE = newChat()
     eq(PE:GetModule("chat").opts.scale, 100, "the default")
     c:whisperIn("Ann", "hi")
@@ -1675,7 +1772,8 @@ test("chat window: the keyboard hint is gone, the headings are Talk in and Whisp
     check(not texts:find("Clear marks", 1, true), "Clear marks with no names: " .. texts)
 end)
 
-test("chat window: Clear marks is the last chip, in the off style, even with nothing marked", function()
+-- Spec 0.15.0 D5: dimmed (the disabled style) when nothing is marked.
+test("chat window: Clear marks is the last chip, in the off style, dimmed when nothing is marked", function()
     local c, PE = newChat()
     c:whisperIn("Ann", "hi")
     c:whisperIn("Bob", "hi")
@@ -1692,6 +1790,13 @@ test("chat window: Clear marks is the last chip, in the off style, even with not
     openPicker(c, PE)
     list = chips(c)
     eq(T.labelOf(list[#list]), "Clear marks", "with no marks at all")
+    eq(list[#list].peStyle, "disabled", "not dimmed with nothing marked")
+    -- A new whisper marks a name again: the chip is no longer dimmed.
+    c:whisperIn("Cy", "hi")
+    tapHub(c, PE)
+    openPicker(c, PE)
+    list = chips(c)
+    eq(list[#list].peStyle, "off")
 end)
 
 test("chat window: an unanswered name has the warn style and a red dot at its top-right, no NEW", function()
@@ -1735,10 +1840,10 @@ test("chat options: Chat text size keeps always and gains help; the window size 
     local opts = PE:GetModule("chat").options
     eq(opts[1].label, "Chat text size")
     eq(opts[1].always, true)
-    eq(opts[1].help, "For every chat window, even with Chat picker off.")
+    eq(opts[1].help, "All chat windows, even with Chat picker off.")
     local n = opts[2]
     eq(n.key, "scale")
-    eq(n.label, "Size of the chat picker window")
+    eq(n.label, "Chat picker size")
     eq(n.number, { min = 70, max = 150, step = 10, default = 100, suffix = "%", unit = "of normal" })
     eq(PE:GetModule("chat").opts.scale, 100)
 end)

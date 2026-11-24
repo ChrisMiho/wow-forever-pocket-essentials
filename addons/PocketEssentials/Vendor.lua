@@ -76,10 +76,6 @@ if Enum and Enum.ItemQuality and type(Enum.ItemQuality.Poor) == "number" then
     POOR = Enum.ItemQuality.Poor
 end
 
--- Copper our own repair feature has asked the vendor to take, in total. The
--- sell line is worked out from the change in money, so it adds this back.
-local repairSpent = 0
-
 local sellJunk          -- the module
 local run               -- this vendor visit (MERCHANT_SHOW to MERCHANT_CLOSED), or nil
 
@@ -138,35 +134,33 @@ local function ScanJunk()
     return list
 end
 
--- Prints the visit's one line, once: how many were sold and how much money
--- came in. Nothing if nothing was tried or no money arrived.
+-- Prints the visit's one line, once: how many items were sold (a stack of
+-- three counts three) and their price, as read from each item just before it
+-- went. Not the change in money: buying, buybacks and the time the money takes
+-- to arrive would skew that. Nothing if no sale was tried.
 local function SellReport(r)
     if r.reported then return end
     r.reported = true
     r.stopped = true
-    if r.attempts <= 0 or not r.startMoney then
-        if PE.debugOn then
-            PE:Debug("sellJunk", r.attempts <= 0 and "money line: nothing said, no sale tried"
-                or "money line: nothing said, money at the start was unreadable")
-        end
+    if r.attempts <= 0 or r.items <= 0 then
+        if PE.debugOn then PE:Debug("sellJunk", "money line: nothing said, no sale tried") end
         return
     end
-    local money = Num(GetMoney())
-    if not money then
-        if PE.debugOn then PE:Debug("sellJunk", "money line: nothing said, money unreadable now") end
-        return
-    end
-    local gain = money - r.startMoney + (repairSpent - r.startRepair)
     if PE.debugOn then
-        PE:Debug("sellJunk", "money line: " .. r.attempts .. " tried, " .. gain .. " copper gained"
-            .. (gain <= 0 and ", nothing said" or ""))
+        PE:Debug("sellJunk", "money line: " .. r.items .. " items, " .. r.value .. " copper")
     end
-    if gain <= 0 then return end
-    local text = "Sold " .. r.attempts .. (r.attempts == 1 and " junk item for " or " junk items for ") .. Money(gain) .. "."
+    local text = "Sold " .. r.items .. (r.items == 1 and " junk item for " or " junk items for ") .. Money(r.value) .. "."
     sellJunk:Print(text)
 end
 
--- No more sales this visit; the line follows once the money has come in.
+-- Counts one sale in the line, or (sign -1) takes it off again.
+local function CountSale(r, e, sign)
+    r.attempts = r.attempts + sign
+    r.items = r.items + sign * e.count
+    r.value = r.value + sign * e.count * e.price
+end
+
+-- No more sales this visit; the line follows a moment later.
 local function SellStop(r)
     if r.stopped then return end
     r.stopped = true
@@ -209,8 +203,10 @@ local function SellStep(r)
         r.i = r.i + 1
         -- Looked at again just before it goes: same item, still grey, still
         -- worth something, not locked. Otherwise skipped.
-        if JunkAt(e.bag, e.slot) == e.itemID then
-            r.attempts = r.attempts + 1
+        local itemID, count, price = JunkAt(e.bag, e.slot)
+        if itemID == e.itemID then
+            e.count, e.price = count, price
+            CountSale(r, e, 1)
             if PE.debugOn then
                 PE:Debug("sellJunk", "selling bag " .. e.bag .. " slot " .. e.slot .. " item " .. e.itemID)
             end
@@ -220,7 +216,7 @@ local function SellStep(r)
                 -- The game refused the sale (it reports that synchronously,
                 -- inside the call). Trying the next item would only bring its
                 -- warning back every step: stop for this visit.
-                r.attempts = r.attempts - 1
+                CountSale(r, e, -1)
                 if PE.debugOn then PE:Debug("sellJunk", "stopped: the game refused the sale") end
                 sellJunk:Print("The game would not let Pocket Essentials sell items here; stopped selling.")
                 SellStop(r)
@@ -238,7 +234,7 @@ local function SellStep(r)
             sellJunk:After(SELL_CHECK_DELAY, function()
                 if run ~= r or r.stopped then return end
                 if JunkAt(e.bag, e.slot) == e.itemID then
-                    r.attempts = r.attempts - 1
+                    CountSale(r, e, -1)
                     if PE.debugOn then
                         PE:Debug("sellJunk", "first sale check: still there")
                         PE:Debug("sellJunk", "stopped: the first item did not sell")
@@ -261,7 +257,7 @@ end
 
 local function SellOnShow(mod)
     if run then return end -- this visit is already being handled
-    local r = { list = {}, i = 1, attempts = 0, startMoney = Num(GetMoney()), startRepair = repairSpent }
+    local r = { list = {}, i = 1, attempts = 0, items = 0, value = 0 }
     run = r
     if PE.debugOn then PE:Debug("sellJunk", "vendor opened") end
     -- A short wait so the window and the bags have settled.
@@ -295,7 +291,7 @@ sellJunk = PE:RegisterModule({
 
     OnEnable = function(mod)
         if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo
-                and C_Container.UseContainerItem and C_Item and C_Item.GetItemInfo and GetMoney) then
+                and C_Container.UseContainerItem and C_Item and C_Item.GetItemInfo) then
             error("This game version does not have the functions needed to sell items.", 0)
         end
         -- Switched on with a vendor window already open: nothing until the next visit.
@@ -355,7 +351,6 @@ local function RepairOnShow()
     end
     if PE.debugOn then PE:Debug("repair", "repaired for " .. cost .. " copper") end
     repair:Print("Repairing for " .. Money(cost) .. ".")
-    repairSpent = repairSpent + cost
 end
 
 local function RepairOnClosed()
