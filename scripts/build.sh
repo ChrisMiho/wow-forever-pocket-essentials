@@ -67,6 +67,8 @@ if ! grep -q -F "## [$version]" CHANGELOG.md; then
 fi
 
 cp -R addons/PocketEssentials "$stage/"
+# Hidden files and folders (editor or tool leftovers such as .DS_Store or .claude) never ship.
+find "$stage/PocketEssentials" -name '.*' -prune -exec rm -rf {} +
 unzip -q "$qdb_zip" -d "$stage"
 
 # The old standalone QuestDots addon was folded into PocketEssentials. It must
