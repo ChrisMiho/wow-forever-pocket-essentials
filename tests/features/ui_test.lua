@@ -1090,6 +1090,34 @@ test("scroll bar: the arrow tabs dim at the ends and page like Up and Down did",
     c:assertClean("scroll bar tabs")
 end)
 
+-- 0.15.0 (B9): the tabs draw our arrow picture (up, and turned over for
+-- down) inside the tab, tinted like the tab's text, instead of "^" and "v".
+test("scroll bar: the arrow tabs draw the arrow picture, not letters, tinted like their text", function()
+    local c, PE = T.new({})
+    local area, m = bareArea(c, PE, true, 4000)
+    for name, btn in pairs({ up = area.upButton, down = area.downButton }) do
+        local icon = btn.peIcon
+        check(icon, name .. ": no arrow picture")
+        eq(icon:GetTexture(), "Interface\\AddOns\\PocketEssentials\\Icons\\arrow", name .. ": the picture")
+        check(icon:IsVisible(), name .. ": the picture is hidden")
+        check(not btn.peText:IsVisible() or (btn.peText:GetText() or "") == "", name .. ": a letter shows on the tab")
+        local il, ir, it, ib = c._rect(icon)
+        local bl, br, bt, bb = c._rect(btn)
+        check(il >= bl - 0.01 and ir <= br + 0.01 and it <= bt + 0.01 and ib >= bb - 0.01, name .. ": the picture is outside the tab")
+        check(ir - il > (br - bl) * 0.4, name .. ": the picture is too small for the tab")
+        local _, top, _, bottom = icon:GetTexCoord()
+        if name == "up" then check(top < bottom, "up: the picture is turned over") else check(top > bottom, "down: the picture is not turned over") end
+        for _, style in ipairs({ "step", "stepDim" }) do
+            btn:SetStyle(style)
+            local tc = c._state(btn.peText).textColor
+            local tr, tg, tb = tc[1], tc[2], tc[3]
+            local vr, vg, vb = icon:GetVertexColor()
+            check(near(tr, vr) and near(tg, vg) and near(tb, vb), name .. ", " .. style .. ": the picture is not tinted like the text")
+        end
+    end
+    c:assertClean("scroll bar arrows")
+end)
+
 test("touch: not asked yet reads as yes; only an explicit no hides the bar", function()
     local c, PE = T.new({})
     eq(PE.db.ui.touch, nil)

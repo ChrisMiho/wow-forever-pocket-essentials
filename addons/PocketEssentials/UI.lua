@@ -231,6 +231,8 @@ local function Paint(btn)
     btn.peBorder:SetColorTexture(c.border[1], c.border[2], c.border[3], 1)
     btn.peFill:SetColorTexture(c.fill[1], c.fill[2], c.fill[3], 1)
     btn.peText:SetTextColor(c.text[1], c.text[2], c.text[3], 1)
+    -- A picture in place of the label (the scroll bar's arrow tabs) takes the text's colour.
+    if btn.peIcon then btn.peIcon:SetVertexColor(c.text[1], c.text[2], c.text[3], 1) end
     local inset = UI:Metrics().border * (btn.peSelected and 2 or 1)
     btn.peFill:ClearAllPoints()
     btn.peFill:SetPoint("TOPLEFT", btn, "TOPLEFT", inset, -inset)
@@ -427,6 +429,7 @@ end
 ---------------------------------------------------------------------------
 
 local DISC_TEXTURE = "Interface\\AddOns\\PocketEssentials\\Icons\\circle"
+local ARROW_TEXTURE = "Interface\\AddOns\\PocketEssentials\\Icons\\arrow"
 -- The circle art leaves a 1.5-pixel clear margin in its 128-pixel square, so
 -- the texture is drawn that much larger to make the visible disc `diameter`.
 local DISC_ART_SCALE = 128 / 125
@@ -1005,6 +1008,9 @@ function AreaMethods:Layout(width, height, noPaging, metrics)
     self.downButton:ClearAllPoints()
     self.downButton:SetPoint("BOTTOMRIGHT", self, "BOTTOMRIGHT", 0, 0)
     self.downButton:SetSize(column, m.button)
+    local side = min(column, m.button) * 0.8
+    if self.upButton.peIcon then self.upButton.peIcon:SetSize(side, side) end
+    if self.downButton.peIcon then self.downButton.peIcon:SetSize(side, side) end
     self.trackHeight = max(height - 2 * (m.button + m.gap), 1)
     self.track:ClearAllPoints()
     self.track:SetPoint("TOPRIGHT", self, "TOPRIGHT", 0, -(m.button + m.gap))
@@ -1020,9 +1026,24 @@ function UI:CreateScrollArea(parent)
     area.scrollFrame:SetScrollChild(area.child)
     area.offset, area.contentHeight, area.viewWidth, area.viewHeight = 0, 1, 10, 10
 
-    -- Plain letters as the arrows: any game font draws them.
+    -- Our arrow picture (Icons/arrow, pointing up), turned over for down by
+    -- its texture corners. The letters stay as the tabs' names, hidden while
+    -- the picture shows; they show only if the picture cannot be set.
     area.upButton = self:CreateButton(area, "^")
     area.downButton = self:CreateButton(area, "v")
+    for btn, coords in pairs({ [area.upButton] = { 0, 1, 0, 1 }, [area.downButton] = { 0, 1, 1, 0 } }) do
+        local icon = btn:CreateTexture(nil, "ARTWORK", nil, 1)
+        local ok, set = pcall(icon.SetTexture, icon, ARROW_TEXTURE)
+        if ok and set ~= false then
+            pcall(icon.SetTexCoord, icon, coords[1], coords[2], coords[3], coords[4])
+            icon:SetPoint("CENTER", btn, "CENTER", 0, 0)
+            btn.peIcon = icon
+            btn.peText:Hide()
+            Paint(btn)
+        else
+            icon:Hide()
+        end
+    end
     for name, fn in pairs(AreaMethods) do area[name] = fn end
     area.upButton:SetScript("OnClick", function() area:PageUp() end)
     area.downButton:SetScript("OnClick", function() area:PageDown() end)
