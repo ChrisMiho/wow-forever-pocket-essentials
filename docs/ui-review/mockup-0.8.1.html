@@ -1448,7 +1448,7 @@ const NOTES_P={
 /* ---------- new (draft): Face bars, one setup (2026-11-23) ----------
    Drawn as one SVG in the game's own units (1365 × 768 at UI scale 1, the device's 720p screen),
    so the sizes measured on the device go in unchanged. Same 16:9 shape as the 1280 × 720 stage. */
-S.fbShow='face';
+S.fbShow='split';
 const pFaceBars=(()=>{
   const W=1365.33,H=768;
   const OURS='#f1c232', REAL='#3fc6e0', WHEEL='#f2a33a', AIM='#ff7ab8', GAME='rgba(255,255,255,.5)', BAD='#e0443a';
@@ -1498,7 +1498,7 @@ const pFaceBars=(()=>{
     lab(164,146,"game's controller hints"); }
   function probe(){ R(623,4,119,47,{fill:'#4b4a33',stroke:'#7a7650'}); gt(682,33,'Probe',{fill:'#e6dfc0','font-size':13});
     R(467,54,430,18,{fill:'rgba(60,60,40,.85)'}); T(682,67,'idle (tap Probe)',{fill:'#ddd','font-size':11,'text-anchor':'middle'}); }
-  function questArrow(){ gt(252,178,'No quest focused',{fill:'#f0c23a','font-size':22}); gt(252,198,'Focus one in your quest log',{fill:'#eee','font-size':14}); lab(252,216,'Pocket Essentials quest arrow'); }
+  function questArrow(x=252,y=178){ gt(x,y,'No quest focused',{fill:'#f0c23a','font-size':22}); gt(x,y+20,'Focus one in your quest log',{fill:'#eee','font-size':14}); lab(x,y+38,'Pocket Essentials quest arrow'); }
   function hub(){ Ci(127,475,31,{fill:'#141414',stroke:OURS,'stroke-width':3.5}); gt(127,483,'PE',{fill:'#fff','font-size':22});
     Ci(202,475,30,{fill:'#2a1414',stroke:'#e04a4a','stroke-width':3}); gt(202,481,'Stop',{fill:'#fff','font-size':16});
     lab(127,522,'PE button'); lab(202,522,'Stop (Probe)'); }
@@ -1512,8 +1512,8 @@ const pFaceBars=(()=>{
     lab(x+w/2,y+h+14,label); }
   function mapCircle(cx,cy,r){ Ci(cx,cy,r,{fill:'#6b5434',stroke:'#cdb57d','stroke-width':3});
     Ci(cx-r*.3,cy-r*.2,r*.12,{fill:'#4e3c24'}); Ci(cx+r*.25,cy+r*.3,r*.16,{fill:'#4e3c24'}); add(`<path d="M${cx-4} ${cy+4} L${cx} ${cy-8} L${cx+4} ${cy+4}Z" fill="#fff"/>`); }
-  function strip(cx,y,w,withEnds){ R(cx-w/2,y,w,19,{fill:'rgba(20,16,10,.88)',stroke:'#8a7a52'}); gt(cx,y+14,'Durotar   12:17',{fill:'#e6c35a','font-size':11});
-    if(withEnds){ magnifier(cx-w/2+10,y+9.5); calendar(cx+w/2-11,y+9.5); } }
+  function strip(cx,y,w,withEnds,h=19){ R(cx-w/2,y,w,h,{fill:'rgba(20,16,10,.88)',stroke:'#8a7a52'}); gt(cx,y+h/2+4.5,'Durotar   12:17',{fill:'#e6c35a','font-size':11});
+    if(withEnds){ magnifier(cx-w/2+10,y+h/2); calendar(cx+w/2-11,y+h/2); } }
   function magnifier(x,y){ Ci(x-1,y-1,4.5,{fill:'none',stroke:'#ddd','stroke-width':1.6}); L(x+2,y+2,x+6,y+6,{stroke:'#ddd','stroke-width':2}); }
   function calendar(x,y){ R(x-7,y-7,14,14,{rx:2,fill:'#d9c27a',stroke:'#6b5a40'}); R(x-7,y-7,14,4,{fill:'#a8452f'}); }
   function mail(x,y){ R(x-10,y-7,20,14,{rx:2,fill:'#e9e2cf',stroke:'#6b5a40'}); add(`<path d="M${x-10} ${y-7} L${x} ${y+1} L${x+10} ${y-7}" fill="none" stroke="#a8452f" stroke-width="1.6"/>`); }
@@ -1529,23 +1529,24 @@ const pFaceBars=(()=>{
 
   /* things the game places: sub-menu buttons, their wheels, targeting circles */
   const WR=87.5;
-  function wheelRoom(cx,cy,left){ Ci(cx,cy,WR,{fill:'rgba(242,163,58,.07)',stroke:WHEEL,'stroke-width':1.7,'stroke-dasharray':'4 4'});
-    lab(cx,cy-WR-6,left?'keep free: LB+LT wheel':'keep free: RB+RT wheel',{fill:WHEEL}); }
-  function subBtn(cx,cy,left){ Ci(cx,cy,17,{fill:left?'#4a3050':'#3a3a5a',stroke:'#cdb57d','stroke-width':2}); Ci(cx,cy-3,7,{fill:'rgba(255,255,255,.35)'});
+  function wheelRoom(cx,cy,left,quiet){ Ci(cx,cy,WR,{fill:'rgba(242,163,58,.07)',stroke:WHEEL,'stroke-width':1.7,'stroke-dasharray':'4 4'});
+    lab(cx,cy-WR-6,quiet?(left?'LB+LT wheel opens here':'RB+RT wheel opens here'):(left?'keep free: LB+LT wheel':'keep free: RB+RT wheel'),{fill:WHEEL}); }
+  function subBtn(cx,cy,left,quiet){ Ci(cx,cy,17,{fill:left?'#4a3050':'#3a3a5a',stroke:'#cdb57d','stroke-width':2}); Ci(cx,cy-3,7,{fill:'rgba(255,255,255,.35)'});
     add(`<path d="M${cx-7} ${cy-24} L${cx} ${cy-30} L${cx+7} ${cy-24}Z" fill="#e6c35a"/>`);
     T(cx,cy+34,left?'LB + LT':'RB + RT',{fill:'#fff','font-size':11,'text-anchor':'middle','font-weight':600});
-    lab(cx,cy+47,"game's sub-menu"); }
+    if(!quiet) lab(cx,cy+47,"game's sub-menu"); }
   function wheelOpen(cx,cy,label){ Ci(cx,cy,WR,{fill:'rgba(0,0,0,.72)',stroke:'#cdb57d','stroke-width':2.5});
     for(let i=0;i<8;i++){ const a=i*Math.PI/4, x=cx+Math.sin(a)*60, y=cy-Math.cos(a)*60; Ci(x,y,15,{fill:i%3===2?'rgba(60,60,60,.6)':PAL.both[i],stroke:'#cdb57d','stroke-width':1.5}); }
     Ci(cx,cy,17,{fill:'#3a3028',stroke:'#cdb57d','stroke-width':2}); lab(cx,cy-WR-6,label,{fill:WHEEL}); }
-  function aim(cx,cy,friendly){ const c=friendly?'#45d045':'#e03a3a'; R(cx-18,cy-16,36,32,{rx:7,fill:'#262422',stroke:'#777'}); Ci(cx,cy,9,{fill:'none',stroke:c,'stroke-width':2.5});
+  function aim(cx,cy,friendly,quiet){ const c=friendly?'#45d045':'#e03a3a'; R(cx-18,cy-16,36,32,{rx:7,fill:'#262422',stroke:'#777'}); Ci(cx,cy,9,{fill:'none',stroke:c,'stroke-width':2.5});
     L(cx-12,cy,cx+12,cy,{stroke:c,'stroke-width':1.5}); L(cx,cy-12,cx,cy+12,{stroke:c,'stroke-width':1.5});
     Ci(cx,cy,24,{fill:'none',stroke:AIM,'stroke-width':1.4,'stroke-dasharray':'2 3'});
-    lab(friendly?cx-27:cx+27,cy-3,friendly?'LB: friendly\ntargeting':'RB: enemy\ntargeting',{fill:AIM,'text-anchor':friendly?'end':'start'}); }
-  function gameSpots(btnY,aimY,dx){ const lx=683-dx, rx=683+dx, m=S.clMenu;
-    if(m==='petcmd') wheelOpen(lx,btnY,'pet commands wheel, open'); else { wheelRoom(lx,btnY,true); subBtn(lx,btnY,true); }
-    if(m==='petspell') wheelOpen(rx,btnY,'pet spells wheel, open'); else { wheelRoom(rx,btnY,false); subBtn(rx,btnY,false); }
-    aim(lx+3,aimY,true); aim(rx-3,aimY,false); }
+    if(!quiet) lab(friendly?cx-27:cx+27,cy-3,friendly?'LB: friendly\ntargeting':'RB: enemy\ntargeting',{fill:AIM,'text-anchor':friendly?'end':'start'}); }
+  // opts.aimDx: targeting pictures' centre from the middle (default: 3 inside the buttons); opts.quiet: fewer labels, for a crowded band
+  function gameSpots(btnY,aimY,dx,opts={}){ const lx=683-dx, rx=683+dx, m=S.clMenu, q=opts.quiet, ad=opts.aimDx||dx-3;
+    if(m==='petcmd') wheelOpen(lx,btnY,'pet commands wheel, open'); else { wheelRoom(lx,btnY,true,q); subBtn(lx,btnY,true,q); }
+    if(m==='petspell') wheelOpen(rx,btnY,'pet spells wheel, open'); else { wheelRoom(rx,btnY,false,q); subBtn(rx,btnY,false,q); }
+    aim(683-ad,aimY,true,q); aim(683+ad,aimY,false,q); }
   function xpBar(x,y,w,h){ R(x,y,w,h,{fill:'#1b2347',stroke:'#4a5590'}); R(x+1,y+1,(w-2)*.62,h-2,{fill:'#3a5ad8'}); for(let i=1;i<20;i++) L(x+w*i/20,y,x+w*i/20,y+h,{stroke:'rgba(0,0,0,.5)'}); }
   function heldBadge(y){ const t=S.clHold==='none'?'no trigger held: main bar in use':'holding '+SHORT[S.clHold]+': the '+SHORT[S.clHold]+' bar is in use';
     T(683,y,t,{'text-anchor':'middle','font-size':12,'font-weight':600,fill:OURS,class:'fbtag'}); }
@@ -1608,8 +1609,64 @@ const pFaceBars=(()=>{
     heldBadge(128);
     mark(1,760,396); mark(2,330,748); mark(3,1140,278); mark(4,580,483); mark(5,1072,176);
   }
+  /* ===== 0.13.0: the split face (spec 2026-11-23-controller-layout-0.13.0-face-bars.md, "Where everything goes") =====
+     Spec numbers are x from the middle and "up" from the bottom; here X(x) and Y(up) turn them into the drawing's units. */
+  const X=x=>683+x, Y=up=>H-up;
+  const TAG={lt:'LT',rt:'RT',both:'LT+RT'};
+  // one diamond of our pictures: button 28, offsets 30 across and 19 up/down (88 × 66); the trigger tag in its middle
+  function faceDiamond(cx,cy,kind,bar){ cluster(cx,cy,kind,bar,28,30,19,kind==='face'?4:0);
+    if(TAG[bar]){ const w=bar==='both'?30:18; R(cx-w/2,cy-5.5,w,11,{rx:3,fill:'rgba(0,0,0,.78)',stroke:'rgba(255,255,255,.35)','stroke-width':.8});
+      T(cx,cy+3,TAG[bar],{fill:'#fff','font-size':8,'font-weight':700,'text-anchor':'middle'}); } }
+  // "on cooldown": the picture goes dark, with the game's sweep left to run (the darkening alone must read)
+  function cooldown(cx,cy,s){ R(cx-s/2,cy-s/2,s,s,{rx:s*.13,fill:'rgba(0,0,0,.62)'});
+    add(`<path d="M${cx} ${cy} L${cx} ${cy-s/2} A${s/2} ${s/2} 0 0 1 ${cx+s/2} ${cy} Z" fill="rgba(0,0,0,.35)"/>`); }
+  // a frame box (the game's whole frame, dotted) with its visible picture centred in it
+  function frameBox(x,y,w,h,pw,ph,name){ R(x,y,w,h,{fill:'none',stroke:'rgba(255,255,255,.28)','stroke-dasharray':'2 3'});
+    unitFrame(x+(w-pw)/2,y+(h-ph)/2,pw,ph,name); }
+  function drawSplit(){
+    scenery(); hub();
+    // top left: the quest tracker where the hint box was (TOPLEFT 5,-5); the hint box itself is hidden
+    tracker(5,5,260,300,"game's quest tracker: top left (5, 5)");
+    lab(135,338,"game's hint box: hidden while the layout is on",{fill:'rgba(255,255,255,.55)'});
+    // top middle: XP bar, then the quest arrow under it
+    xpBar(388,2,590,17); lab(683,34,"game's XP bar: top edge, middle",{fill:'#b9c6ff'});
+    questArrow(683,90);
+    // top right: chat as 0.12.0, buffs and debuffs under it
+    chat(905,40,430,210,"game's chat: top right, as 0.12.0");
+    buffs(1335,296,5); buffs(1335,330,2,'#5a1a1a');
+    lab(1162,318,'buffs and debuffs,\nunder the chat',{'text-anchor':'end'});
+    // the game's real bars: invisible, scale 0.9 (187 × 61), under our pictures
+    const RW=187, RH=61;
+    [[-248,39],[-248,113],[248,39],[248,113]].forEach(([x,up])=>R(X(x)-RW/2,Y(up)-RH/2,RW,RH,{fill:'rgba(63,198,224,.05)',stroke:REAL,'stroke-width':1.3,'stroke-dasharray':'8 4',opacity:.85}));
+    lab(334,733,"blue dashed: the game's real bars,\ninvisible, still cast",{fill:REAL,'text-anchor':'end'});
+    // frames beside the spells: player box right edge -345, 56..156 up (picture 192 × 67 inside); pet above, right-aligned
+    frameBox(X(-345)-232,Y(156),232,100,192,67,'Player (you)');
+    frameBox(X(-345)-120,Y(181)-49,120,49,112,34,'Pet');
+    frameBox(X(345),Y(156),232,100,192,67,'Target');
+    frameBox(X(345),Y(181)-49,120,49,112,34,'Target of target');
+    // the target's cast bar: 150 × 10 at x 468..618, 0..10 up
+    R(X(468),Y(10),150,10,{fill:'rgba(0,0,0,.6)',stroke:'#8a7a52'}); R(X(468)+1,Y(10)+1,148*.55,8,{fill:'#d8a32c'});
+    lab(X(543),Y(10)-6,"target's cast bar");
+    // the map (round, centred 156.6 up, r 69.3), its strip 46..69 up (152 wide), three swing timers 170 × 12 at 31, 17, 3 up
+    mapCircle(683,Y(156.6),69.3); lab(683,Y(156.6)+2,"game's minimap, 70%");
+    strip(683,Y(69),152,true,23);
+    [['Main Hand',.7,31],['Off Hand',.35,17],['Ranged',.9,3]].forEach(([n,f,up])=>swing(683-85,Y(up+12),170,12,n,f));
+    // our pictures: left = the d-pad halves, right = the face-button halves; up is LT, out is RT
+    const CELL={none:[199,39],lt:[199,113],rt:[297,39],both:[297,113]};
+    ['none','lt','rt','both'].forEach(bar=>{ const [dx,up]=CELL[bar], on=S.clHold===bar;
+      add(`<g opacity="${on?1:.5}">`); faceDiamond(X(-dx),Y(up),'dpad',bar); faceDiamond(X(dx),Y(up),'face',bar);
+      if(bar==='none') cooldown(X(dx),Y(up)-19,28);
+      add('</g>'); });
+    // the game's spots on top: sub-menu buttons ±138, 188 up (their wheels open over the spells), targeting ±108..±144, 84..116 up
+    gameSpots(Y(188),Y(100),138,{aimDx:126,quiet:true});
+    // the band: everything low, the middle free
+    add(`<path d="M1344 ${Y(153.6)} H1354 V766 H1344" fill="none" stroke="rgba(255,255,255,.45)" stroke-width="1.4"/>`);
+    lab(1356,Y(153.6)-20,'everything in the bottom fifth;\nthe middle of the screen is free',{'text-anchor':'end',fill:'rgba(255,255,255,.7)'});
+    heldBadge(330);
+    lab(683,348,"orange: where the game opens its sub-menu wheels; pink: the game's LB / RB targeting pictures",{fill:'rgba(255,255,255,.6)'});
+  }
   return scr=>{
-    P=[]; (S.fbShow==='today'?drawToday:drawFace)();
+    P=[]; ({today:drawToday,face:drawFace,split:drawSplit}[S.fbShow]||drawSplit)();
     const box=el('div',scr,{left:0,top:0,width:'100%',height:'100%'});
     box.innerHTML=`<svg class="fbsvg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="position:absolute;left:0;top:0;width:100%;height:100%">`
       +`<style>.fbsvg text{font-family:var(--ui)}.fbsvg .fbgt{font-family:var(--game)}.fbsvg .fbtag{font-size:11px;fill:rgba(255,255,255,.8);paint-order:stroke;stroke:rgba(0,0,0,.8);stroke-width:3px;stroke-linejoin:round}</style>`
@@ -1617,7 +1674,21 @@ const pFaceBars=(()=>{
   };
 })();
 PROPOSED.facebars=pFaceBars;
-Object.defineProperty(NOTES_P,'facebars',{enumerable:true,get:()=>S.fbShow==='today'?{what:[
+const FB_SPLIT_NOTES={what:[
+  '0.13.0, one setup, drawn to scale for your 720p screen in the game\'s own units (1365 × 768). Not built yet. The other two "Show" choices are there to compare.',
+  'The split: left of the map is your d-pad, right of the map is your face buttons, the same way the controller sits in your hands.',
+  'Each side has four small diamonds, one per bar. The rule is "up is LT, out is RT": next to the map at the bottom is the main bar, above it LT, further out RT, further out and up LT + RT. The small tag in a diamond\'s middle says which.',
+  'The bar you are using is bright and the other three are at half strength. Try "You hold" above. Nothing moves when you hold a trigger.',
+  'The spell pictures are ours. The game\'s own bars sit underneath them (blue dashed), invisible, and still do the casting, so you press the same buttons as now. If our pictures ever stop working, the game\'s bars come back by themselves.',
+  'Each picture\'s corner shows which button it is: a plus with the pressed arm filled for the d-pad, four dots with the pressed one filled for the face buttons. Colours are placeholders: warm main, blue LT, green RT, purple LT + RT.',
+  'A spell on cooldown goes dark (one main-bar spell is drawn that way). No cooldown numbers: the game does not let addons read them in a fight.',
+  'Tapping a picture does nothing, on purpose, so a stray tap never fires a spell. Cast with the controller, as now.',
+  'Frames sit beside the spells: your frame left with your pet above it, the target right with its target above it. The target\'s cast bar goes in the free bottom right corner.',
+  'Everything sits in one low band at the bottom of the screen, so the middle stays free for the game.',
+  'The quest tracker moves to the top left, where the game\'s controller hint box was. That hint box is hidden while the layout is on and comes back when you switch the layout off.',
+  'Kept from 0.12.0: the map bottom middle, its name strip and the swing timers under it, the two sub-menu buttons and the pink targeting pictures. A sub-menu wheel opens over the spells (try "Sub-menu" above).',
+  'Chat stays top right with buffs and debuffs under it; the XP bar is top middle; the quest arrow sits under the XP bar here, since the tracker took its old corner.'],fix:[]};
+Object.defineProperty(NOTES_P,'facebars',{enumerable:true,get:()=>S.fbShow==='split'?FB_SPLIT_NOTES:S.fbShow==='today'?{what:[
   'Today: Controller layout 0.11.0 on your main, drawn from the 10:02 photo, in the same units as the face bars picture.',
   'Red numbers: 1 the LT + RT bar is lost over your head; 2 the bars touch the XP bar, which stayed at the bottom; 3 buffs sit on the chat\'s last lines; 4 the map\'s name strip sits on top of the map; 5 the chat is a big, mostly empty box.',
   'Hold a trigger above: the game lights the bar in use; nothing moves.'],fix:[]}:{what:[
@@ -1665,7 +1736,7 @@ function subControls(){
     if(S.ver==='proposed'){ mk('Both-triggers bar',[['small','Small, above the pads'],['corner','Small, bottom corners'],['swap','Swaps with the main pads']],'clBoth');
       { const g=el('div',sub,null,'seg'); el('span',g).textContent='Spell button size'; [100,85,70].forEach(v=>{ const bb=el('button',g); bb.textContent=v+'%'; bb.setAttribute('aria-pressed',String(S.opt.layout.size===v)); bb.onclick=()=>{S.opt.layout.size=v;render();}; }); }
       [['Main pads','clKm'],['LT and RT bars','clKo'],['Both-triggers pads','clKb']].forEach(([l,key])=>mk('Fine-tune: '+l,[[.85,'Smaller'],[1,'Same'],[1.15,'Bigger']],key)); } }
-  if(S.view==='facebars'){ mk('Show',[['face','Face bars (one setup)'],['today','Today (0.11.0)']],'fbShow'); mk('You hold',[['none','Nothing'],['lt','Left trigger'],['rt','Right trigger'],['both','Both']],'clHold'); mk('Sub-menu',[['closed','Closed'],['petcmd','Pet commands'],['petspell','Pet spells']],'clMenu'); }
+  if(S.view==='facebars'){ mk('Show',[['split','0.13.0: split face (one setup)'],['face','Whole bars (earlier draft)'],['today','Today (0.11.0)']],'fbShow'); mk('You hold',[['none','Nothing'],['lt','Left trigger'],['rt','Right trigger'],['both','Both']],'clHold'); mk('Sub-menu',[['closed','Closed'],['petcmd','Pet commands'],['petspell','Pet spells']],'clMenu'); }
   if((S.view==='layout'&&S.ver==='today')||S.view==='quietbars'||S.view==='qbsettings') mk('Compact in Edit Mode',[[false,'Off'],[true,'On']],'compact');
   if(S.view==='kit'){
     mk('Moment',[['out','Out of combat'],['combat','In combat']],'kitMoment');
