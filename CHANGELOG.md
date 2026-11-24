@@ -4,6 +4,87 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.15.0] - 2026-11-24
+
+Thirty-first test build: polish before the first public post. Every file was
+read by a reviewer, and the confirmed bugs and rough edges are fixed. Spec
+`docs/superpowers/specs/2026-11-24-0.15.0-polish.md`. Not yet tested on a
+device. Your saved choices carry over (see the whisper list below). Pocket
+Probe is unchanged (0.7.0).
+
+### Added
+
+- **Spell panel size** (Controller tab): 80% to 120%. The pictures, the
+  game's hidden bars and the frames all follow; at 110% and 120% your frame
+  and your target's rise above the panels. A change needs a reload (the card
+  shows Reload now); in a fight it waits for the fight to end.
+
+### Changed
+
+- **Your whisper list belongs to each character.** It no longer sits in the
+  shared file you send with a bug report, and an alt no longer shows your
+  main's whisperers. Each character starts with an empty list once.
+- **The sell line counts what was sold:** "Sold 20 junk items for 1s 4c"
+  counts items (not stacks) and their price, so buying food or a buyback in
+  the same visit no longer changes the figure, and closing the vendor at once
+  no longer reports too little.
+- **Quest icons keep the spots in every zone.** A quest with hundreds of
+  spots across several zones could lose every icon in a small zone (often
+  the one where the drop actually is). Each zone now keeps its own share.
+  Heavy quests also make far less garbage when they update.
+- **Clearer words** in the settings, the guide and the chat lines: one name,
+  "Move on screen", for the move panel; the same labels in the guide and the
+  settings ("Size of all buttons", "Round button colour", "I play with");
+  shorter labels that no longer wrap at 720p; "Go to: <name>" for explore
+  spots; the Controller card describes the panels; the "Template" row is
+  "Rebuild the layout"; "Main hand timer", "Off hand timer"; the guide is
+  titled "Setup guide".
+- **Tidier windows:** the scroll tabs show arrows instead of "^" and "v";
+  the Quest icon key page has its title; the Debug log switch lines up with
+  the other switches; the Errors page has the same spacing as the other tabs;
+  on the guide's first screen Skip sits at the left edge; "Your screen" says
+  where each piece is now; "All set" lists the features in the guide's order.
+- **Move on screen** opened from the settings brings the settings back when
+  you close it.
+- **The Sort tab hides while the bank is open** (it sat over the bank's bag
+  slots). The stick sort still works there.
+- **Debug log** holds 3,000 lines (was 10,000), so it loads and saves faster.
+  A longer saved log keeps its newest lines. Its rebuild line now shows the
+  real work time, not the waiting between steps.
+- **Quest arrow:** "Hidden inside dungeons, raids and battlegrounds."
+
+### Fixed
+
+- **Controller layout:** switching it on needed two reloads when your old
+  saved layout was from an earlier version; now one. A spell stayed dark
+  after its cooldown ended until you cast something; it now brightens when
+  the cooldown ends, and also after a slot gets a different spell. If the
+  spell pictures cannot be made, the game's own bars come back at full size
+  (they stayed small). The status line no longer contradicts itself.
+- **Minimap quest icons** come back after leaving a dungeon (they could stay
+  off until the next zone change).
+- **Quest arrow** switches to the turn-in when a quest completes at the same
+  NPC as its objective.
+- **Chat picker:** a channel that went away while the picker was open (you
+  left a city or a group) now says "That channel is gone." instead of
+  sending to the wrong channel.
+- **Loot sparkles:** switched off in a fight and reloaded before the fight
+  ended, the sparkles stayed on for good; they are now put back at the next
+  login. The "restart the game" line shows only when a restart is needed.
+- **Errors page with the d-pad:** Right from Previous moves to Next, and
+  Clear all can be reached from any error.
+- **Catch all errors:** clear wording when another, unnamed addon takes the
+  errors, and for errors from a macro or an unknown source.
+- A job held for the end of a fight could run twice.
+
+### Known
+
+- A wheel or the "new spell" picture opened from a spell button shows where
+  the game's hidden button is, not always at that spell's picture.
+- The game's page number sits just above the left panel while you hold the
+  page button.
+- Pet and possess bar pictures show no cooldown.
+
 ## [0.14.0] - 2026-11-24
 
 Thirtieth test build. Controller layout shows one bigger panel each side of

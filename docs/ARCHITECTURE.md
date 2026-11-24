@@ -9,7 +9,7 @@ One addon folder, one Lua file per part, no libraries.
 
 ```
 addons/PocketEssentials/
-  PocketEssentials.toc   interface 16001, one saved table PocketEssentialsDB, QuestieDB as optional dependency
+  PocketEssentials.toc   interface 16001, PocketEssentialsDB (account-wide) and PocketEssentialsCharDB (per character: each one's old layout, the whisper list since 0.15.0), QuestieDB as optional dependency
   Core.lua        feature registry, saved settings, error catching and log, debug log, combat queue, /pe
   UI.lua          sizes for touch, big buttons, windows, controller navigation
   Move.lua        "Move on screen" (was "Move things" until 0.8.0): saved offsets for our on-screen pieces, the small panel that nudges them
@@ -21,7 +21,7 @@ addons/PocketEssentials/
   QuestArrow.lua  feature: quest arrow
   Bags.lua        feature: bag sorter (key `bags`; called "One big bag" before 0.1.0)
   Vendor.lua      features: sell junk, repair (two switches)
-  Chat.lua        feature: big chat buttons
+  Chat.lua        feature: Chat picker (key `chat`; "Big chat buttons" until 0.8.1)
   MenuBackground.lua  feature: menu background (key `menuBg`): a dark panel of ours behind the game's pop-up menus
   LootSparkles.lua    feature: loot sparkles (key `sparkles`): keeps the engine setting `outlineModeShowLootEffectWhenDisabled` at 1
   ErrorCatcher.lua    feature: Catch all errors (key `errors`): other addons' and the game's errors in PocketEssentialsDB.otherErrors (at most 50), the Errors tab's viewer reads them; stands aside for BugSack, BugGrabber and Swatter

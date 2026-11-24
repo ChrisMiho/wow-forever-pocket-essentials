@@ -2,121 +2,144 @@
 
 # WoW Forever Pocket Essentials
 
-A small, lightweight addon suite that makes WoW Forever comfortable to play on
-a handheld, with touch and a controller together: big buttons, no tiny
-targets, no typed commands.
+**The stuff you miss from your desktop addons, rebuilt for thumbs.** One small
+addon for playing WoW Forever on a handheld, with touch and a controller
+together: big buttons, no tiny targets, no typed commands.
 
-> **Status: In progress: version 0.8.0 is a test build. Quest icons, the quest arrow, the bag sorter, sell junk, repair and the chat buttons have run on a device (0.0.9 and 0.1.0). Everything added since has not: Move on screen, the setup guide, Menu background, Bag window, the new Bag sorter choices, button colours, the scroll bar and the chat text size box.**
-> Treat every feature as unproven until it has been tested in the game.
+On a handheld there is no CurseForge app and installing addons one by one is a
+chore, so Pocket Essentials puts the everyday quality-of-life helpers in one
+download. Each one has its own switch, everything starts **off**, and whatever
+stays off does nothing at all. No libraries.
 
-## Who it's for
+![Everything in one addon, use what you want](curseforge/images/overview.png)
 
-Anyone playing WoW Forever on a handheld, on any device that runs the client.
-The developer's test device is a Retroid Pocket 6 running the game through
-Droid Deck.
+> **Status: test builds (0.15.0).** Developed and played on a Retroid Pocket 6
+> at 720p. Quest icons, the quest arrow, bag sorting, auto sell junk, auto
+> repair, the chat picker, the settings and the setup guide have all run on
+> the device. Controller layout is **experimental** and still changing between
+> builds. Bug reports are very welcome (see [Feedback](#feedback)).
 
 ## Features
 
-Every feature has its own on/off switch and starts switched off. The first
-time you log in, a short **setup guide** explains each one in a few lines and
-lets you switch on the ones you want and set them up, with each feature's
-choices right under its switch.
+### Quests
+- **Quest icons:** icons on the world map and minimap where your objectives
+  are (kill, loot, use, explore, turn in), one colour each, from QuestieDB's
+  data. Show them for your tracked quests, the focused one or all of them;
+  cap the spots per objective, merge icons that sit on top of each other,
+  pick the size, and hide Blizzard's blue quest haze. A Quest icon key page
+  explains the colours.
+- **Quest arrow:** points to the nearest objective of your focused quest, with
+  the distance. It moves on as you finish parts, leaves spots you already
+  reached alone, and goes to the turn-in when you are done. Quest in another
+  zone? It names the zone.
 
-| Feature | What it does |
-|---------|--------------|
-| Quest icons | Objective icons on the map and minimap for your tracked quests (or only the focused one, or all), no blue haze; a limit on icons per objective, and a Quest Icon Key page in the settings |
-| Quest arrow | An arrow to your focused quest's nearest objective in your zone, with distance. Focus a quest from the quest log. For a quest in another zone it names the zone |
-| Bag window | Makes Blizzard's combined bag bigger ("Bag size": three sizes) and, with "Bag icons: One row at the top", puts the pictures of your equipped bags side by side above your items, not in among them |
-| Bag sorter | A big Sort button on the bag ("Sort button": On or Off). "Sort stick" (Left or Right) makes a click on that stick sort while the bag is open. Press Left from the bag's first column to reach the Sort button, then A sorts |
-| Sell junk automatically | Sells every grey item at vendors. Only the last 12 sold can be bought back |
-| Repair automatically | Repairs from your own money |
-| Chat from round button | The round button opens a picker: one big button per channel and per recent whisperer. A badge shows unanswered whispers. "Chat text size" (a - size + control) is in the settings and works with the feature on or off |
-| Menu background | A plain dark panel behind the game's pop-up menus, such as the menu on a quest in the quest log, so the text is easy to read |
-| Loot sparkles | Brings back the sparkle on things you can loot or use, even on the lowest graphics. Switching it off needs a full restart of the game |
-| Setup guide | Not a switch: nine short screens that explain the features above, each with its switch and, under it, the same choices as in the settings. Opens by itself once; open it again from the settings ("Setup guide") |
+### Bags and vendors
+- **Bigger bag:** the game's combined bag in three sizes, with your bags in one
+  row at the top.
+- **Bag sorting:** a big Sort tab on the bag, a stick click that sorts while the
+  bag is open, and the d-pad reaches the tab too.
+- **Auto sell junk:** open a vendor and your grey items are sold, with one line
+  in chat saying what went and for how much.
+- **Auto repair:** fixes your gear from your own gold.
+
+### Chat
+- **Chat picker:** tap the round **PE** button and pick who to talk to: Say,
+  Party, Guild, General, Trade and so on, one big button each, plus your last
+  six whisperers. A badge shows when someone is waiting on a reply.
+- **Chat text size:** a simple - size + control for every chat window.
+
+### Controller (experimental)
+- **Controller layout:** the map at the bottom middle with a spell panel each
+  side, drawn the way you hold the controller (d-pad spells on the left, face
+  buttons on the right). Hold LT or RT and that side swaps to the trigger's
+  spells. Frames, XP bar, chat and quest tracker are moved out of the way so
+  the middle of the screen is yours. "Spell panel size" goes from 80% to 120%.
+  Switching it off brings back your own layout.
+
+### Game fixes
+- **Menu background:** a dark panel behind the game's pop-up menus, so you can
+  read them.
+- **Loot sparkles:** keeps the sparkle on things you can loot or use, even on
+  the lowest graphics.
+- **Catch all errors:** every Lua error, from the game and other addons, in one
+  list in the settings, instead of pop-ups in the middle of a fight.
+
+### Settings and setup
+- **Setup guide:** the first time you log in, a few short screens explain each
+  helper and carry its switch and choices. Open it again any time.
+- **Settings:** one window, a tab per area, a green dot on the ones that are
+  on, big switches. Works by touch, or with the d-pad, A and B.
+- **Move on screen:** nudge the quest arrow, the chat prompt and the round
+  button with big arrow buttons or the d-pad. No dragging.
+- **Errors tab:** if something of ours goes wrong, it shows what happened in
+  plain words, and a debug log you can switch on and send.
 
 ## Install
 
-Pocket Essentials is one addon, `PocketEssentials`. The two quest features also
-need the `QuestieDB` addon; everything else works without it.
+Pocket Essentials is one addon folder, `PocketEssentials`. The quest icons and
+the quest arrow also need the `QuestieDB` addon (by the Questie team); the
+GitHub download includes it.
+
+### On a handheld (from GitHub)
+
+1. On the project's GitHub **Releases** page, download
+   `wow-forever-pocket-essentials.zip` from the newest release.
+2. Extract it into the game's `Interface/AddOns` folder (on the Retroid Pocket
+   6 we use Droid Deck's file access). You should end up with two folders side
+   by side: `PocketEssentials` and `QuestieDB`. Do not rename either.
+3. If you used a very early build, delete any old `QuestDots` folder.
+4. Log in. A round **PE** button appears at the left edge of the screen, and a
+   moment after the loading screen the setup guide opens. Switch on what you
+   want and press **Finish** (or **Skip** to leave everything off).
 
 ### From CurseForge (coming later)
 
-Install Pocket Essentials from CurseForge. QuestieDB installs with it as a
-dependency.
+Pocket Essentials will go on CurseForge with QuestieDB as a dependency once it
+leaves test builds.
 
-### From GitHub
+### Without QuestieDB
 
-Test builds are published as pre-releases on the project's GitHub
-"Releases" page.
-
-1. Download `wow-forever-pocket-essentials.zip` from the newest release. (Or
-   build it yourself: on a Mac or Linux computer, run `scripts/build.sh`,
-   which writes `dist/wow-forever-pocket-essentials.zip`.)
-2. Copy that zip to your device.
-3. In the game's `Interface/AddOns` folder, **delete any old `QuestDots`
-   folder** from an earlier version of this bundle.
-4. Extract the zip into `Interface/AddOns`. You should end up with two folders
-   side by side: `PocketEssentials` and `QuestieDB`. Do not rename either.
-5. Log in. A round "PE" button appears at the left edge of the screen, and a
-   moment after the loading screen the setup guide opens by itself. Read
-   through it and switch on what you want, then press **Finish** (or **Skip**
-   to leave everything off). Closing it any other way only hides it until the
-   next login. Later, tap the round button to open the settings.
-
-### Without QuestieDB, or with a version this addon doesn't understand
-
-The quest icons and quest arrow stay off and the settings window says why
-(for example "Needs the QuestieDB addon, which is not installed or did not
-load."). Everything else keeps working.
+The two quest helpers stay off and the settings say why. Everything else works.
 
 ## Using it
 
-- **Tap the round "PE" button** to open the settings. If Chat from round button
-  is on, it opens the chat picker instead.
-- **Hold the round button for half a second** to always open the settings.
-- **While the map is open**, the round button sits on the map's book icon
-  in its top-left corner, so it is off the map. It goes back when the map
-  closes (or goes full screen).
-- **Type `/pe`**, or use the addon-list button on the minimap, as other ways
-  to open them.
-- **Setup guide:** the "Setup guide" button in the bottom row of the settings
-  (or `/pe setup`) opens the guide again at any time. Its switches and
-  choices are the same ones as in the settings: change one in either place
-  and the other shows it. Use the touch screen, or the d-pad to
-  move the blue highlight, A to press and B to close.
-- **Reload UI button:** at the bottom of the settings, so a reload never
-  needs a typed command.
-- **Errors page:** if something goes wrong, the settings window has an Errors
-  page that shows what failed, in large text. It also has a **Debug log**
-  switch: turn it on, play until the problem happens, tap Save log now, and
-  send the file `WTF/Account/<account>/SavedVariables/PocketEssentials.lua`.
+- **Tap the round PE button** to open the settings. With the Chat picker on, a
+  tap opens the picker; **hold the button a moment** to open the settings.
+- While the world map is open, the round button sits on the map's book icon,
+  out of the way.
+- The addon button on the minimap and `/pe` open the settings too; `/pe setup`
+  opens the guide.
+- The **General** tab has a **Reload** button, so a reload never needs typing.
+- Something wrong? Open the **Errors** tab. For a bug report, switch on the
+  **Debug log**, play until it happens, tap **Save log now**, and send the file
+  `WTF/Account/<account>/SavedVariables/PocketEssentials.lua`.
+
+## Feedback
+
+Found a bug or have an idea? Open an issue:
+[github.com/ChrisMiho/wow-forever-pocket-essentials/issues](https://github.com/ChrisMiho/wow-forever-pocket-essentials/issues).
+Say which device you play on and at what resolution.
 
 ## For developers
 
 ```bash
-scripts/check.sh   # LuaJIT syntax check plus a comment-wording check
-scripts/test.sh    # offline tests: API check, QuestieDB, feature rules, smoke test
+scripts/check.sh      # LuaJIT syntax check plus a comment-wording check
+scripts/test.sh       # offline tests: API check, QuestieDB, feature rules, smoke test
 scripts/audit-api.sh  # full check of game names against Blizzard's source (~45 s)
-scripts/build.sh   # dist/wow-forever-pocket-essentials.zip (GitHub bundle)
-                   # dist/PocketEssentials-<version>.zip (CurseForge, addon only)
-                   # dist/PocketProbe.zip (probe/PocketProbe, a test-only addon that records what the game allows; never in the two zips above)
+scripts/build.sh      # dist/wow-forever-pocket-essentials.zip (GitHub bundle)
+                      # dist/PocketEssentials-<version>.zip (CurseForge, addon only)
+                      # dist/PocketProbe.zip (a test-only addon that records what the game allows)
 ```
 
-The first test run downloads QuestieDB into `vendor/` (cached afterwards). The
-tests also run on GitHub for every push. Nothing in `tests/` or `scripts/` goes into
-the addon zips; see [docs/TESTING.md](docs/TESTING.md). The
-project enables the `wow-addon-skills` Claude Code plugin
-(<https://github.com/ChrisMiho/wow-addon-skills>) via `.claude/settings.json`,
-so Claude Code may offer to install it.
-
-A Stop hook in `.claude/settings.json` runs the checks and tests and blocks a
-Claude Code turn from ending if either fails. New features follow the
-spec-driven workflow (rule 7 in [PRD.md](PRD.md)): a spec first, then a plan,
-then a reviewed build, then a device test. See [CLAUDE.md](CLAUDE.md) for how
-to work in this repo.
-
-## Project docs
+There is no game client off the device, so the tests run the addon against a
+stand-in for the game under LuaJIT: they prove the logic, not how it looks in
+game. The first test run downloads QuestieDB into `vendor/`. Every feature is
+specified before it is built (`docs/superpowers/specs/`) and tested on the
+handheld before it counts as working ([docs/TESTING.md](docs/TESTING.md)). See
+[PRD.md](PRD.md) for the goals and working rules and [CLAUDE.md](CLAUDE.md) for
+AI-assisted development in this repo, which uses the
+[wow-addon-skills](https://github.com/ChrisMiho/wow-addon-skills) Claude Code
+plugin.
 
 | File | What's in it |
 |------|--------------|
@@ -125,24 +148,16 @@ to work in this repo.
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Why things are the way they are |
 | [docs/TESTING.md](docs/TESTING.md) | Offline tests and the device test plan |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in each version |
-| [CLAUDE.md](CLAUDE.md) | Working rules for AI-assisted development |
-
-## Feedback
-
-Found a bug or have an idea? Open an issue:
-[github.com/ChrisMiho/wow-forever-pocket-essentials/issues](https://github.com/ChrisMiho/wow-forever-pocket-essentials/issues).
 
 ## Credits and thanks
 
-- Thank you to the [Questie team](https://github.com/Questie/QuestieDB) for
-  making the quest database available for other addons to build on.
-  QuestieDB (GPL-3.0) is also on
-  [CurseForge](https://www.curseforge.com/wow/addons/questiedb).
-- Three icons come from [pfQuest](https://github.com/shagu/pfQuest) by Shagu
-  (MIT).
-- Loot sparkles: Based on
-  [ForeverLootSparkles](https://github.com/svengabr/ForeverLootSparkles) by
-  Ashtar Senior (GPL-3.0-or-later).
+- The [Questie team](https://github.com/Questie/QuestieDB) for QuestieDB
+  (GPL-3.0, also on [CurseForge](https://www.curseforge.com/wow/addons/questiedb)):
+  all quest data comes from it.
+- [pfQuest](https://github.com/shagu/pfQuest) by Shagu (MIT): three of the
+  quest objective icons.
+- [ForeverLootSparkles](https://github.com/svengabr/ForeverLootSparkles) by
+  Ashtar Senior (GPL-3.0-or-later): Loot sparkles is based on it.
 
 ## Licence
 

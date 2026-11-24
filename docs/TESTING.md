@@ -135,9 +135,9 @@ On the device:
 4. Send this file:
    `World of Warcraft/_forever_/WTF/Account/<account>/SavedVariables/PocketEssentials.lua`
 
-The line under the switch ("N of 10,000 lines") shows how much is held. When
+The line under the switch ("N of 3,000 lines") shows how much is held. When
 it is full the oldest lines are replaced. Switching the log off keeps the
-lines; **Clear log** removes them. The log never holds player names or chat
+lines; **Empty the log** removes them. The log never holds player names or chat
 text.
 
 Reading the file on a computer:
@@ -1718,3 +1718,44 @@ Things to watch for (known, not fixed yet):
   page button.
 
 To go back to your own layout: Controller tab, switch Off, **Reload now**.
+
+### 29. Version 0.15.0: polish before the first public post
+
+**What this is for.** A reviewer read every file and the confirmed bugs and
+rough edges are fixed, and the Controller tab gets "Spell panel size". Spec
+`docs/superpowers/specs/2026-11-24-0.15.0-polish.md`. Download: the GitHub
+pre-release **v0.15.0** (both zips; Pocket Probe is unchanged, you don't
+need it). Turn the **Debug log** on before you start.
+
+1. In `AddOns`, delete the old `PocketEssentials` folder (keep `QuestieDB`)
+   and unzip the new one. Fully restart the game and log in.
+2. **Settings, look around:** the scroll tabs show arrows, not "^" and "v";
+   General says "Size of all buttons", "Round button colour", "I play with",
+   "Move on screen". Open Move on screen and close it: the settings come
+   back. Quest icons > Icon key: the page has its title. Screenshot anything
+   that wraps onto two lines or looks out of line.
+3. **Setup guide** (General > Setup guide > Open): the window says "Setup
+   guide"; on the first screen Skip sits at the bottom left; the controls row
+   reads "Press it"; the last screen lists the features in the guide's order.
+4. **Controller tab:** set **Spell panel size** to 80%, tap Reload now,
+   screenshot. Then 120%, Reload now, screenshot: your frame and your
+   target's sit just above the panels. Is anything overlapping? Do LT, RT and
+   both still swap the panels? Put it back to the size you like.
+5. **Cooldowns on the pictures:** use a spell with a long cooldown, walk
+   around without casting until it is ready: its picture brightens by itself.
+6. **Vendor:** with greys in your bags, buy one food item and let the greys
+   sell. The line counts items (a stack of 5 is 5) and only their price.
+7. **Chat picker:** check the whisper list on an alt does not show your
+   main's names. Whisper yourself from another character if you can.
+8. **Bank:** open the bank with Bag sorting on: the Sort tab is gone while it
+   is open and comes back after.
+9. **Quests:** a quest whose items drop in more than one zone: the icons show
+   in the zone you are in. Leave a dungeon: the minimap icons come back.
+10. Settings, tab **Errors**: screenshot it. Send me
+    `SavedVariables/PocketEssentials.lua` and the screenshots.
+
+Things to watch for (known, not fixed):
+- A wheel or the "new spell" picture opened from a spell button appears
+  where the game's hidden button is.
+- The game's page number sits just above the left panel.
+- Pet and possess bar pictures show no cooldown.

@@ -85,8 +85,9 @@ safer option. Any of them can be reversed.
 **Vendor**
 - No cap on how many greys sell per visit (the maintainer's choice, 2026-11-14; the
   first build stopped at 12). Only the last 12 sold can be bought back.
-- The chat line reports the money gained during the visit, e.g. "Sold 7 junk
-  items for 1g 20s 5c." and "Repairing for 12s 40c."
+- The chat line reports the items sold and their price (since 0.15.0; it was
+  the money gained during the visit), e.g. "Sold 7 junk items for 1g 20s 5c."
+  and "Repairing for 12s 40c."
 - An item must be grey according to both the bag slot and the item database,
   have a price, and not be locked. Bags the player marked "ignore for junk" in
   Blizzard's bag menu are skipped.
@@ -297,6 +298,33 @@ Made without the owner:
 - Texts were shortened where a control now says it. "You can change all of
   this later in the settings" is said on the welcome and the last screen
   only.
+
+## Batch of 2026-11-24 (0.15.0)
+
+Polish before the first public post, built while the owner was away at their
+instruction ("without asking questions, apply polish"). Spec
+`docs/superpowers/specs/2026-11-24-0.15.0-polish.md`. Rulings:
+
+1. The sell line reports the price of what was sold, not the change in money
+   during the visit (buying, buybacks and hand sales skewed it). It counts
+   items, not stacks.
+2. The round button's hold time stays 0.6 s (device-tested); the README and
+   CurseForge text say "hold it a moment" instead of "half a second".
+3. The whisper list moves to the character's own saved file, so names stay
+   out of the shared file players send with the debug log. Each character
+   starts with an empty list once.
+4. The Sort tab is hidden while the bank is open (it covered the bank bag's
+   slots); the stick sort still works there.
+5. Spell panel size asks for a reload instead of redrawing live, the same as
+   every other Controller layout change. It is saved as `panelSize`, because
+   0.11.x left an unused `size` in saved files. It is a number row (80 to
+   120, step 10), like the other size rows.
+6. Left from Close on the Errors page goes back to Clear all, so it can be
+   reached from any error.
+7. Left out on purpose: resetting the chat type after the 12 seconds (not
+   probed), fewer bag layout passes (touches the device-tested d-pad route),
+   a longer first quest rebuild delay, clearing QuestieDB's cache, moving the
+   page number, `/pe help`.
 
 ## What was left out, and why
 

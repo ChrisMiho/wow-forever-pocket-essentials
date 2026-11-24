@@ -64,7 +64,7 @@ Anything the addon puts on screen can be moved: **Move on screen** nudges the ar
 2. Log in. A round **PE** button appears at the left edge of the screen, and the setup guide opens.
 3. Flip on what you want. Everything starts off.
 
-Later, tap the round button to open the settings (hold it for half a second if the Chat picker opens instead), use the addon button on the minimap, or type `/pe`.
+Later, tap the round button to open the settings (hold it a moment if the Chat picker opens instead), use the addon button on the minimap, or type `/pe`.
 
 ## Quest data from QuestieDB
 

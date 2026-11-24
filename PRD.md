@@ -227,7 +227,7 @@ until its step in the test plan passes.
 | Repair automatically | Repairs from your own money at vendors that can | Worked on the device (0.0.9) |
 | Chat from round button (named "Big chat buttons" until 0.8.1) | Picker with one big button per channel plus the last six whisperers; badge on the round button for unanswered whispers. With the Gamepad UI on (0.0.9) a tap sets where the chat goes and the player opens chat with the game's own button; with it off the tap opens the chat box | Say and Guild through "Press A to type" worked on the device (0.0.9); a whisper is untried. 0.1.0 adds the on-screen "Press A to type" prompt and "Chat text size" (the game's own setting); the size changed on all chat windows in the 0.1.0 log, the prompt is untested. Since 0.4.0 "Chat text size" is one stepper (Smaller, the size, Bigger; 12 to 34) shown whether the feature is on or off: untested |
 | Menu background (0.4.0) | Its own switch. A plain dark panel of ours behind the game's pop-up menus while they are open; made for the menu on a quest in the quest log, which the game draws with no background. The menu itself is not touched | Did not show on the quest menu on the device (0.8.0); waiting on a debug log |
-| Setup guide (0.4.0, options in it since 0.5.0) | A window of nine screens (Welcome, Quest icons, Quest arrow, Menu background, Bags, Vendors, Chat, the round button and Move on screen, All set) that explains each feature and carries its switch and, under the switch, its options, both the same as in the settings and drawn by the same code. Opens by itself once per account, a moment after the first loading screen, until Finish or Skip is pressed; never in a fight. Reopened from the settings' bottom row ("Setup guide") or `/pe setup`. Touch and d-pad / A / B | Untested |
+| Setup guide (0.4.0, options in it since 0.5.0) | A window of screens (Welcome, Quest icons, Quest arrow, Menu background, Bags, Vendors, Chat, the round button and Move on screen, All set) that explains each feature and carries its switch and, under the switch, its options, both the same as in the settings and drawn by the same code. Opens by itself once per account, a moment after the first loading screen, until Finish or Skip is pressed; never in a fight. Reopened from the settings' bottom row ("Setup guide") or `/pe setup`. Touch and d-pad / A / B | Untested |
 | QuestieDB | Official Questie data addon, Forever build 1.1.1, shipped unmodified. Only the two quest features need it | Untested |
 | Move on screen (0.2.0 as "Move things"; renamed 0.8.0) | A small panel, opened from the settings' bottom row, from "Move the arrow" in Quest arrow or from "Move the round button", that nudges the quest arrow, the "Press A to type" text and the round button with Up / Down / Left / Right buttons (press = 2 pixels, hold = repeat and speed up), by touch or d-pad / A / B. Saved as an offset from each piece's starting spot; Reset puts the picked piece back to the starting spot. The old position buttons are gone (0.8.0). Does not use the game's Edit Mode | Untested |
 | `scripts/build.sh` | Downloads QuestieDB (pinned checksum), checks the addon's file list, writes `dist/wow-forever-pocket-essentials.zip` (GitHub bundle) and `dist/PocketEssentials-<version>.zip` (CurseForge, addon only) | Runs on the Mac |
@@ -429,6 +429,20 @@ buttons where they fit. Not taken: merging "Merge nearby icons" and "Spots
 per objective". The owner has more Quest icons ideas to bring after testing.
 Spec `docs/superpowers/specs/2026-11-18-tidier-settings.md`; device steps
 `docs/TESTING.md` 14.
+
+**0.15.0 (2026-11-24, untested):** polish before the first public post (the
+owner: "without asking questions, apply polish to this addon suite, ironing
+out bugs and refining the existing features ... I want to make a Reddit post
+today"). Five reviewers read every file; the confirmed bugs and rough edges
+are fixed, and Controller layout gets "Spell panel size" (80% to 120%, the
+owner's request). Main changes: the whisper list per character (out of the
+shared file), the sell line counts what was sold, quest spots kept in every
+zone and less garbage on heavy quests, one reload to switch the layout on,
+spell pictures brighten when a cooldown ends, the debug log at 3,000 lines,
+and many label, spacing and wording fixes. The README is rewritten for
+players arriving from Reddit; a post draft is in `docs/reddit-post-draft.md`.
+Spec `docs/superpowers/specs/2026-11-24-0.15.0-polish.md`; device steps
+`docs/TESTING.md` 29; pre-release `v0.15.0` with both zips.
 
 **0.14.0 (2026-11-24, untested):** the console. Controller layout shows
 one panel a side: at rest the main bar's d-pad diamond inner-left of the map
