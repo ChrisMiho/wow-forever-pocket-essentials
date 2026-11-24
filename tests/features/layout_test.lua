@@ -1184,6 +1184,21 @@ test("layout: the bars are never touched in combat, and placed once the fight en
     c:assertClean()
 end)
 
+test("layout: the PE button takes the layout's spot when the bars are placed and leaves it when they are put back", function()
+    local c, PE = layoutClient({}, 3)
+    local button = PE.Hub.button
+    local before = { button:GetPoint(1) }
+    switchOn(c, PE)
+    local _, x, y = PE.LayoutPlan.HubSpot(PE.LayoutPlan.PanelSize(PE.LayoutPlan.DEFAULTS))
+    local p, _, _, px, py = button:GetPoint(1)
+    eq({ p, px, py }, { "BOTTOMLEFT", x, y }, "the button is not at the layout's spot")
+    PE:SetModuleEnabled("ctrlLayout", false)
+    c:advance(0.1)
+    local q, _, _, qx, qy = button:GetPoint(1)
+    eq({ q, qx, qy }, { before[1], before[4], before[5] }, "the button did not go back")
+    c:assertClean("hub spot")
+end)
+
 test("layout: another layout picked puts the bars back as the game had them", function()
     local c, PE = layoutClient({}, 3)
     local before = allStates(c)

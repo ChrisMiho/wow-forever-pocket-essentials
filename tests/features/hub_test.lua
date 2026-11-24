@@ -161,4 +161,56 @@ test("hub: its press scripts and the timer after a release are caught and logged
     eq(count, 3, "not every script's error was logged under the round button")
 end)
 
+
+-- 0.16.0: the button's default spot is the controller layout's while the layout is placed.
+local function point(PE)
+    local p, _, _, x, y = PE.Hub.button:GetPoint(1)
+    return p, x, y
+end
+
+local function stubSpot(PE, ...)
+    local spot = { ... }
+    rawset(PE.ControllerLayout, "HubSpot", function() return (unpack or table.unpack)(spot) end)
+end
+
+test("hub: with the controller layout placed the default spot is the layout's", function()
+    local c, PE = T.new({})
+    stubSpot(PE, "BOTTOMLEFT", 10, 162)
+    PE.Hub:Refresh()
+    local p, x, y = point(PE)
+    eq(p, "BOTTOMLEFT"); eq(x, 10); eq(y, 162)
+    c:assertClean("layout spot")
+end)
+
+test("hub: a button the player moved keeps its offset from the old default", function()
+    local saved = { version = 1, enabled = {}, options = {}, ui = { size = "medium", hubPos = "LEFT", moved = { hub = { x = 30, y = -20 } } }, errors = {} }
+    local c, PE = T.new({ saved = saved })
+    local before = { point(PE) }
+    stubSpot(PE, "BOTTOMLEFT", 10, 162)
+    PE.Hub:Refresh()
+    local p, x, y = point(PE)
+    eq(p, "LEFT"); eq(p, before[1]); eq(x, before[2]); eq(y, before[3])
+    check(x > 10, "the offset is not in the point")
+end)
+
+test("hub: a position the player chose in settings wins", function()
+    local c, PE = T.new({})
+    PE:SetUISetting("hubPos", "RIGHT")
+    stubSpot(PE, "BOTTOMLEFT", 10, 162)
+    PE.Hub:Refresh()
+    local p = point(PE)
+    eq(p, "RIGHT")
+end)
+
+test("hub: without the layout the spot is as before", function()
+    local c, PE = T.new({})
+    local before = { point(PE) }
+    local real = PE.ControllerLayout.HubSpot
+    stubSpot(PE)
+    PE.Hub:Refresh()
+    local p, x, y = point(PE)
+    eq(p, "LEFT"); eq(x, before[2]); eq(y, before[3])
+    eq(real(PE.ControllerLayout), nil, "the layout is off: no spot")
+end)
+
 return { known = KNOWN_FAILURES }

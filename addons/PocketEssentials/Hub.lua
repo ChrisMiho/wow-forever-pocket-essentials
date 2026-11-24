@@ -111,19 +111,30 @@ local function UpdateBadge()
 end
 
 -- Where the button goes: anchor point on UIParent, x, y and size (UI units),
--- from the chosen position plus the offset saved by "Move on screen".
+-- from the chosen position plus the offset saved by "Move on screen", or the
+-- controller layout's spot (see below).
 local function Placement()
     local UI = PE.UI
     local size = UI:Metrics().hub
     local key = PE.db and PE.db.ui and PE.db.ui.hubPos
     local pos = POSITIONS[key] or POSITIONS.LEFT
+    local Move, dx, dy = PE.Move, 0, 0
+    if Move and Move.GetOffset then dx, dy = Move:GetOffset(MOVE_KEY) end
+    -- With the controller layout placed, its spot is the default. A button the
+    -- player moved, or put at another spot in the settings, stays as it was.
+    local layout = PE.ControllerLayout
+    if (key == nil or key == "LEFT") and dx == 0 and dy == 0 and type(layout) == "table"
+        and type(layout.HubSpot) == "function" then
+        local ok, point, lx, ly = pcall(layout.HubSpot, layout)
+        if ok and type(point) == "string" and type(lx) == "number" and type(ly) == "number" then
+            return point, lx, ly, size
+        end
+    end
     local margin = UI:Px(10)
     local height = UIParent:GetHeight() or 768
     local x = pos.x * margin
     local y = pos.y * height
     if pos.point == "TOP" then y = -margin end
-    local Move, dx, dy = PE.Move, 0, 0
-    if Move and Move.GetOffset then dx, dy = Move:GetOffset(MOVE_KEY) end
     return pos.point, x + dx, y + dy, size
 end
 

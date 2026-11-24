@@ -1486,6 +1486,12 @@ local function FaceStatus()
     return nil
 end
 
+-- The round button works out its own spot again (Hub.lua asks HubSpot, below).
+local function RefreshHub()
+    local hub = PE.Hub
+    if type(hub) == "table" and type(hub.Refresh) == "function" then PE:Safe("ctrlLayout", hub.Refresh, hub) end
+end
+
 -- Puts the bars back. The bottom anchor and the both-triggers bar, which the
 -- game never re-anchors, go back to the points read before the first change.
 -- The Top, Left and Right anchors follow the game's current Compact setting
@@ -1500,6 +1506,7 @@ local function RestoreNow()
     ShowHints()
     if not placed then return end
     placed = false
+    RefreshHub() -- the round button goes back to its own default spot
     local frames = BarFrames()
     local reanchored = {}
     if frames then
@@ -1545,6 +1552,7 @@ local function PlaceNow()
     end
     local spots = Plan.BarSpots(SessionSize())
     placed = true
+    RefreshHub() -- the round button takes the layout's spot
     for _, b in ipairs(BAR_FRAMES) do
         local spot = spots[b.spot]
         Put(frames[b.spot], spot.x, spot.y, spot.s)
@@ -2161,6 +2169,15 @@ mod = PE:RegisterModule({
         PE:RunOutOfCombat("ctrlLayout:off", function() SwitchOff(false) end)
     end,
 })
+
+-- The PE button's default spot (Hub.lua): point, x, y on UIParent while the bars are
+-- placed by us, else nil. "Placed" is what SyncBars decides: the switch is on and our layout
+-- is the active one. Reads only.
+function mod:HubSpot()
+    if not (wanted and placed) then return nil end
+    return Plan.HubSpot(SessionSize())
+end
+PE.ControllerLayout = mod
 
 -- From here on a switch-on is a tap, except the late one below.
 PE:OnLogin(function() atLogin = false end)
