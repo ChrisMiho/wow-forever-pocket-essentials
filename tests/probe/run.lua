@@ -1993,7 +1993,7 @@ end)
 -- 0.8.0: what a fight leaves readable of the target's and the pet's buffs
 ---------------------------------------------------------------------------
 
-local AURA_IDS = { "aura.count", "aura.fields", "aura.show", "aura.custom", "aura.blizzard" }
+local AURA_IDS = { "aura.count", "aura.fields", "aura.show", "aura.blizzard" }
 
 -- Stand-in for C_UnitAuras: the target has two buffs, the pet one debuff.
 -- GetAuraDataByAuraInstanceID: UnitAuraDocumentation.lua:190;
@@ -2064,6 +2064,10 @@ local function installTargetAuras(cl, opts)
         rawset(auras, "SetIgnoreParentAlpha", function(_, v)
             cl.ignoreCalls[#cl.ignoreCalls + 1] = v
             if opts.setRefused and v == true then error("SetIgnoreParentAlpha(): forbidden") end
+            if opts.putBackRefusedOnce and v == false then
+                opts.putBackRefusedOnce = nil
+                error("SetIgnoreParentAlpha(): busy")
+            end
             ignoring = v
         end)
     end
@@ -2096,12 +2100,20 @@ local function installCustomAuras(cl, opts)
                 groups[key] = {}
                 for i = 1, 10 do groups[key][i] = create("Button", nil, self) groups[key][i]:Hide() end
             end)
+            -- SetUnit only marks it for an update (Blizzard_AuraContainer.lua:40-47); the icons
+            -- are given out in the template's OnUpdate on a later frame while it is shown
+            -- (Blizzard_ManagedAuraContainer.lua:98-106).
+            local dirty = false
             rawset(f, "SetUnit", function(self, u)
                 if opts.refuseUnit then error("SetUnit(): forbidden") end
                 cl.customCalls[#cl.customCalls + 1] = "SetUnit " .. u
-                unit = u
+                unit, dirty = u, true
+            end)
+            f:SetScript("OnUpdate", function()
+                if not dirty then return end
+                dirty = false
                 for key, list in pairs(groups) do
-                    for i, b in ipairs(list) do if u == "target" and i <= 2 then b:Show() else b:Hide() end end
+                    for i, b in ipairs(list) do if unit == "target" and i <= 2 then b:Show() else b:Hide() end end
                 end
             end)
             rawset(f, "GetAuraGroupFrameCount", function(self, key) return groups[key] and #groups[key] or 0 end)
@@ -2113,7 +2125,7 @@ local function installCustomAuras(cl, opts)
     end)
 end
 
-test("aura trials: five value trials in 'Buffs in a fight', for a fight, not risky", function()
+test("aura trials: four value trials in 'Buffs in a fight', for a fight, not risky", function()
     local c, P = new()
     for _, id in ipairs(AURA_IDS) do
         local t = P.trialById[id]
@@ -2126,6 +2138,11 @@ test("aura trials: five value trials in 'Buffs in a fight', for a fight, not ris
     check(t, "aura.ignore missing")
     eq(t.area, "Buffs in a fight"); eq(t.kind, "action"); eq(t.risky, true)
     check(not t.fight, "aura.ignore is marked for a fight")
+    -- The game's container for addons waits for the game's next frames: an action that waits.
+    local t2 = P.trialById["aura.custom"]
+    check(t2, "aura.custom missing")
+    eq(t2.area, "Buffs in a fight"); eq(t2.kind, "action"); eq(t2.fight, true); check(not t2.risky, "aura.custom risky")
+    check(t2.wait and t2.wait <= 1, "aura.custom waits about half a second")
     noErrors(c)
 end)
 
@@ -2134,6 +2151,7 @@ test("aura trials: every buff trial for a fight is in the Fight tests pass, the 
     local at = {}
     for i, t in ipairs(P.FightList()) do at[t.id] = i end
     for _, id in ipairs(AURA_IDS) do check(at[id], id .. " is not in the Fight tests pass") end
+    check(at["aura.custom"], "aura.custom is not in the Fight tests pass")
     check(not at["aura.ignore"], "aura.ignore is in the Fight tests pass")
     local c2, P2 = new({ saved = { options = { auto = false, risky = true } } })
     for _, t in ipairs(P2.FightList()) do check(t.id ~= "aura.ignore", "aura.ignore is in the risky Fight tests pass") end
@@ -2299,6 +2317,16 @@ test("aura.ignore: Risky off leaves it out; a refusal, a missing method and no c
     check(db4.last["aura.ignore"].message:find("no aura container", 1, true), db4.last["aura.ignore"].message)
 end)
 
+test("aura.ignore: a put-back that fails once is tried again by undo", function()
+    local c, P, db = new({ saved = riskyOn(), setup = function(cl) installTargetAuras(cl, { putBackRefusedOnce = true }) end })
+    c:advance(30)
+    eq(cell(db, "aura.ignore", KEY_AUTO), "error", "the failed put-back is said")
+    eq(c.tfIgnoring(), false, "undo did not put it back")
+    local calls = {}
+    for i, v in ipairs(c.ignoreCalls) do calls[i] = tostring(v) end
+    eq(table.concat(calls, " "), "true false false", "set, a failed put-back, then undo's")
+end)
+
 test("aura.custom: made at load, pointed at the target in a fight, each call recorded, hidden again", function()
     local c, P, db = new({ setup = function(cl) installCustomAuras(cl) end })
     c:advance(30)
@@ -2315,10 +2343,10 @@ test("aura.custom: made at load, pointed at the target in a fight, each call rec
     c:enterCombat(); c:advance(30)
     noErrors(c)
     eq(ours(), before, "a frame was made in a fight")
-    eq(cell(db, "aura.custom", KEY_FIGHT), "readable")
+    eq(cell(db, "aura.custom", KEY_FIGHT), "allowed")
     local m = db.last["aura.custom"].message or ""
     for _, part in ipairs({ "made at load accepted", "AddAuraGroup at load accepted", "SetUnit target accepted",
-        "GetAuraGroupFrameCount accepted, group frames 10", "icons shown 2", "SetUnit none accepted" }) do
+        "GetAuraGroupFrameCount accepted, group frames 10", "icons shown 2 after half a second", "SetUnit none accepted" }) do
         check(m:find(part, 1, true), part .. ": " .. m)
     end
     eq(c.customCalls[1], "AddAuraGroup buffs HELPFUL 10", "one group of at most ten buffs, at load")
@@ -2332,6 +2360,28 @@ test("aura.custom: made at load, pointed at the target in a fight, each call rec
     check(db3.last["aura.custom"].message:find("CustomAuraContainerTemplate is not on this client", 1, true), db3.last["aura.custom"].message)
     local c4, P4, db4 = runAura(function() end)
     eq(cell(db4, "aura.custom", KEY_FIGHT), "missing", "no template on the plain stand-in")
+end)
+
+test("aura.custom from the one-tap Fight tests: the icons are counted after the game's next frames, nothing made in the fight", function()
+    local c, P, db = new({ auto = false, setup = function(cl) installCustomAuras(cl) end })
+    c:advance(5)
+    c:enterCombat(); c:advance(2)
+    P.RunFightTests(); c:advance(60)
+    noErrors(c)
+    local m = db.last["aura.custom"].message or ""
+    check(m:find("icons shown 2", 1, true), "counted in the same frame: " .. m)
+    check(m:find("after half a second", 1, true), m)
+    eq(cell(db, "aura.custom", KEY_FIGHT_PRESS), "allowed")
+    check(not c.customContainer:IsShown(), "the container is hidden again")
+    eq(c.customCalls[#c.customCalls], "SetUnit none", "pointed at nothing at the end")
+    local function underContainer()
+        local n = 0
+        for _, rec in ipairs(c:frames()) do
+            if rec.frame == c.customContainer or rec.frame:GetParent() == c.customContainer then n = n + 1 end
+        end
+        return n
+    end
+    eq(underContainer(), 11, "only the container and its ten icons from load")
 end)
 
 test("bars.alpha sets the left bar's see-through to its own value, out of and in a fight; a block is recorded", function()

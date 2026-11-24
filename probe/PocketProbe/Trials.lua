@@ -2198,8 +2198,8 @@ end
 local function PutBackIgnore(st)
     if not st.container or st.was == nil then return nil end
     local container, was = st.container, st.was
-    st.container, st.was = nil, nil
     container:SetIgnoreParentAlpha(was)
+    st.container, st.was = nil, nil   -- only once it was taken, so undo can try again
     local word, now = Ask(container, "IsIgnoringParentAlpha")
     if word ~= "accepted" then return "put back to " .. tostring(was) .. ", then reads " .. word end
     return "put back to " .. tostring(was) .. ", then reads " .. (now == was and "the same" or "something else")
@@ -2261,48 +2261,68 @@ do
     end
 end
 
+-- SetUnit only marks the container for an update (Blizzard_AuraContainer.lua:40-47,
+-- Blizzard_ManagedAuraContainer.lua:63-65); the game gives out the icons in the
+-- template's own OnUpdate on a later frame, while it is shown
+-- (Blizzard_ManagedAuraContainer.lua:98-106). So run() shows it and points it at
+-- the target, check() counts the icons half a second later (Run.lua's timer, no
+-- ticker of ours), and undo() points it at nothing and hides it.
+local function HideCustom(st)
+    local frame = auraCustom.frame
+    if frame and st.shown then
+        st.shown = nil
+        st.notes[#st.notes + 1] = "SetUnit none " .. Ask(frame, "SetUnit", "none")
+        pcall(frame.Hide, frame)
+    end
+    auraHome:Hide()
+end
+
 Add({
     id = "aura.custom", area = AURA_AREA,
     label = "Point the game's own buff container for addons at the target (run it in a fight too)",
-    kind = "value", fight = true, noRow = true,
-    read = function(c)
-        if auraCustom.made == "missing" then return "missing", "CustomAuraContainerTemplate is not on this client" end
-        c:note("made at load " .. auraCustom.made)
-        c:note("AddAuraGroup at load " .. auraCustom.group)
+    kind = "action", fight = true, noRow = true, wait = 0.5,
+    run = function(st)
+        if auraCustom.made == "missing" then return "missing", "CustomAuraContainerTemplate" end
+        st.notes = { "made at load " .. auraCustom.made, "AddAuraGroup at load " .. auraCustom.group }
         local frame = auraCustom.frame
-        if not frame then
-            c:add("container", nil)
-            return
-        end
+        if not frame then return false, tconcat(st.notes, ", ") end
         auraHome:Show()
         pcall(frame.Show, frame)
-        local okAll, err = pcall(function()
-            c:note("SetUnit target " .. Ask(frame, "SetUnit", "target"))
-            local word, n = Ask(frame, "GetAuraGroupFrameCount", AURA_GROUP)
-            n = Num(n)
-            c:note("GetAuraGroupFrameCount " .. (word == "accepted" and ("accepted, group frames " .. (n and tostring(n) or "unreadable")) or word))
-            -- How many of the group's icons the game shows for the target now.
-            local shown, refused = 0, 0
-            for i = 1, (n and math.min(n, 10)) or 0 do
-                local w, icon = Ask(frame, "GetAuraGroupFrame", AURA_GROUP, i)
-                if w == "accepted" and type(icon) == "table" then
-                    local sw, isShown = Ask(icon, "IsShown")
-                    if sw == "accepted" then
-                        if isShown == true then shown = shown + 1 end
-                    else
-                        refused = refused + 1
-                    end
+        st.shown = true
+        local word = Ask(frame, "SetUnit", "target")
+        st.notes[#st.notes + 1] = "SetUnit target " .. word
+        if word ~= "accepted" then
+            HideCustom(st)
+            return false, tconcat(st.notes, ", ")
+        end
+        return "wait"
+    end,
+    check = function(st)
+        local frame = auraCustom.frame
+        local word, n = Ask(frame, "GetAuraGroupFrameCount", AURA_GROUP)
+        n = Num(n)
+        st.notes[#st.notes + 1] = "GetAuraGroupFrameCount " .. (word == "accepted" and ("accepted, group frames " .. (n and tostring(n) or "unreadable")) or word)
+        -- How many of the group's icons the game shows for the target now.
+        local shown, refused = 0, 0
+        for i = 1, (n and math.min(n, 10)) or 0 do
+            local w, icon = Ask(frame, "GetAuraGroupFrame", AURA_GROUP, i)
+            if w == "accepted" and type(icon) == "table" then
+                local sw, isShown = Ask(icon, "IsShown")
+                if sw == "accepted" then
+                    if isShown == true then shown = shown + 1 end
                 else
                     refused = refused + 1
                 end
+            else
+                refused = refused + 1
             end
-            c:note("icons shown " .. shown .. (refused > 0 and (", unreadable " .. refused) or ""))
-            c:note("SetUnit none " .. Ask(frame, "SetUnit", "none"))
-        end)
-        pcall(frame.Hide, frame)
-        auraHome:Hide()
-        if not okAll then c:note("stopped: " .. P.Plain(err, 80)) end
-        c:add("container", "made")
+        end
+        st.notes[#st.notes + 1] = "icons shown " .. shown .. (refused > 0 and (", unreadable " .. refused) or "") .. " after half a second"
+        HideCustom(st)
+        return n ~= nil and refused == 0, tconcat(st.notes, ", ")
+    end,
+    undo = function(st)
+        if st.notes then HideCustom(st) else auraHome:Hide() end
     end,
 })
 

@@ -1807,16 +1807,21 @@ PocketProbe). Turn the **Debug log** on before you start.
     button) while the layout is on. Tap it once and wait until the word Fight
     on it turns into a tick mark (or the word Done). This also tries the
     game's own buff box for addons on your target; nothing to switch on for
-    it. Then open the probe's window and take a **performance recording** in
-    town, and another in a fight.
+    it, and you see nothing of it. It waits half a second for the game, so the
+    tick comes about half a second later than before. Then open the probe's
+    window and take a **performance recording** in town, and another in a
+    fight.
 12. **The probe, the target frame's buffs (last, out of a fight).** Target
-    something with a buff. In the probe's window tap **Risky** so it reads On,
-    then **Auto** so it reads On. Wait until the status line says "pass
-    done" (about a minute). This tries once whether the target frame's buff
-    icons can stay visible while the rest of the frame fades, and puts it back
-    at once. Tap Risky and Auto off again, then **Save** (it reloads): the
-    risky trials can leave the controller refusing some actions until that
-    reload.
+    something with a buff, and stay out of a fight until Risky and Auto are
+    both off again. In the probe's window tap the Risky button so it reads
+    **Risky: On**, then the Auto button so it reads **Auto: On**. Wait until
+    the status line says "pass done" (about a minute). This pass also opens
+    and closes the chat and the bags and moves or fades the bars for a moment:
+    that is expected. It tries once whether the target frame's buff icons can
+    stay visible while the rest of the frame fades, and puts it back at once.
+    Then tap them back to **Risky: Off** and **Auto: Off**, and tap
+    **Save (reloads)**: the risky trials can leave the controller refusing
+    some actions until that reload.
 13. Settings, tab **Errors**: screenshot it. Send me
     `SavedVariables/PocketEssentials.lua`, `SavedVariables/PocketProbe.lua`
     and the screenshots.
