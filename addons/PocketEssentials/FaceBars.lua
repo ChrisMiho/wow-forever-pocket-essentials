@@ -950,9 +950,11 @@ local function ReadActive()
         local ok, b = pcall(pageUnit.GetActiveBar, pageUnit)
         if ok and not IsSecret(b) and type(b) == "table" then bar = b end
     end
-    if bar == lastActive then return false end
-    lastActive = bar
+    -- The group is read again even for the same bar: a possess or stance bar moved to
+    -- another anchor by a settings change stays the same frame (GamepadOverrideBarMixin.lua:59-64).
     local group = callbackSet and bar and GroupOfBar(bar) or nil
+    if bar == lastActive and group == activeGroup then return false end
+    lastActive = bar
     if group ~= activeGroup then
         activeGroup = group
         swapDirty = true
@@ -971,6 +973,11 @@ Flush = function()
     if driver then driver:SetScript("OnUpdate", nil) end
     pending = false
     if not running or barsHidden then return end
+    -- The swap first: it needs no binding, so an error further down never holds it back.
+    if swapDirty then
+        swapDirty = false
+        ApplyState()
+    end
     if bindDirty then
         bindDirty = false
         Rebind()
@@ -994,10 +1001,6 @@ Flush = function()
         for _, g in ipairs(groups) do
             for _, pic in ipairs(g.pics) do RefreshChecked(pic) end
         end
-    end
-    if swapDirty then
-        swapDirty = false
-        ApplyState()
     end
 end
 OnUpdate = Guard(function() Flush() end)
