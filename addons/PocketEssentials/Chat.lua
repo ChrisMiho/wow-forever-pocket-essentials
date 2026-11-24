@@ -453,7 +453,7 @@ end
 -- The window
 -- As big as its content and centred: a "Talk in" heading and the targets,
 -- then a "Whispers" heading and the names, in three columns of chips. Every
--- size in it is the shared size times the "Size of the chat picker window"
+-- size in it is the shared size times the "Chat picker size"
 -- setting (opts.scale, 70 to 150 per cent), except the border. So the window
 -- lays out its own title bar and has its own three fonts, set again only when
 -- it opens or redraws and a size has changed.
@@ -735,8 +735,9 @@ local function DoRefresh()
             btn.peChatTarget, btn.peChatEntry = nil, entry
             if entry.unanswered then SetDot(btn, true) end
         end
-        -- Always the last chip, so it is always in the same place.
-        PlaceChip(clearButton, "Clear marks", #shown + 1, y, "off")
+        -- Always the last chip, so it is always in the same place. Dimmed
+        -- (still tappable) while nothing is marked.
+        PlaceChip(clearButton, "Clear marks", #shown + 1, y, marked > 0 and "off" or "disabled")
         y = y + GridHeight(#shown + 1)
         used = used + #shown
     end
@@ -804,7 +805,8 @@ local function TargetClicked(btn)
         return
     end
     if opened == "set" then
-        local name = entry and "your whisper" or (type(target.label) == "string" and target.label or "that")
+        local name = entry and ("a whisper to " .. Escape(entry.name))
+            or (type(target.label) == "string" and target.label or "that")
         if TypeKeyArm(name) then
             mod:Print("Chat is set to " .. name .. ". Press A to type.")
         else
@@ -1123,8 +1125,8 @@ mod = PE:RegisterModule({
 
     options = {
         { label = "Chat text size", value = TextSizeValue, stepper = TextSizeStepper, always = true,
-          help = "For every chat window, even with Chat picker off." },
-        { key = "scale", label = "Size of the chat picker window",
+          help = "All chat windows, even with Chat picker off." },
+        { key = "scale", label = "Chat picker size",
           number = { min = SCALE_MIN, max = SCALE_MAX, step = 10, default = SCALE_DEFAULT, suffix = "%", unit = "of normal" } },
     },
 

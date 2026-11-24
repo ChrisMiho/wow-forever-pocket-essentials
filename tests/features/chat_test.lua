@@ -447,7 +447,8 @@ test("chat: prompt: with the Gamepad UI on, a tap shows 'Press A to type' naming
     eq(#c:problems(), 0, table.concat(c:problems(), " / "))
 end)
 
-test("chat: prompt: a whisper prompt says 'your whisper', never the name", function()
+-- Spec 0.15.0 D5: "Chat is set to a whisper to <name>."
+test("chat: prompt: a whisper prompt names who the whisper is to", function()
     local c = T.new({ on = { "chat" }, gamepadUI = true })
     local PE = c.PE
     c:fire("CHAT_MSG_WHISPER", "hello", "Bobby-Realm", "", "", "Bobby-Realm", "", 0, 0, "", 0, 1, "guid")
@@ -459,7 +460,12 @@ test("chat: prompt: a whisper prompt says 'your whisper', never the name", funct
     check(btn, "no whisper button")
     c:click(btn)
     local _, lines = promptLines(c)
-    eq(lines[2], "Chat is set to your whisper")
+    eq(lines[2], "Chat is set to a whisper to Bobby-Realm")
+    local said = false
+    for _, line in ipairs(T.chatLines(c)) do
+        if line == "Chat is set to a whisper to Bobby-Realm. Press A to type." then said = true end
+    end
+    check(said, "the chat line does not name the whisper: " .. table.concat(T.chatLines(c), " / "))
 end)
 
 test("chat: prompt: no prompt when the A button could not be lent (in a fight)", function()
@@ -1635,7 +1641,7 @@ test("chat window: the width is 3 chips of 3.4 buttons plus the gaps and padding
     near(t - b, M.button, "chip height")
 end)
 
-test("chat window: the size follows the Size of the chat picker window setting", function()
+test("chat window: the size follows the Chat picker size setting", function()
     local c, PE = newChat()
     eq(PE:GetModule("chat").opts.scale, 100, "the default")
     c:whisperIn("Ann", "hi")
@@ -1766,7 +1772,8 @@ test("chat window: the keyboard hint is gone, the headings are Talk in and Whisp
     check(not texts:find("Clear marks", 1, true), "Clear marks with no names: " .. texts)
 end)
 
-test("chat window: Clear marks is the last chip, in the off style, even with nothing marked", function()
+-- Spec 0.15.0 D5: dimmed (the disabled style) when nothing is marked.
+test("chat window: Clear marks is the last chip, in the off style, dimmed when nothing is marked", function()
     local c, PE = newChat()
     c:whisperIn("Ann", "hi")
     c:whisperIn("Bob", "hi")
@@ -1783,6 +1790,13 @@ test("chat window: Clear marks is the last chip, in the off style, even with not
     openPicker(c, PE)
     list = chips(c)
     eq(T.labelOf(list[#list]), "Clear marks", "with no marks at all")
+    eq(list[#list].peStyle, "disabled", "not dimmed with nothing marked")
+    -- A new whisper marks a name again: the chip is no longer dimmed.
+    c:whisperIn("Cy", "hi")
+    tapHub(c, PE)
+    openPicker(c, PE)
+    list = chips(c)
+    eq(list[#list].peStyle, "off")
 end)
 
 test("chat window: an unanswered name has the warn style and a red dot at its top-right, no NEW", function()
@@ -1826,10 +1840,10 @@ test("chat options: Chat text size keeps always and gains help; the window size 
     local opts = PE:GetModule("chat").options
     eq(opts[1].label, "Chat text size")
     eq(opts[1].always, true)
-    eq(opts[1].help, "For every chat window, even with Chat picker off.")
+    eq(opts[1].help, "All chat windows, even with Chat picker off.")
     local n = opts[2]
     eq(n.key, "scale")
-    eq(n.label, "Size of the chat picker window")
+    eq(n.label, "Chat picker size")
     eq(n.number, { min = 70, max = 150, step = 10, default = 100, suffix = "%", unit = "of normal" })
     eq(PE:GetModule("chat").opts.scale, 100)
 end)

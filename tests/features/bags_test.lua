@@ -572,7 +572,7 @@ test("bags: the features are called Bag sorting and Bigger bag and no text of th
         eq(mod.desc, "Sort your bags with one press.")
         eq(mod.key, "bags")
         local win = c.PE:GetModule("bagWindow")
-        eq({ win.label, win.desc }, { "Bigger bag", "A bigger and better organized bag window." })
+        eq({ win.label, win.desc }, { "Bigger bag", "A bigger bag window, with your bags in one row at the top." })
         for _, text in ipairs(textsOf(c)) do
             check(not text:lower():find("big bag", 1, true), "old name in: " .. text)
         end
@@ -2000,7 +2000,7 @@ test("split: Bigger bag is its own feature with only Bag size", function()
     local c = newSplit()
     local win = c.PE:GetModule("bagWindow")
     check(win, "no bagWindow feature")
-    eq({ win.label, win.desc, win.order }, { "Bigger bag", "A bigger and better organized bag window.", 31 })
+    eq({ win.label, win.desc, win.order }, { "Bigger bag", "A bigger bag window, with your bags in one row at the top.", 31 })
     eq(#win.options, 1)
     local size = win.options[1]
     eq(size.key, "size")
@@ -2010,9 +2010,9 @@ test("split: Bigger bag is its own feature with only Bag size", function()
     eq(got, { "normal=Normal", "large=Large", "xlarge=Extra large" })
 end)
 
--- Spec 0.9.0, "Bag sorting": "Sort button on the bag: Show / Hide (showTab)"; "Click a stick in to
--- sort: Left stick / Right stick (sortKey l3 / r3)". The keys stay.
-test("split: Bag sorting has Sort button on the bag and Click a stick in to sort, and no How to sort or D-pad to Sort", function()
+-- Spec 0.9.0, "Bag sorting": "Sort button on the bag: Show / Hide (showTab)"; the stick row
+-- (spec 0.15.0 D5: "Sort with a stick click"): Left stick / Right stick (sortKey l3 / r3). The keys stay.
+test("split: Bag sorting has Sort button on the bag and Sort with a stick click, and no How to sort or D-pad to Sort", function()
     local c = newSplit()
     local mod = c.PE:GetModule("bags")
     eq(mod.label, "Bag sorting")
@@ -2021,7 +2021,7 @@ test("split: Bag sorting has Sort button on the bag and Click a stick in to sort
     eq({ tab.key, tab.label }, { "showTab", "Sort button on the bag" })
     eq({ tab.choices[1].value, tab.choices[1].label, tab.choices[2].value, tab.choices[2].label }, { true, "Show", false, "Hide" })
     eq(#tab.choices, 2)
-    eq({ stick.key, stick.label }, { "sortKey", "Click a stick in to sort" })
+    eq({ stick.key, stick.label }, { "sortKey", "Sort with a stick click" })
     eq({ stick.choices[1].value, stick.choices[1].label, stick.choices[2].value, stick.choices[2].label },
         { "l3", "Left stick", "r3", "Right stick" })
     eq(#stick.choices, 2)

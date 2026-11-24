@@ -1,6 +1,6 @@
 -- Pocket Essentials: two features in one file, sharing one engine.
 --   * "bags" (Bag sorting): a large Sort tab ("Sort button on the bag": Show /
---     Hide), a stick-click shortcut ("Click a stick in to sort": left or right)
+--     Hide), a stick-click shortcut ("Sort with a stick click": left or right)
 --     and, while the Sort tab shows, a d-pad route onto it.
 --   * "bagWindow" (Bigger bag): a size choice ("Bag size"), and the bag
 --     pictures always in one row at the top while it is on (controller style).
@@ -523,7 +523,7 @@ local function SyncButton()
     end
 end
 
--- The "Click a stick in to sort" choice: "l3" or "r3". Anything else reads as "l3".
+-- The "Sort with a stick click" choice: "l3" or "r3". Anything else reads as "l3".
 local function SortKeyChoice()
     local opts = Opts()
     local value = opts and opts.sortKey
@@ -1702,7 +1702,7 @@ mod = PE:RegisterModule({
               SyncConfirm()
               RefreshSortJump()
           end },
-        { key = "sortKey", label = "Click a stick in to sort", toggle = true,
+        { key = "sortKey", label = "Sort with a stick click", toggle = true,
           choices = {
               { value = "l3", label = "Left stick" },
               { value = "r3", label = "Right stick" },
@@ -1739,7 +1739,7 @@ mod = PE:RegisterModule({
 win = PE:RegisterModule({
     key = "bagWindow",
     label = "Bigger bag",
-    desc = "A bigger and better organized bag window.",
+    desc = "A bigger bag window, with your bags in one row at the top.",
     order = 31,
     -- 0.9.0: an old iconRow ("Bag icons") may still be in a saved table; it
     -- is left there and not read (the row is always on with the feature).
