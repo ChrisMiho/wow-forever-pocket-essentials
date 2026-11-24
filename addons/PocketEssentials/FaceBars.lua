@@ -128,7 +128,7 @@ local errorCount = 0
 local logged = {}         -- [reason] = true: each reason goes to the debug log once
 
 local holder, driver      -- the pictures' parent, and the frame for events and the one OnUpdate
-local pageUnit, mainFrame
+local pageUnit
 local groups = {}         -- [1..4] = { def, frame, pics = { [1..8] = picture }, anchor, bar, tags }
 local buttonPic = {}      -- [real button] = picture, for the buttons bound now
 local hooked = {}         -- [real button or Blizzard frame] = true: its hooks are on
@@ -826,7 +826,7 @@ local function StartNow()
     end
     local api = C_ActionBar
     if type(api) ~= "table" or type(api.GetActionCooldownDuration) ~= "function" then return Fail(TEXT_NO_COOLDOWN) end
-    mainFrame, pageUnit = root, pu
+    pageUnit = pu
     if not holder then
         local ok, made, why = pcall(Build)
         if not ok or not made then

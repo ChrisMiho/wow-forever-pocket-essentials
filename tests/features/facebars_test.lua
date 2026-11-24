@@ -1,0 +1,654 @@
+-- Rules for the face pictures of Controller layout 0.13.0 (FaceBars.lua).
+-- Source: docs/superpowers/specs/2026-11-23-controller-layout-0.13.0-face-bars.md
+-- ("The face", "The real bars", "When the face cannot work", "Layers and taps",
+-- "Tests") and the plan's contract (PE.FaceBars:Start / Stop / Status). Fresh client
+-- and addon per test; PE.FaceBars is started directly (ControllerLayout calls it in the game).
+local T = ...
+local test, eq, check = T.test, T.eq, T.check
+
+local KNOWN_FAILURES = {
+}
+
+local TEXT_NO_BARS = "the game's spell bars were not found"
+local TEXT_NO_BUTTONS = "the game's spell buttons were not found"
+local TEXT_NO_COOLDOWN = "this game version cannot draw cooldowns on our pictures"
+local TEXT_ERROR = "Pocket Essentials' spell pictures hit an error"
+local CHAT_ERROR = "Spell pictures turned off after an error; the game's bars are back. Reload to try again."
+local ANCHORS = { "TopCenteredAnchor", "LeftCenteredAnchor", "RightCenteredAnchor", "BottomCenteredAnchor" }
+
+local function near(a, b, msg)
+    check(type(a) == "number" and math.abs(a - b) < 1e-6, (msg or "number") .. ": expected " .. tostring(b) .. ", got " .. tostring(a))
+end
+
+-- A client with the addon loaded; opts.setup(c) runs before the load. Returns c, PE, Face.
+local function new(opts)
+    opts = opts or {}
+    local c, PE = T.new({ setup = opts.setup })
+    return c, PE, PE.FaceBars
+end
+
+-- A client with the face started (checked).
+local function started(opts)
+    local c, PE, Face = new(opts)
+    local ok, why = Face:Start()
+    check(ok == true, "Start failed: " .. tostring(why))
+    return c, PE, Face
+end
+
+local function pu(c) return c.env.GamepadMainActionBarFrame.PageUnit end
+local function anchor(c, key) return pu(c)[key] end
+local function alphaOf(c, f) return c._state(f).alpha end
+local function pic(Face, g, n) return Face.view[g].pics[n] end
+local function st(c, region) return c._state(region) end
+local function shown(c, region) return st(c, region).shown == true end
+
+-- Every frame FaceBars.lua made.
+local function faceFrames(c)
+    local out = {}
+    for _, rec in ipairs(c:frames()) do
+        if rec.addonFile == "FaceBars.lua" then out[#out + 1] = rec end
+    end
+    return out
+end
+
+local function onUpdates(c)
+    local n = 0
+    for _, rec in ipairs(faceFrames(c)) do if rec.scripts.OnUpdate then n = n + 1 end end
+    return n
+end
+
+local function cdCalls(c, method)
+    local n = 0
+    for _, call in ipairs(c.cdCalls) do if call.method == method then n = n + 1 end end
+    return n
+end
+
+local function hookCount(c)
+    return #c:callsTo("hooksecurefunc")
+end
+
+---------------------------------------------------------------------------
+-- Off until started
+---------------------------------------------------------------------------
+
+test("face: nothing is made, hooked or registered before Start", function()
+    local c, PE, Face = new()
+    eq(#faceFrames(c), 0, "frames made at load")
+    eq(#T.gameCalls(c), 0, "game calls at load")
+    eq(Face:Status(), nil)
+    eq(alphaOf(c, anchor(c, "TopCenteredAnchor")), 1)
+    c:advance(1)
+    eq(#faceFrames(c), 0)
+    c:assertClean()
+end)
+
+---------------------------------------------------------------------------
+-- The pictures
+---------------------------------------------------------------------------
+
+test("face: Start builds 32 pictures at the contract's spots, then makes the four anchors invisible", function()
+    local c, PE, Face = started()
+    eq(Face:Status(), nil)
+    eq(#Face.view, 4)
+    -- main dpad diamond at (-199, 39), face diamond at (199, 39); LT at y 113; RT at x 297; both at (297, 113).
+    local centres = { { -199, 39, 199, 39 }, { -199, 113, 199, 113 }, { -297, 39, 297, 39 }, { -297, 113, 297, 113 } }
+    local steps = { { -30, 0 }, { 0, 19 }, { 30, 0 }, { 0, -19 } }
+    for g = 1, 4 do
+        eq(#Face.view[g].pics, 8, "group " .. g)
+        for n = 1, 8 do
+            local p = pic(Face, g, n)
+            local half = n <= 4 and 0 or 1
+            local q = (n - 1) % 4 + 1
+            local point, rel, relPoint, x, y = p.frame:GetPoint(1)
+            eq({ point, rel == c.UIParent, relPoint }, { "CENTER", true, "BOTTOM" }, "group " .. g .. " picture " .. n)
+            near(x, centres[g][half * 2 + 1] + steps[q][1], "x of " .. g .. "/" .. n)
+            near(y, centres[g][half * 2 + 2] + steps[q][2], "y of " .. g .. "/" .. n)
+            near(p.frame:GetWidth(), 28)
+        end
+    end
+    for _, key in ipairs(ANCHORS) do eq(alphaOf(c, anchor(c, key)), 0, key .. " see-through") end
+    eq(onUpdates(c), 0, "no OnUpdate left after Start")
+    c:assertClean()
+end)
+
+test("face: the trigger tags sit in each diamond's centre, none on the main bar", function()
+    local c, PE, Face = started()
+    eq(#Face.view[1].tags, 0)
+    local want = { nil, "LT", "RT", "LT+RT" }
+    for g = 2, 4 do
+        eq(#Face.view[g].tags, 2, "group " .. g)
+        for _, tag in ipairs(Face.view[g].tags) do eq(tag:GetText(), want[g]) end
+    end
+    local _, _, _, x, y = Face.view[4].tags[2]:GetPoint(1)
+    eq({ x, y }, { 297, 113 })
+end)
+
+test("face: strata MEDIUM, between the bars (LOW) and the wheels (DIALOG)", function()
+    local c, PE, Face = started()
+    local holder = c._state(Face.view[1].frame).parent
+    eq(holder:GetFrameStrata(), "MEDIUM")
+end)
+
+test("face: taps are taken and do nothing (mouse on, no click handler)", function()
+    local c, PE, Face = started()
+    for g = 1, 4 do
+        for n = 1, 8 do
+            local rec = st(c, pic(Face, g, n).frame)
+            eq(rec.mouse, true, "mouse on " .. g .. "/" .. n)
+            for name in pairs(rec.scripts) do error("picture " .. g .. "/" .. n .. " has a " .. name .. " script") end
+        end
+    end
+end)
+
+test("face: icon, usable colour and empty slots are copied from the real buttons", function()
+    local c, PE, Face = started()
+    local p1, p2, p3 = pic(Face, 1, 1), pic(Face, 1, 2), pic(Face, 1, 3)
+    eq(st(c, p1.icon).texture, 135274)
+    eq(shown(c, p1.icon), true)
+    eq(st(c, p1.icon).vertexColor, { 1, 1, 1, 1 })
+    eq(st(c, p2.icon).texture, 136096)
+    eq(st(c, p2.icon).vertexColor, { 0.4, 0.4, 0.4, 1 }, "not usable: the game's grey")
+    eq(p3.empty, true, "slot 3 holds nothing")
+    eq(shown(c, p3.icon), false)
+    eq(st(c, p3.back).color, { 1, 1, 1, 0.12 }, "a faint outline")
+    -- The game greys a button and changes its colour: the hooks bring both across.
+    local real = c.barButtons.TopCenteredAnchor[1]
+    real.icon:SetDesaturated(true)
+    real.icon:SetVertexColor(0.5, 0.5, 1)
+    eq(st(c, p1.icon).desaturated, false, "not before the next frame")
+    c:advance(0.1)
+    eq(st(c, p1.icon).desaturated, true)
+    eq(st(c, p1.icon).vertexColor, { 0.5, 0.5, 1, 1 })
+    -- A slot that gets a spell.
+    c:setAction(3, { texture = 777, duration = 0, count = "" })
+    c:advance(0.1)
+    eq(p3.empty, false)
+    eq(st(c, p3.icon).texture, 777)
+    eq(onUpdates(c), 0)
+    c:assertClean()
+end)
+
+test("face: the main bar's face buttons show the game's own pictures, no cooldown, never checked", function()
+    local c, PE, Face = started()
+    local x, y, b, a = pic(Face, 1, 5), pic(Face, 1, 6), pic(Face, 1, 7), pic(Face, 1, 8)
+    eq(x.special, true)
+    eq(st(c, x.icon).texture, "Interface\\Cursor\\Interact")
+    eq(st(c, y.icon).atlas, "crosshair_unableinspect_32")
+    eq(st(c, b.icon).atlas, "128-redbutton-exit")
+    eq(st(c, a.icon).atlas, "gamepad-ability-icon-jump")
+    -- Slot 5 has a spell in the stand-in's world, but the button is reserved: no sweep.
+    for _, call in ipairs(c.cdCalls) do check(call.frame ~= x.cd, "a cooldown was set on X") end
+    c.world.actions[5].checked = true
+    c:fire("ACTIONBAR_UPDATE_STATE")
+    c:advance(0.1)
+    eq(shown(c, x.checked), false)
+    -- The game changes Y's picture (a target to inspect).
+    c.barButtons.TopCenteredAnchor[6].SpecialActionIcon:SetAtlas("crosshair_inspect_32")
+    c:advance(0.1)
+    eq(st(c, y.icon).atlas, "crosshair_inspect_32")
+    c:assertClean()
+end)
+
+test("face: cooldown from the duration object, the icon darkened while on cooldown, never SetCooldown", function()
+    local c, PE, Face = started()
+    local p1, p2 = pic(Face, 1, 1), pic(Face, 1, 2)
+    eq(shown(c, p2.cd), true, "slot 2 is on cooldown (8 s)")
+    eq(st(c, p2.cd).cooldown.duration, 8)
+    eq(shown(c, p2.dim), true)
+    eq(shown(c, p1.cd), false)
+    eq(shown(c, p1.dim), false)
+    -- A cast puts slot 1 on cooldown; the events are collected into one update.
+    c.world.actions[1].duration = 5
+    local before = cdCalls(c, "SetCooldownFromDurationObject")
+    c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+    c:fire("SPELL_UPDATE_COOLDOWN")
+    c:fire("SPELL_UPDATE_COOLDOWN")
+    eq(cdCalls(c, "SetCooldownFromDurationObject"), before, "nothing before the next frame")
+    eq(onUpdates(c), 1, "one OnUpdate waiting")
+    c:advance(0.1)
+    local after = cdCalls(c, "SetCooldownFromDurationObject")
+    check(after > before and after - before <= 32, "one pass over the pictures, got " .. (after - before) .. " calls")
+    eq(st(c, p1.cd).cooldown.duration, 5)
+    eq(shown(c, p1.dim), true)
+    eq(onUpdates(c), 0, "the OnUpdate removed itself")
+    -- The global cooldown: the sweep runs, the icon is not darkened.
+    c.world.actions[1].duration, c.world.actions[1].gcd = 1.5, true
+    c:fire("SPELL_UPDATE_COOLDOWN")
+    c:advance(0.1)
+    eq(shown(c, p1.cd), true)
+    eq(shown(c, p1.dim), false)
+    eq(cdCalls(c, "SetCooldown"), 0, "SetCooldown is never used")
+    c:assertClean()
+end)
+
+test("face: range dot copies the real RangeIndicator (shown, colour)", function()
+    local c, PE, Face = started()
+    local real, p = c.barButtons.LeftCenteredAnchor[2], pic(Face, 2, 2)
+    eq(shown(c, p.range), false)
+    c:setRange(real, true, false)
+    c:advance(0.1)
+    eq(shown(c, p.range), true)
+    eq(st(c, p.range).vertexColor, { 1, 0.1, 0.1, 1 })
+    c:setRange(real, true, true)
+    c:advance(0.1)
+    eq(st(c, p.range).vertexColor, { 0.6, 0.6, 0.6, 1 })
+    c:setRange(real, false)
+    c:advance(0.1)
+    eq(shown(c, p.range), false)
+end)
+
+test("face: the count text is passed on as it is, a secret one too", function()
+    local c, PE, Face = started()
+    c:setAction(9, { texture = 5, duration = 0, count = "5" })
+    c:advance(0.1)
+    eq(pic(Face, 2, 1).count:GetText(), "5")
+    local secret = "12"
+    c.world.secrets[secret] = true
+    c.barButtons.LeftCenteredAnchor[1].Count:SetText(secret)
+    c:advance(0.1)
+    eq(pic(Face, 2, 1).count:GetText(), "12")
+    c:assertClean()
+end)
+
+test("face: checked is read on ACTIONBAR_UPDATE_STATE and after UpdateState", function()
+    local c, PE, Face = started()
+    local p = pic(Face, 1, 1)
+    eq(shown(c, p.checked), false)
+    c.world.actions[1].checked = true
+    c:fire("ACTIONBAR_UPDATE_STATE")
+    c:advance(0.1)
+    eq(shown(c, p.checked), true)
+    c.world.actions[1].checked = false
+    c.barButtons.TopCenteredAnchor[1]:UpdateState()
+    c:advance(0.1)
+    eq(shown(c, p.checked), false)
+end)
+
+test("face: the proc glow follows the game's alert on that button only", function()
+    local c, PE, Face = started()
+    local p = pic(Face, 3, 4)
+    c:spellAlert(c.barButtons.RightCenteredAnchor[4], true)
+    c:advance(0.1)
+    eq(shown(c, p.glow), true)
+    eq(shown(c, pic(Face, 3, 3).glow), false)
+    c:spellAlert(c.barButtons.RightCenteredAnchor[4], false)
+    c:advance(0.1)
+    eq(shown(c, p.glow), false)
+    -- A button that is not on our bars: nothing happens.
+    c:spellAlert({}, true)
+    c:advance(0.1)
+    c:assertClean()
+end)
+
+test("face: a stance bar swapped into an anchor is mirrored, and the normal bar again when it leaves", function()
+    local c, PE, Face = started()
+    c:setAction(201, { texture = 4444, duration = 0, count = "" })
+    local stance = c.actionBars.stanceBar
+    c:showOverrideBar("stanceBar", "TopCenteredAnchor")
+    c:advance(0.1)
+    eq(pic(Face, 1, 1).button, stance:GetActionButtonByIndex(1))
+    eq(st(c, pic(Face, 1, 1).icon).texture, 4444)
+    eq(pic(Face, 1, 5).special, false, "the stance bar's face buttons are spells")
+    c:hideOverrideBar("stanceBar")
+    c:advance(0.1)
+    eq(pic(Face, 1, 1).button, c.barButtons.TopCenteredAnchor[1])
+    eq(st(c, pic(Face, 1, 1).icon).texture, 135274)
+    -- The stance bar in the LT anchor (GamepadStanceBarOverride Page1LeftBar).
+    c:showOverrideBar("stanceBar", "LeftCenteredAnchor")
+    c:advance(0.1)
+    eq(pic(Face, 2, 1).button, stance:GetActionButtonByIndex(1))
+    eq(pic(Face, 1, 1).button, c.barButtons.TopCenteredAnchor[1], "the main group keeps its own bar")
+    c:assertClean()
+end)
+
+test("face: a targeting bar held in the top anchor is mirrored by the main group, which stays the active one", function()
+    local c, PE, Face = started({ setup = function(cl) cl:addTargetingBars() end })
+    local friendly = c.actionBars.friendlyTargetingBar
+    c:showOverrideBar("friendlyTargetingBar", "TopCenteredAnchor")
+    c:advance(0.1)
+    eq(pic(Face, 1, 2).button, friendly:GetActionButtonByIndex(2))
+    eq(alphaOf(c, Face.view[1].frame), 1)
+    eq(alphaOf(c, Face.view[2].frame), 0.5)
+    c:hideOverrideBar("friendlyTargetingBar")
+    c:advance(0.1)
+    eq(pic(Face, 1, 2).button, c.barButtons.TopCenteredAnchor[2])
+end)
+
+test("face: the active bar at full strength, the others at 50%, following the game's callback", function()
+    local c, PE, Face = started()
+    local function alphas() local t = {} for g = 1, 4 do t[g] = alphaOf(c, Face.view[g].frame) end return t end
+    eq(alphas(), { 1, 0.5, 0.5, 0.5 })
+    c:pressTriggers(true, false)
+    c:advance(0.1)
+    eq(alphas(), { 0.5, 1, 0.5, 0.5 }, "LT")
+    c:pressTriggers(false, true)
+    c:advance(0.1)
+    eq(alphas(), { 0.5, 0.5, 1, 0.5 }, "RT")
+    c:pressTriggers(true, true)
+    c:advance(0.1)
+    eq(alphas(), { 0.5, 0.5, 0.5, 1 }, "LT+RT")
+    -- The game calls back on every trigger check: no change, no work.
+    c:pressTriggers(true, true)
+    eq(onUpdates(c), 0, "an unchanged bar asks for nothing")
+    c:pressTriggers(false, false)
+    c:advance(0.1)
+    eq(alphas(), { 1, 0.5, 0.5, 0.5 })
+    c:assertClean()
+end)
+
+test("face: without the active-bar callback every bar stays at full strength", function()
+    local c, PE, Face = started({ setup = function(cl)
+        rawset(cl.env.GamepadMainActionBarFrame.PageUnit, "RegisterActiveActionBarUpdatedCallback", nil)
+    end })
+    for g = 1, 4 do eq(alphaOf(c, Face.view[g].frame), 1, "group " .. g) end
+    c:assertClean()
+end)
+
+test("face: GetActiveBar raising or missing: every bar at full strength, no error", function()
+    local c, PE, Face = started({ setup = function(cl) cl.world.activeBarError = true end })
+    for g = 1, 4 do eq(alphaOf(c, Face.view[g].frame), 1) end
+    c:pressTriggers(true, false)
+    c:advance(0.1)
+    for g = 1, 4 do eq(alphaOf(c, Face.view[g].frame), 1) end
+    c:assertClean()
+    local c2, PE2, Face2 = started({ setup = function(cl) rawset(cl.env.GamepadMainActionBarFrame.PageUnit, "GetActiveBar", nil) end })
+    for g = 1, 4 do eq(alphaOf(c2, Face2.view[g].frame), 1) end
+    c2:assertClean()
+end)
+
+test("face: a page change re-reads every picture", function()
+    local c, PE, Face = started()
+    c.world.actions[101] = { texture = 9001, duration = 0, count = "" }
+    c:setPage(2)
+    eq(st(c, pic(Face, 1, 1).icon).texture, 135274, "not before the next frame")
+    c:advance(0.1)
+    eq(st(c, pic(Face, 1, 1).icon).texture, 9001)
+    eq(pic(Face, 1, 2).empty, true, "slot 102 holds nothing")
+    eq(onUpdates(c), 0)
+end)
+
+test("face: hidden while the game hides its bars (binding editor, Gamepad UI off)", function()
+    local c, PE, Face = started()
+    local holder = c._state(Face.view[1].frame).parent
+    eq(holder:IsShown(), true)
+    c.env.GamepadMainActionBarFrame:Hide()
+    eq(holder:IsShown(), false)
+    c.env.GamepadMainActionBarFrame:Show()
+    eq(holder:IsShown(), true)
+    c:assertClean()
+end)
+
+test("face: started while the game's bars are hidden, the pictures wait for them", function()
+    local c, PE, Face = new({ setup = function(cl) cl.env.GamepadMainActionBarFrame:Hide() end })
+    eq(Face:Start(), true)
+    local holder = c._state(Face.view[1].frame).parent
+    eq(holder:IsShown(), false)
+    c.env.GamepadMainActionBarFrame:Show()
+    eq(holder:IsShown(), true)
+end)
+
+test("face: something else setting an anchor's see-through while on gets 0 back; after Stop it stays", function()
+    local c, PE, Face = started()
+    local top = anchor(c, "TopCenteredAnchor")
+    top:SetAlpha(1)
+    eq(alphaOf(c, top), 0)
+    Face:Stop()
+    eq(alphaOf(c, top), 1)
+    top:SetAlpha(0.7)
+    eq(alphaOf(c, top), 0.7)
+    c:assertClean()
+end)
+
+test("face: Stop puts the bars back, hides the pictures, drops the events, and the hooks go idle", function()
+    local c, PE, Face = started()
+    local hooks = hookCount(c)
+    c:fire("SPELL_UPDATE_COOLDOWN") -- an update waiting
+    Face:Stop()
+    for _, key in ipairs(ANCHORS) do eq(alphaOf(c, anchor(c, key)), 1, key) end
+    local holder = c._state(Face.view[1].frame).parent
+    eq(holder:IsShown(), false)
+    eq(onUpdates(c), 0, "the waiting update was dropped")
+    for _, rec in ipairs(faceFrames(c)) do eq(next(rec.events), nil, "events left on a frame") end
+    eq(Face:Status(), nil)
+    -- Everything the hooks watch changes: nothing runs.
+    local calls = #c.cdCalls
+    c:setAction(1, { texture = 1, duration = 3, count = "2" })
+    c.barButtons.TopCenteredAnchor[1].icon:SetVertexColor(0.4, 0.4, 0.4)
+    c:spellAlert(c.barButtons.TopCenteredAnchor[1], true)
+    c:pressTriggers(true, false)
+    c:setPage(2)
+    eq(onUpdates(c), 0)
+    c:advance(1)
+    eq(#c.cdCalls, calls)
+    -- Started again: the same hooks (none added), the bars invisible again.
+    eq(Face:Start(), true)
+    eq(hookCount(c), hooks, "hooks are installed once")
+    eq(alphaOf(c, anchor(c, "TopCenteredAnchor")), 0)
+    eq(holder:IsShown(), true)
+    c:assertClean()
+end)
+
+test("face: Stop in a fight puts the bars back at once", function()
+    local c, PE, Face = started()
+    c:enterCombat()
+    Face:Stop()
+    for _, key in ipairs(ANCHORS) do eq(alphaOf(c, anchor(c, key)), 1, key) end
+    c:assertClean()
+end)
+
+test("face: Start twice keeps one set of pictures", function()
+    local c, PE, Face = started()
+    local frames, hooks = #faceFrames(c), hookCount(c)
+    eq(Face:Start(), true)
+    c:advance(0.1)
+    eq(#faceFrames(c), frames)
+    eq(hookCount(c), hooks)
+end)
+
+test("face: Start in a fight waits (the game's bars stay, no reason is kept)", function()
+    local c, PE, Face = new()
+    c:enterCombat()
+    local ok, why = Face:Start()
+    eq(ok, false)
+    eq(why, "waiting for the fight to end")
+    eq(Face:Status(), nil)
+    eq(#faceFrames(c), 0)
+    eq(alphaOf(c, anchor(c, "TopCenteredAnchor")), 1)
+end)
+
+---------------------------------------------------------------------------
+-- When the face cannot work
+---------------------------------------------------------------------------
+
+local function refused(opts, reason, what)
+    local c, PE, Face = new(opts)
+    local ok, why = Face:Start()
+    eq(ok, false, what)
+    eq(why, reason, what)
+    eq(Face:Status(), reason, what)
+    for _, key in ipairs(ANCHORS) do
+        local a = c.barParts[c.barParts[c.env.GamepadMainActionBarFrame].PageUnit or {}]
+        if a and a[key] then eq(alphaOf(c, a[key]), 1, what .. ": " .. key .. " stays visible") end
+    end
+    c:assertClean(what)
+    return c, PE, Face
+end
+
+test("face: not built when the bars, the buttons or the cooldown call are missing; the bars stay", function()
+    refused({ setup = function(cl) cl.barParts[cl.env.GamepadMainActionBarFrame].PageUnit = nil end }, TEXT_NO_BARS, "no PageUnit")
+    refused({ setup = function(cl)
+        local bar = cl.env.GamepadMainActionBarFrame.PageUnit.RightCenteredAnchor.Bar
+        rawset(bar, "GetActionButtonByIndex", function() return nil end)
+    end }, TEXT_NO_BUTTONS, "no buttons")
+    refused({ setup = function(cl) rawset(cl.env.C_ActionBar, "GetActionCooldownDuration", nil) end }, TEXT_NO_COOLDOWN, "no duration call")
+    local c = refused({ setup = function(cl) cl.world.noCooldownFrames = true end }, TEXT_NO_COOLDOWN, "no Cooldown frames")
+    -- Not tried again: the same reason, still no pictures showing.
+    local Face = c.PE.FaceBars
+    eq(select(2, Face:Start()), TEXT_NO_COOLDOWN)
+    for _, rec in ipairs(faceFrames(c)) do
+        -- (the one frame with no parent is the event frame, which draws nothing)
+        check(rec.parent == nil or not rec.frame:IsVisible(), "a picture frame is showing")
+    end
+end)
+
+test("face: the bars' own button list is used when GetActionButtonByIndex is missing", function()
+    local c, PE, Face = started({ setup = function(cl)
+        for _, key in ipairs(ANCHORS) do rawset(cl.env.GamepadMainActionBarFrame.PageUnit[key].Bar, "GetActionButtonByIndex", nil) end
+    end })
+    eq(pic(Face, 1, 1).button, c.barButtons.TopCenteredAnchor[1])
+    c:assertClean()
+end)
+
+test("face: without CooldownFrameTemplate a plain Cooldown frame is used", function()
+    local c, PE, Face = started({ setup = function(cl) cl.world.noCooldownTemplate = true end })
+    eq(st(c, pic(Face, 1, 2).cd).cooldown.duration, 8)
+    c:assertClean()
+end)
+
+test("face: Stop clears a not-built reason", function()
+    local c, PE, Face = refused({ setup = function(cl) rawset(cl.env.C_ActionBar, "GetActionCooldownDuration", nil) end }, TEXT_NO_COOLDOWN, "no duration call")
+    Face:Stop()
+    eq(Face:Status(), nil)
+end)
+
+test("face: after 3 errors the pictures turn off, the bars come back, one chat line, Start refused", function()
+    local c, PE, Face = started()
+    rawset(pic(Face, 1, 1).icon, "SetVertexColor", function() error("broken picture") end)
+    local real = c.barButtons.TopCenteredAnchor[1]
+    for i = 1, 2 do
+        real.icon:SetVertexColor(0.5, 0.5, 0.5)
+        c:advance(0.1)
+        eq(Face:Status(), nil, "still on after error " .. i)
+        eq(alphaOf(c, anchor(c, "TopCenteredAnchor")), 0)
+    end
+    real.icon:SetVertexColor(0.5, 0.5, 0.5)
+    c:advance(0.1)
+    eq(Face:Status(), TEXT_ERROR)
+    for _, key in ipairs(ANCHORS) do eq(alphaOf(c, anchor(c, key)), 1, key) end
+    eq(c._state(Face.view[1].frame).parent:IsShown(), false)
+    local lines = 0
+    for _, line in ipairs(T.chatLines(c)) do if line == CHAT_ERROR then lines = lines + 1 end end
+    eq(lines, 1)
+    local ok, why = Face:Start()
+    eq({ ok, why }, { false, TEXT_ERROR })
+    Face:Stop()
+    eq(Face:Status(), TEXT_ERROR, "the reason stays until a reload")
+    check(#PE.errors > 0 and PE.errors[1].module == "ctrlLayout", "the errors are in the log under Controller layout")
+end)
+
+---------------------------------------------------------------------------
+-- A difficult game: each call missing, nil, raising, secret
+---------------------------------------------------------------------------
+
+test("face: cooldown calls that raise, return nil or are refused clear the sweep without an error", function()
+    for _, case in ipairs({
+        { what = "duration raises", set = function(w) w.durationFails = true end },
+        { what = "duration nil", set = function(w) w.durationNil = true end },
+        { what = "duration object refused", set = function(w) w.durationObjectRefused = true end },
+    }) do
+        local c, PE, Face = started()
+        eq(shown(c, pic(Face, 1, 2).cd), true, case.what .. ": on cooldown first")
+        case.set(c.world)
+        c:fire("ACTIONBAR_UPDATE_COOLDOWN")
+        c:advance(0.1)
+        eq(shown(c, pic(Face, 1, 2).cd), false, case.what)
+        eq(cdCalls(c, "SetCooldown"), 0, case.what)
+        c:assertClean(case.what)
+    end
+end)
+
+test("face: a secret or missing GetActionCooldown answer leaves the icon undarkened", function()
+    local c, PE, Face = started({ setup = function(cl) cl.world.cooldownInfoSecret = true end })
+    eq(shown(c, pic(Face, 1, 2).dim), false)
+    eq(shown(c, pic(Face, 1, 2).cd), true, "the sweep still comes from the duration object")
+    c:assertClean()
+    local c2, PE2, Face2 = started({ setup = function(cl) rawset(cl.env.C_ActionBar, "GetActionCooldown", nil) end })
+    eq(shown(c2, pic(Face2, 1, 2).dim), false)
+    c2:assertClean()
+end)
+
+test("face: a secret colour shows white; a texture that cannot be read shows the empty picture", function()
+    local c, PE, Face = started()
+    local real = c.barButtons.TopCenteredAnchor[1]
+    c.world.secrets[0.25] = true
+    real.icon:SetVertexColor(0.25, 0.25, 0.25)
+    c:advance(0.1)
+    eq(st(c, pic(Face, 1, 1).icon).vertexColor, { 1, 1, 1, 1 })
+    rawset(real.icon, "GetTexture", function() error("no texture now") end)
+    real.icon:SetTexture(1234)
+    c:advance(0.1)
+    eq(pic(Face, 1, 1).empty, true)
+    c:assertClean()
+end)
+
+test("face: a secret texture is passed on as it is", function()
+    local c, PE, Face = started()
+    local secret = 424242
+    c.world.secrets[secret] = true
+    c.barButtons.TopCenteredAnchor[1].icon:SetTexture(secret)
+    c:advance(0.1)
+    eq(st(c, pic(Face, 1, 1).icon).texture, secret)
+    eq(pic(Face, 1, 1).empty, false)
+    c:assertClean()
+end)
+
+test("face: GetChecked secret, raising or missing: not checked", function()
+    local c, PE, Face = started()
+    local real = c.barButtons.TopCenteredAnchor[1]
+    local secret = {}
+    c.world.secrets[secret] = true
+    for _, fn in ipairs({ function() return secret end, function() error("no") end }) do
+        rawset(real, "GetChecked", fn)
+        c:fire("ACTIONBAR_UPDATE_STATE")
+        c:advance(0.1)
+        eq(shown(c, pic(Face, 1, 1).checked), false)
+    end
+    c:assertClean()
+end)
+
+test("face: the alert manager missing or raising: no glow, no error", function()
+    local c, PE, Face = started({ setup = function(cl) rawset(cl.env, "ActionButtonSpellAlertManager", nil) end })
+    eq(shown(c, pic(Face, 1, 1).glow), false)
+    c:assertClean()
+    local c2, PE2, Face2 = started()
+    rawset(c2.env.ActionButtonSpellAlertManager, "HasAlert", function() error("no") end)
+    c2:spellAlert(c2.barButtons.TopCenteredAnchor[1], true)
+    c2:advance(0.1)
+    eq(shown(c2, pic(Face2, 1, 1).glow), false)
+    c2:assertClean()
+end)
+
+test("face: SetCurrentPage missing: it still starts", function()
+    local c, PE, Face = started({ setup = function(cl) rawset(cl.env.GamepadMainActionBarFrame.PageUnit, "SetCurrentPage", nil) end })
+    eq(Face:Status(), nil)
+    c:assertClean()
+end)
+
+test("face: the possess bar's pet buttons (no action slot, no UpdateAction) show without a cooldown", function()
+    local c, PE, Face = started()
+    c:showOverrideBar("possessBar", "TopCenteredAnchor")
+    c:advance(0.1)
+    local possess = c.actionBars.possessBar
+    eq(pic(Face, 1, 1).button, possess:GetActionButtonByIndex(1))
+    eq(pic(Face, 1, 1).empty, true)
+    eq(shown(c, pic(Face, 1, 1).cd), false)
+    c:assertClean()
+end)
+
+test("face: the contract's numbers come from PE.LayoutPlan when it has them", function()
+    local c, PE, Face = new()
+    local plan = PE.LayoutPlan
+    rawset(plan, "FACE", { button = 20, dx = 25, dy = 15 })
+    rawset(plan, "FaceSpots", function() return {
+        main = { dpad = { x = -100, y = 50 }, face = { x = 100, y = 50 } },
+        lt = { dpad = { x = -100, y = 120 }, face = { x = 100, y = 120 } },
+        rt = { dpad = { x = -200, y = 50 }, face = { x = 200, y = 50 } },
+        both = { dpad = { x = -200, y = 120 }, face = { x = 200, y = 120 } },
+    } end)
+    eq(Face:Start(), true)
+    local _, _, _, x, y = pic(Face, 1, 1).frame:GetPoint(1)
+    eq({ x, y }, { -125, 50 })
+    near(pic(Face, 1, 1).frame:GetWidth(), 20)
+end)
+
+return { known = KNOWN_FAILURES }
