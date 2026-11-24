@@ -93,14 +93,17 @@ event	ZONE_CHANGED	Blizzard_APIDocumentationGenerated/MapDocumentation.lua docum
 event	ZONE_CHANGED_INDOORS	Blizzard_APIDocumentationGenerated/MapDocumentation.lua documented
 event	ZONE_CHANGED_NEW_AREA	Blizzard_APIDocumentationGenerated/MapDocumentation.lua documented
 frame	ActionButtonSpellAlertManager	Blizzard_ActionBar/Shared/ActionButtonSpellAlerts.lua used
+frame	AddonCompartmentFrame	Blizzard_Minimap/Camelot/AddonCompartment.xml used
 frame	BACKPACK_CONTAINER	Blizzard_FrameXMLBase/Constants.lua used
 frame	BAG_COMMAND_CONVERT_TO_COMBINED	Blizzard_UIPanels_Game/Mainline/ContainerFrame.lua used
 frame	BankFrame	Blizzard_UIPanels_Game/Camelot/BankFrame.xml used
 frame	BuffFrame	Blizzard_BuffFrame/BuffFrame.xml used
 frame	CHAT_FONT_HEIGHTS	Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua used
+frame	CHAT_FRAME_TEXTURES	Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua used
 frame	ChatFrame1	Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.xml used
 frame	ChatFrameUtil	Blizzard_ChatFrameBase/Shared/ChatFrameUtil.lua used
 frame	ContainerFrameCombinedBags	Blizzard_UIPanels_Game/Mainline/ContainerFrame.xml used
+frame	DEFAULT_CHATFRAME_ALPHA	Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua used
 frame	DEFAULT_CHAT_FRAME	Blizzard_ChatFrameBase/Shared/ChatFrameUtil.lua used
 frame	DebuffFrame	Blizzard_BuffFrame/BuffFrame.xml used
 frame	EditModeManagerFrame	Blizzard_EditMode/Shared/EditModeManager.xml used
@@ -129,6 +132,7 @@ frame	GameFontHighlight	Blizzard_Fonts_Shared/Shared/FontStyles.xml used
 frame	GameFontHighlightLarge	Blizzard_Fonts_Shared/Shared/FontStyles.xml used
 frame	GameFontNormal	Blizzard_Fonts_Shared/Shared/FontStyles.xml used
 frame	GameFontNormalLarge	Blizzard_Fonts_Shared/Shared/FontStyles.xml used
+frame	GameTimeFrame	Blizzard_Minimap/Mainline/GameTime.xml used
 frame	GamepadBagBar	Blizzard_MainMenuBarBagButtons/Camelot/MainMenuBarBagButtons.xml used
 frame	GamepadMainActionBarFrame	Blizzard_GamepadActionBars/MainActionBarFrame.xml used
 frame	GamepadPetActionFlyout	Blizzard_GamepadActionBars/Camelot/PetClassFlyouts.xml used
@@ -136,6 +140,8 @@ frame	MainStatusTrackingBarContainer	Blizzard_StatusTrackingBar/Mainline/StatusT
 frame	MerchantFrame	Blizzard_UIPanels_Game/Mainline/MerchantFrame.xml used
 frame	Minimap	Blizzard_Minimap/Mainline/Minimap.xml used
 frame	MinimapCluster	Blizzard_Minimap/Mainline/Minimap.xml used
+frame	MinimapCompassTexture	Blizzard_Minimap/Mainline/Minimap.xml used
+frame	MinimapCompassTextureUnderlay	Blizzard_Minimap/Mainline/Minimap.xml used
 frame	NUM_BAG_SLOTS	Blizzard_FrameXMLBase/Constants.lua used
 frame	NUM_CHAT_WINDOWS	Blizzard_DeprecatedChatInfo/Deprecated_ChatFrame.lua used
 frame	ObjectiveTrackerFrame	Blizzard_ObjectiveTracker/Blizzard_ObjectiveTracker.xml used
@@ -163,6 +169,7 @@ global	DisplayInterfaceActionBlockedMessage	Blizzard_ChatFrameBase/Mainline/Chat
 global	EditModePresetLayoutManager	Blizzard_EditMode/Shared/EditModePresetLayoutsManager.lua used
 global	EventRegistry	Blizzard_SharedXMLBase/GlobalCallbackRegistry.lua used
 global	FCF_SetChatWindowFontSize	Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua used
+global	FCF_SetWindowAlpha	Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua used
 global	GetBindingAction	Blizzard_FrameXML/Mainline/CoinPickupFrame.lua used
 global	GetBuildInfo	Blizzard_APIDocumentationGenerated/BuildDocumentation.lua documented
 global	GetCVar	Blizzard_SharedXMLBase/CvarUtil.lua used
@@ -346,6 +353,7 @@ method	UnregisterCallback	Blizzard_SharedXMLBase/CallbackRegistry.lua used
 method	UnregisterEvent	Blizzard_APIDocumentationGenerated/SimpleFrameAPIDocumentation.lua documented
 method	UpdateAction	Blizzard_ActionBar/Shared/ActionButton.lua used
 method	UpdateHeader	Blizzard_ChatFrameBase/Shared/ChatFrameEditBox.lua used
+method	UpdateMinimapConfig	Blizzard_Minimap/Camelot/Minimap.lua used
 method	UpdateState	Blizzard_ActionBar/Shared/ActionButton.lua used
 namespace	C_ActionBar.GetActionCooldown	Blizzard_APIDocumentationGenerated/ActionBarFrameDocumentation.lua documented
 namespace	C_ActionBar.GetActionCooldownDuration	Blizzard_APIDocumentationGenerated/ActionBarFrameDocumentation.lua documented

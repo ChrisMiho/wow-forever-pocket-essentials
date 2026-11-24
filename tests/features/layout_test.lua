@@ -1357,7 +1357,8 @@ test("rows: Spell panel size, the three timer rows and Start over", function()
     local list = PE:GetModule("ctrlLayout").options
     local labels = {}
     for i, o in ipairs(list) do labels[i] = o.label end
-    eq(labels, { "Spell panel size", "Ranged timer", "Main hand timer", "Off hand timer", "Rebuild the layout" })
+    eq(labels, { "Spell panel size", "Ranged timer", "Main hand timer", "Off hand timer", "Controls reminder", "Map buttons",
+        "Rebuild the layout" })
     eq(list[1].key, "panelSize")
     local n = list[1].number
     eq({ n.min, n.max, n.step, n.default, n.suffix }, { 80, 120, 10, 100, "%" })
@@ -1368,8 +1369,8 @@ test("rows: Spell panel size, the three timer rows and Start over", function()
         for j, ch in ipairs(list[i + 1].choices) do out[j] = { ch.value, ch.label } end
         eq(out, { { 0, "Always" }, { 1, "In combat" }, { 2, "Hidden" } })
     end
-    eq(list[5].button, "Start over")
-    eq(type(list[5].action), "function")
+    eq(list[7].button, "Start over")
+    eq(type(list[7].action), "function")
 end)
 
 test("rows: old saved values for the removed rows change nothing", function()
@@ -3167,6 +3168,223 @@ test("0.16.0: a layout without the tooltip system is still built", function()
     check(type(layout) == "table", "no layout")
     eq(layout.systems[1].anchorInfo.offsetY, 0, "the map was not placed")
     eq(layout.systems[4].anchorInfo.offsetY, 85, "an entry of an unknown system was changed")
+end)
+
+---------------------------------------------------------------------------
+-- 0.16.0: the pieces Edit Mode does not own (spec "0.16.0: the arrangement", the two rows,
+-- "Left to the builder"): the hint box row, the chat without its dark box, the map's black
+-- border, the two map buttons.
+---------------------------------------------------------------------------
+
+local function choicesOf(row)
+    local out = {}
+    for i, ch in ipairs(row.choices or {}) do out[i] = { ch.value, ch.label } end
+    return out
+end
+
+-- Our black disc behind the round map: a frame of ControllerLayout.lua's with the circle picture.
+local function mapDisc(c)
+    for _, f in ipairs(c._allFrames()) do
+        local st = c._state(f)
+        if st.addonFile == "ControllerLayout.lua" then
+            for _, r in ipairs(st.regions) do
+                local tex = c._state(r).texture
+                if type(tex) == "string" and tex:find("Icons\\circle", 1, true) then return f, r end
+            end
+        end
+    end
+    return nil
+end
+
+local function mapButtons(c)
+    return { c.env.MinimapCluster.Tracking, c.env.GameTimeFrame, c.env.AddonCompartmentFrame }
+end
+
+local function allShown(list, want, what)
+    for i, f in ipairs(list) do eq(f:IsShown(), want, what .. ": button " .. i) end
+end
+
+test("0.16.0: the two rows exist, Off and Hidden by default", function()
+    local _, PE = layoutClient({}, 3)
+    local h, m = optRow(PE, "hints"), optRow(PE, "mapButtons")
+    check(h ~= nil and m ~= nil, "a row is missing")
+    eq(h.label, "Controls reminder")
+    eq(choicesOf(h), { { 0, "Off" }, { 1, "On" } })
+    eq(m.label, "Map buttons")
+    eq(choicesOf(m), { { 0, "Hidden" }, { 1, "Shown" } })
+    eq(opts(PE).hints, 0)
+    eq(opts(PE).mapButtons, 0)
+end)
+
+test("0.16.0: Controls reminder On writes the game setting once and Off hides it", function()
+    -- On from the start: the player's "0" is kept, the box is shown, once.
+    local c, PE = hintsClient("0")
+    opts(PE).hints = 1
+    switchOn(c, PE)
+    eq(c.world.cvars[HINTS], "1")
+    eq(opts(PE).hintsWas, "0")
+    c:fire("EDIT_MODE_LAYOUTS_UPDATED")
+    c:fire("PLAYER_ENTERING_WORLD")
+    eq(hintWrites(c), 1, "written more than once")
+    switchOff(c, PE)
+    eq(c.world.cvars[HINTS], "0")
+    eq(opts(PE).hintsWas, nil)
+    c:assertClean()
+    -- Off (the default): hidden, the player's "1" kept; the row turns it on and off while placed.
+    local c2, PE2 = hintsClient("1")
+    switchOn(c2, PE2)
+    eq(c2.world.cvars[HINTS], "0")
+    eq(opts(PE2).hintsWas, "1")
+    PE2:GetModule("ctrlLayout"):CancelReload() -- the switch-on's own reload
+    choose(c2, PE2, "hints", 1)
+    eq(c2.world.cvars[HINTS], "1")
+    eq(opts(PE2).hintsWas, "1", "the value from before the layout")
+    choose(c2, PE2, "hints", 0)
+    eq(c2.world.cvars[HINTS], "0")
+    eq(reloadReason(PE2), nil, "a reload was asked for")
+    switchOff(c2, PE2)
+    eq(c2.world.cvars[HINTS], "1")
+    c2:assertClean()
+end)
+
+test("0.16.0: the chat's box is see-through while placed and the player's value comes back", function()
+    local c, PE = layoutClient({}, 3, { setup = function(c0)
+        c0.env.FCF_SetWindowAlpha(c0.chatWindows[2], 0.6, true) -- the player's own see-through on window 2
+    end })
+    local w1, w2 = c.chatWindows[1], c.chatWindows[2]
+    local bg1, bg2 = c.env.ChatFrame1Background, c.env.ChatFrame2Background
+    switchOn(c, PE)
+    eq(w1.oldAlpha, 0)
+    eq(bg1:GetAlpha(), 0)
+    eq(w2.oldAlpha, 0)
+    -- Opening or pointing at the chat fades the box in (FloatingChatFrame.lua:1237-1246): it stays unseen.
+    c.env.FCF_FadeInChatFrame(w1)
+    check(not bg1:IsShown() or bg1:GetAlpha() == 0, "the box shows when the chat fades in")
+    check(not c.env.ChatFrame1TopLeftTexture:IsShown() or c.env.ChatFrame1TopLeftTexture:GetAlpha() == 0,
+        "the border shows when the chat fades in")
+    switchOff(c, PE)
+    eq(w1.oldAlpha, 0.25)
+    eq(bg1:GetAlpha(), 0.25)
+    eq(bg1:IsShown(), true)
+    eq(w2.oldAlpha, 0.6)
+    eq(bg2:GetAlpha(), 0.6)
+    eq(bg2:IsShown(), true)
+    local calls = c:callsTo("FCF_SetWindowAlpha")
+    check(#calls > 1, "FCF_SetWindowAlpha was not called")
+    for i, call in ipairs(calls) do eq(call.args[3], true, "call " .. i .. " saved the value") end
+    eq(#c:callsTo("SetChatWindowAlpha"), 0, "the player's saved value was changed")
+    c:assertClean()
+end)
+
+test("0.16.0: the map's ring is hidden, the black border shown, and both survive the game redrawing the ring", function()
+    local c, PE = layoutClient({}, 3)
+    local ring = c.env.MinimapCompassTexture
+    switchOn(c, PE)
+    eq(ring:IsShown(), false)
+    eq(c.env.MinimapCompassTextureUnderlay:IsShown(), false)
+    local disc, tex = mapDisc(c)
+    check(disc ~= nil, "no black disc")
+    eq(disc:IsShown(), true)
+    eq({ tex:GetVertexColor() }, { 0, 0, 0, 1 })
+    eq(disc:GetFrameLevel(), c.minimap:GetFrameLevel() - 1)
+    near(disc:GetWidth(), c.minimap:GetWidth() + 4, "disc width")
+    near(disc:GetHeight(), c.minimap:GetHeight() + 4, "disc height")
+    c.env.MinimapCluster:UpdateMinimapConfig()
+    eq(ring:IsShown(), false, "the ring came back after the game redrew it")
+    eq(disc:IsShown(), true)
+    -- The map turned to rotating: the game shows its underlay; hidden too, and it comes back at the end.
+    c.world.rotateMinimap = true
+    c.env.MinimapCluster:UpdateMinimapConfig()
+    eq(c.env.MinimapCompassTextureUnderlay:IsShown(), false)
+    switchOff(c, PE)
+    eq(ring:IsShown(), true)
+    eq(c.env.MinimapCompassTextureUnderlay:IsShown(), true)
+    eq(disc:IsShown(), false)
+    -- While off the hook does nothing.
+    c.world.rotateMinimap = false
+    c.env.MinimapCluster:UpdateMinimapConfig()
+    eq(ring:IsShown(), true)
+    eq(disc:IsShown(), false)
+    c:assertClean()
+end)
+
+test("0.16.0: Map buttons Hidden hides both buttons, Shown leaves them, off puts them back", function()
+    local c, PE = layoutClient({}, 3)
+    local list = mapButtons(c)
+    switchOn(c, PE)
+    allShown(list, false, "Hidden")
+    PE:GetModule("ctrlLayout"):CancelReload() -- the switch-on's own reload
+    -- The game shows one again (an addon registers, the tracking list changes): hidden once more.
+    c.env.GameTimeFrame:Show()
+    eq(c.env.GameTimeFrame:IsShown(), false, "the calendar button stayed after the game showed it")
+    choose(c, PE, "mapButtons", 1)
+    allShown(list, true, "Shown")
+    eq(reloadReason(PE), nil, "a reload was asked for")
+    choose(c, PE, "mapButtons", 0)
+    allShown(list, false, "Hidden again")
+    switchOff(c, PE)
+    allShown(list, true, "off")
+    c:assertClean()
+    -- Shown from the start: none of the three is touched.
+    local c2, PE2 = layoutClient({}, 3)
+    opts(PE2).mapButtons = 1
+    switchOn(c2, PE2)
+    allShown(mapButtons(c2), true, "Shown from the start")
+    for _, name in ipairs({ "MinimapCluster.Tracking:Hide", "GameTimeFrame:Hide", "AddonCompartmentFrame:Hide" }) do
+        eq(#c2:callsTo(name), 0, name)
+    end
+    -- A button the game itself had hidden stays hidden at the end.
+    local c3, PE3 = layoutClient({}, 3, { setup = function(c0) c0.env.AddonCompartmentFrame:Hide() end })
+    switchOn(c3, PE3)
+    switchOff(c3, PE3)
+    eq(c3.env.AddonCompartmentFrame:IsShown(), false)
+    eq(c3.env.GameTimeFrame:IsShown(), true)
+    c3:assertClean()
+end)
+
+test("0.16.0: a client without the calendar button or the ring still places the rest", function()
+    local c, PE = hintsClient("1", nil, nil, function(c0)
+        rawset(c0.env, "GameTimeFrame", nil)
+        rawset(c0.env, "MinimapCompassTexture", nil)
+    end)
+    switchOn(c, PE)
+    eq(c.world.cvars[HINTS], "0", "the hint step did not run")
+    eq(c.chatWindows[1].oldAlpha, 0, "the chat step did not run")
+    eq(c.env.MinimapCluster.Tracking:IsShown(), false, "the tracking button step did not run")
+    switchOff(c, PE)
+    eq(c.chatWindows[1].oldAlpha, 0.25)
+    eq(c.env.MinimapCluster.Tracking:IsShown(), true)
+    c:assertClean()
+end)
+
+test("0.16.0: none of it runs in a fight", function()
+    local c, PE = hintsClient("1")
+    switchOn(c, PE)
+    c:enterCombat()
+    local n = #c.calls
+    choose(c, PE, "hints", 1)
+    choose(c, PE, "mapButtons", 1)
+    local game = { ["FCF_SetWindowAlpha"] = true, ["C_CVar.SetCVar"] = true, ["MinimapCluster.Tracking:Show"] = true,
+        ["GameTimeFrame:Show"] = true, ["AddonCompartmentFrame:Show"] = true, ["MinimapCompassTexture:Hide"] = true,
+        ["MinimapCompassTexture:Show"] = true }
+    for i = n + 1, #c.calls do check(not game[c.calls[i].name], "called in a fight: " .. c.calls[i].name) end
+    eq(c.world.cvars[HINTS], "0")
+    eq(c.env.GameTimeFrame:IsShown(), false)
+    c:leaveCombat()
+    c:advance(0.1)
+    eq(c.world.cvars[HINTS], "1")
+    allShown(mapButtons(c), true, "after the fight")
+    -- Switched off in a fight: the box, the ring and the buttons wait for its end too.
+    c:enterCombat()
+    n = #c.calls
+    switchOff(c, PE)
+    for i = n + 1, #c.calls do check(not game[c.calls[i].name], "called in a fight: " .. c.calls[i].name) end
+    eq(c.chatWindows[1].oldAlpha, 0)
+    c:leaveCombat()
+    c:advance(0.1)
+    eq(c.chatWindows[1].oldAlpha, 0.25)
+    eq(c.env.MinimapCompassTexture:IsShown(), true)
+    c:assertClean()
 end)
 
 return { known = KNOWN_FAILURES }

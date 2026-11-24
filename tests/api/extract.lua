@@ -71,6 +71,8 @@ local INDIRECT = {
     { "namespace", "C_EditMode.IsValidLayoutName", "ControllerLayout.lua", "state.api.IsValidLayoutName" },
     -- Controller layout: the gamepad bar's PageUnit method it hooks is named in a constant.
     { "method", "RefreshCompactLayout", "ControllerLayout.lua", '"RefreshCompactLayout"' },
+    -- Controller layout 0.16.0: the map cluster's method it hooks is named in a constant.
+    { "method", "UpdateMinimapConfig", "ControllerLayout.lua", '"UpdateMinimapConfig"' },
     -- Controller layout 0.13.0: the game's controller hint box setting, held in a constant.
     { "cvar", "GamepadShowPersistentInputLegend", "ControllerLayout.lua", '"GamepadShowPersistentInputLegend"' },
     -- The restriction probe also uses these; the stand-in client offers them for its tests too.
@@ -259,7 +261,7 @@ for _, f in ipairs(files) do
         if not STD[name] and not isOwnGlobal(name) then
             if not name:match("^C_") and name ~= "Enum" then
                 local isFrame = not name:match("%l") or name:match("Frame$") or name:match("Manager$")
-                    or name:match("Util$") or name:match("^GameFont") or name == "Minimap"
+                    or name:match("Util$") or name:match("^GameFont") or name:match("^Minimap")
                     or name == "Constants" or name == "SlashCmdList" or name == "UIParent"
                     or name == "UISpecialFrames"
                 if name == "CreateFrame" then isFrame = false end

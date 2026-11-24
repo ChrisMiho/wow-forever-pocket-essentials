@@ -1383,10 +1383,12 @@ end
 -- controls information" (Blizzard_SettingsDefinitions_Shared/Gamepad.lua:140), the
 -- console setting GamepadShowPersistentInputLegend; the box hides itself as soon as
 -- it changes (Blizzard_Gamepad/UI/PersistentInputLegend/GamepadPersistentInputLegend.lua:
--- 201-203, 273, 297). Set to "0" when the layout is placed, the player's value saved
--- once (opts.hintsWas) and written back when the layout is put back or switched off.
--- While a value is saved it is not set again, so a player who turns the box back on
--- while the layout is on keeps it. Out of a fight only (both callers run there).
+-- 201-203, 273, 297). Since 0.16.0 the "Controls reminder" row (opts.hints) picks it:
+-- Off (0) writes "0" when the layout is placed, as since 0.13.0; On (1) writes "1". Either
+-- way the player's value is saved once (opts.hintsWas) and written back when the layout is
+-- put back or switched off. While a value is saved it is not set again unless the row was
+-- tapped since (hintsTapped), so a player who changes the game's own option while the
+-- layout is on keeps it. Out of a fight only (both callers run there).
 ---------------------------------------------------------------------------
 
 local HINTS_SETTING = "GamepadShowPersistentInputLegend"
@@ -1406,21 +1408,36 @@ local function WriteHints(value)
     return ok and took ~= false
 end
 
-local function HideHints()
+local hintsTapped = false -- the Controls reminder row was tapped since the value was last written
+
+local function PlaceHints()
     local opts = mod and mod.opts
-    if type(opts) ~= "table" or opts.hintsWas ~= nil then return end
+    if type(opts) ~= "table" then return end
+    local value = opts.hints == 1 and "1" or "0"
+    if opts.hintsWas ~= nil then
+        if not hintsTapped then return end
+        if WriteHints(value) then
+            hintsTapped = false
+            if PE.debugOn then PE:Debug("ctrlLayout", "the game's hint box set to " .. value .. " (the row)") end
+        elseif PE.debugOn then
+            PE:Debug("ctrlLayout", "the game's hint box setting could not be changed")
+        end
+        return
+    end
     local was = ReadHints()
     if was == nil then return end
-    if not WriteHints("0") then
+    if not WriteHints(value) then
         if PE.debugOn then PE:Debug("ctrlLayout", "the game's hint box setting could not be changed") end
         return
     end
     opts.hintsWas = was
-    if PE.debugOn then PE:Debug("ctrlLayout", "the game's hint box hidden (it was " .. was .. ")") end
+    hintsTapped = false
+    if PE.debugOn then PE:Debug("ctrlLayout", "the game's hint box set to " .. value .. " (it was " .. was .. ")") end
 end
 
 local function ShowHints()
     local opts = mod and mod.opts
+    hintsTapped = false -- nothing saved after this: the next placement writes the row's value anyway
     if type(opts) ~= "table" or type(opts.hintsWas) ~= "string" then return end
     if not WriteHints(opts.hintsWas) then
         -- Kept: the next put-back tries again.
@@ -1429,6 +1446,283 @@ local function ShowHints()
     end
     opts.hintsWas = nil
     if PE.debugOn then PE:Debug("ctrlLayout", "the game's hint box setting put back") end
+end
+
+---------------------------------------------------------------------------
+-- 0.16.0: the pieces of the playing screen Edit Mode does not own (spec 2026-11-24
+-- "0.16.0: the arrangement", "Left to the builder"): the chat without its dark box, the
+-- map's black border in place of its gold ring, and the two map buttons (the "Map buttons"
+-- row, opts.mapButtons). Placed with the layout, bars or not, and put back with it; each
+-- piece keeps what it found before its first change. Out of a fight only: PlaceNow and
+-- RestoreNow run through PE:RunOutOfCombat, and so do the two hooks below. A missing frame
+-- or function skips that one piece (said once in the debug log); the rest still runs.
+---------------------------------------------------------------------------
+
+local PlaceScreen, RestoreScreen -- the block below; in a do block, as the file is near Lua's 200 locals
+
+do
+    local screenPlaced = false -- these pieces are placed (the hooks below do nothing otherwise)
+    local missingSaid = {}
+
+    local function SayMissing(what)
+        if missingSaid[what] then return end
+        missingSaid[what] = true
+        if PE.debugOn then PE:Debug("ctrlLayout", what .. " not changed: not found on this client") end
+    end
+
+    -- A texture or frame that can be read, shown and hidden.
+    local function Showable(t)
+        return type(t) == "table" and type(t.IsShown) == "function" and type(t.Show) == "function"
+            and type(t.Hide) == "function"
+    end
+
+    local function IsShownNow(t)
+        local ok, shown = pcall(t.IsShown, t)
+        return ok and shown and true or false
+    end
+
+    -- The chat's dark box. Each chat window's box is the textures listed in CHAT_FRAME_TEXTURES
+    -- (Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua:43-63, named after the window).
+    -- FCF_SetWindowAlpha (same file, 1053-1063) sets them all; its third argument leaves the
+    -- player's saved value alone (SetChatWindowAlpha is skipped), and it keeps the new value as
+    -- frame.oldAlpha. The game also draws the box when the chat fades in, opened or pointed at:
+    -- FCF_FadeInChatFrame (1237-1246) fades every shown box texture to at least
+    -- DEFAULT_CHATFRAME_ALPHA (0.25, line 22), whatever oldAlpha says, and
+    -- FloatingChatFrame_Update (488-498) sets the saved value again. So each box texture is
+    -- hidden as well: both fades skip a hidden texture (1243, 1276) and no chat code shows one
+    -- again. The see-through each window had (oldAlpha, or the game's default when the window
+    -- has none, as at 1239) is read before the first change and set back at the end.
+    local chatFound = {}   -- [window] = its see-through before the first change
+    local chatOrder = {}   -- the windows in chatFound, in order
+    local chatHidden = {}  -- box textures hidden by the addon, in order
+    local chatHiddenSet = {}
+
+    local function ChatWindows()
+        local out = {}
+        local n = tonumber(NUM_CHAT_WINDOWS) or 0
+        for i = 1, n do
+            local f = _G["ChatFrame" .. i]
+            if type(f) == "table" then out[#out + 1] = { frame = f, name = "ChatFrame" .. i } end
+        end
+        return out
+    end
+
+    local function PlaceChat()
+        local setAlpha = FCF_SetWindowAlpha
+        if type(setAlpha) ~= "function" then return SayMissing("the chat's box (FCF_SetWindowAlpha)") end
+        local textures = type(CHAT_FRAME_TEXTURES) == "table" and CHAT_FRAME_TEXTURES or {}
+        local default = type(DEFAULT_CHATFRAME_ALPHA) == "number" and DEFAULT_CHATFRAME_ALPHA or 0.25
+        for _, w in ipairs(ChatWindows()) do
+            local f = w.frame
+            if chatFound[f] == nil then
+                local was = f.oldAlpha
+                chatFound[f] = type(was) == "number" and was or default
+                chatOrder[#chatOrder + 1] = f
+            end
+            local ok, err = pcall(setAlpha, f, 0, true)
+            if not ok then PE:LogError("ctrlLayout", "The chat's box could not be made see-through: " .. tostring(err)) end
+            for _, value in ipairs(textures) do
+                local t = _G[w.name .. tostring(value)]
+                if Showable(t) and IsShownNow(t) then
+                    pcall(t.Hide, t)
+                    if not chatHiddenSet[t] then
+                        chatHiddenSet[t] = true
+                        chatHidden[#chatHidden + 1] = t
+                    end
+                end
+            end
+        end
+    end
+
+    local function RestoreChat()
+        for _, t in ipairs(chatHidden) do pcall(t.Show, t) end
+        chatHidden, chatHiddenSet = {}, {}
+        local setAlpha = FCF_SetWindowAlpha
+        if type(setAlpha) == "function" then
+            for _, f in ipairs(chatOrder) do
+                local ok, err = pcall(setAlpha, f, chatFound[f], true)
+                if not ok then PE:LogError("ctrlLayout", "The chat's box could not be put back: " .. tostring(err)) end
+            end
+        end
+        chatFound, chatOrder = {}, {}
+    end
+
+    -- The map's gold ring: MinimapCompassTexture, and MinimapCompassTextureUnderlay under it
+    -- (Blizzard_Minimap/Mainline/Minimap.xml:111-125, the file this client loads). The game
+    -- redraws them in MinimapCluster:UpdateMinimapConfig (Camelot/Minimap.lua:31-58: a new
+    -- picture for the compass, and the underlay shown only while the map rotates), so a hook
+    -- on it, installed once, hides them again while placed. The underlay's wish is read again
+    -- after each redraw, so the end shows it only if the game last wanted it.
+    -- In its place a black disc of ours (the addon's circle picture, UI.lua's CreateDisc), 4
+    -- wider than the round map (the Minimap frame, Mainline/Minimap.xml:56-62) and one frame
+    -- level under it, on the map's parent so it moves and scales with the map.
+    local RING_HOOK = "UpdateMinimapConfig"
+    local RING = {
+        { name = "MinimapCompassTexture", get = function() return MinimapCompassTexture end },
+        { name = "MinimapCompassTextureUnderlay", get = function() return MinimapCompassTextureUnderlay end, redrawn = true },
+    }
+    local ringFound = {}  -- [texture] = shown before the addon hid it (the underlay: as the game last drew it)
+    local ringOrder = {}
+    local ringHooked = false
+    local disc            -- { frame, art } made at the first placement
+    local PlaceRing       -- below
+
+    local function PlaceDisc()
+        local map = Minimap
+        if type(map) ~= "table" or type(map.GetParent) ~= "function" or type(map.GetWidth) ~= "function"
+            or type(map.GetFrameLevel) ~= "function" or type(map.GetEffectiveScale) ~= "function" then
+            return SayMissing("the map's black border (Minimap)")
+        end
+        local ok, parent = pcall(map.GetParent, map)
+        if not ok or type(parent) ~= "table" then return SayMissing("the map's black border (the map's parent)") end
+        if not disc then
+            local UI = PE.UI
+            if type(UI) ~= "table" or type(UI.CreateDisc) ~= "function" or type(CreateFrame) ~= "function" then
+                return SayMissing("the map's black border (the disc)")
+            end
+            local frame = CreateFrame("Frame", nil, parent)
+            local art = UI:CreateDisc(frame, "BACKGROUND")
+            art:SetColor(0, 0, 0, 1)
+            disc = { frame = frame, art = art }
+        end
+        local _, w = pcall(map.GetWidth, map)
+        local _, level = pcall(map.GetFrameLevel, map)
+        local _, mapScale = pcall(map.GetEffectiveScale, map)
+        local okP, parentScale = pcall(parent.GetEffectiveScale, parent)
+        local uiScale = UIParent and UIParent:GetEffectiveScale() or 1
+        if type(w) ~= "number" or type(level) ~= "number" or type(mapScale) ~= "number" or not okP
+            or type(parentScale) ~= "number" or parentScale <= 0 then
+            return SayMissing("the map's black border (the map's size)")
+        end
+        -- In the parent's units: the map's own width, plus 4 screen units.
+        local size = w * mapScale / parentScale + 4 * uiScale / parentScale
+        local f = disc.frame
+        f:SetFrameLevel(math.max(0, level - 1))
+        f:SetSize(size, size)
+        f:ClearAllPoints()
+        f:SetPoint("CENTER", map, "CENTER", 0, 0)
+        disc.art:Layout(f, size)
+        f:Show()
+    end
+
+    local function HookRing()
+        if ringHooked then return end
+        local cluster = MinimapCluster
+        if type(cluster) ~= "table" or type(cluster[RING_HOOK]) ~= "function" or type(hooksecurefunc) ~= "function" then
+            return SayMissing("the hook on the map's redraw (MinimapCluster.UpdateMinimapConfig)")
+        end
+        local ok = pcall(hooksecurefunc, cluster, RING_HOOK, PE:Wrap("ctrlLayout", function()
+            if not screenPlaced then return end
+            PE:RunOutOfCombat("ctrlLayout:ring", function() if screenPlaced then PlaceRing(true) end end)
+        end))
+        ringHooked = ok and true or false
+    end
+
+    -- redraw: the game has just drawn the ring again (the hook).
+    PlaceRing = function(redraw)
+        for _, r in ipairs(RING) do
+            local ok, t = pcall(r.get)
+            if not ok or not Showable(t) then
+                SayMissing(r.name)
+            else
+                local shown = IsShownNow(t)
+                if ringFound[t] == nil then
+                    ringFound[t] = shown
+                    ringOrder[#ringOrder + 1] = t
+                elseif redraw and r.redrawn then
+                    ringFound[t] = shown
+                end
+                if shown then pcall(t.Hide, t) end
+            end
+        end
+        PlaceDisc()
+        HookRing()
+    end
+
+    local function RestoreRing()
+        for _, t in ipairs(ringOrder) do
+            if ringFound[t] then pcall(t.Show, t) end
+        end
+        ringFound, ringOrder = {}, {}
+        if disc then disc.frame:Hide() end
+    end
+
+    -- The two map buttons beside the place name: the tracking (magnifier) frame,
+    -- MinimapCluster.Tracking (Mainline/Minimap.xml:25-44), and the calendar button,
+    -- GameTimeFrame (Mainline/GameTime.xml:3, Camelot/GameTimeFrameTemplate.xml:3-11). The
+    -- addon-count badge, AddonCompartmentFrame, is anchored under the calendar button
+    -- (Camelot/AddonCompartment.xml:3-12, and Camelot/Minimap.lua:80-90), so it would float
+    -- without it: hidden with them. The mail and other rim icons are anchored to the place name
+    -- on this client (Camelot/MinimapIndicatorFrameTemplate.xml:8-10, Camelot/Minimap.lua:75-76)
+    -- and stay. The game shows these again on its own (the tracking frame, Mainline/Minimap.lua:398,
+    -- 852, 917; the badge, Mainline/AddonCompartment.lua:166-172), so each gets an OnShow hook,
+    -- installed once, that hides it again while placed; a button the game shows meanwhile is
+    -- shown at the end.
+    local BUTTONS = {
+        { name = "the tracking button (MinimapCluster.Tracking)",
+          get = function() return Child(type(MinimapCluster) == "table" and MinimapCluster or nil, "Tracking") end },
+        { name = "the calendar button (GameTimeFrame)", get = function() return GameTimeFrame end },
+        { name = "the addon-count badge (AddonCompartmentFrame)", get = function() return AddonCompartmentFrame end },
+    }
+    local buttonsFound = {}  -- [frame] = shown before the addon hid it, or shown by the game since
+    local buttonOrder = {}
+    local buttonHooked = {}
+    local PlaceButtons       -- below
+
+    local function ButtonsWanted()
+        local opts = mod and mod.opts
+        return type(opts) == "table" and opts.mapButtons == 1
+    end
+
+    local function HookButton(f)
+        if buttonHooked[f] or type(f.HookScript) ~= "function" then return end
+        local ok = pcall(f.HookScript, f, "OnShow", PE:Wrap("ctrlLayout", function()
+            if not screenPlaced or ButtonsWanted() then return end
+            buttonsFound[f] = true -- the game wants it shown: it is, once the layout goes
+            PE:RunOutOfCombat("ctrlLayout:mapButtons", function() if screenPlaced then PlaceButtons() end end)
+        end))
+        buttonHooked[f] = ok and true or false
+    end
+
+    local function RestoreButtons()
+        for _, f in ipairs(buttonOrder) do
+            if buttonsFound[f] then pcall(f.Show, f) end
+        end
+        buttonsFound, buttonOrder = {}, {}
+    end
+
+    PlaceButtons = function()
+        if ButtonsWanted() then return RestoreButtons() end -- Shown: as the game draws them
+        for _, b in ipairs(BUTTONS) do
+            local ok, f = pcall(b.get)
+            if not ok or not Showable(f) then
+                SayMissing(b.name)
+            else
+                local shown = IsShownNow(f)
+                if buttonsFound[f] == nil then buttonOrder[#buttonOrder + 1] = f end
+                if shown or buttonsFound[f] == nil then buttonsFound[f] = shown end
+                if shown then pcall(f.Hide, f) end
+                HookButton(f)
+            end
+        end
+    end
+
+    -- Every piece of this block, each on its own: one that raises does not stop the others.
+    PlaceScreen = function()
+        screenPlaced = true
+        PE:Safe("ctrlLayout", PlaceHints)
+        PE:Safe("ctrlLayout", PlaceChat)
+        PE:Safe("ctrlLayout", PlaceRing, false)
+        PE:Safe("ctrlLayout", PlaceButtons)
+    end
+
+    RestoreScreen = function()
+        screenPlaced = false
+        PE:Safe("ctrlLayout", ShowHints)
+        PE:Safe("ctrlLayout", RestoreChat)
+        PE:Safe("ctrlLayout", RestoreRing)
+        PE:Safe("ctrlLayout", RestoreButtons)
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -1499,11 +1793,11 @@ end
 -- picked meanwhile may have changed it: Compact on, all points on the bottom
 -- anchor; Compact off, the game's own points for each, or ours if the game
 -- keeps none. Every scale comes from what was read. The spell pictures stop first
--- (the real bars show again) and the hint box setting comes back, placed or not:
--- a value saved at an earlier session is put back too.
+-- (the real bars show again) and the pieces Edit Mode does not own come back, placed or
+-- not: a hint box value saved at an earlier session is put back too.
 local function RestoreNow()
     StopFace()
-    ShowHints()
+    RestoreScreen()
     if not placed then return end
     placed = false
     RefreshHub() -- the round button goes back to its own default spot
@@ -1539,7 +1833,7 @@ local function RestoreNow()
 end
 
 local function PlaceNow()
-    HideHints() -- the game's hint box goes with our layout, bars or not
+    PlaceScreen() -- the hint box, the chat's box, the map's border and buttons go with our layout, bars or not
     local frames = BarFrames()
     if not frames then return end
     -- Every frame read before any is changed.
@@ -1998,6 +2292,15 @@ local OPTIONS = {
     { key = "ranged", label = "Ranged timer", choices = VISIBILITY, OnChange = LayoutRow("ranged") },
     { key = "mainHand", label = "Main hand timer", choices = VISIBILITY, OnChange = LayoutRow("mainHand") },
     { key = "offHand", label = "Off hand timer", choices = VISIBILITY, OnChange = LayoutRow("offHand") },
+    -- 0.16.0: these two change no Edit Mode piece, so no rewrite and no reload: the
+    -- screen is placed again (out of a fight) while the layout is on.
+    { key = "hints", label = "Controls reminder", choices = { { value = 0, label = "Off" }, { value = 1, label = "On" } },
+      OnChange = function()
+          hintsTapped = true
+          if wanted then SyncBars() end
+      end },
+    { key = "mapButtons", label = "Map buttons", choices = { { value = 0, label = "Hidden" }, { value = 1, label = "Shown" } },
+      OnChange = function() if wanted then SyncBars() end end },
     { label = "Rebuild the layout", button = "Start over", action = function() StartOver() end },
 }
 

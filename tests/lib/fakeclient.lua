@@ -1145,6 +1145,34 @@ function Client.new(opts)
     minimap:SetPoint("CENTER", cluster, "CENTER", 0, 0)
     W[minimap].level = 2
     c.minimap = minimap
+    -- The gold ring (Mainline/Minimap.xml:101-125): MinimapBackdrop on the map, holding
+    -- MinimapCompassTextureUnderlay (shown by the game only with the map rotating) and
+    -- MinimapCompassTexture. MinimapCluster:UpdateMinimapConfig (Camelot/Minimap.lua:31-58)
+    -- redraws them; the stand-in's version shows the ring again, so a test can see whether
+    -- the addon hides it once more. A plain function on the frame, so hooksecurefunc works on it.
+    local backdrop = Blizz("Frame", "MinimapBackdrop", minimap)
+    backdrop:SetSize(215, 226)
+    backdrop:SetPoint("CENTER", minimap, "CENTER", 0, 0)
+    local compassUnder = Blizz("Texture", "MinimapCompassTextureUnderlay", backdrop)
+    W[compassUnder].shown = false
+    local compass = Blizz("Texture", "MinimapCompassTexture", backdrop)
+    LogBlizzardMutations(compass, "MinimapCompassTexture")
+    rawset(cluster, "UpdateMinimapConfig", function()
+        Log("MinimapCluster:UpdateMinimapConfig")
+        compass:Show()
+        if world.rotateMinimap then compassUnder:Show() else compassUnder:Hide() end
+    end)
+    -- The two map buttons beside the place name: the tracking (magnifier) frame
+    -- (Mainline/Minimap.xml:25-44, MinimapCluster.Tracking) and the calendar button
+    -- (Mainline/GameTime.xml:3, GameTimeFrame), and the addon-count badge anchored under the
+    -- calendar button (Camelot/AddonCompartment.xml:3-12; AddonCompartmentFrame, made below).
+    local tracking = Blizz("Frame", nil, cluster)
+    tracking:SetSize(17, 17)
+    rawset(cluster, "Tracking", tracking)
+    LogBlizzardMutations(tracking, "MinimapCluster.Tracking")
+    local gameTime = Blizz("Button", "GameTimeFrame", cluster)
+    gameTime:SetSize(23, 23)
+    LogBlizzardMutations(gameTime, "GameTimeFrame")
 
     -- The combined bag (Blizzard_UIPanels_Game/Mainline/ContainerFrame.xml), hidden until opened.
     local bag = Blizz("Frame", "ContainerFrameCombinedBags", UIParent)
@@ -1165,7 +1193,8 @@ function Client.new(opts)
     BlizzMethod(editMode, "IsEditModeActive", function() return world.editMode and true or false end)
     -- EditModeManager.lua:216-218: true once UpdateLayoutInfo ran (EDIT_MODE_LAYOUTS_UPDATED).
     BlizzMethod(editMode, "IsInitialized", function() return world.editModeReady ~= false end)
-    Blizz("Frame", "AddonCompartmentFrame", UIParent)
+    local compartment = Blizz("Frame", "AddonCompartmentFrame", UIParent)
+    LogBlizzardMutations(compartment, "AddonCompartmentFrame")
     -- Blizzard_GamepadActionBars/MainActionBarFrame.xml (that addon loads on this client whatever
     -- the input style: DefaultState enabled, AllowLoadGameType camelot).
     local gamepadBar = Blizz("Frame", "GamepadMainActionBarFrame", UIParent)
@@ -1642,6 +1671,45 @@ function Client.new(opts)
         frame:SetFont(fontFile, fontSize, fontFlags)
         Log("SetChatWindowSize", frame:GetID(), fontSize)
         c.chatSizes[frame:GetID()] = fontSize
+    end)
+    -- Each window's dark box: the textures named in CHAT_FRAME_TEXTURES (FloatingChatFrame.lua:43-63,
+    -- made by FloatingBorderedFrame, FloatingChatFrame.xml:3-), at the game's default see-through
+    -- (DEFAULT_CHATFRAME_ALPHA = 0.25, FloatingChatFrame.lua:22).
+    local CHAT_TEXTURES = { "Background", "TopLeftTexture", "BottomLeftTexture", "TopRightTexture", "BottomRightTexture",
+        "LeftTexture", "RightTexture", "BottomTexture", "TopTexture", "ButtonFrameBackground", "ButtonFrameTopLeftTexture",
+        "ButtonFrameBottomLeftTexture", "ButtonFrameTopRightTexture", "ButtonFrameBottomRightTexture", "ButtonFrameLeftTexture",
+        "ButtonFrameRightTexture", "ButtonFrameBottomTexture", "ButtonFrameTopTexture" }
+    rawset(env, "CHAT_FRAME_TEXTURES", CHAT_TEXTURES)
+    rawset(env, "DEFAULT_CHATFRAME_ALPHA", 0.25)
+    c.chatAlphas = {} -- what SetChatWindowAlpha (the game's saver) was given, by window number
+    for i, f in ipairs(chatWindows) do
+        for _, value in ipairs(CHAT_TEXTURES) do
+            local t = Blizz("Texture", "ChatFrame" .. i .. value, f)
+            t:SetAlpha(0.25)
+        end
+        rawset(f, "oldAlpha", 0.25)
+    end
+    -- FCF_SetWindowAlpha (FloatingChatFrame.lua:1053-1063): every box texture to `alpha`,
+    -- saved unless doNotSave, and remembered as frame.oldAlpha.
+    rawset(env, "FCF_SetWindowAlpha", function(frame, alpha, doNotSave)
+        Log("FCF_SetWindowAlpha", frame, alpha, doNotSave)
+        local id = frame:GetID()
+        for _, value in ipairs(CHAT_TEXTURES) do env["ChatFrame" .. id .. value]:SetAlpha(alpha) end
+        if not doNotSave then
+            Log("SetChatWindowAlpha", id, alpha)
+            c.chatAlphas[id] = alpha
+        end
+        rawset(frame, "oldAlpha", alpha or 0.25)
+    end)
+    -- FCF_FadeInChatFrame's box part (FloatingChatFrame.lua:1237-1246): each shown box texture
+    -- goes to max(oldAlpha, DEFAULT_CHATFRAME_ALPHA) when the chat is opened or pointed at
+    -- (at once here; the game fades over CHAT_FRAME_FADE_TIME).
+    rawset(env, "FCF_FadeInChatFrame", function(frame)
+        local id = frame:GetID()
+        for _, value in ipairs(CHAT_TEXTURES) do
+            local t = env["ChatFrame" .. id .. value]
+            if t:IsShown() then t:SetAlpha(max(frame.oldAlpha or 0.25, 0.25)) end
+        end
     end)
 
     -----------------------------------------------------------------------
