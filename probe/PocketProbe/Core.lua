@@ -195,7 +195,7 @@ local type, tostring, pairs, ipairs, pcall, select = type, tostring, pairs, ipai
 local tconcat, tremove = table.concat, table.remove
 
 P.name = ADDON_NAME or "PocketProbe"
-P.VERSION = "0.7.0"          -- used when the game cannot read the TOC's version line
+P.VERSION = "0.8.0"          -- used when the game cannot read the TOC's version line
 -- An action trial returns this when nothing refused it but it could not see
 -- whether it worked; it is stored as it is (never as "allowed").
 P.CANT_TELL = "can't tell"

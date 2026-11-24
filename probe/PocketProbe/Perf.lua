@@ -333,6 +333,31 @@ local function HubButton()
     return hub
 end
 
+-- While Pocket Essentials' Controller layout is placed, its round button sits
+-- over the pet frame's corner, where Stop and Fight would cover the pet. Then
+-- the pair goes to the left edge of the screen, 30 units over the chat's top.
+-- Returns x, y (the pair's bottom left, UI units from the screen's bottom
+-- left) or nil. Reads only; Pocket Essentials' own functions, each guarded:
+-- ControllerLayout:HubSpot() returns nil unless the layout is placed, and
+-- LayoutPlan.Rects(options) lists each piece as { left, bottom, right, top }
+-- from the screen's centre (ControllerLayout.lua). The spot is worked out
+-- whenever Stop or Fight is placed (Pocket Essentials' button showing or
+-- hiding, a recording starting, a fight starting): no timer asks.
+local CHAT_GAP = 30
+local function ControllerSpot()
+    local pe = Essentials()
+    local layout, plan = pe and pe.ControllerLayout, pe and pe.LayoutPlan
+    if type(layout) ~= "table" or type(plan) ~= "table" then return nil end
+    if type(layout.HubSpot) ~= "function" or type(plan.Rects) ~= "function" then return nil end
+    local ok, point = pcall(layout.HubSpot, layout)
+    if not ok or type(point) ~= "string" then return nil end
+    local okR, rects = pcall(plan.Rects, layout.opts)
+    local chat = okR and type(rects) == "table" and rects.chat
+    local top = type(chat) == "table" and Num(chat[4])
+    if not top then return nil end
+    return 10, top + CHAT_GAP
+end
+
 local function CenterDisc(texture, size)
     texture:ClearAllPoints()
     texture:SetPoint("CENTER", stop, "CENTER", 0, 0)
@@ -376,6 +401,7 @@ local function PlaceRound(f)
     local gap, dotSize, size = unit(10), unit(20), unit(60)
     f:ClearAllPoints()
     local side, level = nil, stopLevel
+    local spotX, spotY = ControllerSpot()
     local hub = HubButton()
     if hub then
         if hubHooked ~= hub and type(hub.HookScript) == "function" then
@@ -394,7 +420,9 @@ local function PlaceRound(f)
             local okc, x = pcall(hub.GetCenter, hub)
             local oks, screen = pcall(UIParent.GetWidth, UIParent)
             x, screen = okc and Num(x), oks and Num(screen)
-            if x and screen and x < screen / 2 then
+            if spotX then
+                side = pcall(f.SetPoint, f, "BOTTOMLEFT", UIParent, "BOTTOMLEFT", spotX, spotY) and "right" or nil
+            elseif x and screen and x < screen / 2 then
                 side = pcall(f.SetPoint, f, "LEFT", hub, "RIGHT", gap, 0) and "right" or nil
             else
                 side = pcall(f.SetPoint, f, "RIGHT", hub, "LEFT", -gap, 0) and "left" or nil
@@ -403,6 +431,11 @@ local function PlaceRound(f)
             local okl, hubLevel = pcall(hub.GetFrameLevel, hub)
             if okl and Num(hubLevel) then level = hubLevel end
         end
+    end
+    if not side and spotX then
+        -- The PE button is not showing: the same spot.
+        f:ClearAllPoints()
+        side = pcall(f.SetPoint, f, "BOTTOMLEFT", UIParent, "BOTTOMLEFT", spotX, spotY) and "right" or nil
     end
     if not side then
         f:ClearAllPoints()

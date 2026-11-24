@@ -427,7 +427,7 @@ local function new(opts)
         saved.options = saved.options or {}
         if saved.options.auto == nil then saved.options.auto = true end
     end
-    local c = Client.new({ root = root, addonDir = ADDON_DIR, addonName = "PocketProbe", saved = saved, gamepadUI = gamepad })
+    local c = Client.new({ root = root, addonDir = ADDON_DIR, addonName = "PocketProbe", saved = saved, gamepadUI = gamepad, screen = opts.screen })
     clients[#clients + 1] = c
     install(c)
     if opts.setup then opts.setup(c) end
@@ -514,7 +514,7 @@ test("saved table has the fixed shape", function()
     local c, P, db = new()
     eq(db.version, 1)
     eq(db.game, "1.16.0 (60000)")
-    eq(db.probe, "0.7.0")
+    eq(db.probe, "0.8.0")
     eq(db.options.vendor, true)
     eq(db.options.risky, false)
     eq(type(db.spoiled), "table")
@@ -1096,7 +1096,7 @@ test("refusals outside a trial are counted once per situation, with a quiet log"
     end
     c.env.DisplayInterfaceActionBlockedMessage()
     noErrors(c)
-    eq(db.spoiled[KEY_AUTO], "val.name.target", "the last trial of the pass")
+    eq(db.spoiled[KEY_AUTO], "aura.blizzard", "the last trial of the pass")
     eq(cell(db, "after.InteractUnit", KEY_AUTO), "forbidden")
     eq(cell(db, "after.ClearTarget", KEY_AUTO), "forbidden")
     eq(cell(db, "after.message", KEY_AUTO), "blocked")
@@ -1110,7 +1110,7 @@ test("refusals outside a trial are counted once per situation, with a quiet log"
     eq(entries, 1, "one detail entry per refused function and situation")
     local d = detail(db, "after.InteractUnit")
     eq(d.result, "forbidden"); eq(d.func, "InteractUnit()"); eq(d.situation, KEY_AUTO)
-    eq(d.message, "seen 60 times this session; first seen after: val.name.target")
+    eq(d.message, "seen 60 times this session; first seen after: aura.blizzard")
     check(type(d.stack) == "string" and d.stack ~= "", "stack kept")
     eq(countLog(db, "after.InteractUnit: forbidden"), 1, "one log line on first sight")
     local summaries = countLog(db, "more refusal")
@@ -1125,7 +1125,7 @@ test("refusals outside a trial are counted once per situation, with a quiet log"
     local c2, P2 = new({ saved = saved, setup = function(cl) rawset(cl.env, "UnitName", nil) end })
     eq(#saved.trials, trialCount + 3)
     c2:fire("ADDON_ACTION_FORBIDDEN", "PocketProbe", "InteractUnit()")
-    eq(saved.spoiled[KEY_AUTO], "val.name.target / no trial yet")
+    eq(saved.spoiled[KEY_AUTO], "aura.blizzard / no trial yet")
     eq(#saved.trials, trialCount + 3)
     eq(detail(saved, "after.InteractUnit").message, "seen 1 time this session; first seen after: no trial yet")
     noErrors(c2)
@@ -1143,7 +1143,7 @@ test("results from another probe version are cleared at load", function()
     }
     local c, P, db = new({ saved = saved })
     eq(db, saved)
-    eq(db.probe, "0.7.0")
+    eq(db.probe, "0.8.0")
     eq(next(db.last), nil, "the panel's newest results are cleared too")
     eq(db.guided["gfx.icons"].stage, "ask", "a guided trial's old values are kept, to be put back")
     eq(next(db.results), nil); eq(#db.details, 0); eq(next(db.situations), nil); eq(next(db.spoiled), nil)
@@ -1432,11 +1432,11 @@ test("the panel: Settings-sized, area tabs with counts, no scroll bar (big areas
     for _, rec in ipairs(c:frames()) do
         if rec.frame == panel then
             for _, region in ipairs(rec.regions or {}) do
-                if region.GetText and region:GetText() == "Pocket Probe 0.7.0" then titleText = true end
+                if region.GetText and region:GetText() == "Pocket Probe 0.8.0" then titleText = true end
             end
         end
     end
-    check(titleText, "titled Pocket Probe 0.7.0")
+    check(titleText, "titled Pocket Probe 0.8.0")
     local labels = tabLabels(P)
     eq(labels[1], "Errors"); eq(labels[2], "Graphics")
     local joined = table.concat(labels, "|")
@@ -1454,7 +1454,10 @@ test("the panel: Settings-sized, area tabs with counts, no scroll bar (big areas
         total = total + #page.entries
     end
     -- Every trial, and the two rows of probe 0.7.0 (Watch my next fights, Clear saved results).
-    eq(total, #db.trials + 2, "every trial is on a tab")
+    local rowless = 0
+    for _, t in ipairs(db.trials) do if P.trialById[t.id] and P.trialById[t.id].noRow then rowless = rowless + 1 end end
+    eq(rowless, 4, "the four buff trials have no row")
+    eq(total, #db.trials + 2 - rowless, "every other trial is on a tab")
     for _, rec in ipairs(c:frames()) do
         check(rec.type ~= "ScrollFrame" or not rec.addonFile or not rec.addonFile:find("Panel", 1, true), "the panel made a scroll frame")
     end
@@ -1984,6 +1987,120 @@ test("bars.spells: a secret cooldown makes the result secret; an error and a mis
     noErrors(c3)
     eq(cell(db3, "bars.spells", KEY_AUTO), "nil")
     check(db3.last["bars.spells"].message:find("the main bar's buttons are not there", 1, true), "said")
+end)
+
+---------------------------------------------------------------------------
+-- 0.8.0: what a fight leaves readable of the target's and the pet's buffs
+---------------------------------------------------------------------------
+
+local AURA_IDS = { "aura.count", "aura.fields", "aura.show", "aura.blizzard" }
+
+-- Stand-in for C_UnitAuras: the target has two buffs, the pet one debuff.
+-- GetAuraDataByAuraInstanceID: UnitAuraDocumentation.lua:190;
+-- GetUnitAuraInstanceIDs: UnitAuraDocumentation.lua:475.
+local function installAuras(cl, opts)
+    opts = opts or {}
+    local data = {
+        [11] = { icon = 135000, applications = 2, duration = 30, expirationTime = 130 },
+        [12] = { icon = 135001, applications = 1, duration = 0, expirationTime = 0 },
+        [21] = { icon = 135002, applications = 1, duration = 10, expirationTime = 110 },
+    }
+    if opts.secretField then cl.world.secrets[135000] = true end
+    rawset(cl.env, "C_UnitAuras", {
+        GetUnitAuraInstanceIDs = function(unit, filter)
+            if opts.refuse then error("restricted") end
+            if opts.none then return {} end
+            if unit == "target" and filter == "HELPFUL" then return { 11, 12 } end
+            if unit == "pet" and filter == "HARMFUL" then return { 21 } end
+            return {}
+        end,
+        GetAuraDataByAuraInstanceID = function(unit, id) return data[id] end,
+    })
+end
+
+test("aura trials: four value trials in 'Buffs in a fight', for a fight, not risky", function()
+    local c, P = new()
+    for _, id in ipairs(AURA_IDS) do
+        local t = P.trialById[id]
+        check(t, id .. " missing")
+        eq(t.area, "Buffs in a fight"); eq(t.kind, "value")
+        eq(t.fight, true, id .. " fight"); check(not t.risky, id .. " risky")
+    end
+    noErrors(c)
+end)
+
+local function runAura(setup)
+    local c, P, db = new({ setup = setup })
+    c:advance(30)
+    c:enterCombat(); c:advance(30)
+    noErrors(c)
+    return c, P, db
+end
+
+test("aura trials: with buffs they count, read fields, and feed the box; the box stays hidden", function()
+    local c, P, db = runAura(function(cl) installAuras(cl) end)
+    local msg = db.last["aura.count"].message
+    for _, part in ipairs({ "target buffs 2", "target debuffs 0", "pet buffs 0", "pet debuffs 1" }) do
+        check(msg:find(part, 1, true), part .. ": " .. tostring(msg))
+    end
+    eq(cell(db, "aura.count", KEY_FIGHT), "readable")
+    local f = db.last["aura.fields"].message or ""
+    eq(cell(db, "aura.fields", KEY_FIGHT), "readable")
+    for _, part in ipairs({ "target icon plain", "target applications plain", "target duration plain", "target expirationTime plain", "pet icon plain" }) do
+        check(f:find(part, 1, true), part .. ": " .. f)
+    end
+    local s = db.last["aura.show"].message or ""
+    check(s:find("SetTexture accepted", 1, true), s)
+    check(not s:find("135000", 1, true), "an icon id was saved")
+    local box = P.auraBox
+    check(box and not box:IsShown(), "the box is hidden again")
+    check(P.auraBox.cooldown == nil or not P.auraBox.cooldown:IsShown(), "cooldown hidden")
+end)
+
+test("aura trials: no aura, a secret field, a refusal and a missing C_UnitAuras all give a result", function()
+    local c, P, db = runAura(function(cl) installAuras(cl, { none = true }) end)
+    check(db.last["aura.count"].message:find("target buffs 0", 1, true), "none counted")
+    check(db.last["aura.show"], "show has a result")
+    check(not P.auraBox:IsShown(), "box hidden")
+    local c2, P2, db2 = runAura(function(cl) installAuras(cl, { secretField = true }) end)
+    eq(cell(db2, "aura.fields", KEY_FIGHT), "secret")
+    check(db2.last["aura.fields"].message:find("target icon secret", 1, true), db2.last["aura.fields"].message)
+    check(not P2.auraBox:IsShown(), "box hidden")
+    local c3, P3, db3 = runAura(function(cl) installAuras(cl, { refuse = true }) end)
+    check(db3.last["aura.count"].message:find("refused", 1, true), db3.last["aura.count"].message)
+    local c4, P4, db4 = runAura(function() end)
+    eq(cell(db4, "aura.count", KEY_FIGHT), "missing")
+    eq(cell(db4, "aura.show", KEY_FIGHT), "missing")
+    eq(cell(db4, "aura.fields", KEY_FIGHT), "missing")
+end)
+
+test("aura.blizzard: no change; says where the target's aura icons hang and their see-through", function()
+    local c, P, db = runAura(function() end)
+    eq(cell(db, "aura.blizzard", KEY_FIGHT), "nil")
+    check(db.last["aura.blizzard"].message:find("no aura container", 1, true), db.last["aura.blizzard"].message)
+    local c1, P1, db1 = runAura(function(cl) rawset(cl.env, "TargetFrame", nil) end)
+    check(db1.last["aura.blizzard"].message:find("TargetFrame is not there", 1, true), db1.last["aura.blizzard"].message)
+    local c2, P2, db2 = runAura(function(cl)
+        local E = cl.env
+        local tf = E.CreateFrame("Frame", "TargetFrame", E.UIParent)
+        local content = E.CreateFrame("Frame", nil, tf)
+        local ctx = E.CreateFrame("Frame", nil, content)
+        local auras = E.CreateFrame("Frame", nil, ctx)
+        tf.TargetFrameContent = content
+        content.TargetFrameContentContextual = ctx
+        ctx.Auras = auras
+        auras:SetAlpha(0.5)
+        local icon = E.CreateFrame("Button", nil, auras)
+        icon.Icon = icon:CreateTexture()
+        -- The stand-in has no :GetChildren; the game has (SimpleFrameAPIDocumentation.lua:323).
+        rawset(auras, "GetChildren", function() return icon end)
+        cl.tfAlpha = auras
+    end)
+    local m = db2.last["aura.blizzard"].message
+    check(m:find("Auras", 1, true) and m:find("TargetFrame", 1, true), m)
+    check(m:find("own see-through", 1, true), m)
+    check(m:find("children of the container", 1, true), m)
+    eq(c2.tfAlpha:GetAlpha(), 0.5, "nothing changed")
 end)
 
 test("bars.alpha sets the left bar's see-through to its own value, out of and in a fight; a block is recorded", function()
@@ -3018,7 +3135,7 @@ end
 local function newPerf(opts)
     opts = opts or {}
     local inner = opts.setup
-    return new({ saved = opts.saved, auto = opts.auto == true, setup = function(c)
+    return new({ saved = opts.saved, auto = opts.auto == true, screen = opts.screen, setup = function(c)
         installPerf(c, opts)
         if opts.pe ~= false then installPE(c, opts) end
         if opts.reload then
@@ -3352,7 +3469,7 @@ end)
 test("recorder: 480 samples, then it stops by itself and says so; the last three runs are kept", function()
     local samples = {}
     for i = 1, 478 do samples[i] = "t=" .. (i * 15) .. ";dt=15;a=s;fps=60" end
-    local saved = { probe = "0.7.0", perf = { on = true, runs = {
+    local saved = { probe = "0.8.0", perf = { on = true, runs = {
         { started = "2026-11-20 10:00:00", why = "stopped", samples = { "t=0;dt=0;a=s" }, keys = {}, feat = {} },
         { started = "2026-11-21 10:00:00", why = "stopped", samples = { "t=0;dt=0;a=s" }, keys = {}, feat = {} },
         { started = "2026-11-21 11:00:00", why = "stopped", samples = { "t=0;dt=0;a=s" }, keys = {}, feat = {} },
@@ -4552,6 +4669,75 @@ test("fight button: placed beside Stop away from the PE button, or in Stop's spo
     local l4 = c4._rect(button(c4, "PocketProbeRecStopButton"))
     check(r4 <= l4 + 0.01, "Fight left of Stop above the dot")
     noErrors(c4)
+end)
+
+test("probe: Stop and Fight stay clear of every piece while the controller layout is placed", function()
+    -- Pocket Essentials' own plan, from its addon folder in a client of its own.
+    local pc = Client.new({ root = root, addonDir = root .. "/addons/PocketEssentials" })
+    clients[#clients + 1] = pc
+    local Plan = pc:loadAddon().LayoutPlan
+    local SW, SH = 1365.33, 768
+    local function overlap(a, b) return a[1] < b[3] and b[1] < a[3] and a[2] < b[4] and b[2] < a[4] end
+    local function standIn(cl, size, placed)
+        local layout = { opts = { panelSize = size } }
+        function layout:HubSpot()
+            if not placed then return nil end
+            return Plan.HubSpot(size)
+        end
+        rawget(cl.env, "PocketEssentials").ControllerLayout = layout
+        rawget(cl.env, "PocketEssentials").LayoutPlan = Plan
+    end
+    local function boxes(c)
+        local out = {}
+        for name, f in pairs({ Stop = button(c, "PocketProbeRecStopButton"), Fight = floatFight(c) }) do
+            local l, r, t, b = c._rect(f)
+            out[name] = { l = l, r = r, t = t, b = b, box = { l - SW / 2, b, r - SW / 2, t }, shown = f:IsShown() }
+        end
+        return out
+    end
+    -- The spot as the probe ran before this change (no controller layout).
+    local base = newPerf({ screen = { SW, SH } })
+    base:advance(5); base:enterCombat()
+    local was = boxes(base)
+    for _, size in ipairs(Plan.PANEL_SIZES) do
+        local point, hx, hy = Plan.HubSpot(size)
+        eq(point, "BOTTOMLEFT")
+        local rects = Plan.Rects({ panelSize = size })
+        local c = newPerf({ screen = { SW, SH }, setup = function(cl)
+            standIn(cl, size, true)
+            cl.hub:ClearAllPoints()
+            cl.hub:SetSize(76.8, 76.8)
+            cl.hub:SetPoint(point, cl.env.UIParent, point, hx, hy)
+        end })
+        c:advance(5)
+        c:enterCombat()
+        local got = boxes(c)
+        for name, g in pairs(got) do
+            check(g.shown, name .. " is not showing at size " .. size)
+            check(g.l >= 0 and g.r <= SW and g.b >= 0 and g.t <= SH, name .. " is off the screen at size " .. size)
+            for piece, rect in pairs(rects) do
+                check(not overlap(g.box, rect), name .. " overlaps the " .. piece .. " at size " .. size)
+            end
+        end
+        check(got.Fight.l > got.Stop.r, "Fight is right of Stop")
+        noErrors(c)
+    end
+    -- No spot: where it was before.
+    local c2 = newPerf({ screen = { SW, SH }, setup = function(cl) standIn(cl, 100, false) end })
+    c2:advance(5); c2:enterCombat()
+    local now = boxes(c2)
+    for _, name in ipairs({ "Stop", "Fight" }) do
+        for _, k in ipairs({ "l", "r", "t", "b" }) do
+            check(math.abs(now[name][k] - was[name][k]) < 0.01, name .. " moved without a spot")
+        end
+    end
+    -- Pocket Essentials without the plan or the layout: also where it was.
+    local c3 = newPerf({ screen = { SW, SH }, setup = function(cl)
+        rawget(cl.env, "PocketEssentials").ControllerLayout = { HubSpot = function() return "BOTTOMLEFT", 10, 10 end }
+    end })
+    c3:advance(5); c3:enterCombat()
+    eq(boxes(c3).Stop.l, was.Stop.l)
+    noErrors(c3)
 end)
 
 test("fight button: tap during a recording pauses, runs the pass, resumes; next sample has dt=0 and p", function()

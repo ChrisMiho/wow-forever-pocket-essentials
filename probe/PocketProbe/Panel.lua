@@ -1,6 +1,6 @@
 local ADDON_NAME, P = ...
 
--- The panel that drives the probe: "Pocket Probe 0.7.0".
+-- The panel that drives the probe: "Pocket Probe 0.8.0".
 --
 --   top     the title, the status line, and (only with Pocket Essentials
 --           loaded) the recording line: "Recording 12 min" and Stop, or
@@ -524,10 +524,11 @@ local function BuildPages(rowsFit)
     local byArea, order = {}, {}
     local list = (db and type(db.trials) == "table") and db.trials or P.trials
     for _, t in ipairs(list) do
-        if type(t) == "table" and type(t.id) == "string" then
+        local def = type(t) == "table" and P.trialById[t.id]
+        -- noRow trials (probe 0.8.0) have no row: the panel's ten tabs are full.
+        if type(t) == "table" and type(t.id) == "string" and not (def and def.noRow) then
             local area = AreaName(t.area)
             if not byArea[area] then byArea[area] = {} end
-            local def = P.trialById[t.id]
             local entries = byArea[area]
             entries[#entries + 1] = { id = t.id, label = (def and def.label) or Str(t.label) or t.id, def = def }
         end
