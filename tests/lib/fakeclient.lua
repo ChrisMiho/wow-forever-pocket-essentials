@@ -1246,6 +1246,33 @@ function Client.new(opts)
     GuardBarFrame(gamepadBar, "GamepadBar")
     c.barParts[gamepadBar].PageUnit = pageUnit
     c.barParts[gamepadBar].useCompactLayout = false -- tests set it (c.barParts[GamepadMainActionBarFrame])
+    -- MainActionBarFrame.xml:18-26: the LB / RB targeting pictures, textures of PageUnit anchored to
+    -- the main bar's anchor (tests remove or break them in their setup).
+    do
+        local top = anchorFrames.TopCenteredAnchor
+        local left = pageUnit:CreateTexture(nil, "BACKGROUND")
+        left:SetSize(60, 44)
+        left:SetPoint("BOTTOMRIGHT", top, "CENTER", -108, 42)
+        local right = pageUnit:CreateTexture(nil, "BACKGROUND")
+        right:SetSize(60, 44)
+        right:SetPoint("BOTTOMLEFT", top, "CENTER", 108, 42)
+        c.barParts[pageUnit].LeftShoulderBackground = left
+        c.barParts[pageUnit].RightShoulderBackground = right
+    end
+    -- The target frame (Blizzard_UnitFrame/Mainline/PlayerFrame.xml:14 size) and its target of
+    -- target, TargetFrame.totFrame (TargetFrame.lua:732-737; TargetFrame.xml:397-405: 120 x 49,
+    -- TOPRIGHT on the target frame's BOTTOMRIGHT, 12, 10), a secure button: its moves are logged as
+    -- "TargetFrame.totFrame:<Method>" and raise in combat.
+    local targetFrame = Blizz("Frame", "TargetFrame", UIParent)
+    targetFrame:SetSize(232, 100)
+    targetFrame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOM", 300, 250)
+    do
+        local tot = Blizz("Button", nil, targetFrame)
+        tot:SetSize(120, 49)
+        tot:SetPoint("TOPRIGHT", targetFrame, "BOTTOMRIGHT", 12, 10)
+        raw[tot] = GuardBarFrame(tot, "TargetFrame.totFrame")
+        rawset(targetFrame, "totFrame", tot)
+    end
     -- More pieces the Controller layout places (sizes read by the probe's layout.sizes).
     for _, f in ipairs({ { "BuffFrame", 260, 80 }, { "DebuffFrame", 260, 40 }, { "ObjectiveTrackerFrame", 250, 400 },
         { "MainStatusTrackingBarContainer", 800, 12 }, { "GamepadPetActionFlyout", 160, 160 } }) do

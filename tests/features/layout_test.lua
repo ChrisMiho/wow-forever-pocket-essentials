@@ -1894,4 +1894,136 @@ test("switch: a login that changes the layout says so in chat, a tap does not", 
     check(not said(c3, "Reload now"), "a login that changed nothing said it")
 end)
 
+
+---------------------------------------------------------------------------
+-- Pieces placed with the bars (0.12.0): the LB / RB targeting pictures and the target of target
+---------------------------------------------------------------------------
+
+-- The two pictures (PageUnit.LeftShoulderBackground / RightShoulderBackground) and the target of
+-- target (TargetFrame.totFrame) in the stand-in.
+local function extras(c)
+    local pu = c.barParts[c.env.GamepadMainActionBarFrame].PageUnit
+    local parts = c.barParts[pu]
+    local target = rawget(c.env, "TargetFrame")
+    return parts.LeftShoulderBackground, parts.RightShoulderBackground, target and rawget(target, "totFrame")
+end
+
+local function pointsOf(c, region)
+    local out = {}
+    for i, p in ipairs(c._state(region).points) do out[i] = { p.point, p.rel, p.relPoint, p.x, p.y } end
+    return out
+end
+
+local function extraStates(c)
+    local l, r, t = extras(c)
+    return { pointsOf(c, l), pointsOf(c, r), pointsOf(c, t) }
+end
+
+local function totCalls(c)
+    local n = 0
+    for _, call in ipairs(c.calls) do if call.name:match("^TargetFrame%.totFrame:") then n = n + 1 end end
+    return n
+end
+
+test("bars: the targeting pictures go where the main bar used to hold them", function()
+    local c = onClient()
+    local l, r = extras(c)
+    eq(pointsOf(c, l), { { "BOTTOMRIGHT", c.env.UIParent, "BOTTOM", -108, 84 } })
+    eq(pointsOf(c, r), { { "BOTTOMLEFT", c.env.UIParent, "BOTTOM", 108, 84 } })
+    c:assertClean()
+end)
+
+test("bars: the target of target sits above the target frame", function()
+    local c = onClient()
+    local _, _, tot = extras(c)
+    eq(pointsOf(c, tot), { { "BOTTOMLEFT", c.env.TargetFrame, "TOPLEFT", 0, 2 } })
+    c:assertClean()
+end)
+
+test("bars: off puts the targeting pictures and the target of target back", function()
+    local c, PE = layoutClient({}, 3)
+    local before = extraStates(c)
+    switchOn(c, PE)
+    switchOff(c, PE)
+    eq(extraStates(c), before)
+    -- Another layout picked while on: put back the same way.
+    local c2, PE2 = layoutClient({}, 3)
+    local before2 = extraStates(c2)
+    switchOn(c2, PE2)
+    c2.world.layouts.activeLayout = 1
+    c2:fire("EDIT_MODE_LAYOUTS_UPDATED")
+    eq(extraStates(c2), before2)
+    c:assertClean()
+    c2:assertClean()
+end)
+
+test("bars: a missing, nil or failing targeting picture or target of target places the rest", function()
+    local cases = {
+        { what = "no LB picture", setup = function(c)
+            c.barParts[c.barParts[c.env.GamepadMainActionBarFrame].PageUnit].LeftShoulderBackground = nil end,
+          placed = { false, true, true } },
+        { what = "an LB picture that is not a frame", setup = function(c)
+            c.barParts[c.barParts[c.env.GamepadMainActionBarFrame].PageUnit].LeftShoulderBackground = 7 end,
+          placed = { false, true, true } },
+        { what = "no target of target", setup = function(c) rawset(c.env.TargetFrame, "totFrame", nil) end,
+          placed = { true, true, false } },
+        { what = "no target frame", setup = function(c) rawset(c.env, "TargetFrame", nil) end,
+          placed = { true, true, false } },
+        { what = "an RB picture whose SetPoint raises", setup = function(c)
+            local _, r = extras(c)
+            rawset(r, "SetPoint", function() error("refused") end) end,
+          placed = { true, false, true }, logged = true },
+        { what = "a target of target whose points cannot be read", setup = function(c)
+            local _, _, t = extras(c)
+            rawset(t, "GetNumPoints", function() error("refused") end) end,
+          placed = { true, true, false } },
+    }
+    for _, case in ipairs(cases) do
+        local c, PE = layoutClient({}, 3, { setup = case.setup })
+        local l, r, t = extras(c)
+        local want = {
+            { "BOTTOMRIGHT", c.env.UIParent, "BOTTOM", -108, 84 },
+            { "BOTTOMLEFT", c.env.UIParent, "BOTTOM", 108, 84 },
+            { "BOTTOMLEFT", rawget(c.env, "TargetFrame"), "TOPLEFT", 0, 2 },
+        }
+        switchOn(c, PE)
+        check(PE:IsModuleEnabled("ctrlLayout"), case.what .. ": switched off")
+        placedAt(c, barFrames(c).left, PE.LayoutPlan.BarSpots().left, case.what .. ": left bar")
+        for i, region in ipairs({ l, r, t }) do
+            if case.placed[i] then
+                eq(pointsOf(c, region), { want[i] }, case.what .. ": piece " .. i)
+            end
+        end
+        if case.logged then
+            check(#PE.errors == 1, case.what .. ": " .. #PE.errors .. " errors logged")
+        else
+            eq(#PE.errors, 0, case.what .. ": errors logged")
+            eq(#c.errors, 0, case.what .. ": Lua errors")
+        end
+        switchOff(c, PE)
+    end
+end)
+
+test("bars: the targeting pictures and the target of target are never moved in a fight", function()
+    local c, PE = layoutClient({}, 3)
+    local before = extraStates(c)
+    c:enterCombat()
+    switchOn(c, PE)
+    eq(extraStates(c), before)
+    eq(totCalls(c), 0, "the target of target touched in a fight")
+    c:leaveCombat()
+    c:advance(0.1)
+    local _, _, tot = extras(c)
+    eq(pointsOf(c, tot), { { "BOTTOMLEFT", c.env.TargetFrame, "TOPLEFT", 0, 2 } })
+    -- The game re-anchors the bars in a fight: nothing moves until it ends.
+    local calls = totCalls(c)
+    c:enterCombat()
+    local _, pu = barFrames(c)
+    pu:RefreshCompactLayout()
+    c:fire("EDIT_MODE_LAYOUTS_UPDATED")
+    eq(totCalls(c) - calls, 0, "the target of target touched in a fight")
+    c:leaveCombat()
+    c:assertClean()
+end)
+
 return { known = KNOWN_FAILURES }

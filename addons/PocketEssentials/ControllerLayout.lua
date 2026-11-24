@@ -876,6 +876,84 @@ local function GamePoints(pageUnit, anchor)
     return out
 end
 
+---------------------------------------------------------------------------
+-- Pieces placed with the bars (0.12.0): the two LB / RB targeting pictures and
+-- the target of target. Out of a fight only, like the bars; their points are
+-- read before the first change and put back when the bars are.
+--
+-- The targeting pictures are PageUnit's LeftShoulderBackground and
+-- RightShoulderBackground textures (the friendly and hostile icons sit on them),
+-- anchored to the main bar's anchor at -108 / +108, 42
+-- (Blizzard_GamepadActionBars/MainActionBarFrame.xml:18-26). Moving the main bar to
+-- its corner would take them along, so they are anchored where that anchor held them
+-- (the main bar centred, 42 up): BOTTOMRIGHT at -108, 84 and BOTTOMLEFT at 108, 84.
+-- No game code re-anchors them (MainActionBarFrame.lua:631-649 only sets their
+-- pictures and the pressed highlight, which is anchored on them).
+--
+-- The target of target is TargetFrame.totFrame, a secure button made by
+-- TargetFrameMixin:CreateTargetofTarget (Blizzard_UnitFrame/Mainline/TargetFrame.lua:732-737)
+-- from TargetofTargetFrameTemplate (Mainline/TargetFrame.xml:397-405: 120 by 49,
+-- under the target frame's bottom right). It is no Edit Mode system and the game
+-- does not re-anchor it for the target frame (only the focus frame's, lines
+-- 1175-1215), so it is placed here: above the target frame, its left edges lined up,
+-- the mirror of the pet above the player.
+---------------------------------------------------------------------------
+
+local EXTRAS = {
+    { name = "LB targeting picture", get = function() return Child(Child(GamepadBar(), "PageUnit"), "LeftShoulderBackground") end,
+      point = function() return "BOTTOMRIGHT", UIParent, "BOTTOM", -108, 84 end },
+    { name = "RB targeting picture", get = function() return Child(Child(GamepadBar(), "PageUnit"), "RightShoulderBackground") end,
+      point = function() return "BOTTOMLEFT", UIParent, "BOTTOM", 108, 84 end },
+    { name = "target of target", get = function() return Child(type(TargetFrame) == "table" and TargetFrame or nil, "totFrame") end,
+      point = function() return "BOTTOMLEFT", TargetFrame, "TOPLEFT", 0, 2 end },
+}
+
+local extraFound = {}   -- [region] = { { point, relativeTo, relativePoint, x, y }, ... } read before the first change
+local extraPlaced = {}  -- regions placed by the addon, in order
+
+-- A region's points, or nil when they cannot be read.
+local function ReadPoints(f)
+    if type(f.GetNumPoints) ~= "function" or type(f.GetPoint) ~= "function" then return nil end
+    local ok, n = pcall(f.GetNumPoints, f)
+    if not ok or type(n) ~= "number" then return nil end
+    local points = {}
+    for i = 1, n do
+        local okPoint, point, relativeTo, relativePoint, x, y = pcall(f.GetPoint, f, i)
+        if not okPoint or type(point) ~= "string" then return nil end
+        points[i] = { point, relativeTo, relativePoint, x, y }
+    end
+    return points
+end
+
+local function PlaceExtras()
+    for _, x in ipairs(EXTRAS) do
+        local ok, f = pcall(x.get)
+        if not ok or type(f) ~= "table" or type(f.ClearAllPoints) ~= "function" or type(f.SetPoint) ~= "function" then
+            if PE.debugOn then PE:Debug("ctrlLayout", x.name .. " not placed: not found") end
+        else
+            local points = extraFound[f] or ReadPoints(f)
+            if not points then
+                if PE.debugOn then PE:Debug("ctrlLayout", x.name .. " not placed: its points cannot be read") end
+            else
+                if not extraFound[f] then
+                    extraFound[f] = points
+                    extraPlaced[#extraPlaced + 1] = f
+                end
+                local okMove, err = pcall(f.ClearAllPoints, f)
+                if okMove then okMove, err = pcall(f.SetPoint, f, x.point()) end
+                if not okMove then PE:LogError("ctrlLayout", "The " .. x.name .. " could not be placed: " .. tostring(err)) end
+            end
+        end
+    end
+end
+
+local function RestoreExtras()
+    for _, f in ipairs(extraPlaced) do
+        local ok, err = PutBackPoints(f, extraFound[f])
+        if not ok then PE:LogError("ctrlLayout", "A targeting picture or the target of target could not be put back: " .. tostring(err)) end
+    end
+end
+
 -- Puts the bars back. The bottom anchor and the both-triggers bar, which the
 -- game never re-anchors, go back to the points read before the first change.
 -- The Top, Left and Right anchors follow the game's current Compact setting
@@ -913,6 +991,7 @@ local function RestoreNow()
             if not ok then PE:LogError("ctrlLayout", "A bar could not be put back: " .. tostring(err)) end
         end
     end
+    RestoreExtras()
     if PE.debugOn then PE:Debug("ctrlLayout", "bars put back" .. (compact and " (compact)" or "")) end
 end
 
@@ -933,6 +1012,7 @@ local function PlaceNow()
         local spot = spots[b.spot]
         Put(frames[b.spot], spot.x, spot.y, spot.s)
     end
+    PlaceExtras()
     if PE.debugOn then PE:Debug("ctrlLayout", "bars placed") end
 end
 
