@@ -17,9 +17,11 @@ local ADDON_NAME, PE = ...
 -- quiet. The swap is ClearAllPoints, SetPoint, Show, Hide and SetAlpha on those plain
 -- frames only, which a fight allows; no frame of the game's is touched by it.
 --
---   PE.FaceBars:Start()   out of a fight; builds once, binds to the real buttons,
---                         shows the pictures, then makes the real bars invisible.
---                         Returns true, or false and a plain reason.
+--   PE.FaceBars:Start(whenOff)  out of a fight; builds once, binds to the real
+--                         buttons, shows the pictures, then makes the real bars
+--                         invisible. Returns true, or false and a plain reason.
+--                         whenOff (optional) is called when the safety net below
+--                         turns the pictures off later (the real bars show again).
 --   PE.FaceBars:Stop()    any time, also in a fight: the real bars back to full
 --                         strength, the pictures hidden, events dropped.
 --   PE.FaceBars:Status()  nil while fine or stopped; else why the game's own bars
@@ -75,7 +77,9 @@ local ADDON_NAME, PE = ...
 --     "On cooldown" from C_ActionBar.GetActionCooldown(slot).isActive and .isOnGCD,
 --     both NeverSecret (DOC/SpellSharedDocumentation.lua:26-31). isOnGCD is only to be
 --     trusted inside a SPELL_UPDATE_COOLDOWN handler (:31), so it is read there, kept
---     on each picture, and the next frame only shows it.
+--     on each picture, and the next frame only shows it. That event fires when a
+--     cooldown starts; its end comes from our own frame's OnCooldownDone script (the
+--     Cooldown script Blizzard_CooldownViewer/CooldownViewer.lua:718 sets too).
 --   * CooldownFrameTemplate: Blizzard_FrameXMLUtil/Mainline/Cooldown.xml:3. It draws the
 --     star flash and the edge by default (:3-10); the game's buttons turn both off
 --     (Blizzard_ActionBar/Mainline/ActionButtonTemplate.xml:111), and so do we
@@ -175,8 +179,8 @@ local TEXT_NO_BARS = "the game's spell bars were not found"
 local TEXT_NO_BUTTONS = "the game's spell buttons were not found"
 local TEXT_NO_COOLDOWN = "this game version cannot draw cooldowns on our pictures"
 local TEXT_NO_HOOKS = "this game version does not let addons follow its buttons"
-local TEXT_BUILD = "the spell pictures could not be made"
-local TEXT_ERROR = "Pocket Essentials' spell pictures hit an error"
+local TEXT_BUILD = "they could not be made"
+local TEXT_ERROR = "they hit an error"
 local TEXT_FIGHT = "waiting for the fight to end"
 local CHAT_ERROR = "Spell pictures turned off after an error; the game's bars are back. Reload to try again."
 
@@ -266,6 +270,9 @@ end
 
 local StopNow -- below
 
+local onOff              -- Start's caller's function: told when the pictures turn off by themselves
+local starting = false   -- inside Start: its caller reads the answer instead
+
 local function Failed()
     errorCount = errorCount + 1
     if errorCount < ERROR_LIMIT or broken then return end
@@ -275,6 +282,8 @@ local function Failed()
     Note("turned off after " .. errorCount .. " errors")
     PE:Print(CHAT_ERROR)
     RefreshPanel()
+    -- The game's bars show again: ControllerLayout.lua puts them at full size (out of a fight).
+    if onOff and not starting then pcall(onOff) end
 end
 
 local function Guard(fn)
@@ -423,6 +432,16 @@ local function MakePicture(parent, x, y, size, quad, dpad)
     pic.cd = NewCooldown(p)
     if not pic.cd then return nil end
     pic.cd:SetAllPoints(pic.icon)
+    -- The cooldown ran out: the darkening is read again on the next frame. No game event
+    -- says so (SPELL_UPDATE_COOLDOWN fires when a cooldown starts), so without this a
+    -- spell stayed dark until the next cast.
+    pcall(pic.cd.SetScript, pic.cd, "OnCooldownDone", Guard(function()
+        if not running or not pic.button then return end
+        pic.dimSlot = nil
+        pic.dCooldown = true
+        picsDirty = true
+        Schedule()
+    end))
 
     -- Above the cooldown's sweep: the position glyph, the range dot and the count.
     local over = CreateFrame("Frame", nil, p)
@@ -628,6 +647,9 @@ local function CopyIcon(pic, icon)
         if tex ~= pic.tex then
             if not pcall(pic.icon.SetTexture, pic.icon, tex) then pic.tex = nil return ShowEmpty(pic) end
             pic.tex = tex
+            -- Another spell in the slot, maybe: its cooldown and darkening are read again.
+            pic.dCooldown = true
+            pic.dimSlot = nil
         end
     end
     if not pic.plainCoords then
@@ -667,7 +689,8 @@ local function CopySpecial(pic, sp)
 end
 
 -- The picture: the real icon, or the game's own picture on the main bar's face
--- buttons. When it turns empty or special (or back), the cooldown is looked at again.
+-- buttons. When it turns empty or special (or back), or shows another texture, the
+-- cooldown is looked at again.
 local function RefreshIcon(pic)
     local b = pic.button
     local wasEmpty, wasSpecial = pic.empty, pic.special
@@ -786,7 +809,8 @@ end
 
 -- The cooldown sweep from the game's duration object, and the darkening kept by
 -- ReadDim. The darkening is read here only for a slot it was never read for (a
--- new button or page): there is no event to read it in then, and the next
+-- new button or page, another texture in it) or whose cooldown just ended (our
+-- frame's OnCooldownDone): there is no event to read it in then, and the next
 -- SPELL_UPDATE_COOLDOWN puts it right.
 local function RefreshCooldown(pic)
     local slot = SlotOf(pic)
@@ -1191,13 +1215,16 @@ end
 -- name this addon defines as its own, and "Stop" is also the game's animation call.
 local Public = {}
 
-function Public.Start()
+function Public.Start(whenOff)
+    if type(whenOff) == "function" then onOff = whenOff end
     if broken then return false, status end
     if PE:InCombat() then return false, TEXT_FIGHT end
     local ok, started, reason = PE:Safe(KEY, StartNow)
     if ok then return started, reason end
     pcall(StopNow)
+    starting = true
     Failed()
+    starting = false
     if broken then return false, status end
     status = TEXT_BUILD
     return false, status
@@ -1212,6 +1239,6 @@ function Public.Reason()
     return status
 end
 
-Face["Start"] = function() return Public.Start() end
+Face["Start"] = function(_, whenOff) return Public.Start(whenOff) end
 Face["Stop"] = function() Public.Halt() end
 Face["Status"] = function() return Public.Reason() end

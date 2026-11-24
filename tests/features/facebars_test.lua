@@ -14,7 +14,7 @@ local KNOWN_FAILURES = {
 local TEXT_NO_BARS = "the game's spell bars were not found"
 local TEXT_NO_BUTTONS = "the game's spell buttons were not found"
 local TEXT_NO_COOLDOWN = "this game version cannot draw cooldowns on our pictures"
-local TEXT_ERROR = "Pocket Essentials' spell pictures hit an error"
+local TEXT_ERROR = "they hit an error"
 local CHAT_ERROR = "Spell pictures turned off after an error; the game's bars are back. Reload to try again."
 local ANCHORS = { "TopCenteredAnchor", "LeftCenteredAnchor", "RightCenteredAnchor", "BottomCenteredAnchor" }
 
@@ -950,6 +950,46 @@ test("face: the darkening is read inside SPELL_UPDATE_COOLDOWN; the next frame o
     c:advance(0.1)
     eq(shown(c, p1.cd), true)
     eq(shown(c, p1.dim), false, "the global cooldown alone does not darken")
+    c:assertClean()
+end)
+
+test("face: the darkening ends when our cooldown frame says the cooldown is done, not at the next cast", function()
+    local c, PE, Face = started()
+    local p2 = pic(Face, 1, 2)
+    eq(shown(c, p2.dim), true, "slot 2 is on cooldown (8 s)")
+    -- The cooldown runs out: no SPELL_UPDATE_COOLDOWN comes (that fires when one starts).
+    c.world.actions[2].duration = 0
+    c._runScript(p2.cd, "OnCooldownDone")
+    eq(shown(c, p2.dim), true, "not before the next frame")
+    eq(onUpdates(c), 1, "one OnUpdate waiting")
+    c:advance(0.1)
+    eq(shown(c, p2.dim), false, "still dark after its cooldown ended")
+    eq(onUpdates(c), 0)
+    -- While stopped it does nothing.
+    Face:Stop()
+    c._runScript(p2.cd, "OnCooldownDone")
+    eq(onUpdates(c), 0, "an OnUpdate while stopped")
+    c:assertClean()
+end)
+
+test("face: a slot whose icon turns into another spell reads that spell's cooldown again", function()
+    local c, PE, Face = started()
+    local p1 = pic(Face, 1, 1)
+    eq(shown(c, p1.dim), false)
+    local before = cdCalls(c, "SetCooldownFromDurationObject")
+    -- The game puts another spell in slot 1 (on cooldown) and only changes the icon.
+    c.world.actions[1].duration, c.world.actions[1].texture = 6, 999
+    c.barButtons.TopCenteredAnchor[1].icon:SetTexture(999)
+    c:advance(0.1)
+    eq(st(c, p1.icon).texture, 999)
+    check(cdCalls(c, "SetCooldownFromDurationObject") > before, "the sweep was not read again")
+    eq(st(c, p1.cd).cooldown.duration, 6)
+    eq(shown(c, p1.dim), true, "the new spell's cooldown not read")
+    -- The same icon again (a colour change): nothing read.
+    local calls = cdCalls(c, "SetCooldownFromDurationObject")
+    c.barButtons.TopCenteredAnchor[1].icon:SetVertexColor(0.5, 0.5, 0.5)
+    c:advance(0.1)
+    eq(cdCalls(c, "SetCooldownFromDurationObject"), calls, "a colour change read the cooldown")
     c:assertClean()
 end)
 

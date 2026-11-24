@@ -579,7 +579,7 @@ test("layout: registered, off, with its defaults, a Controller tab and no work w
     local mod = PE:GetModule("ctrlLayout")
     check(mod ~= nil, "the feature did not register")
     eq(mod.label, "Controller layout")
-    eq(mod.desc, "Map bottom middle, spell bars around it, chat top right.")
+    eq(mod.desc, "Map bottom middle, a spell panel each side (hold LT or RT to swap), chat top right.")
     eq(mod.order, 60)
     eq(mod.experimental, true)
     eq(mod.statusWhenOff, true)
@@ -587,7 +587,7 @@ test("layout: registered, off, with its defaults, a Controller tab and no work w
     for k, v in pairs(PE.LayoutPlan.DEFAULTS) do eq(mod.defaults[k], v, "default " .. k) end
     eq(mod.defaults.prev, false)
     eq(mod.defaults.prevs, nil, "0.11.1's entries by name are only read")
-    eq(mod:status(), "Switching on or off reloads. Your old layout comes back when off.")
+    eq(mod:status(), "Needs a reload to switch on or off. Off brings back your own layout.")
     eq(PE.SETTINGS_TABS[6].id, "controller")
     eq(PE.SETTINGS_TABS[6].label, "Controller")
     eq(PE.SETTINGS_TABS[6].features, { "ctrlLayout" })
@@ -600,10 +600,10 @@ end)
 ---------------------------------------------------------------------------
 
 local NAME = "Pocket Essentials"
-local RELOAD = "Reload to finish changing the screen layout."
-local USING = "Using the Pocket Essentials layout. Move the map, chat or frames in Edit Mode; it is kept."
+local RELOAD = "Reload to finish the layout change."
+local USING = "Using the Pocket Essentials layout. Move the map, chat or frames in Edit Mode if you like."
 local ANOTHER = "Another Edit Mode layout is active. Pick Pocket Essentials in Edit Mode, or switch this off and on."
-local OFF_TEXT = "Switching on or off reloads. Your old layout comes back when off."
+local OFF_TEXT = "Needs a reload to switch on or off. Off brings back your own layout."
 
 -- Saved layouts as the game stores them (fake client: Account 1, Character 2, Gamepad style 1).
 local function saved(name, layoutType, style)
@@ -796,6 +796,7 @@ test("layout: on when Pocket Essentials already exists activates it and leaves i
     local ours = saved(NAME)
     ours.systems[1].anchorInfo.offsetX = 123 -- the player's own change
     local c, PE = layoutClient({ saved("A1"), ours }, 4)
+    opts(PE).template = PE.LayoutPlan.TEMPLATE -- built from this template (an older one is rebuilt first)
     switchOn(c, PE)
     eq(#c:callsTo("C_EditMode.SaveLayouts"), 0)
     eq(#c:callsTo("C_EditMode.OnLayoutAdded"), 0)
@@ -1249,7 +1250,7 @@ end)
 -- Option rows (spec "Options on the card")
 ---------------------------------------------------------------------------
 
-local START_OVER_ASK = "Tap Start over again to replace the Pocket Essentials layout with the template."
+local START_OVER_ASK = "Tap Start over again to put every piece back. Changes you made in Edit Mode are lost."
 
 local function optRow(PE, keyOrLabel)
     for _, o in ipairs(PE:GetModule("ctrlLayout").options or {}) do
@@ -1269,7 +1270,7 @@ local function choose(c, PE, key, value)
 end
 
 local function tapStartOver(c, PE)
-    local o = optRow(PE, "Template")
+    local o = optRow(PE, "Rebuild the layout")
     check(o ~= nil and type(o.action) == "function", "no Start over row")
     PE:Safe("ctrlLayout", o.action, PE:GetModule("ctrlLayout"))
     c:advance(0.1)
@@ -1306,7 +1307,7 @@ test("rows: only the three timer rows and Start over", function()
     local list = PE:GetModule("ctrlLayout").options
     local labels = {}
     for i, o in ipairs(list) do labels[i] = o.label end
-    eq(labels, { "Ranged timer", "Main Hand timer", "Off Hand timer", "Template" })
+    eq(labels, { "Ranged timer", "Main hand timer", "Off hand timer", "Rebuild the layout" })
     for i, key in ipairs({ "ranged", "mainHand", "offHand" }) do
         eq(list[i].key, key)
         local out = {}
@@ -1475,7 +1476,7 @@ test("layout: the settings window's Controller tab draws the rows while on, and 
             if rs.type == "FontString" and rs.text and r:IsVisible() then texts[rs.text] = true end
         end
     end)
-    for _, label in ipairs({ "Ranged timer", "Main Hand timer", "Off Hand timer", "Template" }) do
+    for _, label in ipairs({ "Ranged timer", "Main hand timer", "Off hand timer", "Rebuild the layout" }) do
         check(texts[label], "no row " .. label)
     end
     for _, gone in ipairs({ "Main bar", "Map size", "Player and target frames", "Spell button size", "Swing timers" }) do
@@ -2309,11 +2310,37 @@ test("template: a layout of the player's own is never touched", function()
     eq(saidIn(c, UPDATED), 0)
     eq(statusText(PE), ANOTHER)
     c:assertClean()
-    -- A tap on an existing older layout keeps it as it is (the next login brings the new one).
-    local c2, PE2 = layoutClient({ saved(NAME) }, 1)
+    -- A tap that finds our older layout active already keeps it as it is (the next login
+    -- brings the new one).
+    local c2, PE2 = layoutClient({ saved(NAME) }, 4)
     switchOn(c2, PE2)
     eq(#c2:callsTo("C_EditMode.SaveLayouts"), 0)
     eq(saidIn(c2, UPDATED), 0)
+    c2:assertClean()
+end)
+
+test("template: a tap that makes an older layout of ours active rebuilds it first; one reload is enough", function()
+    -- Switched on and off again on 0.11.x: our layout is saved, with no version, and the
+    -- player is back on the Modern preset.
+    local file, list, char = oldTester()
+    char.ctrlLayoutPrev = nil
+    file.enabled.ctrlLayout = false
+    local c, PE = login(file, list, 1, { char = char })
+    eq(layoutCalls(c), 0, "a layout call while off")
+    switchOn(c, PE)
+    eq(checkSaves(c), 1, "rebuilt before it was made active")
+    eq(#c:callsTo("C_EditMode.SetActiveLayout"), 1)
+    eq(c.world.layouts.activeLayout, 4)
+    eq(systemEntry(ours(c), SYS.Minimap).anchorInfo.offsetY, 38, "not rebuilt from the template")
+    eq(opts(PE).template, PE.LayoutPlan.TEMPLATE)
+    eq(reloadReason(PE), RELOAD)
+    c:assertClean()
+    -- The reload: nothing more to do, no second reload asked for.
+    local c2, PE2 = login(db(c), c.world.layouts.layouts, 4, { char = charDB(c) })
+    eq(layoutCalls(c2), 0)
+    eq(reloadReason(PE2), nil)
+    eq(saidIn(c2, UPDATED), 0)
+    eq(statusText(PE2), USING)
     c2:assertClean()
 end)
 
@@ -2516,7 +2543,7 @@ end)
 -- whether the real bars were placed at that moment.
 ---------------------------------------------------------------------------
 
-local USING_LINE = "Using the Pocket Essentials layout. Move the map, chat or frames in Edit Mode; it is kept."
+local USING_LINE = "Using the Pocket Essentials layout. Move the map, chat or frames in Edit Mode if you like."
 
 local function faceStub(c, PE)
     local s = { calls = {}, reason = nil }
@@ -2633,9 +2660,9 @@ test("face: the status line says when and why the game's own spell bars are show
     PE:GetModule("ctrlLayout"):CancelReload()
     eq(statusText(PE), USING_LINE)
     face.reason = "the game's bars were not found"
-    eq(PE:GetModule("ctrlLayout"):status(), { USING_LINE, "Showing the game's own spell bars: the game's bars were not found." })
-    face.reason = "Pocket Essentials' spell pictures hit an error."
-    eq(PE:GetModule("ctrlLayout"):status(), { USING_LINE, "Showing the game's own spell bars: Pocket Essentials' spell pictures hit an error." })
+    eq(PE:GetModule("ctrlLayout"):status(), { USING_LINE, "Pocket Essentials' spell pictures are off: the game's bars were not found." })
+    face.reason = "they hit an error"
+    eq(PE:GetModule("ctrlLayout"):status(), { USING_LINE, "Pocket Essentials' spell pictures are off: they hit an error." })
     -- A status that raises or is not text: the usual line only.
     face.statusFails = true
     eq(statusText(PE), USING_LINE)
@@ -2673,6 +2700,76 @@ test("face: a start or stop that fails or refuses is logged, and the layout carr
     eq(statusText(PE3), USING_LINE)
     switchOff(c3, PE3)
     c3:assertClean()
+end)
+
+-- 0.15.0 (polish spec E4): with our pictures off, the game's four bars show at full size.
+local function checkFull(c, PE, what)
+    local full, f = PE.LayoutPlan.FullBarSpots(), barFrames(c)
+    for _, spot in ipairs({ "top", "left", "right", "both", "bottom" }) do
+        placedAt(c, f[spot], full[spot], what .. ": " .. spot)
+        eq(frameState(c, f[spot]).scale, 1, what .. ": " .. spot .. " scale")
+    end
+end
+
+test("face: the real bars at full size, two a side, clear of everything but the hidden diamonds", function()
+    local Plan = plan()
+    local full = Plan.FullBarSpots()
+    eq(full.top, { x = -220, y = 121, s = 1 })
+    eq(full.left, { x = -220, y = 45, s = 1 })
+    eq(full.right, { x = 220, y = 121, s = 1 })
+    eq(full.both, { x = 220, y = 45, s = 1 })
+    eq(full.bottom, Plan.BarSpots().bottom)
+    local rects = Plan.Rects()
+    for spot, b in pairs(full) do
+        if spot ~= "bottom" then
+            local r = { b.x - 104, b.y - 34, b.x + 104, b.y + 34 }
+            check(r[2] >= 0, spot .. " below the screen")
+            for name, o in pairs(rects) do
+                if not name:find("diamond") then
+                    check(r[3] <= o[1] or o[3] <= r[1] or r[4] <= o[2] or o[4] <= r[2], spot .. " bar overlaps " .. name)
+                end
+            end
+            for other, o in pairs(full) do
+                if other ~= spot and other ~= "bottom" then
+                    check(math.abs(o.x - b.x) >= 208 or math.abs(o.y - b.y) >= 68, spot .. " overlaps " .. other)
+                end
+            end
+        end
+    end
+end)
+
+test("face: pictures that cannot be made leave the game's bars at full size", function()
+    local c, PE = layoutClient({}, 3, { setup = function(c) c.world.noCooldownFrames = true end })
+    switchOn(c, PE)
+    check(PE.FaceBars:Status() ~= nil, "the pictures were made")
+    checkFull(c, PE, "not made")
+    c:assertClean()
+end)
+
+test("face: the safety net turning the pictures off in a fight puts the bars at full size once it ends", function()
+    local c, PE = layoutClient({}, 3)
+    switchOn(c, PE)
+    PE:GetModule("ctrlLayout"):CancelReload()
+    near(frameState(c, barFrames(c).left).scale, 0.6, "placed under the pictures")
+    c:enterCombat()
+    rawset(PE.FaceBars.view[1].pics[1].icon, "SetVertexColor", function() error("broken picture") end)
+    local real = c.barButtons.TopCenteredAnchor[1]
+    for _ = 1, 3 do
+        real.icon:SetVertexColor(0.5, 0.5, 0.5)
+        c:advance(0.1)
+    end
+    eq(PE.FaceBars:Status(), "they hit an error")
+    near(frameState(c, barFrames(c).left).scale, 0.6, "a bar moved in the fight")
+    c:leaveCombat()
+    c:advance(0.1)
+    checkFull(c, PE, "after the fight")
+    -- Later syncs keep them at full size; off puts them back as the game had them.
+    c:fire("EDIT_MODE_LAYOUTS_UPDATED")
+    checkFull(c, PE, "after a sync")
+    PE:ClearErrors()
+    switchOff(c, PE)
+    eq(frameState(c, barFrames(c).left).scale, 1)
+    eq(#c.errors, 0)
 end)
 
 return { known = KNOWN_FAILURES }

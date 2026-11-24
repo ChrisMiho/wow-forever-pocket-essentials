@@ -237,6 +237,20 @@ local SPOTS = {
 -- Which face group each real bar spot is.
 local SPOT_FACE = { top = "main", left = "lt", right = "rt", both = "both" }
 
+-- 0.15.0: the four bars when our pictures are off (FaceBars.lua could not make them, or
+-- its safety net turned them off): the game's bars show again, so at full size (208 by
+-- 68), two a side, 8 apart: 116 to 324 either side of the centre, 11 to 79 and 87 to 155
+-- up. Clear of the LB / RB targeting pictures (76 to 112), the timers, the map, the
+-- sub-menu buttons (169 up) and the frames (395); only the diamonds, hidden then, share
+-- the place.
+local FULL_SPOTS = {
+    top = { x = -220, y = 121, s = 1 },
+    left = { x = -220, y = 45, s = 1 },
+    right = { x = 220, y = 121, s = 1 },
+    both = { x = 220, y = 45, s = 1 },
+    bottom = SPOTS.bottom,
+}
+
 -- Pocket Essentials' own round button at its default spot (Hub.lua:30-37, 115-127: LEFT
 -- of the screen, 10 px in, centred up and down), for the size presets of UI.lua:22-24 (56,
 -- 60 and 72 px on a 720 px screen, 768 / 720 UI units each). The largest one is used.
@@ -273,6 +287,11 @@ end
 -- the screen's bottom centre.
 function Plan.BarSpots()
     return DeepCopy(SPOTS)
+end
+
+-- The same for when our pictures are off (see FULL_SPOTS).
+function Plan.FullBarSpots()
+    return DeepCopy(FULL_SPOTS)
 end
 
 -- The four spots a diamond can be drawn at (see FACE_SPOTS): { inner = { left, right },
@@ -558,14 +577,14 @@ end
 local tostring, pcall = tostring, pcall
 local tinsert = table.insert
 
-local TEXT_OFF = "Switching on or off reloads. Your old layout comes back when off."
-local TEXT_USING = "Using the Pocket Essentials layout. Move the map, chat or frames in Edit Mode; it is kept."
+local TEXT_OFF = "Needs a reload to switch on or off. Off brings back your own layout."
+local TEXT_USING = "Using the Pocket Essentials layout. Move the map, chat or frames in Edit Mode if you like."
 local TEXT_ANOTHER = "Another Edit Mode layout is active. Pick Pocket Essentials in Edit Mode, or switch this off and on."
 local TEXT_NEEDS_GAMEPAD = "Needs the game's Gamepad UI (Options, Controller, Enable Gamepad UI)."
 local TEXT_NO_LAYOUTS = "This game version has no layouts an addon can change."
 local TEXT_EDIT_MODE = "Close Edit Mode first."
 local TEXT_NAME_REFUSED = "The game refused the layout name."
-local RELOAD_REASON = "Reload to finish changing the screen layout."
+local RELOAD_REASON = "Reload to finish the layout change."
 -- Said in chat when a login, not a tap, changed this character's layout: the reload
 -- request itself only shows in the settings window, which is closed at login.
 local CHAT_SWITCHED_ON = "This character now uses the controller layout. Open the settings and tap Reload now to finish."
@@ -575,7 +594,7 @@ local CHAT_UPDATED = "The controller layout was updated to the new arrangement (
 local TEXT_WAIT_FIGHT = "Updating the layout after this fight."
 local TEXT_WAIT_LAYOUTS = "Waiting for the game's layouts."
 -- Under the "Using" line while our spell pictures are off for a reason (PE.FaceBars:Status()).
-local TEXT_FACE_OFF = "Showing the game's own spell bars: "
+local TEXT_FACE_OFF = "Pocket Essentials' spell pictures are off: "
 local MAX_LAYOUTS = 5 -- per type (EditModeManagerConstantsDocumentation.lua, EditModeMaxLayoutsPerType)
 
 local mod
@@ -1248,10 +1267,15 @@ local function FaceCall(name)
     return face, fn
 end
 
+local SyncBars   -- below
+local onFaceOff  -- made once: FaceBars.lua's safety net turned the pictures off
+
 local function StartFace()
     local face, start = FaceCall("Start")
     if not face then return end
-    local ok, started, why = PE:Safe("ctrlLayout", start, face)
+    -- The bars go to full size once our pictures are off (PlaceNow), out of a fight.
+    onFaceOff = onFaceOff or PE:Wrap("ctrlLayout", function() if wanted then SyncBars() end end)
+    local ok, started, why = PE:Safe("ctrlLayout", start, face, onFaceOff)
     if ok and not started and PE.debugOn then
         PE:Debug("ctrlLayout", "spell pictures not shown: " .. tostring(why))
     end
@@ -1337,11 +1361,20 @@ local function PlaceNow()
     PlaceExtras()
     if PE.debugOn then PE:Debug("ctrlLayout", "bars placed") end
     StartFace()
+    -- Our pictures are off (FaceStatus says why): the game's bars show, at full size.
+    if FaceStatus() then
+        local full = Plan.FullBarSpots()
+        for _, b in ipairs(BAR_FRAMES) do
+            local spot = full[b.spot]
+            Put(frames[b.spot], spot.x, spot.y, spot.s)
+        end
+        if PE.debugOn then PE:Debug("ctrlLayout", "bars at full size: the spell pictures are off") end
+    end
 end
 
 -- Places the bars while the feature is on and our layout is the active one,
 -- else puts them back; out of combat. Safe to call in any state.
-local function SyncBars()
+SyncBars = function()
     PE:RunOutOfCombat("ctrlLayout:bars", function()
         if wanted and IsOursActive() then PlaceNow() else RestoreNow() end
     end)
@@ -1457,6 +1490,54 @@ local function AddOurs(state, e)
     return true, true
 end
 
+-- Our layout from a fresh read: state, its position in state.saved, and enums;
+-- or nil (logged when the read itself failed).
+local function ReadOurs()
+    local e = Enums()
+    local state, why = ReadState()
+    if not e or not state then
+        PE:LogError("ctrlLayout", "The layout list could not be read: " .. tostring(why or "the game's enums are missing"))
+        return nil
+    end
+    local index = OursIndex(state)
+    if not index then
+        -- Deleted or never saved: nothing to rewrite; the status line says another layout is active.
+        if PE.debugOn then PE:Debug("ctrlLayout", "the Pocket Essentials layout is not saved; nothing rewritten") end
+        mod:RefreshPanel()
+        return nil
+    end
+    return state, index - state.numPresets, e
+end
+
+-- Rebuilds our layout from the template, in place (only ours: every other layout
+-- is saved back as it was read). True if the game took it; a failure is logged.
+local function Rebuild()
+    local state, pos, e = ReadOurs()
+    if not state then return false end
+    local presets = CopyOfPresets()
+    local base = presets and presets[e.preset.Gamepad + 1]
+    if type(base) ~= "table" or base.layoutIndex ~= e.preset.Gamepad then
+        PE:LogError("ctrlLayout", "The game's Gamepad preset could not be copied")
+        return false
+    end
+    base.layoutIndex = nil
+    state.saved[pos] = Plan.Build(base, mod.opts, e)
+    local ok, err = SaveAll(state, state.saved)
+    if not ok then
+        PE:LogError("ctrlLayout", err)
+        return false
+    end
+    mod.opts.template = Plan.TEMPLATE
+    if PE.debugOn then PE:Debug("ctrlLayout", "the Pocket Essentials layout was rebuilt from the template") end
+    return true
+end
+
+-- The saved template version (none saved: 0.11.x, version 1).
+local function SavedTemplate()
+    local v = mod.opts.template
+    return type(v) == "number" and v or 1
+end
+
 local function SwitchOn()
     if not wanted then return end -- switched off again before this ran
     if EditModeOpen() then
@@ -1487,6 +1568,10 @@ local function SwitchOn()
         or { preset = e.preset.Gamepad }
     if oursIndex then
         SetThisPrev(prev)
+        -- Built from an older template: rebuilt first, so this one reload brings the new
+        -- arrangement (the next login would otherwise rebuild it and ask for a second
+        -- reload). A failure is logged; the next login tries again.
+        if SavedTemplate() < Plan.TEMPLATE then Rebuild() end
         local ok, err = pcall(state.api.SetActiveLayout, oursIndex)
         if not ok then
             SetThisPrev(nil)
@@ -1567,7 +1652,7 @@ end
 -- place the bars again at once. Both run out of combat.
 ---------------------------------------------------------------------------
 
-local TEXT_START_OVER = "Tap Start over again to replace the Pocket Essentials layout with the template."
+local TEXT_START_OVER = "Tap Start over again to put every piece back. Changes you made in Edit Mode are lost."
 local START_OVER_SECONDS = 20
 
 local applied = {}         -- the option values last applied: what a refused change is put back to
@@ -1591,25 +1676,6 @@ local REWRITES = {
     mainHand = Timer("MainHand"),
     offHand = Timer("OffHand"),
 }
-
--- Our layout from a fresh read: state, its position in state.saved, and enums;
--- or nil (logged when the read itself failed).
-local function ReadOurs()
-    local e = Enums()
-    local state, why = ReadState()
-    if not e or not state then
-        PE:LogError("ctrlLayout", "The layout list could not be read: " .. tostring(why or "the game's enums are missing"))
-        return nil
-    end
-    local index = OursIndex(state)
-    if not index then
-        -- Deleted or never saved: nothing to rewrite; the status line says another layout is active.
-        if PE.debugOn then PE:Debug("ctrlLayout", "the Pocket Essentials layout is not saved; nothing rewritten") end
-        mod:RefreshPanel()
-        return nil
-    end
-    return state, index - state.numPresets, e
-end
 
 local function RunRewrites()
     if not wanted or #pendingRewrites == 0 then return end -- kept for the next switch-on
@@ -1670,43 +1736,15 @@ local function LayoutRow(key)
     end
 end
 
--- Rebuilds our layout from the template, in place (only ours: every other layout
--- is saved back as it was read). True if the game took it; a failure is logged.
-local function Rebuild()
-    local state, pos, e = ReadOurs()
-    if not state then return false end
-    local presets = CopyOfPresets()
-    local base = presets and presets[e.preset.Gamepad + 1]
-    if type(base) ~= "table" or base.layoutIndex ~= e.preset.Gamepad then
-        PE:LogError("ctrlLayout", "The game's Gamepad preset could not be copied")
-        return false
-    end
-    base.layoutIndex = nil
-    state.saved[pos] = Plan.Build(base, mod.opts, e)
-    local ok, err = SaveAll(state, state.saved)
-    if not ok then
-        PE:LogError("ctrlLayout", err)
-        return false
-    end
-    mod.opts.template = Plan.TEMPLATE
-    if PE.debugOn then PE:Debug("ctrlLayout", "the Pocket Essentials layout was rebuilt from the template") end
-    return true
-end
-
 local function RunStartOver()
     if not wanted then return end
     if Rebuild() then mod:RequestReload(RELOAD_REASON) end
 end
 
--- The saved template version (none saved: 0.11.x, version 1).
-local function SavedTemplate()
-    local v = mod.opts.template
-    return type(v) == "number" and v or 1
-end
-
 -- At a login with ours active and built from an older template: rebuilt once from
 -- the template (Start over's steps), the reload asked for, and said in chat. A tap on
--- the switch keeps an existing layout as it is (until the next login). A failure
+-- the switch that makes an older layout of ours active rebuilds it there (SwitchOn);
+-- one that finds it active already keeps it as it is (until the next login). A failure
 -- keeps the old version saved, so the next login tries again.
 local function UpdateTemplate(byTap)
     if byTap or SavedTemplate() >= Plan.TEMPLATE or not IsOursActive() then return end
@@ -1739,9 +1777,9 @@ local VISIBILITY = { { value = 0, label = "Always" }, { value = 1, label = "In c
 -- gone; values older versions saved for them stay in the file, unused.
 local OPTIONS = {
     { key = "ranged", label = "Ranged timer", choices = VISIBILITY, OnChange = LayoutRow("ranged") },
-    { key = "mainHand", label = "Main Hand timer", choices = VISIBILITY, OnChange = LayoutRow("mainHand") },
-    { key = "offHand", label = "Off Hand timer", choices = VISIBILITY, OnChange = LayoutRow("offHand") },
-    { label = "Template", button = "Start over", action = function() StartOver() end },
+    { key = "mainHand", label = "Main hand timer", choices = VISIBILITY, OnChange = LayoutRow("mainHand") },
+    { key = "offHand", label = "Off hand timer", choices = VISIBILITY, OnChange = LayoutRow("offHand") },
+    { label = "Rebuild the layout", button = "Start over", action = function() StartOver() end },
 }
 
 -- This character's check (see the notes above Say). Runs out of combat; waits
@@ -1813,7 +1851,7 @@ defaults.prev = false -- the 0.11.0 file's single layout to go back to; read onc
 mod = PE:RegisterModule({
     key = "ctrlLayout",
     label = "Controller layout",
-    desc = "Map bottom middle, spell bars around it, chat top right.",
+    desc = "Map bottom middle, a spell panel each side (hold LT or RT to swap), chat top right.",
     order = 60,
     experimental = true,
     statusWhenOff = true,
