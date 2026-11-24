@@ -4,6 +4,55 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.13.0] - 2026-11-23
+
+Twenty-ninth test build. Controller layout draws its own spell pictures,
+split the way you hold the controller, in one low band at the bottom of the
+screen. Spec
+`docs/superpowers/specs/2026-11-23-controller-layout-0.13.0-face-bars.md`.
+Not yet tested on a device. Your saved choices carry over. Pocket Probe is
+unchanged (0.7.0).
+
+### Added
+
+- **Spell pictures of our own ("face bars"):** with Controller layout on,
+  Pocket Essentials draws all four of your bars itself. Left of the map are
+  the d-pad halves, right of it the face-button halves, like the controller
+  in your hands. Each side is a small grid: the main bar nearest the map at
+  the bottom, LT above it, RT on the outside, LT + RT outside and up ("up is
+  LT, out is RT"). Each picture shows the spell, a small picture of which
+  button presses it, greying when it can't be used, blue when you lack mana,
+  darkening and the game's sweep while on cooldown, a range dot, stack
+  counts, a gold edge while active and a glow when the game highlights it.
+- **The bar in use stands out:** holding LT, RT or both brings that bar to
+  full strength and the others drop to half. Nothing moves.
+- **The game's own bars still do the casting.** They stay whole, invisible,
+  under our pictures; you press the same buttons as before. Stance, form,
+  possess and LB / RB targeting bars show in our pictures too.
+- **A safety net:** if the pictures cannot be built, or hit three errors, the
+  game's own bars come back by themselves and the Controller card says why.
+
+### Changed
+
+- **Everything moved down and in:** your frame sits beside the left
+  pictures with your pet above it, the target beside the right pictures with
+  the target of target above it; the target's cast bar sits in the bottom
+  right corner. The middle of the screen is free.
+- **The game's hint box (top left) is hidden** while the layout is on (the
+  game's own "show input legend" setting, put back when you switch the
+  layout off). The quest tracker moved into that corner.
+- Your next login rebuilds the layout once (as 0.12.0 did); tap Reload now.
+
+### Known
+
+- Tapping a spell picture does nothing; cast with the controller.
+- The cooldown sweep may not draw on this client; the darkening still shows.
+- Numbers for cooldowns are not shown (the game keeps them secret in a fight).
+- A wheel or the "new spell" picture opened from a spell button shows where
+  the game's hidden button is, not at its picture.
+- The game's page number can show over the left pictures while you hold the
+  page button.
+
 ## [0.12.0] - 2026-11-23
 
 Twenty-eighth test build. Controller layout now arranges the screen the way

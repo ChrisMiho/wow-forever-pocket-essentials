@@ -430,6 +430,21 @@ per objective". The owner has more Quest icons ideas to bring after testing.
 Spec `docs/superpowers/specs/2026-11-18-tidier-settings.md`; device steps
 `docs/TESTING.md` 14.
 
+**0.13.0 (2026-11-23, untested):** face bars. Controller layout draws its
+own spell pictures (display only) for all four bars, split like the
+controller (d-pad halves left of the map, face-button halves right), the
+bar in use bright and the others at half; the game's real bars stay whole and
+invisible (the four bar anchors at alpha 0) and still cast; frames beside the
+pictures in one low band; the game's hint box hidden; the quest tracker top
+left. Falls back to the game's bars by itself. Spec
+`docs/superpowers/specs/2026-11-23-controller-layout-0.13.0-face-bars.md`;
+device steps `docs/TESTING.md` 27; pre-release `v0.13.0` with both zips.
+
+**0.12.0 (2026-11-23, worked on the device):** the mockup's one setup with
+the game's real bars. Device check `docs/weMadeProgress/` (17:48 to 17:51,
+0 errors): applied as designed; dead space between the bars and the map,
+frames high up the sides, the quest tracker into the right bars.
+
 **0.11.1 (2026-11-23, untested):** the clear Controller layout bugs from the
 owner's main (`docs/11-23-ui-debug/FINDINGS.md`): XP bar top middle at 100%,
 each character switches to our layout at login and remembers its own, the

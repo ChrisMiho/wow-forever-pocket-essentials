@@ -213,3 +213,44 @@ asks for the reload, as 0.12.0 does (chat line, status lines while waiting).
 `## Version: 0.13.0`, CHANGELOG, `docs/TESTING.md` section 27, the mockup
 page gets the new screen (the same page, one setup), pre-release `v0.13.0`
 with both zips (Pocket Probe unchanged at 0.7.0).
+
+## As built (2026-11-23)
+
+Two builders in parallel (layout: `face-layout`; pictures: `face-pictures`),
+merged into `setup-options`. Differences from the text above, and why:
+
+- **Quest tracker at TOPLEFT 92, -5, not 5, -5.** With Height 0 it is at
+  least 400 tall (the slider's minimum, `EditModeSettingDisplayInfo.lua:609-618`;
+  `Blizzard_ObjectiveTrackerContainer.lua:206-217`); at 5, -5 it would reach
+  the PE round button at its default left spot. 87 right clears the button
+  at all three sizes and at "Upper left", and stays clear of the XP bars and
+  the quest arrow at 150%.
+- **Real bars 0.6 wider than their grid on each side** (187.2 against 186)
+  at scale 0.9; kept.
+- **Targeting pictures 36 by 32** from the device photos (their atlas size
+  is not in this source).
+- **Sub-menu prompts ("LB+LT", "RB+RT", 72 by 24 at ±138, 158 up) touch the
+  top of the LT diamonds (146) without overlapping**; not in the overlap list.
+- **Strata MEDIUM for the pictures**: the real bars are LOW, levels 4 and 5
+  (`ActionBarTemplates.xml:147`, `ActionBar.lua:1-2`), the wheels DIALOG,
+  level 10 (`FlyoutRadial.xml:29`, `FlyoutRadial.lua:305`).
+- **Range dot top right** (the count is bottom right); the glyph's other
+  spots are dim squares, not outlines.
+- **The main bar's face buttons** are recognised by their shown
+  `SpecialActionIcon`, not by `action == 0`.
+- **"On cooldown" darkening** from `GetActionCooldown(slot).isActive` and not
+  `isOnGCD`.
+- **Pictures need** `C_ActionBar.GetActionCooldownDuration` and a Cooldown
+  frame that takes a duration object; without them the game's bars stay,
+  "this game version cannot draw cooldowns on our pictures".
+- **Hint box setting**: saved account-wide (`opts.hintsWas`); whether the
+  game keeps it per account or per character is unverified
+  (`docs/ARCHITECTURE.md`).
+- **After the third error** the pictures stay off until a reload.
+- **Review fixes (fdbc896):** a plain, mouse-taking backing frame per side
+  (left -345, 2 to -150.4, 150; right the mirror) so a tap or the cursor
+  between pictures never reaches a hidden button (0.2 units of the main and LT
+  bars' left button past -345 stay uncovered, under the player frame's edge);
+  cooldown star flash and edge off; "on cooldown" darkening read inside
+  `SPELL_UPDATE_COOLDOWN` only; each hook redraws only its own part; nothing
+  drawn while the game's bars are hidden.

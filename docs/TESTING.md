@@ -1632,3 +1632,48 @@ pre-release **v0.12.0**.
    `SavedVariables/PocketEssentials.lua` and the screenshots.
 
 To go back to your own layout: Controller tab, switch Off, **Reload now**.
+
+### 27. Version 0.13.0: our own spell pictures, split like the controller
+
+**What this is for.** The Controller layout now draws your spells itself:
+d-pad spells left of the map, face-button spells right of it, in one low
+band at the bottom. The game's bars are still there, invisible, and do the
+casting. Picture of the plan: `docs/ui-review/mockup-0.8.1.html`, "Face bars
+(one setup)", Show "0.13.0: split face". Download: the GitHub pre-release
+**v0.13.0** (both zips; Pocket Probe is unchanged, you don't need it).
+
+1. In `AddOns`, delete the old `PocketEssentials` folder (keep `QuestieDB`)
+   and unzip the new one. Fully restart the game and log into your main.
+2. A chat line says the controller layout was updated. Open the settings,
+   tap **Reload now**.
+3. Take a screenshot. You should see: no hint box top left (the quest
+   tracker is there now); at the bottom, left of the map, four small
+   diamonds of spell pictures with a plus in their corners (your d-pad);
+   right of the map, four with four dots (your face buttons); your frame
+   beside the left pictures, your target's beside the right ones. Tell me
+   what is in the way and what is too small to read.
+4. Hold LT, then RT, then both. Does the matching pair of diamonds (one each
+   side, tagged LT, RT, LT+RT) go bright while the rest dims?
+5. Out of a fight, press a few spells from each bar. Do the right spells
+   cast? (Same buttons as before.)
+6. Fight a few mobs using all four bars. Do spells cast? Do the pictures
+   darken while on cooldown, and grey out when you can't use them? Does
+   anything say "Interface action blocked" or "failed because of an AddOn"?
+7. Open the pet wheel (LB + LT) and the pet spells wheel (RB + RT). Is the
+   wheel drawn on top of the pictures?
+8. Tap a spell picture with your finger. Nothing should happen.
+9. If the pictures ever vanish and the game's bars come back, the Controller
+   card says why: screenshot it.
+10. Settings, tab **Errors**: screenshot it. Send me
+   `SavedVariables/PocketEssentials.lua` and the screenshots.
+
+Things to watch for (found in review, not fixed yet):
+- A wheel or the "new spell" picture opened from a spell button appears
+  where the game's hidden button is, which may be on the other grid cell.
+- The game's page number shows above the left pictures while you hold the
+  page button.
+- A warrior's or druid's stance bar set to replace the LT+RT bar sits
+  invisible over the top of the map (the pictures still show it right).
+
+To go back to your own layout: Controller tab, switch Off, **Reload now**
+(the hint box comes back too).
