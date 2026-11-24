@@ -378,6 +378,27 @@ test("quest icons: the minimap tick is stopped while the filter leaves nothing o
     eq(#iconsOn(c, c.minimap), 1)
 end)
 
+-- Spec 0.15.0 C4: "Minimap icons come back after leaving a dungeon: PLAYER_ENTERING_WORLD resets the retry
+-- count." Inside, zone events use up the three position retries; on the way out the position is a moment
+-- late after the loading screen and no further event comes, so only a fresh retry finds it.
+test("quest icons: minimap icons come back after leaving a dungeon whose zone events used up the retries", function()
+    local c, PE = newIcons()
+    check(tickerRunning(c))
+    c.world.instance = true                                 -- into a dungeon: no position
+    c:fire("PLAYER_ENTERING_WORLD")
+    c:advance(5)
+    for _, event in ipairs({ "ZONE_CHANGED_INDOORS", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS" }) do
+        c:fire(event)
+        c:advance(1.5)
+    end
+    check(not tickerRunning(c), "the ticker runs inside the dungeon")
+    c:fire("PLAYER_ENTERING_WORLD")                         -- out again; the position is still late
+    c:advance(0.5)
+    c.world.instance = false                                -- readable now, with no event to say so
+    c:advance(4)
+    check(tickerRunning(c), "the minimap icons did not come back after leaving the dungeon")
+end)
+
 -- CLAUDE.md "Nothing ticks while its feature is off"; QuestIcons.lua OnDisable -> StopTicker.
 test("quest icons: the minimap tick is stopped, and no icon left, after the feature is switched off", function()
     local c, PE = newIcons()
@@ -482,6 +503,30 @@ test("quest icons: a dungeon objective has an icon on the entrance and its text 
     c:click(tapped)
     check(labelBox(c):IsShown())
     check(labelBox(c).text:GetText():find("Inside " .. inside.inside, 1, true), "the text box does not say Inside: " .. tostring(labelBox(c).text:GetText()))
+end)
+
+-- Spec 0.15.0 C5: 'Tooltip says "Go to: <name>" for explore spots that carry a name.' Quest 273's first
+-- objective is to find Miran (a "talk to" objective, an explore spot) in Loch Modan.
+test("quest icons: the text box of a named explore spot says Go to: <name>", function()
+    local c, PE = newIcons({ quests = { { id = 273 } }, focus = 273, watched = {} })
+    local map, spot
+    for m, list in pairs(PE.QuestData:GetPinsForQuest(273)) do
+        for _, p in ipairs(list) do if p.kind == "event" and p.target then map, spot = m, p end end
+    end
+    check(spot, "test data: quest 273 has no explore spot with a name")
+    c:openWorldMap(map)
+    c:advance(0.3)
+    local tapped
+    for _, icon in ipairs(iconsOn(c, c.worldMapCanvas)) do
+        local fx, fy = mapFraction(c, icon)
+        local _, p = questAt(PE, { 273 }, map, fx, fy)
+        if p == spot then tapped = icon break end
+    end
+    check(tapped, "no icon on the explore spot")
+    c:click(tapped)
+    local text = labelBox(c).text:GetText()
+    check(text:find("Go to: " .. spot.target, 1, true), "the text box does not say Go to: " .. tostring(text))
+    check(not text:find("Explore:", 1, true), "the text box still says Explore: " .. tostring(text))
 end)
 
 -- QuestIcons.lua header: "...when another icon is tapped" the box moves to that icon.
@@ -700,6 +745,35 @@ test("quest icons: /qd spots takes 1 to 20, and /qd cluster stops at 10", functi
     c:assertClean("qd numbers")
 end)
 
+
+-- Spec 0.15.0 C7: "/qd uses the settings' words (Tiny, Tracked, \"Blue quest haze: hidden\")". The settings
+-- rows: Show icons for Tracked / Focused / All; Icon size Tiny / Small / Medium / Large; Blizzard blue
+-- quest haze Hide / Show; Merge Off; Spots All.
+test("quest icons: /qd answers in the settings' words", function()
+    local c, PE = newIcons()
+    local qd = c.env.SlashCmdList.POCKETESSENTIALSQD
+    local mod = PE:GetModule("questIcons")
+    local function said(cmd)
+        local before = #T.chatLines(c)
+        qd(cmd)
+        local lines = T.chatLines(c)
+        eq(#lines, before + 1, "lines printed by /qd " .. cmd)
+        return lines[#lines]
+    end
+    eq(said("show tracked"), "Show icons for: Tracked.")
+    eq(said("show focus"), "Show icons for: Focused.")
+    eq(said("show all"), "Show icons for: All.")
+    eq(said("size xsmall"), "Icon size: Tiny.")
+    eq(said("size tiny"), "Icon size: Tiny.")
+    eq(mod.opts.size, "xsmall", "the saved value of Tiny")
+    eq(said("size large"), "Icon size: Large.")
+    local hidden = mod.opts.hideHaze
+    eq(said("haze"), "Blizzard blue quest haze: " .. (hidden and "shown." or "hidden."))
+    eq(said("haze"), "Blizzard blue quest haze: " .. (hidden and "hidden." or "shown."))
+    eq(said("cluster 0"), "Merge icons closer than: Off.")
+    eq(said("spots all"), "Spots per objective: All.")
+    check(not said("help"):find("xsmall", 1, true), "the usage line still says xsmall")
+end)
 
 -- Review of 0.7.0, finding 1: what the map uses is what the control shows.
 test("quest icons: a saved Merge or Spots value the control cannot show runs as the default it shows", function()
