@@ -1,7 +1,7 @@
 -- Rules for the setup guide (Setup.lua).
 -- Source: docs/superpowers/specs/2026-11-20-0.9.0-ui-redesign.md, section
 -- "Setup guide" (ten screens, the Quest icon details screen only while Quest
--- icons is on, step dots, feature cards, "Move things now"), and the first-run
+-- icons is on, step dots, feature cards, "Open Move on screen"), and the first-run
 -- rules it keeps from docs/superpowers/specs/2026-11-17-0.4.0-handheld-batch.md,
 -- section "5. Setup guide" (opening once, Skip and Finish saving, fights).
 -- Fresh client and addon per test. Tests that need the guide to open by itself
@@ -18,7 +18,7 @@ local KNOWN_FAILURES = {
 
 local NAV_NAME = "PocketEssentialsNavButton"
 local ALL_KEYS = { PADDUP = NAV_NAME, PADDDOWN = NAV_NAME, PADDLEFT = NAV_NAME, PADDRIGHT = NAV_NAME, PAD1 = NAV_NAME, PAD2 = NAV_NAME }
-local TITLE = "Setup"
+local TITLE = "Setup guide"
 -- The screens while Quest icons is off: "Quest icon details" is skipped.
 local ALL_SCREENS = { "Welcome", "Quest icons", "Quest arrow", "Bags", "Vendors and game fixes", "Round button and chat",
     "Controller", "Your screen", "All set" }
@@ -177,7 +177,7 @@ local function saved(enabled, setup)
     return { version = 1, enabled = enabled or {}, options = {}, ui = { size = "medium", hubPos = "LEFT" }, errors = {}, setup = setup }
 end
 
--- The two Open buttons of the settings' General tab, top to bottom: Move things on screen, Setup guide.
+-- The two Open buttons of the settings' General tab, top to bottom: Move on screen, Setup guide.
 local function generalOpenButtons(c, PE)
     PE:OpenSettings("general")
     c:advance(0.2)
@@ -273,7 +273,7 @@ end)
 -- Screens, dots and switches
 ---------------------------------------------------------------------------
 
-test("setup: the window is titled Setup; the screens are welcome, quest icons, quest arrow, bags, vendors and game fixes, round button and chat, your screen, all set", function()
+test("setup: the window is titled Setup guide; the screens are welcome, quest icons, quest arrow, bags, vendors and game fixes, round button and chat, your screen, all set", function()
     local c, PE = T.new({})
     open(c, PE)
     for i = 1, N do
@@ -292,6 +292,22 @@ test("setup: the window is titled Setup; the screens are welcome, quest icons, q
     c:advance(0.1)
     eq(at(PE), (N - 1) .. " of " .. N)
     c:assertClean("screens")
+end)
+
+-- 0.15.0 (B8): on the first screen, with Back hidden, Skip sits at the left
+-- edge; from the second screen on it is right of Back.
+test("setup: Skip is at the left edge on the first screen and right of Back after it", function()
+    local c, PE = T.new({})
+    open(c, PE)
+    local M = PE.UI:Metrics()
+    local contentLeft = c._rect(guide(c).content)
+    local skipLeft = c._rect(button(c, "Skip"))
+    check(math.abs(skipLeft - contentLeft) < 0.01, "on the first screen Skip is at " .. skipLeft .. ", not " .. contentLeft)
+    goTo(c, 2)
+    local _, backRight = c._rect(button(c, "Back"))
+    skipLeft = c._rect(button(c, "Skip"))
+    check(math.abs(skipLeft - (backRight + M.gap)) < 0.01, "on the second screen Skip is not right of Back")
+    c:assertClean("skip place")
 end)
 
 -- One dot per screen between Skip and Next, the current one gold.
@@ -610,23 +626,25 @@ test("setup: a card whose feature is not registered is left out, and a screen wi
     if not ok then error(err, 0) end
 end)
 
-test("setup: the finish screen lists what is on and what is off, then the Tap, Hold and Move things tiles", function()
+test("setup: the finish screen lists what is on and what is off, then the Tap, Hold and Move on screen tiles", function()
     local c, PE = T.new({})
     open(c, PE)
     goTo(c, N)
     check(hasText(c, "|cff59eb73On: |rnothing yet"), "no \"On: nothing yet\" line")
     local off = textWith(c, "Off: |r")
     check(off, "no Off line with everything off")
+    -- 0.15.0 (B5): only the features the guide shows, in the order of its screens.
     for _, mod in ipairs(PE.moduleList) do
-        check(off:find(mod.label, 1, true), "Off does not name " .. mod.label)
+        if mod.key ~= "errors" then check(off:find(mod.label, 1, true), "Off does not name " .. mod.label) end
     end
+    check(not off:find("Catch all errors", 1, true), "Off names Catch all errors, which the guide does not show")
 
     PE:SetModuleEnabled("sellJunk", true)
     PE:SetModuleEnabled("chat", true)
     c:advance(0.1)
     check(hasText(c, "|cff59eb73On: |rAuto sell junk, Chat picker"), "the On line is wrong: " .. tostring(textWith(c, "On: |r")))
-    eq(textWith(c, "Off: |r"), "|cff9e9ea3Off: |rQuest icons, Quest arrow, Bag sorting, Bigger bag, Auto repair, Controller layout, Menu background, Loot sparkles, Catch all errors")
-    for _, t in ipairs({ "Tap", "Hold", "Move things", "Opens the settings, or Chat picker when it is on.",
+    eq(textWith(c, "Off: |r"), "|cff9e9ea3Off: |rQuest icons, Quest arrow, Bigger bag, Bag sorting, Auto repair, Menu background, Loot sparkles, Controller layout")
+    for _, t in ipairs({ "Tap", "Hold", "Move on screen", "Opens the settings, or the Chat picker when that is on.",
         "Always opens the settings.", "Settings, General tab." }) do
         check(hasText(c, t), "the tiles have no \"" .. t .. "\"")
     end
@@ -639,7 +657,7 @@ test("setup: the three tiles have the same width and height and sit side by side
     open(c, PE)
     goTo(c, N)
     local tops, lefts = {}, {}
-    for _, name in ipairs({ "Tap", "Hold", "Move things" }) do
+    for _, name in ipairs({ "Tap", "Hold", "Move on screen" }) do
         local found
         walk(c, guide(c), function(w)
             for _, r in ipairs(c._state(w).regions) do
@@ -664,7 +682,8 @@ test("setup: with every feature on the finish screen has no Off line", function(
     c:advance(0.5)
     open(c, PE)
     goTo(c, N + 1) -- ten screens with Quest icons on
-    check(textWith(c, "On: |rQuest icons, Quest arrow, Bag sorting"), "no On line")
+    check(textWith(c, "On: |rQuest icons, Quest arrow, Bigger bag, Bag sorting"), "no On line")
+    check(not textWith(c, "Catch all errors"), "the On line names Catch all errors, which the guide does not show")
     check(not textWith(c, "Off: |r"), "an Off line with everything on")
 end)
 
@@ -720,8 +739,8 @@ test("setup: Welcome has the play-style row and the controls card with its three
     local c, PE = T.new({ on = { "bags" } })
     open(c, PE)
     for _, t in ipairs({ "A few helpers for playing on a handheld. They all start off: switch on the ones you want.",
-        "You can change everything later in the settings.", "How do you play?", "Getting around these windows",
-        "Move the blue highlight", "Press the highlighted button", "Close the window",
+        "You can change everything later in the settings.", "I play with", "Getting around these windows",
+        "Move the blue highlight", "Press it", "Close the window",
         "Or just tap any button on the screen." }) do
         check(hasText(c, t), "Welcome has no \"" .. t .. "\"")
     end
@@ -768,6 +787,84 @@ test("setup: Welcome has the play-style row and the controls card with its three
     c:assertClean("welcome cards")
 end)
 
+-- The shown text region of the guide whose text is `text`, as { region = }.
+local function shownRegion(c, text)
+    local found
+    walk(c, guide(c), function(w)
+        for _, r in ipairs(c._state(w).regions) do
+            local st = c._state(r)
+            if not found and st.type == "FontString" and st.text == text and r:IsVisible() then found = { region = r } end
+        end
+    end)
+    return found
+end
+
+-- 0.15.0 (B8): the three pictures of "Getting around these windows" sit on
+-- one line, and each text is centred on them, also when a text wraps.
+test("setup: the controls card's pictures share one line and each text is centred on it", function()
+    for _, size in ipairs({ "small", "medium", "large" }) do
+        local c, PE = T.new({})
+        PE:SetUISetting("size", size)
+        open(c, PE)
+        local M = PE.UI:Metrics()
+        local d = M.button * 0.75
+        local centres = {}
+        -- The face-button diamonds (press, close).
+        local boxes = {}
+        walk(c, guide(c), function(w)
+            if w.peFace and w:IsShown() then
+                local b = boxes[w.peGlyph] or { top = -math.huge, bottom = math.huge }
+                b.top, b.bottom = math.max(b.top, w:GetTop()), math.min(b.bottom, w:GetBottom())
+                boxes[w.peGlyph] = b
+            end
+        end)
+        for _, name in ipairs({ "press", "close" }) do
+            check(boxes[name], size .. ": no " .. name .. " picture")
+            centres[#centres + 1] = (boxes[name].top + boxes[name].bottom) / 2
+        end
+        -- The d-pad: its upright bar, a glyph-coloured texture d high.
+        local glyph = { 0.70, 0.70, 0.72 }
+        for _, r in ipairs(c._state(guide(c).peNavArea.child).regions) do
+            local st = c._state(r)
+            local col = st.color
+            if st.type == "Texture" and r:IsShown() and col and math.abs(col[1] - glyph[1]) < 1e-6
+                and math.abs(col[3] - glyph[3]) < 1e-6 then
+                local _, _, top, bottom = c._rect(r)
+                if math.abs((top - bottom) - d) < 0.01 then centres[#centres + 1] = (top + bottom) / 2 end
+            end
+        end
+        eq(#centres, 3, size .. ": pictures found")
+        check(math.abs(centres[1] - centres[2]) < 0.5 and math.abs(centres[2] - centres[3]) < 0.5,
+            size .. ": the pictures are not on one line (" .. table.concat(centres, ", ") .. ")")
+        for _, t in ipairs({ "Move the blue highlight", "Press it", "Close the window" }) do
+            local found = shownRegion(c, t)
+            check(found, size .. ": no " .. t)
+            local _, _, top = c._rect(found.region)
+            local mid = top - PE.UI:TextHeight(found.region, "font") / 2
+            check(math.abs(mid - centres[1]) < 0.5, size .. ": " .. t .. " is not centred on the pictures")
+        end
+        c:assertClean("controls card at " .. size)
+    end
+end)
+
+-- 0.15.0 (B8): the labels under the gold boxes of "Your screen" are as wide
+-- as they need ("Round button" wrapped at Large).
+test("setup: Your screen gives each gold box's label the width it needs", function()
+    for _, size in ipairs({ "small", "medium", "large" }) do
+        local c, PE = T.new({})
+        PE:SetUISetting("size", size)
+        open(c, PE)
+        goTo(c, AT.layout)
+        for _, t in ipairs({ "Round button", "Quest arrow" }) do
+            local found = shownRegion(c, t)
+            check(found, size .. ": no label " .. t)
+            check(found.region:GetWidth() >= PE.UI:TextWidth(t, "small"),
+                size .. ": " .. t .. " gets " .. found.region:GetWidth() .. ", needs " .. PE.UI:TextWidth(t, "small"))
+        end
+        c:assertClean("layout labels at " .. size)
+    end
+end)
+
 -- The live round button beside its two choices.
 local function hubPreview(c)
     local found
@@ -785,7 +882,7 @@ test("setup: Round button and chat shows a live round button that follows the co
     open(c, PE)
     goTo(c, AT.chat)
     check(hasText(c, "The PE button is always on screen."), "no lead line")
-    check(textWith(c, "Colour") and textWith(c, "Size of all Pocket Essentials buttons"), "no Colour or size rows")
+    check(textWith(c, "Round button colour") and textWith(c, "Size of all buttons"), "no Colour or size rows")
     switch(c, "chat")
     local preview = hubPreview(c)
     check(preview, "no round button picture")
@@ -806,16 +903,16 @@ test("setup: Round button and chat shows a live round button that follows the co
 end)
 
 -- The labels of the gold boxes in the screen picture.
-test("setup: Your screen shows a gold box for each of the three pieces, with Move things now beside it", function()
+test("setup: Your screen shows a gold box for each of the three pieces, with Open Move on screen beside it", function()
     local c, PE = T.new({})
     open(c, PE)
     goTo(c, AT.layout)
-    check(hasText(c, "This is where each piece sits to start with. Move any of them to suit your screen."), "no lead line")
-    for _, t in ipairs({ "Quest arrow", "Press A to type", "Round button", "Gold boxes show where each piece starts.",
+    check(hasText(c, "This is where each piece sits now. Move any of them to suit your screen."), "no lead line")
+    for _, t in ipairs({ "Quest arrow", "Press A to type", "Round button", "Gold boxes show where each piece is now.",
         "You can do this later too: Settings, General tab." }) do
         check(hasText(c, t), "Your screen has no \"" .. t .. "\"")
     end
-    button(c, "Move things now")
+    button(c, "Open Move on screen")
     c:assertClean("your screen")
 end)
 
@@ -840,11 +937,11 @@ test("setup: a moved round button moves its box in the screen picture", function
     check(labelTop("Round button") > before + 1, "the box did not follow the round button up")
 end)
 
-test("setup: Move things now hides the guide and opens Move on screen; closing it brings the guide back on the same screen", function()
+test("setup: Open Move on screen hides the guide and opens Move on screen; closing it brings the guide back on the same screen", function()
     local c, PE = T.new({ firstRun = true })
     c:advance(2)
     goTo(c, AT.layout)
-    c:click(button(c, "Move things now"))
+    c:click(button(c, "Open Move on screen"))
     c:advance(0.1)
     check(not isOpen(c), "the guide stayed open")
     check(moveOpen(c), "Move on screen did not open")
@@ -857,7 +954,7 @@ test("setup: Move things now hides the guide and opens Move on screen; closing i
     eq(at(PE), AT.layout .. " of " .. N)
     eq(bindings(c), ALL_KEYS)
     -- B closes Move the same way
-    c:click(button(c, "Move things now"))
+    c:click(button(c, "Open Move on screen"))
     c:advance(0.1)
     press(c, "B")
     c:advance(0.1)
@@ -866,7 +963,7 @@ test("setup: Move things now hides the guide and opens Move on screen; closing i
     c:assertClean("move things now")
 end)
 
-test("setup: Move the arrow in the guide behaves like Move things now, with the arrow picked", function()
+test("setup: Move the arrow in the guide behaves like Open Move on screen, with the arrow picked", function()
     if not T.questieDB then return end
     local c, PE = T.new({ quest = true, on = { "questArrow" } })
     open(c, PE)
@@ -888,7 +985,7 @@ test("setup: the guide does not come back over another window that closed Move o
     local c, PE = T.new({})
     open(c, PE)
     goTo(c, AT.layout)
-    c:click(button(c, "Move things now"))
+    c:click(button(c, "Open Move on screen"))
     c:advance(0.1)
     PE:OpenSettings()
     c:advance(0.2)
@@ -905,7 +1002,7 @@ test("setup: a fight while Move on screen is open brings the guide back on the s
     local c, PE = T.new({})
     open(c, PE)
     goTo(c, AT.layout)
-    c:click(button(c, "Move things now"))
+    c:click(button(c, "Open Move on screen"))
     c:advance(0.1)
     c:enterCombat()
     c:advance(0.1)
@@ -1350,7 +1447,7 @@ test("setup: Next pressed with A puts the highlight on the next screen's first c
         local stops = listStops(c)
         check(panel.peNavFocus == stops[1], screenId(PE) .. ": the highlight is on " .. focusName(c) .. ", not the first control")
     end
-    check(panel.peNavFocus == button(c, "Move things now"), "Your screen does not start on Move things now")
+    check(panel.peNavFocus == button(c, "Open Move on screen"), "Your screen does not start on Open Move on screen")
     -- All set has no controls: the highlight stays on Next (now Finish) and A finishes
     panel:NavSetFocus(nextButton(c))
     press(c, "A")
@@ -1364,7 +1461,7 @@ test("setup: Next pressed with A puts the highlight on the next screen's first c
     press(c, "A")
     c:advance(0.1)
     eq(screenId(PE), "layout")
-    check(panel.peNavFocus == button(c, "Move things now"), "after Back the highlight is on " .. focusName(c))
+    check(panel.peNavFocus == button(c, "Open Move on screen"), "after Back the highlight is on " .. focusName(c))
     panel:NavSetFocus(nextButton(c))
     press(c, "A")
     c:advance(0.1)
@@ -1595,7 +1692,7 @@ test("setup: the debug log says when Move on screen takes the guide's place and 
     local c, PE = T.new({ saved = { debug = { on = true } } })
     open(c, PE)
     goTo(c, AT.layout)
-    c:click(button(c, "Move things now"))
+    c:click(button(c, "Open Move on screen"))
     c:advance(0.1)
     c:click(shownButtons(c, movePanel(c), "Close")[1])
     c:advance(0.1)

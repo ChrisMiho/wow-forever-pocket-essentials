@@ -794,7 +794,7 @@ local function BuildGeneral(width)
     local y = 0
     y = list:Card(0, y, width, function(ix, iy, iw)
         local yy = iy
-        yy = list:ChoiceRow("Button size", Items(SIZE_CHOICES, M.size,
+        yy = list:ChoiceRow("Size of all buttons", Items(SIZE_CHOICES, M.size,
             function(v) PE:SetUISetting("size", v) end), ix, yy, iw)
         yy = list:ChoiceRow("Round button colour", Items(COLOR_CHOICES, ui.hubColor or "gold",
             function(v) PE:SetUISetting("hubColor", v) end), ix, yy, iw)
@@ -807,7 +807,7 @@ local function BuildGeneral(width)
     y = list:Card(0, y, width, function(ix, iy, iw)
         local yy = iy
         if PE.Move and PE.Move.Open then
-            yy = list:ActionRow("Move things on screen", "Open",
+            yy = list:ActionRow("Move on screen", "Open",
                 PE:Wrap("core", function() PE.Move:Open() end), ix, yy, iw)
         end
         if PE.Setup and PE.Setup.Open then
@@ -850,8 +850,11 @@ local function DebugCard(y, width)
         ty = ty + M.gap * 0.3
         ty = ty + list:Text("small", WithCommas(PE:DebugCount()) .. " of " .. WithCommas(PE.DEBUG_CAP) .. " lines",
             ix, ty, tw, COLOR.status) + M.gap * 0.3
-        list:Switch(ix + iw - sw, iy, on and "on" or "off", PE:Wrap("core", function() PE:SetDebug(not PE.debugOn) end))
-        local yy = max(iy + M.button, ty) + M.gap
+        -- Centred on the header, as a feature card's switch is.
+        local headerHeight = max(M.button, ty - iy)
+        list:Switch(ix + iw - sw, iy + (headerHeight - M.button) * 0.5, on and "on" or "off",
+            PE:Wrap("core", function() PE:SetDebug(not PE.debugOn) end))
+        local yy = iy + headerHeight + M.gap
         list:Divider(ix, yy - M.gap * 0.5, iw)
         yy = yy + M.gap * 0.5
         -- A reload is what writes the file. Called straight from the tap, in
@@ -1035,7 +1038,8 @@ local function BuildErrors(width)
     local catcher = PE.ErrorCatcher
     if catcher and PE:GetModule("errors") then
         local ok, nextY = PE:Safe("errors", list.FeatureCard, list, catcher, 0, y, width)
-        y = (ok and type(nextY) == "number") and nextY or (max(y, list.lowest) + M.gap)
+        -- Two gaps after it, as between the cards on every other tab.
+        y = ((ok and type(nextY) == "number") and nextY or (max(y, list.lowest) + M.gap)) + M.gap
     end
     local ok, nextY = PE:Safe("core", ViewerCard, y, width)
     if ok and type(nextY) == "number" then return nextY end
@@ -1047,7 +1051,13 @@ end
 ---------------------------------------------------------------------------
 
 local function BuildKey(width)
-    list:Button("Back", 0, 0, M.button * 3, M.button, "normal", PE:Wrap("core", function() PE:OpenSettings("questIcons") end))
+    local backWidth = M.button * 3
+    list:Button("Back", 0, 0, backWidth, M.button, "normal", PE:Wrap("core", function() PE:OpenSettings("questIcons") end))
+    -- The page's title right of Back, in the middle of its height.
+    local tx = backWidth + M.gap
+    local th, titleText = list:Text("title", "Quest icon key", tx, 0, max(width - tx, 10), COLOR.title, 1)
+    titleText:ClearAllPoints()
+    titleText:SetPoint("TOPLEFT", list.child, "TOPLEFT", tx, -max((M.button - th) * 0.5, 0))
     local y = M.button + M.gap
     local key = PE.QuestIconKey -- made when QuestIcons.lua loads, so read it here
     if type(key) ~= "table" or #key == 0 then
@@ -1276,9 +1286,11 @@ local function NavCross(focus, step, byRow)
         end
         return focus
     end
-    -- The viewer's Previous and Next: Left and Right move between errors
-    -- while there is one that way (else the usual move).
-    if focus.peErrorStep and ViewerStep(step) then
+    -- The viewer's Previous and Next: Left on Previous and Right on Next
+    -- move between errors while there is one that way. The other way (Right
+    -- from Previous, Left from Next) is the usual move, so Next and Clear all
+    -- can be reached on any error.
+    if focus.peErrorStep == step and ViewerStep(step) then
         local role = focus.peErrorStep
         Draw()
         -- The button of the same role after the redraw (pooled buttons may
@@ -1294,7 +1306,12 @@ local function NavCross(focus, step, byRow)
     if step < 0 then
         local column = PageColumn()
         for i, btn in ipairs(column) do
-            if btn == focus then
+            if btn == focus and focus == panel.closeButton and tab == "errors" and i > 1 then
+                -- Left from Close on the Errors page undoes Right from its
+                -- last stop: back to Clear all (or the scroll tabs), whatever
+                -- error shows (Right on Next pages instead of reaching it).
+                return column[i - 1]
+            elseif btn == focus then
                 if i == 1 or not UI:NavSameRow(column[i - 1], focus) then return ChosenTabButton() end
                 return nil
             end
@@ -1385,7 +1402,7 @@ local function QueueDraw()
     if drawQueued or not built or not panel:IsShown() then return end
     if C_Timer and C_Timer.After then
         drawQueued = true
-        C_Timer.After(0, QueuedDraw)
+        C_Timer.After(0, PE:Wrap("core", QueuedDraw))
     else
         Draw()
     end

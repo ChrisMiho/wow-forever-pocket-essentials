@@ -505,7 +505,46 @@ test("viewer: the message shows at most 3 lines and the stack at most 6", functi
     check(not c._state(st).text:find("f7", 1, true), "more than 6 stack lines")
 end)
 
-test("viewer: d-pad Left and Right on Previous and Next move between errors", function()
+-- 0.15.0 (B3): only Left on Previous and Right on Next move between errors;
+-- Right from Previous and Left from Next move the highlight as anywhere else.
+test("viewer: d-pad Left on Previous and Right on Next move between errors, the other way moves the highlight", function()
+    local c, PE = on()
+    threeErrors(c, PE)
+    openErrors(c, PE)
+    local panel, nav = settingsPanel(c), rawget(c.env, NAV_NAME)
+    local function key(k)
+        c:script(nav, "OnClick", k, true)
+        c:script(nav, "OnClick", k, false)
+    end
+    local prev = shownButtons(c, "< Previous")[1]
+    local n = 0
+    repeat key("RIGHT"); n = n + 1 until panel.peNavFocus == prev or n > 80
+    eq(countText(c), "1 of 3", "getting to Previous with Right moved the viewer")
+    key("RIGHT")
+    eq(countText(c), "1 of 3", "Right on Previous moved the viewer")
+    eq(T.labelOf(panel.peNavFocus), "Next >", "Right on Previous did not move the highlight to Next")
+    key("RIGHT")
+    eq(countText(c), "2 of 3")
+    eq(T.labelOf(panel.peNavFocus), "Next >", "the highlight left Next after Right")
+    key("RIGHT")
+    eq(countText(c), "3 of 3")
+    key("RIGHT") -- no more errors that way: the usual move
+    eq(countText(c), "3 of 3")
+    eq(T.labelOf(panel.peNavFocus), "Clear all")
+    key("LEFT")
+    eq(T.labelOf(panel.peNavFocus), "Next >")
+    key("LEFT")
+    eq(countText(c), "3 of 3", "Left on Next moved the viewer")
+    eq(T.labelOf(panel.peNavFocus), "< Previous", "Left on Next did not move the highlight to Previous")
+    key("LEFT")
+    eq(countText(c), "2 of 3")
+    eq(T.labelOf(panel.peNavFocus), "< Previous", "the highlight left Previous after Left")
+    PE:ClearErrors()
+    c:assertClean("d-pad")
+end)
+
+-- 0.15.0 (B3): Clear all can be reached while the first error shows.
+test("viewer: d-pad reaches Clear all from the first error", function()
     local c, PE = on()
     threeErrors(c, PE)
     openErrors(c, PE)
@@ -517,25 +556,17 @@ test("viewer: d-pad Left and Right on Previous and Next move between errors", fu
     local nextButton = shownButtons(c, "Next >")[1]
     local n = 0
     repeat key("RIGHT"); n = n + 1 until panel.peNavFocus == nextButton or n > 80
-    -- Getting there with Right moved the viewer on from Previous; start over from the first error.
-    key("LEFT")
-    key("LEFT")
     eq(countText(c), "1 of 3")
-    check(T.labelOf(panel.peNavFocus) == "Next >", "the highlight left Next")
-    key("RIGHT")
-    eq(countText(c), "2 of 3")
-    check(T.labelOf(panel.peNavFocus) == "Next >", "the highlight left Next after Right")
-    key("RIGHT")
-    eq(countText(c), "3 of 3")
-    key("RIGHT") -- no more errors that way: the usual move
-    eq(countText(c), "3 of 3")
-    eq(T.labelOf(panel.peNavFocus), "Clear all")
+    -- Down leaves the row for Close; Left from Close comes back to Clear all.
+    key("DOWN")
+    check(panel.peNavFocus == panel.closeButton, "Down from Next did not reach Close")
     key("LEFT")
-    eq(T.labelOf(panel.peNavFocus), "Next >")
-    key("LEFT")
-    eq(countText(c), "2 of 3")
-    PE:ClearErrors()
-    c:assertClean("d-pad")
+    eq(T.labelOf(panel.peNavFocus), "Clear all", "Left from Close did not reach Clear all")
+    eq(countText(c), "1 of 3", "the viewer moved on the way to Clear all")
+    key("A")
+    c:advance(0.2)
+    check(shownText(c, "No errors recorded."), "A on Clear all did not empty the list")
+    c:assertClean("clear from first")
 end)
 
 -- Spec "No scroll bar": the Errors page fits at every button size.
@@ -641,19 +672,78 @@ test("viewer: d-pad paging keeps the highlight on the same button, Previous or N
         c:script(nav, "OnClick", k, true)
         c:script(nav, "OnClick", k, false)
     end
-    local prev = shownButtons(c, "< Previous")[1]
+    local nextButton = shownButtons(c, "Next >")[1]
     local n = 0
-    repeat key("RIGHT"); n = n + 1 until panel.peNavFocus == prev or n > 40
+    repeat key("RIGHT"); n = n + 1 until panel.peNavFocus == nextButton or n > 40
     eq(countText(c), "1 of 3")
     key("RIGHT")
     eq(countText(c), "2 of 3")
-    eq(T.labelOf(panel.peNavFocus), "< Previous", "Right on Previous moved the highlight")
-    check(panel.peNavFocus:IsVisible() and panel.peNavFocus.peErrorStep == -1, "the highlight is not on the shown Previous")
+    eq(T.labelOf(panel.peNavFocus), "Next >", "Right on Next moved the highlight")
+    check(panel.peNavFocus:IsVisible() and panel.peNavFocus.peErrorStep == 1, "the highlight is not on the shown Next")
+    key("LEFT") -- onto Previous
     key("LEFT")
     eq(countText(c), "1 of 3")
     eq(T.labelOf(panel.peNavFocus), "< Previous", "Left on Previous moved the highlight")
+    check(panel.peNavFocus:IsVisible() and panel.peNavFocus.peErrorStep == -1, "the highlight is not on the shown Previous")
     PE:ClearErrors()
     c:assertClean("paging focus")
+end)
+
+-- 0.15.0 (B7): the Debug log switch sits in the middle of its card's header,
+-- as every feature switch does, not at the top.
+test("debug tab: the switch is centred on the card's header", function()
+    local c, PE = T.new({})
+    for _, size in ipairs({ "small", "medium", "large" }) do
+        PE:SetUISetting("size", size)
+        PE:OpenSettings("debug")
+        c:advance(0.2)
+        local M = PE.UI:Metrics()
+        local sw
+        walkAll(c, settingsPanel(c), function(w)
+            if w.peSwitchState and w:IsVisible() then sw = w end
+        end)
+        check(sw, size .. ": no switch")
+        local name, count -- in the page, not the tab of the same name
+        for _, r in ipairs(c._state(settingsPanel(c).peNavArea.child).regions) do
+            local st = c._state(r)
+            if st.type == "FontString" and st.text and r:IsVisible() then
+                if st.text == "Debug log" then name = r end
+                if st.text:find(" lines$") then count = r end
+            end
+        end
+        check(name and count, size .. ": no name or line count")
+        local _, _, top = c._rect(name)
+        local _, _, countTop = c._rect(count)
+        local countBottom = countTop - PE.UI:TextHeight(count, "small")
+        local header = math.max(M.button, top - countBottom + M.gap * 0.3)
+        local _, _, st, sb = c._rect(sw)
+        check(near((st + sb) / 2, top - header / 2), size .. ": the switch is not centred on the header ("
+            .. (st + sb) / 2 .. ", not " .. (top - header / 2) .. ")")
+    end
+    c:assertClean("debug switch")
+end)
+
+-- 0.15.0 (B7): two gaps between the Errors page's cards, as on every other tab.
+test("errors tab: two gaps between the Catch all errors card and the viewer", function()
+    local c, PE = on()
+    openErrors(c, PE)
+    local M = PE.UI:Metrics()
+    local want = PE.UI.COLORS.card
+    local fills = {}
+    for _, r in ipairs(c._state(settingsPanel(c).peNavArea.child).regions) do
+        local st = c._state(r)
+        local col = st.color
+        if st.type == "Texture" and r:IsShown() and col and near(col[1], want[1], 1e-6)
+            and near(col[2], want[2], 1e-6) and near(col[3], want[3], 1e-6) then
+            local _, _, top, bottom = c._rect(r)
+            fills[#fills + 1] = { top = top, bottom = bottom }
+        end
+    end
+    table.sort(fills, function(a, b) return a.top > b.top end)
+    eq(#fills, 2, "cards on the Errors page")
+    local gap = fills[1].bottom - fills[2].top
+    check(near(gap, 2 * M.gap), "the gap between the cards is " .. gap .. ", not " .. 2 * M.gap)
+    c:assertClean("errors gaps")
 end)
 
 -- Review fix 4: a repeat of an error already listed redraws the open viewer.
@@ -708,7 +798,7 @@ test("back-fill: an error of ours seen 3 times before login is logged once with 
 end)
 
 -- Review fix 6: the unequal parts are only for the filter row.
-test("row rule: the Button size row at Large keeps equal parts", function()
+test("row rule: the Size of all buttons row at Large keeps equal parts", function()
     local c, PE = T.new({})
     PE:SetUISetting("size", "large")
     PE:OpenSettings("general")

@@ -491,7 +491,7 @@ end)
 test("general: two cards with the core rows, I play with saves touch and moves the Sort button", function()
     local c, PE = T.new({})
     openSettings(c, PE, "general")
-    for _, name in ipairs({ "Button size", "Round button colour", "I play with", "Move things on screen", "Setup guide",
+    for _, name in ipairs({ "Size of all buttons", "Round button colour", "I play with", "Move on screen", "Setup guide",
         "Reload the interface" }) do
         check(shownText(c, name), "no row " .. name)
     end
@@ -517,7 +517,7 @@ test("general: two cards with the core rows, I play with saves touch and moves t
     c:assertClean("general")
 end)
 
-test("general: Button size and Round button colour are segmented choices that save at once", function()
+test("general: Size of all buttons and Round button colour are segmented choices that save at once", function()
     local c, PE = T.new({})
     openSettings(c, PE, "general")
     c:click(shownButtons(c, "Large")[1])
@@ -557,6 +557,17 @@ test("icon key: an Icon key row opens the key page; Back returns to the Quest ic
     eq(settingsPanel(c).peTitle:GetText(), "Pocket Essentials")
     local back = shownButtons(c, "Back")[1]
     check(back and near(back:GetWidth(), PE.UI:Metrics().button * 3), "no Back button three buttons wide")
+    -- 0.15.0 (B6): the page's title right of Back, in the middle of its height.
+    local titleText
+    for _, r in ipairs(c._state(settingsPanel(c).peNavArea.child).regions) do
+        local st = c._state(r)
+        if st.type == "FontString" and st.text == "Quest icon key" and r:IsVisible() then titleText = r end
+    end
+    check(titleText, "no Quest icon key title on the key page")
+    local tl, _, tt = c._rect(titleText)
+    local _, br, bt, bb = c._rect(back)
+    check(tl > br, "the title is not right of Back")
+    check(near(tt - PE.UI:TextHeight(titleText, "title") / 2, (bt + bb) / 2, 0.5), "the title is not centred on Back")
     for _, d in ipairs({ "A creature to kill.", "A creature that drops a quest item.", "An object to click, use or open.",
         "A place to go to, or someone to talk to.", "Where to hand the quest in.", "Tap an icon on the map to see what it is for." }) do
         check(shownText(c, d), "missing: " .. d)
@@ -1077,6 +1088,34 @@ test("scroll bar: the arrow tabs dim at the ends and page like Up and Down did",
     c:click(area.upButton)
     check(area.offset < area:GetRange(), "the up tab did not page")
     c:assertClean("scroll bar tabs")
+end)
+
+-- 0.15.0 (B9): the tabs draw our arrow picture (up, and turned over for
+-- down) inside the tab, tinted like the tab's text, instead of "^" and "v".
+test("scroll bar: the arrow tabs draw the arrow picture, not letters, tinted like their text", function()
+    local c, PE = T.new({})
+    local area, m = bareArea(c, PE, true, 4000)
+    for name, btn in pairs({ up = area.upButton, down = area.downButton }) do
+        local icon = btn.peIcon
+        check(icon, name .. ": no arrow picture")
+        eq(icon:GetTexture(), "Interface\\AddOns\\PocketEssentials\\Icons\\arrow", name .. ": the picture")
+        check(icon:IsVisible(), name .. ": the picture is hidden")
+        check(not btn.peText:IsVisible() or (btn.peText:GetText() or "") == "", name .. ": a letter shows on the tab")
+        local il, ir, it, ib = c._rect(icon)
+        local bl, br, bt, bb = c._rect(btn)
+        check(il >= bl - 0.01 and ir <= br + 0.01 and it <= bt + 0.01 and ib >= bb - 0.01, name .. ": the picture is outside the tab")
+        check(ir - il > (br - bl) * 0.4, name .. ": the picture is too small for the tab")
+        local _, top, _, bottom = icon:GetTexCoord()
+        if name == "up" then check(top < bottom, "up: the picture is turned over") else check(top > bottom, "down: the picture is not turned over") end
+        for _, style in ipairs({ "step", "stepDim" }) do
+            btn:SetStyle(style)
+            local tc = c._state(btn.peText).textColor
+            local tr, tg, tb = tc[1], tc[2], tc[3]
+            local vr, vg, vb = icon:GetVertexColor()
+            check(near(tr, vr) and near(tg, vg) and near(tb, vb), name .. ", " .. style .. ": the picture is not tinted like the text")
+        end
+    end
+    c:assertClean("scroll bar arrows")
 end)
 
 test("touch: not asked yet reads as yes; only an explicit no hides the bar", function()
