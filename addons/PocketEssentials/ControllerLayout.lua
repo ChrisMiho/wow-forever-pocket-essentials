@@ -1812,9 +1812,20 @@ local function RewritePieces(filter, key)
 end
 
 -- OnChange of a row: rewrites its pieces in our layout.
+local function NONE() return false end
+
 local function LayoutRow(key)
     return function()
-        RewritePieces(REWRITES[key], key)
+        local filter = REWRITES[key]
+        -- A size change that leaves the frames at the same height (for example 80%
+        -- to 100%) rewrites no frame, so moves made in Edit Mode stay; the reload
+        -- is still asked for (the pictures and the real bars take the new size).
+        if key == "panelSize"
+            and Geometry({ panelSize = applied.panelSize }).frameY
+                == Geometry({ panelSize = mod.opts.panelSize }).frameY then
+            filter = NONE
+        end
+        RewritePieces(filter, key)
     end
 end
 

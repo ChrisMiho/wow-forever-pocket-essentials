@@ -14,9 +14,10 @@ Probe is unchanged (0.7.0).
 
 ### Added
 
-- **Spell panel size** (Controller tab): 80% to 120%. The pictures, the
-  game's hidden bars and the frames all follow; at 110% and 120% your frame
-  and your target's rise above the panels. A change needs a reload (the card
+- **Spell panel size** (Controller tab): 80% to 120%. The pictures and the
+  game's hidden bars follow; at 110% and 120% your frame and your target's
+  rise above the panels (between 80% and 100% the frames stay where they
+  are, including where you moved them in Edit Mode). A change needs a reload (the card
   shows Reload now); in a fight it waits for the fight to end.
 
 ### Changed

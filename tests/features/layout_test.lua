@@ -2952,6 +2952,18 @@ test("size: a change rewrites the frames and asks for a reload; after it the bar
     c2:assertClean()
 end)
 
+-- 0.15.0 review: a size that leaves the frames at the same height (80% to 100%) must not throw away
+-- where the player put them in Edit Mode; only 110% and 120% move them.
+test("size: a change that leaves the frames' height alone keeps the frames where the player put them", function()
+    local c, PE = onClient()
+    systemEntry(ours(c), SYS.UnitFrame, 2).anchorInfo.offsetX = 222   -- moved in Edit Mode
+    choose(c, PE, "panelSize", 90)
+    eq(systemEntry(ours(c), SYS.UnitFrame, 2).anchorInfo.offsetX, 222, "the target frame was put back")
+    eq(systemEntry(ours(c), SYS.UnitFrame, 1).anchorInfo.offsetY, 56, "the player frame moved")
+    eq(reloadReason(PE), RELOAD)
+    c:assertClean()
+end)
+
 test("size: a change in a fight waits for it to end, and the card says so", function()
     local c, PE = onClient()
     c:enterCombat()

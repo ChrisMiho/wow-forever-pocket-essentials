@@ -231,8 +231,10 @@ local function SellStep(r)
             -- for us, and it may not have told us so: stop, so its warning
             -- cannot come back once for every grey item.
             r.checked = true
+            r.unchecked = e
             sellJunk:After(SELL_CHECK_DELAY, function()
                 if run ~= r or r.stopped then return end
+                r.unchecked = nil
                 if JunkAt(e.bag, e.slot) == e.itemID then
                     CountSale(r, e, -1)
                     if PE.debugOn then
@@ -275,6 +277,12 @@ local function SellEnd(why)
     run = nil
     if r then
         if PE.debugOn and not r.stopped then PE:Debug("sellJunk", "stopped: " .. why) end
+        -- Closed before the first sale was looked at again: count it only if it went.
+        local e = r.unchecked
+        if e then
+            r.unchecked = nil
+            if JunkAt(e.bag, e.slot) == e.itemID then CountSale(r, e, -1) end
+        end
         SellReport(r)
     end
 end

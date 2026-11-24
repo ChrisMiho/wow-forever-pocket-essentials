@@ -354,6 +354,33 @@ test("sell junk: a first sale that did not go is not counted", function()
     eq(#lineStartingWith(c, "Sold "), 0, "reported a sale that did not happen")
 end)
 
+-- 0.15.0 review: the vendor closed before the first sale was looked at again (within 1 s) must
+-- not report an item the game silently kept, and must still report one that went.
+test("sell junk: closing before the first sale is checked counts it only if it went", function()
+    local c = visit({ on = { "sellJunk" } }, function(c)
+        put(c, 0, 1, item(1471, 0, 20))
+        put(c, 0, 2, item(1472, 0, 20))
+    end)
+    local real = c.env.C_Container.UseContainerItem
+    c.env.C_Container.UseContainerItem = function() end   -- the game sells nothing and says nothing
+    c:openMerchant()
+    c:advance(0.5)
+    c:closeMerchant()
+    c:advance(5)
+    c.env.C_Container.UseContainerItem = real
+    eq(#lineStartingWith(c, "Sold "), 0, "reported a sale that did not happen")
+
+    local c2 = visit({ on = { "sellJunk" } }, function(c2)
+        put(c2, 0, 1, item(1473, 0, 20))
+        put(c2, 0, 2, item(1474, 0, 20))
+    end)
+    c2:openMerchant()
+    c2:advance(0.5)
+    c2:closeMerchant()
+    c2:advance(5)
+    eq(#lineStartingWith(c2, "Sold 1 junk item for "), 1, "the sale that went was not reported")
+end)
+
 test("sell junk: the chat line uses the plain 'Xg Ys Zc' form when the game has no coin text", function()
     local c = visit({ on = { "sellJunk" } }, function(c)
         put(c, 0, 1, item(1411, 0, 12345))

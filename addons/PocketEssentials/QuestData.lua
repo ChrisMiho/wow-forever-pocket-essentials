@@ -556,9 +556,25 @@ local function BuildObjectives(out, q, blizz)
 end
 
 -- Returns { [uiMapID] = { pin, ... } } for one quest.
+-- Throws away whatever a quest that failed half way left in the scratch tables,
+-- so none of its spots land in the next quest's pins.
+local function Discard()
+    for j = 1, bufN do
+        bufQuest[j], bufText[j], bufTarget[j], bufInside[j], bufObjs[j] = nil, nil, nil, nil, nil
+    end
+    bufN = 0
+    for _, g in pairs(groups) do wipe(g) end
+    wipe(mapSpots)
+    wipe(mapQuota)
+    wipe(mapAt)
+    wipe(mapNext)
+    wipe(seen)
+    bufObj = nil
+end
+
 local function BuildQuest(q, blizz, complete)
     local out = {}
-    Flush(out)   -- start clean, even if the quest before this one failed half way
+    Discard()   -- start clean, even if the quest before this one failed half way
     if not complete then
         local known = BuildObjectives(out, q, blizz)
         -- Nothing to do but hand it in (a "deliver this" quest).

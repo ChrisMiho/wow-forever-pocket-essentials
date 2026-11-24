@@ -63,6 +63,30 @@ test("quest data: an objective spread over many maps keeps about 300 spots in al
     check(total >= MAX_PINS * 0.8, "quest 889 kept only " .. total .. " spots")
 end)
 
+-- 0.15.0 review: a quest that fails half way (here an error inside Flush, after its pins were
+-- made) must leave nothing behind for the next quest: no spots of its own in the next one's pins.
+test("quest data: a quest that fails half way leaves none of its spots to the next quest", function()
+    local c, PE = T.new({ quest = true, on = { "questIcons" }, setup = function(c)
+        QW.setup(c, { quests = { { id = SPREAD }, { id = BUSY } } })
+    end })
+    local QD = PE.QuestData
+    local failed = false
+    QD._groupHook = function(questID)
+        if questID == SPREAD and not failed then
+            failed = true
+            error("test: a quest that fails half way")
+        end
+    end
+    c:advance(1.2)
+    QD._groupHook = nil
+    check(failed, "the failing quest was never built")
+    for mapID, list in pairs(QD:GetPinsForQuest(BUSY)) do
+        for _, pin in ipairs(list) do
+            check(pin.questID == BUSY, "quest " .. BUSY .. " has a spot of quest " .. tostring(pin.questID) .. " on map " .. mapID)
+        end
+    end
+end)
+
 -- Spec C3 (the limit still holds on a busy map) and QuestData.lua MAX_PINS.
 test("quest data: a map with more than 300 spots of one objective keeps 300", function()
     local _, PE = newData({ BUSY })
