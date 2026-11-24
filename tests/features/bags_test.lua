@@ -274,6 +274,32 @@ test("bags: the Sort button choice hides the tab, the left stick still sorts, an
     check(btn:IsVisible(), "tab not shown again after Show")
 end)
 
+-- Spec 0.15.0 D4: the tab sits outside the bag's left edge, over the bank's bag slots, so it
+-- hides while the bank is open. The stick still sorts there.
+test("bags: the Sort tab hides while the bank is open, the stick still sorts, and it comes back after", function()
+    local c = newBags()
+    c:openBag()
+    local btn = sortButton(c)
+    check(btn:IsVisible(), "tab not shown")
+    c:openBank()
+    check(not btn:IsVisible(), "tab shown over the bank")
+    eq(bindings(c), { PADLSTICK = "PocketEssentialsBagSortKey" })
+    c:script(keyButton(c), "OnClick", "LeftButton", false)
+    eq(sorts(c), 1, "the stick did not sort at the bank")
+    c:closeBank()
+    check(btn:IsVisible(), "tab not back after the bank closed")
+    c:assertClean("bank")
+end)
+
+test("bags: the bag opened with the bank already open shows no Sort tab", function()
+    local c = newBags()
+    c:openBank()
+    c:openBag()
+    check(not sortButton(c):IsVisible(), "tab shown over the bank")
+    c:closeBank()
+    check(sortButton(c):IsVisible(), "tab not back after the bank closed")
+end)
+
 -- Bags.lua OnSortTapped -> DoSort: one C_Container.SortBags per tap while the bag is open.
 test("bags: tapping Sort with the bag open calls SortBags once", function()
     local c = newBags()
@@ -977,6 +1003,22 @@ test("d-pad to Sort: hiding the Sort button removes the route and showing it put
     is(rawget(sortButton(c), RIGHT), nil)
     chooseOption(c, "showTab", true)
     eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN)
+end)
+
+-- Spec 0.15.0 D4: with the bank open the tab is hidden, so the d-pad route treats it as gone.
+test("d-pad to Sort: the bank opening removes the route and A, and closing it puts the route back", function()
+    local c, grid = newPad()
+    c:openBag()
+    eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN)
+    focusTab(c, grid)
+    eq(confirmBindings(c), { PAD1 = CONFIRM })
+    c:openBank()
+    eq(leftJumps(grid, sortButton(c)), {})
+    is(rawget(sortButton(c), RIGHT), nil)
+    eq(next(confirmBindings(c) or {}), nil, "A still taken with the tab hidden")
+    c:closeBank()
+    eq(leftJumps(grid, sortButton(c)), FIRST_COLUMN)
+    c:assertClean("bank route")
 end)
 
 -- 15. Plan: "clears overrides ... on switch-off"; in a fight, after it.
