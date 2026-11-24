@@ -430,6 +430,17 @@ per objective". The owner has more Quest icons ideas to bring after testing.
 Spec `docs/superpowers/specs/2026-11-18-tidier-settings.md`; device steps
 `docs/TESTING.md` 14.
 
+**0.16.0 (2026-11-24, untested):** the playing screen's arrangement, the
+first half of the redesign (the slim bars are 0.17.0). Controller layout gets
+a new arrangement (chat without its box at the left edge, quest list top
+right, buffs along the top, map at the bottom middle with a black border,
+swing timers above it, the PE button in the bottom left corner), two rows
+(Controls reminder, Map buttons) and an overlap check in every state. Pocket
+Probe 0.8.0 adds "Buffs in a fight" trials. Spec
+`docs/superpowers/specs/2026-11-24-playing-screen-layout-design.md` (with
+"As built"); device steps `docs/TESTING.md` 30; pre-release `v0.16.0` with
+both zips.
+
 **0.15.0 (2026-11-24, untested):** polish before the first public post (the
 owner: "without asking questions, apply polish to this addon suite, ironing
 out bugs and refining the existing features ... I want to make a Reddit post

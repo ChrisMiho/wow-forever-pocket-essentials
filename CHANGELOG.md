@@ -4,6 +4,48 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.16.0] - 2026-11-24
+
+Thirty-second test build: the playing screen's arrangement (the first half;
+the slim bars follow in 0.17.0). Spec
+`docs/superpowers/specs/2026-11-24-playing-screen-layout-design.md`. Not yet
+tested on a device. Pocket Probe goes to 0.8.0 (bundled in the pre-release;
+it is for testing only).
+
+### Changed
+
+- **Controller layout, a new arrangement** (Rebuild the layout once after
+  updating): the chat sits at the left edge with its tabs in a row above the
+  text and no dark box behind it; the quest list sits at the right edge from
+  the top; your buffs and debuffs run along the top, left of the quest list;
+  the map sits at the bottom middle with a plain black border instead of the
+  gold ring; the place name and clock sit right under it; the three swing
+  timers stack above the map; the green and red targeting pictures (LB and RB)
+  moved off the "LB + LT" and "RB + RT" prompts; the tooltip sits at the right
+  edge above your target's frame. Nothing overlaps at any Spell panel size.
+- **The PE button's first spot** follows the layout: bottom left corner while
+  the layout is on, where it was when it is off. A spot you chose with Move on
+  screen stays as you set it.
+
+### Added
+
+- **Controls reminder** (Controller tab): On or Off, default Off. On shows
+  the game's own box of button hints while the layout is on.
+- **Map buttons** (Controller tab): Shown or Hidden, default Hidden. They are
+  the magnifier and the calendar beside the place name. Switching the layout
+  off puts everything back: the chat box, the map's ring, both buttons, the
+  reminder.
+- **Pocket Probe 0.8.0:** "Buffs in a fight" trials (what a fight leaves
+  readable of the target's and your pet's buffs), run from the Fight button
+  and Run all. While the layout is on, Stop and Fight sit on the left edge
+  above the chat.
+
+### Not yet
+
+- The player, pet, target and target of target frames are still the game's;
+  the slim bars replace them in 0.17.0, built on the probe's results.
+- A pop-up whisper window may still show its dark box.
+
 ## [0.15.0] - 2026-11-24
 
 Thirty-first test build: polish before the first public post. Every file was

@@ -1759,3 +1759,57 @@ Things to watch for (known, not fixed):
   where the game's hidden button is.
 - The game's page number sits just above the left panel.
 - Pet and possess bar pictures show no cooldown.
+
+### 30. Version 0.16.0: the playing screen's arrangement; Pocket Probe 0.8.0
+
+**What this is for.** The first half of the new playing screen: with the
+Controller layout on, the chat, quest list, buffs, map, timers, targeting
+pictures, tooltip and PE button move to new spots and nothing should overlap.
+The slim bars come in 0.17.0, built on what the probe finds here. Spec
+`docs/superpowers/specs/2026-11-24-playing-screen-layout-design.md`. Download:
+the GitHub pre-release **v0.16.0** (both zips: Pocket Essentials and
+PocketProbe). Turn the **Debug log** on before you start.
+
+1. In `AddOns`, delete the old `PocketEssentials` folder (keep `QuestieDB`)
+   and unzip the new one; put the new `PocketProbe` folder in as well. Fully
+   restart the game and log in. Controller tab: **Rebuild the layout**, then
+   reload once when it asks.
+2. **The arrangement, screenshot it.** Chat at the left edge, tabs in a row
+   above the text, no dark box; quest list at the top right; buffs along the
+   top; map at the bottom middle with a plain black ring; place name and clock
+   under it; three swing timers above it; the PE button in the bottom left
+   corner. Screenshot at rest and while holding LT, RT and both.
+3. **The five collisions** from your 2026-11-24 screenshots: is any piece
+   still on top of another? Name each one that is.
+4. **Chat:** open the chat and type. Does the dark box stay gone? Do all five
+   tabs still switch? Does a long message wrap inside the chat? A pop-up
+   whisper window may still show its box: that is expected for now.
+5. **Controls reminder:** On, then Off. On shows the game's hint box in the
+   top left; Off hides it. Does it overlap anything?
+6. **Map buttons:** Hidden (the default) shows only the place name and clock;
+   Shown adds the magnifier and the calendar. Switch Hidden then Shown: does
+   the map jump? Do the buttons work when Shown?
+7. **Spell panel size** 100%, then 120% (Reload now each time): do the chat,
+   the PE button, the tooltip and your frames stay clear of the panels?
+8. **Tooltip:** point at a target and at an item. Is the tooltip above your
+   target's frame, and does a tall one reach the quest list?
+9. **PE button:** move it with "Move on screen", then switch the layout off
+   and on again. Tell me where the button ends up.
+10. **Layout off puts everything back.** Switch the layout off and reload:
+    the chat box, the map's gold ring, the two map buttons and the controls
+    reminder are as before.
+11. **The probe, Fight tests.** Have your pet out and a debuff on your target.
+    The Fight button is on the left edge above the chat (not beside the PE
+    button) while the layout is on. Tap it once and wait for the tick. Then
+    open the probe's window and take a **performance recording** in town, and
+    another in a fight.
+12. Settings, tab **Errors**: screenshot it. Send me
+    `SavedVariables/PocketEssentials.lua`, `SavedVariables/PocketProbe.lua`
+    and the screenshots.
+
+Things to watch for (known, not fixed):
+- A pop-up whisper window still shows its dark box.
+- A wheel or the "new spell" picture opened from a spell button appears where
+  the game's hidden button is.
+- With Map buttons Shown, the magnifier's left edge may not take a tap.
+- A full row of eleven buffs may reach the quest arrow's top spot.

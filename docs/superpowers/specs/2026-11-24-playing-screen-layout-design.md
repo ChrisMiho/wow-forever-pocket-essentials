@@ -165,6 +165,20 @@ as `ControllerLayout.lua` has them; each number's source is cited there.
 - Left as the game has them: each "LB + LT" / "RB + RT" prompt reaches 1 into its own sub-menu
   button (one piece of the game's), and 9 into the top two game bars while they show at full
   size (only while our pictures are off; as in 0.15.0).
+- Probe, Stop and Fight buttons: there was no room beside the PE button's new spot (Stop
+  overlapped the pet frame by 6 units, Fight more; the other sides hit the screen edge, the
+  chat or the player frame). While the controller layout is placed they sit on the left edge
+  above the chat (x 10, Stop's bottom 30 over the chat's top: 445 up at 80% to 100%, 517 at
+  110%, 522 at 120%), Fight to the right of Stop; checked clear of every rectangle at every
+  size. Without the layout they sit beside the PE button as before.
+- Probe, the four buff trials have no row of their own in the probe's window (its ten tabs
+  were full and an eleventh would break the tap-size rule); they run from the Fight button
+  and Run all, and their results are saved and read by `scripts/read-probe.sh` as usual.
+- Chat: the dark box is hidden by hiding its textures as well as setting its see-through to
+  0, because the game's fade-in would otherwise bring it back to at least 0.25. A pop-up
+  whisper window keeps its box for now.
+- Map buttons Hidden also hides the addon badge under the calendar button, so it does not
+  float alone.
 - Not settled: a full row of 11 buffs reaches x -47, into the quest arrow's "top" spot (the
   arrow is not part of the layout); a short row does not.
 
