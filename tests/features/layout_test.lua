@@ -1706,7 +1706,8 @@ end)
 test("migrate: old prev moved or dropped once", function()
     -- A 0.11.0 saved file: one layout to go back to for the whole account.
     local function oldFile(on)
-        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { prev = { name = "Mine", layoutType = 2 } } } }
+        -- (template 2: only the migration is tested here; the rebuild of an older layout has its own tests)
+        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { template = 2, prev = { name = "Mine", layoutType = 2 } } } }
     end
     local ours = saved(NAME)
     -- Ours active on the character logging in: it becomes this character's entry.
@@ -1738,7 +1739,7 @@ end)
 
 test("migrate: a 0.11.1 entry by name moves into this character's own file once", function()
     local function namedFile(on)
-        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { prevs = {
+        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { template = 2, prevs = {
             [KEY] = { name = "Mine", layoutType = 2 }, ["Bee-Camelot"] = { preset = 0 } } } } }
     end
     local ours = saved(NAME)
@@ -2024,6 +2025,155 @@ test("bars: the targeting pictures and the target of target are never moved in a
     eq(totCalls(c) - calls, 0, "the target of target touched in a fight")
     c:leaveCombat()
     c:assertClean()
+end)
+
+
+---------------------------------------------------------------------------
+-- Getting the new arrangement without taps (0.12.0 spec): the template version
+---------------------------------------------------------------------------
+
+-- An entry of a saved layout by system number and index (the per-character block above
+-- names another helper entryOf).
+local function systemEntry(layout, system, index)
+    for _, e in ipairs(layout.systems) do
+        if e.system == system and (index == nil or e.systemIndex == index) then return e end
+    end
+    return nil
+end
+
+local UPDATED = "The controller layout was updated to the new arrangement. Open the settings and tap Reload now to finish."
+
+local function saidIn(c, text)
+    local n = 0
+    for _, line in ipairs(c.chat) do if line:find(text, 1, true) then n = n + 1 end end
+    return n
+end
+
+-- Tester on our layout as 0.11.x left it: no template number saved, our layout's map where
+-- 0.11.x put it, the player's own character layout "Mine" saved beside it.
+local function oldTester()
+    local a = testerOn()
+    local file = db(a)
+    file.options.ctrlLayout.template = nil
+    local list = deepCopy(a.world.layouts.layouts)
+    systemEntry(list[1], SYS.Minimap).anchorInfo.offsetY = 44
+    list[#list + 1] = saved("Mine", 2)
+    return file, list, charDB(a)
+end
+
+test("template: an older layout is rebuilt once at login, asks the reload and says so", function()
+    local file, list, char = oldTester()
+    local mine = deepCopy(list[2])
+    local c, PE = login(file, list, 4, { char = char })
+    eq(checkSaves(c), 1)
+    eq(c.world.layouts.activeLayout, 4, "ours is not the active one any more")
+    local map = systemEntry(ours(c), SYS.Minimap)
+    eq(map.anchorInfo.offsetY, 38, "not rebuilt from the template")
+    eq(c.world.layouts.layouts[2], mine, "the player's own layout changed")
+    eq(opts(PE).template, PE.LayoutPlan.TEMPLATE)
+    eq(reloadReason(PE), RELOAD)
+    eq(saidIn(c, UPDATED), 1)
+    c:assertClean()
+end)
+
+test("template: the next login does nothing", function()
+    local file, list, char = oldTester()
+    local c = login(file, list, 4, { char = char })
+    local c2, PE2 = login(db(c), c.world.layouts.layouts, 4, { char = charDB(c) })
+    eq(layoutCalls(c2), 0)
+    eq(reloadReason(PE2), nil)
+    eq(saidIn(c2, UPDATED), 0)
+    eq(statusText(PE2), USING)
+    c2:assertClean()
+end)
+
+test("template: in a fight it waits and the status line says so", function()
+    local file, list, char = oldTester()
+    local c, PE = login(file, list, 4, { char = char, setup = function(c) c.world.inCombat = true end })
+    eq(layoutCalls(c), 0, "a layout call in a fight")
+    eq(statusText(PE), "Updating the layout after this fight.")
+    c:leaveCombat()
+    c:advance(0.1)
+    eq(checkSaves(c), 1)
+    eq(systemEntry(ours(c), SYS.Minimap).anchorInfo.offsetY, 38)
+    eq(saidIn(c, UPDATED), 1)
+    eq(statusText(PE), USING)
+    c:assertClean()
+end)
+
+test("template: waiting for the game's layouts says so", function()
+    local file, list, char = oldTester()
+    local c, PE = login(file, list, 4, { char = char, setup = function(c) c.world.editModeReady = false end })
+    eq(layoutCalls(c), 0)
+    eq(statusText(PE), "Waiting for the game's layouts.")
+    c.world.editModeReady = true
+    c:fire("EDIT_MODE_LAYOUTS_UPDATED")
+    eq(checkSaves(c), 1)
+    eq(statusText(PE), USING)
+    c:assertClean()
+    -- With the switch off the wait shows too, under the usual line.
+    local a, PEa, b = testerAndBee()
+    switchOff(a, PEa)
+    local c2, PE2 = login(db(a), b.world.layouts.layouts, 4, { char = charDB(b), setup = function(c2) c2.world.editModeReady = false end })
+    eq(PE2:GetModule("ctrlLayout"):status(), { "Waiting for the game's layouts.", OFF_TEXT })
+    c2:assertClean()
+end)
+
+test("template: a layout of the player's own is never touched", function()
+    -- Another layout picked in Edit Mode: our older layout waits, nothing is saved.
+    local file, list, char = oldTester()
+    local c, PE = login(file, list, 5, { char = char })
+    eq(layoutCalls(c), 0)
+    eq(opts(PE).template, nil)
+    eq(saidIn(c, UPDATED), 0)
+    eq(statusText(PE), ANOTHER)
+    c:assertClean()
+    -- A tap on an existing older layout keeps it as it is (the next login brings the new one).
+    local c2, PE2 = layoutClient({ saved(NAME) }, 1)
+    switchOn(c2, PE2)
+    eq(#c2:callsTo("C_EditMode.SaveLayouts"), 0)
+    eq(saidIn(c2, UPDATED), 0)
+    c2:assertClean()
+end)
+
+test("template: a new layout saves the version", function()
+    local c, PE = layoutClient({}, 3)
+    switchOn(c, PE)
+    eq(opts(PE).template, PE.LayoutPlan.TEMPLATE)
+    eq(PE.LayoutPlan.TEMPLATE, 2)
+    -- Start over saves it too.
+    opts(PE).template = nil
+    PE:GetModule("ctrlLayout"):CancelReload()
+    tapStartOver(c, PE)
+    c:advance(1)
+    tapStartOver(c, PE)
+    eq(opts(PE).template, 2)
+    c:assertClean()
+end)
+
+test("template: the rebuild failing logs it and tries again next login", function()
+    local file, list, char = oldTester()
+    local c, PE = login(file, list, 4, { char = char, setup = function(c) c.world.layoutCallFails.SaveLayouts = true end })
+    check(#PE.errors >= 1, "no error logged")
+    eq(opts(PE).template, nil)
+    eq(reloadReason(PE), nil)
+    eq(saidIn(c, UPDATED), 0)
+    check(PE:IsModuleEnabled("ctrlLayout"), "the feature switched itself off")
+    PE:ClearErrors()
+    -- The Gamepad preset missing (a difficult game): logged, nothing saved.
+    local file2, list2, char2 = oldTester()
+    local c2, PE2 = login(file2, list2, 4, { char = char2, setup = function(c2)
+        rawset(c2.env, "EditModePresetLayoutManager", { GetCopyOfPresetLayouts = function() error("no presets") end })
+    end })
+    eq(#c2:callsTo("C_EditMode.SaveLayouts"), 0)
+    eq(opts(PE2).template, nil)
+    PE2:ClearErrors()
+    -- The next login, the game taking it: rebuilt.
+    local c3, PE3 = login(db(c), c.world.layouts.layouts, 4, { char = charDB(c) })
+    eq(checkSaves(c3), 1)
+    eq(opts(PE3).template, 2)
+    eq(saidIn(c3, UPDATED), 1)
+    c3:assertClean()
 end)
 
 return { known = KNOWN_FAILURES }

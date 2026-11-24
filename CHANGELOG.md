@@ -4,6 +4,39 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.12.0] - 2026-11-23
+
+Twenty-eighth test build. Controller layout now arranges the screen the way
+the "Face bars (one setup)" mockup draws it. Spec
+`docs/superpowers/specs/2026-11-23-controller-layout-0.12.0-mockup-setup.md`.
+Not yet tested on a device. Your saved choices carry over.
+
+### Changed
+
+- **Controller layout, the mockup's setup:** the map sits at the bottom
+  middle at 70%, with its zone and clock strip under it and the swing timers
+  under that. The game's four spell bars stay whole and sit in the bottom
+  corners: the LT bar over the main bar on the left, the RT bar over the LT +
+  RT bar on the right, all at full size. Your frame sits above the left
+  bars with your pet above it; the target frame sits above the right bars
+  with the target of target above it. The two sub-menu buttons and the LB / RB
+  targeting pictures stay beside the map where you know them. XP bar, chat,
+  buffs and debuffs as in 0.11.1; the quest tracker moved to the screen's
+  right edge.
+- **One setup:** the rows for the main bar, the map size, the frames, the
+  swing timers' spot, the spell button size and the three bar sizes are gone.
+  The three timer rows (Always / In combat / Hidden) and Start over stay.
+- **No taps needed:** if you are already on the Pocket Essentials layout, your
+  next login rebuilds it in the new arrangement once and says so in chat;
+  open the settings and tap Reload now to finish. While it waits for a fight
+  to end or for the game's layouts, the Controller card says so.
+
+### Known
+
+- The game's quest tracker is wider than the mockup drew it: when it holds a
+  long list, its lower left corner reaches over the right end of the target
+  frame and the corner of the RT bar.
+
 ## [0.11.2] - 2026-11-23
 
 Twenty-seventh test build. A fix for 0.11.1 from the owner's debug log. Not

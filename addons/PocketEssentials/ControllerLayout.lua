@@ -370,6 +370,10 @@ local RELOAD_REASON = "Reload to finish changing the screen layout."
 -- request itself only shows in the settings window, which is closed at login.
 local CHAT_SWITCHED_ON = "This character now uses the controller layout. Open the settings and tap Reload now to finish."
 local CHAT_SWITCHED_OFF = "This character's own screen layout is back. Open the settings and tap Reload now to finish."
+local CHAT_UPDATED = "The controller layout was updated to the new arrangement. Open the settings and tap Reload now to finish."
+-- Status lines while the login check waits (0.12.0 spec, "Getting it without taps"): no silent waiting.
+local TEXT_WAIT_FIGHT = "Updating the layout after this fight."
+local TEXT_WAIT_LAYOUTS = "Waiting for the game's layouts."
 local MAX_LAYOUTS = 5 -- per type (EditModeManagerConstantsDocumentation.lua, EditModeMaxLayoutsPerType)
 
 local mod
@@ -1129,6 +1133,7 @@ local function AddOurs(state, e)
         Fail("C_EditMode.OnLayoutAdded failed: " .. tostring(err))
         return false, true
     end
+    mod.opts.template = Plan.TEMPLATE
     if PE.debugOn then PE:Debug("ctrlLayout", "saved the Pocket Essentials layout at index " .. newIndex) end
     return true, true
 end
@@ -1346,25 +1351,49 @@ local function LayoutRow(key)
     end
 end
 
-local function RunStartOver()
-    if not wanted then return end
+-- Rebuilds our layout from the template, in place (only ours: every other layout
+-- is saved back as it was read). True if the game took it; a failure is logged.
+local function Rebuild()
     local state, pos, e = ReadOurs()
-    if not state then return end
+    if not state then return false end
     local presets = CopyOfPresets()
     local base = presets and presets[e.preset.Gamepad + 1]
     if type(base) ~= "table" or base.layoutIndex ~= e.preset.Gamepad then
         PE:LogError("ctrlLayout", "The game's Gamepad preset could not be copied")
-        return
+        return false
     end
     base.layoutIndex = nil
     state.saved[pos] = Plan.Build(base, mod.opts, e)
     local ok, err = SaveAll(state, state.saved)
     if not ok then
         PE:LogError("ctrlLayout", err)
-        return
+        return false
     end
+    mod.opts.template = Plan.TEMPLATE
     if PE.debugOn then PE:Debug("ctrlLayout", "the Pocket Essentials layout was rebuilt from the template") end
+    return true
+end
+
+local function RunStartOver()
+    if not wanted then return end
+    if Rebuild() then mod:RequestReload(RELOAD_REASON) end
+end
+
+-- The saved template version (none saved: 0.11.x, version 1).
+local function SavedTemplate()
+    local v = mod.opts.template
+    return type(v) == "number" and v or 1
+end
+
+-- At a login with ours active and built from an older template: rebuilt once from
+-- the template (Start over's steps), the reload asked for, and said in chat. A tap on
+-- the switch keeps an existing layout as it is (until the next login). A failure
+-- keeps the old version saved, so the next login tries again.
+local function UpdateTemplate(byTap)
+    if byTap or SavedTemplate() >= Plan.TEMPLATE or not IsOursActive() then return end
+    if not Rebuild() then return end
     mod:RequestReload(RELOAD_REASON)
+    PE:Print(CHAT_UPDATED)
 end
 
 local function StartOver()
@@ -1427,6 +1456,7 @@ Settle = function()
             autoSwitch = false
             if not ok then error(err, 0) end
         end
+        if wanted then UpdateTemplate(byTap) end -- a refused switch-on may have switched it off
         -- Option changes not yet written when the feature went off (after SwitchOn, so ours exists).
         if #pendingRewrites > 0 then PE:RunOutOfCombat("ctrlLayout:rewrite", RunRewrites) end
     elseif ThisPrev() then
@@ -1483,11 +1513,19 @@ mod = PE:RegisterModule({
 
     -- Reads only.
     status = function(m)
+        local waitText
+        if pending then
+            if PE:InCombat() then waitText = TEXT_WAIT_FIGHT elseif not EditModeReady() then waitText = TEXT_WAIT_LAYOUTS end
+        end
         if not m:IsEnabled() then
-            if note then return { note, TEXT_OFF } end
-            return TEXT_OFF
+            local lines = {}
+            if note then lines[#lines + 1] = note end
+            if waitText then lines[#lines + 1] = waitText end
+            lines[#lines + 1] = TEXT_OFF
+            return #lines == 1 and TEXT_OFF or lines
         end
         if note then return note end
+        if waitText then return waitText end
         if rowNote then return rowNote end
         if startOverUntil > 0 and Now() <= startOverUntil then return TEXT_START_OVER end
         if type(m.opts) ~= "table" or not ThisPrev() then return nil end -- still to be done
@@ -1528,6 +1566,8 @@ mod = PE:RegisterModule({
             SyncBars()
             -- Option changes not yet written when the feature went off.
             if #pendingRewrites > 0 then PE:RunOutOfCombat("ctrlLayout:rewrite", RunRewrites) end
+            -- A login whose layout was built from an older template: Settle rebuilds it.
+            if atLogin and SavedTemplate() < Plan.TEMPLATE then Begin(false) end
         else
             -- This character's login check, or a switch-on: Settle, once the character's
             -- name and Edit Mode's layouts are known.
