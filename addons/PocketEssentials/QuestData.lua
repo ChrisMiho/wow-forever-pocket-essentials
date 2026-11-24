@@ -241,18 +241,30 @@ local function Name(entity, id)
 end
 
 -- Building pins ----------------------------------------------------------------
--- Pins of the objective being built wait here until Flush() moves them out.
+-- Spots of the objective being built wait here, one entry per spot in each of
+-- these scratch arrays, until Flush() turns the ones it keeps into pins. A busy
+-- objective can have thousands of spots and keep only MAX_PINS, so no table is
+-- made for a spot that is thinned away.
 -- bufObj is that objective's number in the quest log (nil: none matched).
-local buf, bufMap, seen = {}, {}, {}
+local bufN = 0
+local bufMap, bufX, bufY, bufKind, bufQuest, bufText, bufTarget, bufInside, bufObjs = {}, {}, {}, {}, {}, {}, {}, {}, {}
+local seen = {}
 local bufObj
 
 local function AddPin(mapID, x, y, kind, quest, objText, target, inside)
-    local n = #buf + 1
-    bufMap[n] = mapID
-    buf[n] = {
-        x = x / 100, y = y / 100, kind = kind,
+    local n = bufN + 1
+    bufN = n
+    bufMap[n], bufX[n], bufY[n], bufKind[n] = mapID, x, y, kind
+    bufQuest[n], bufText[n], bufTarget[n], bufInside[n], bufObjs[n] = quest, objText, target, inside, bufObj
+end
+
+-- The pin for scratch spot j.
+local function MakePin(j)
+    local quest = bufQuest[j]
+    return {
+        x = bufX[j] / 100, y = bufY[j] / 100, kind = bufKind[j],
         questID = quest.id, title = quest.title,
-        objText = objText, target = target, inside = inside, obj = bufObj,
+        objText = bufText[j], target = bufTarget[j], inside = bufInside[j], obj = bufObjs[j],
     }
 end
 
@@ -300,27 +312,26 @@ local groups = {}
 
 -- End of one objective: hand its pins over (thinned evenly if there are too many).
 local function Flush(out)
-    local n = #buf
+    local n = bufN
     local take = n > MAX_PINS and MAX_PINS or n
+    local limit = limitCell
     for i = 1, take do
         local j = floor((i - 1) * n / take) + 1
-        local list = out[bufMap[j]]
+        local mapID = bufMap[j]
+        local pin = MakePin(j)
+        local list = out[mapID]
         if not list then
             list = {}
-            out[bufMap[j]] = list
+            out[mapID] = list
         end
-        list[#list + 1] = buf[j]
-    end
-    local limit = limitCell
-    if limit > 0 then
-        for i = 1, take do
-            local j = floor((i - 1) * n / take) + 1
-            local g = groups[bufMap[j]]
+        list[#list + 1] = pin
+        if limit > 0 then
+            local g = groups[mapID]
             if not g then
                 g = {}
-                groups[bufMap[j]] = g
+                groups[mapID] = g
             end
-            g[#g + 1] = buf[j]
+            g[#g + 1] = pin
         end
     end
     local hook = QD._groupHook   -- test seam
@@ -331,8 +342,11 @@ local function Flush(out)
             wipe(g)
         end
     end
-    wipe(buf)
-    wipe(bufMap)
+    -- Drop the references (to quest text and names) the scratch spots hold.
+    for j = 1, n do
+        bufQuest[j], bufText[j], bufTarget[j], bufInside[j], bufObjs[j] = nil, nil, nil, nil, nil
+    end
+    bufN = 0
     wipe(seen)
     bufObj = nil
 end
