@@ -99,10 +99,22 @@ test("hub: hooks go on when the map loads after login", function()
         map = rawget(c.env, "WorldMapFrame")
         rawset(c.env, "WorldMapFrame", nil)
     end })
+    local function listening()
+        local n = 0
+        for _, rec in ipairs(c:frames()) do
+            if rec.addonFile and rec.events.ADDON_LOADED then n = n + 1 end
+        end
+        return n
+    end
+    check(listening() > 0, "nothing waits for the map to load")
+    c:fire("ADDON_LOADED", "SomeOtherAddon")
+    check(listening() > 0, "stopped waiting before the map loaded")
     rawset(c.env, "WorldMapFrame", map)
     c:fire("ADDON_LOADED", "Blizzard_WorldMap")
     c:openWorldMap()
     onBook(c, PE)
+    -- Spec 0.15.0 A9: once the map hook is on, nothing listens for addons loading.
+    eq(listening(), 0, "still listening for ADDON_LOADED after the map hook went on")
 end)
 
 test("hub: nothing ticks for the map", function()
@@ -128,6 +140,25 @@ test("hub: at first install its only game calls are the two hooks after the map'
     table.sort(hooks)
     eq(hooks, { "Maximize", "Minimize" })
     eq(#c.calls, 2, "other game calls at first install")
+end)
+
+-- Spec 0.15.0 A9 and CLAUDE.md "Event handlers and callbacks go through PE:Safe or PE:Wrap":
+-- a problem in the press colour (mouse down, the timer after mouse up, hide) is caught
+-- and logged under the round button, never passed to the game.
+test("hub: its press scripts and the timer after a release are caught and logged", function()
+    local c, PE = T.new({})
+    local button = PE.Hub.button
+    PE.Hub.fill.SetColor = function() error("paint broke", 0) end
+    c:script(button, "OnMouseDown", "LeftButton")
+    c:script(button, "OnMouseUp", "LeftButton")
+    c:advance(0.3)
+    button:Hide()
+    eq(c.errors, {}, "an error reached the game")
+    local count = 0
+    for _, e in ipairs(PE.errors) do
+        if e.module == "hub" and e.msg == "paint broke" then count = count + (tonumber(e.count) or 1) end
+    end
+    eq(count, 3, "not every script's error was logged under the round button")
 end)
 
 return { known = KNOWN_FAILURES }

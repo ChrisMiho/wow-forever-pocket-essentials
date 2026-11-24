@@ -64,6 +64,8 @@ local resetButton
 local sizeLabel, sizeNumber -- the Size row (SIZE_OPTION)
 local probe              -- a hidden frame that Move:PieceRect places like the outline
 local backToGuide = false -- the setup guide was open when this window opened
+local backToSettings = false -- the settings window was open when this window opened
+local SETTINGS_NAME = "PocketEssentialsSettingsPanel" -- Settings.lua's window
 local navList = {}
 local listed = {}        -- the pieces listed right now, in order
 local selected           -- the selected piece (a def)
@@ -577,12 +579,41 @@ local function GuideBack()
     if Setup and Setup.BackFromMove then Setup:BackFromMove() end
 end
 
+local function SettingsShown()
+    local settings = rawget(_G, SETTINGS_NAME)
+    return type(settings) == "table" and settings.IsShown and settings:IsShown() or false
+end
+
+-- Another of our windows (one that closed this one by opening) is on the
+-- screen by then: the settings stay away. Not in a fight.
+local function SettingsBack()
+    if PE:InCombat() then return end
+    if type(UISpecialFrames) == "table" then
+        for _, name in ipairs(UISpecialFrames) do
+            local other = type(name) == "string" and name:find("^PocketEssentials") and _G[name]
+            if other and other.IsShown and other:IsShown() then return end
+        end
+    end
+    PE:OpenSettings()
+end
+
 local function OnHidden()
     StopHold()
     if box then box:Hide() end
     PE:UnregisterCoreEvent("PLAYER_REGEN_DISABLED", "move")
     Debug("panel closed (" .. (closeWhy or "B, Escape or another window") .. ")")
+    local byFight = closeWhy == "fight started"
     closeWhy = nil
+    if backToSettings then
+        backToSettings = false
+        if not byFight then
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0, PE:Wrap("core", SettingsBack))
+            else
+                PE:Safe("core", SettingsBack)
+            end
+        end
+    end
     if backToGuide then
         backToGuide = false
         if C_Timer and C_Timer.After then
@@ -699,7 +730,7 @@ function Move:Open(key)
         end
     end
     if not built then
-        PE:Print("Move on screen could not be opened. See Errors in the settings.")
+        PE:Print("Move on screen could not be opened. See Settings > Errors.")
         return false
     end
     -- From the setup guide: it goes away now and comes back when this closes.
@@ -707,6 +738,8 @@ function Move:Open(key)
     local fromGuide = Setup and Setup.IsOpen and Setup:IsOpen() or false
     if fromGuide then PE:Safe("core", Setup.Close, Setup, "move") end
     backToGuide = fromGuide or (backToGuide and panel:IsShown())
+    -- From the settings: the same, on the tab it was showing.
+    backToSettings = not backToGuide and (SettingsShown() or (backToSettings and panel:IsShown()))
     -- Never on top of another Pocket Essentials window.
     PE:CloseSettings()
     if type(UISpecialFrames) == "table" then

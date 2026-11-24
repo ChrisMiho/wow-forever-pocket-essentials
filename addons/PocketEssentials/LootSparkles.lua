@@ -35,7 +35,7 @@ local WATCHED = {
     [lower(CVAR)] = true,
 }
 
-local TEXT_ON = "Quest items show the sparkle instead of the outline."
+local TEXT_ON = "Things you can loot or use sparkle instead of showing an outline."
 local TEXT_RESTART = "Fully restart the game to remove the sparkles."
 
 local mod                     -- the module
@@ -105,37 +105,66 @@ local function OnEnable(m)
     Apply()
 end
 
--- Puts the saved value back (or 0), then forgets it.
-local function Restore()
-    if on then return end -- switched on again meanwhile
+local restorePending = false -- switched off: the put-back waits for the fight to end
+
+-- The value switching off puts back: the one saved before the first write, or 0.
+local function PutBackValue()
     local opts = mod.opts
     local previous = type(opts) == "table" and opts.previous or nil
-    local value = type(previous) == "string" and previous or "0"
+    return type(previous) == "string" and previous or "0"
+end
+
+-- Puts the saved value back (or 0), then forgets it.
+local function Restore()
+    restorePending = false
+    if on then return end -- switched on again meanwhile
+    local opts = mod.opts
+    local value = PutBackValue()
     if ReadCVar() ~= value then WriteCVar(value) end
     if type(opts) == "table" then opts.previous = nil end
     if PE.debugOn then PE:Debug("sparkles", "put back to " .. PE.Plain(value)) end
+    PE:RefreshSettings()
 end
 
 local function OnDisable()
     on, waiting = false, false
+    restorePending = true
     -- Its events go with the switch; a fight only delays putting the value back.
+    PE:RunOutOfCombat("sparkles:restore", Restore)
+end
+
+-- Switched off in a fight and reloaded before it ended: the queued put-back
+-- was lost with the reload, and OnEnable and OnDisable do not run while the
+-- feature is saved off, so the waiting value is put back here.
+local function OnLoad(m)
+    local opts = m.opts
+    if type(opts) ~= "table" or opts.previous == nil or PE:IsModuleSavedOn("sparkles") then return end
+    -- The sparkles from before the reload stay until a full restart.
+    if ReadCVar() == WANT then shownThisSession = true end
+    restorePending = true
+    if PE.debugOn then PE:Debug("sparkles", "a put-back was waiting from the last session") end
     PE:RunOutOfCombat("sparkles:restore", Restore)
 end
 
 mod = PE:RegisterModule({
     key = "sparkles",
     label = "Loot sparkles",
-    desc = "Brings back the sparkle on things you can loot or use, even on the lowest graphics.",
+    desc = "Brings back the loot sparkle, even on the lowest graphics.",
     order = 80,
     -- Its status line also shows while off: the restart line.
     statusWhenOff = true,
 
     status = function(m)
         if m:IsEnabled() then return TEXT_ON end
-        if shownThisSession then return TEXT_RESTART end
-        return nil
+        if not shownThisSession then return nil end
+        -- A restart removes them only when the setting is off (or will be, once
+        -- the fight ends); one the player had at 1 before stays at 1.
+        local after = restorePending and PutBackValue() or ReadCVar()
+        if after == WANT then return nil end
+        return TEXT_RESTART
     end,
 
+    OnLoad = OnLoad,
     OnEnable = OnEnable,
     OnDisable = OnDisable,
 })

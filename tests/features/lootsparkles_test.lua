@@ -8,7 +8,7 @@ local KNOWN_FAILURES = {
 }
 
 local CVAR = "outlineModeShowLootEffectWhenDisabled"
-local ON_LINE = "Quest items show the sparkle instead of the outline."
+local ON_LINE = "Things you can loot or use sparkle instead of showing an outline."
 local RESTART_LINE = "Fully restart the game to remove the sparkles."
 
 -- A client whose sparkle setting starts at `value` ("0" unless given).
@@ -68,7 +68,7 @@ test("loot sparkles: registered with the spec's name and line, off by default", 
     local mod = PE:GetModule("sparkles")
     check(mod ~= nil, "the feature did not register")
     eq(mod.label, "Loot sparkles")
-    eq(mod.desc, "Brings back the sparkle on things you can loot or use, even on the lowest graphics.")
+    eq(mod.desc, "Brings back the loot sparkle, even on the lowest graphics.")
     check(not PE:IsModuleEnabled("sparkles"), "the feature is on at first install")
     eq(c.world.cvars[CVAR], "0", "the setting changed with the feature off")
     eq(#writes(c), 0)
@@ -231,6 +231,62 @@ test("loot sparkles: turning it off puts previous back and shows the restart lin
     c:assertClean()
 end)
 
+-- Spec 0.15.0 A5: the restart line only when a restart would take the sparkles away.
+-- The player had the setting at 1 before: it stays 1 after switching off, so no line.
+test("loot sparkles: no restart line when the setting stays on after switching off", function()
+    local c, PE = start({ value = "1" })
+    PE:SetModuleEnabled("sparkles", true)
+    eq(PE.db.options.sparkles.previous, "1")
+    PE:SetModuleEnabled("sparkles", false)
+    eq(c.world.cvars[CVAR], "1")
+    local line = PE:GetModule("sparkles"):status()
+    check(line == nil or line == "", "a restart line, yet a restart leaves the sparkles on: " .. tostring(line))
+    c:assertClean()
+end)
+
+-- Spec 0.15.0 A5: switched off in a fight, the value goes back after it; the line shows meanwhile.
+test("loot sparkles: switched off in a fight, the restart line shows and the value goes back after it", function()
+    local c, PE = start({ on = { "sparkles" } })
+    c:enterCombat()
+    PE:SetModuleEnabled("sparkles", false)
+    eq(c.world.cvars[CVAR], "1", "written during the fight")
+    local mod = PE:GetModule("sparkles")
+    eq(mod:status(), RESTART_LINE)
+    c:leaveCombat()
+    eq(c.world.cvars[CVAR], "0")
+    eq(mod:status(), RESTART_LINE)
+    c:assertClean()
+end)
+
+-- Spec 0.15.0 A4: switched off in a fight and reloaded before it ended, the queued put-back
+-- was lost. At login, saved off with a value still waiting, it is put back (after the fight).
+test("loot sparkles: a put-back lost to a reload in a fight is done at the next login", function()
+    local waiting = { enabled = {}, options = { sparkles = { previous = "0" } } }
+    local c, PE = start({ value = "1", saved = waiting })
+    eq(c.world.cvars[CVAR], "0", "not put back at login")
+    eq(PE.db.options.sparkles.previous, nil, "previous not cleared")
+    eq(PE:GetModule("sparkles"):status(), RESTART_LINE, "no restart line for the sparkles still showing")
+    c:assertClean()
+    -- Logged in during the fight: it waits for the fight to end.
+    local c2, PE2 = T.new({
+        saved = { enabled = {}, options = { sparkles = { previous = "0" } } },
+        setup = function(cl)
+            cl.world.cvars[CVAR] = "1"
+            cl.world.inCombat = true
+        end,
+    })
+    eq(c2.world.cvars[CVAR], "1", "written during the fight")
+    c2:leaveCombat()
+    eq(c2.world.cvars[CVAR], "0")
+    eq(PE2.db.options.sparkles.previous, nil)
+    -- Saved on: OnEnable keeps the setting at 1 and previous as it is.
+    local c3, PE3 = start({ value = "1", saved = { enabled = { sparkles = true }, options = { sparkles = { previous = "0" } } } })
+    eq(c3.world.cvars[CVAR], "1")
+    eq(PE3.db.options.sparkles.previous, "0")
+    c2:assertClean()
+    c3:assertClean()
+end)
+
 -- Spec "Put the saved previous value back (or "0")".
 test("loot sparkles: with nothing saved, off writes 0", function()
     local c, PE = start({ value = "1", saved = { enabled = { sparkles = true }, options = { sparkles = {} } } })
@@ -351,7 +407,7 @@ test("loot sparkles: the Vendors and game fixes screen holds four cards and no H
             end
         end
     end)
-    check(shownText(c, guide, "Brings back the sparkle on things you can loot or use, even on the lowest graphics."),
+    check(shownText(c, guide, "Brings back the loot sparkle, even on the lowest graphics."),
         "no one-line description on the Loot sparkles card")
     c:assertClean()
 end)
