@@ -38,8 +38,8 @@ local FIRST_LOGIN_DELAY = 1.5 -- seconds after the first loading screen
 local TEXT_CLOSED = "Setup guide closed. It will show again next time you log in. Press Skip in it to stop that. "
     .. "You can open it any time from the settings."
 local TEXT_FIGHT = "The setup guide cannot be opened during a fight. Try again afterwards."
-local TEXT_BROKEN = "The setup guide could not be opened. See Errors in the settings."
-local TEXT_FAILED = "Switched on, but it hit a problem. See the Errors tab in the settings."
+local TEXT_BROKEN = "The setup guide could not be opened. See Settings > Errors."
+local TEXT_FAILED = "Switched on, but it hit a problem. See Settings > Errors."
 
 local COLOR = {
     line = { 0.88, 0.88, 0.88 },
