@@ -1,3 +1,4 @@
+cvar	GamepadShowPersistentInputLegend	Blizzard_Gamepad/UI/PersistentInputLegend/GamepadPersistentInputLegend.lua used
 cvar	SoftTargetIconEnemy	Blizzard_Gamepad/Core.lua used
 cvar	SoftTargetIconGameObject	Blizzard_Gamepad/Core.lua used
 cvar	SoftTargetIconInteract	Blizzard_Gamepad/Core.lua used

@@ -39,6 +39,17 @@ local ADDON_NAME, PE = ...
 -- (the title at the top edge, the map 30 down: Mainline/Minimap.xml:50 and
 -- Camelot/MinimapZoneTextButton.xml:11). The strip stays inside the map frame, whose bottom
 -- edge is the spot written here, so nothing under the map moves and MapY is not raised.
+--
+-- 0.13.0 (spec 2026-11-23-controller-layout-0.13.0-face-bars.md): Pocket Essentials draws
+-- its own spell pictures (the "face", FaceBars.lua) and the game's four bars sit invisible
+-- under them. Split the way the controller is held: the d-pad halves of all four bars left
+-- of the map, the face-button halves right of it, in two 2 by 2 grids (Plan.FaceSpots).
+-- The real bars sit under the grids at 90%, two a side; the frames moved down beside the
+-- grids, so frames, spells and map share one low band and the middle of the screen is free.
+-- The quest tracker moved top left, where the game's controller hint box was; that box is
+-- hidden while the layout is placed (the game's own setting, put back when off).
+-- This file places everything; FaceBars.lua draws the pictures and fades the real bars.
+-- It is started after a placement and stopped before a put-back (see StartFace).
 
 local type, pairs, ipairs = type, pairs, ipairs
 local sort = table.sort
@@ -64,8 +75,9 @@ Plan.DEFAULTS = {
 
 -- The template's version, saved with our layout whenever it is built
 -- (opts.template). A login that finds an older one rebuilds our layout once.
--- 1: 0.11.x (no number saved). 2: 0.12.0, the mockup's one setup.
-Plan.TEMPLATE = 2
+-- 1: 0.11.x (no number saved). 2: 0.12.0, the mockup's one setup. 3: 0.13.0, the
+-- face bars (frames and the quest tracker moved).
+Plan.TEMPLATE = 3
 
 -- An XP bar: 17 high (STATUS_BAR_CONTAINER_HEIGHT,
 -- Blizzard_StatusTrackingBar/Camelot/StatusTrackingBarConstants.lua:2), 596 wide at 100%
@@ -100,9 +112,9 @@ local TIMER = { w = 213 * 0.8, h = 15 * 0.8, y = { MainHand = 31, OffHand = 17, 
 
 -- The unit frames: player and target 232 by 100
 -- (Blizzard_UnitFrame/Mainline/PlayerFrame.xml:14), pet and target of target 120 by
--- 49 (probe; TargetofTargetFrameTemplate, Mainline/TargetFrame.xml:398). The mockup
--- drew them smaller (192 by 60, 112 by 34); the frames keep its inner edges (x -236
--- and +236).
+-- 49 (probe; TargetofTargetFrameTemplate, Mainline/TargetFrame.xml:398). Since 0.13.0
+-- they sit beside the face grids, their inner edges at x -345 and +345 (the grids end at
+-- -341 and +341).
 local UNIT = { w = 232, h = 100 }
 local SMALL = { w = 120, h = 49 }
 
@@ -118,43 +130,87 @@ local SMALL = { w = 120, h = 49 }
 --     this source).
 --   * Its cast bar, 150 by 10 (Mainline/TargetFrame.xml:536-537): with the target of
 --     target shown and the Gamepad UI on, 123 right of and 46 under the frame's bottom
---     left (TargetFrame.lua:830-852, from TargetOfTargetMixin:Update, line 914). The
---     frame sits high enough that this spot clears the RT bar.
+--     left (TargetFrame.lua:830-852, from TargetOfTargetMixin:Update, line 914). With the
+--     auras on top it never hangs under the aura rows (TargetFrame.lua:561-568).
 local TARGET_AURAS = { picture = { w = 192, h = 67 }, startX = 5, startY = -6, rowWidth = 122, rows = 2, size = 21, spacing = 3 }
 local TARGET_CAST = { x = 123, y = -46, w = 150, h = 10 }
 
--- Player and target 226 up: the target's cast bar (226 - 46 - 10 = 170) then clears the
--- RT bar's top (167). The player side is the mirror. The pet and the target of target
--- sit above the two aura rows (25 over the frames' tops), the pet right-aligned and
--- the target of target left-aligned with the frames' inner edges.
-local FRAME_Y = 226
+-- 0.13.0: player and target 56 up, beside the face grids (x -345 / +345). The target's
+-- cast bar, with the target of target shown, then takes 468 to 618 across and 0 to 10 up:
+-- on screen, in the free corner right of the face. The player side is the mirror. The
+-- pet and the target of target sit above the target's two aura rows (25 over the frames'
+-- tops), the pet right-aligned and the target of target left-aligned with the frames'
+-- inner edges.
+local FRAME_X = 345
+local FRAME_Y = 56
 local SMALL_Y = FRAME_Y + UNIT.h + 25
 local FRAMES = {
-    Player = { "BOTTOMRIGHT", UI, "BOTTOM", -236, FRAME_Y },
-    Pet = { "BOTTOMRIGHT", UI, "BOTTOM", -236, SMALL_Y },
-    Target = { "BOTTOMLEFT", UI, "BOTTOM", 236, FRAME_Y },
+    Player = { "BOTTOMRIGHT", UI, "BOTTOM", -FRAME_X, FRAME_Y },
+    Pet = { "BOTTOMRIGHT", UI, "BOTTOM", -FRAME_X, SMALL_Y },
+    Target = { "BOTTOMLEFT", UI, "BOTTOM", FRAME_X, FRAME_Y },
 }
 
 -- The target of target, placed by the module on the target frame (see EXTRAS).
 Plan.TOT_SPOT = { point = "BOTTOMLEFT", relativePoint = "TOPLEFT", x = 0, y = SMALL_Y - FRAME_Y - UNIT.h }
 -- The two LB / RB targeting pictures, placed by the module on UIParent's bottom (see EXTRAS).
 Plan.SHOULDERS = { left = { "BOTTOMRIGHT", -108, 84 }, right = { "BOTTOMLEFT", 108, 84 } }
+-- Their size: 36 by 32, as measured on the device photos (the pictures use their atlas
+-- size, gamepad-targeting-left/right-shoulder-bg, MainActionBarFrame.xml:18-26; the atlas
+-- itself is not in this source).
+local SHOULDER = { w = 36, h = 32 }
 
 -- A bar that does not grow: 208 by 68 (Blizzard_GamepadActionBars/ActionBarStyles.lua:172;
 -- the template switches growing off, ShouldExpand 0).
 local BAR = { w = 208, h = 68 }
 
--- The four bars, whole, at scale 1, and the bottom anchor that carries the two
--- sub-menu buttons (at -138 / +138, -50 from it:
+-- 0.13.0: our own spell pictures. A picture is 28 across; a diamond puts its four 30
+-- left / right and 19 up / down of its centre, so a diamond is 88 by 66.
+Plan.FACE = { button = 28, dx = 30, dy = 19 }
+local FACE_W = 2 * Plan.FACE.dx + Plan.FACE.button
+local FACE_H = 2 * Plan.FACE.dy + Plan.FACE.button
+
+-- Where each bar's two halves are drawn: the centre of each diamond, in UI units from
+-- the screen's bottom centre. The d-pad halves on the left, the face-button halves on
+-- the right, each side a 2 by 2 grid whose inner edge is 155 from the centre, 186 wide
+-- (two diamonds 10 apart) and 6 to 146 up (two rows 8 apart): inner bottom the main bar,
+-- inner top LT, outer bottom RT, outer top LT+RT ("up is LT, out is RT").
+local FACE_SPOTS = {
+    main = { dpad = { x = -199, y = 39 }, face = { x = 199, y = 39 } },
+    lt = { dpad = { x = -199, y = 113 }, face = { x = 199, y = 113 } },
+    rt = { dpad = { x = -297, y = 39 }, face = { x = 297, y = 39 } },
+    both = { dpad = { x = -297, y = 113 }, face = { x = 297, y = 113 } },
+}
+
+-- The game's four bars, whole and invisible under the face grids, at 90% (187.2 by
+-- 61.2 each): the main and LT bars under the left grid, RT and LT+RT under the right
+-- one, each centred on its grid (x -248 / +248) on the row of its own pictures. Put
+-- divides the spot by the scale, since a frame's offsets count in its own scale. The
+-- bottom anchor carries the two sub-menu buttons (at -138 / +138, -50 from it:
 -- Blizzard_GamepadActionBars/MainActionBarFrame.xml:94-112), so they sit 138 either
 -- side of the centre, 188 up.
+local REAL_BAR_SCALE = 0.9
 local SPOTS = {
-    left = { x = -335, y = 133, s = 1 },  -- LT bar
-    top = { x = -335, y = 45, s = 1 },    -- main bar (no trigger)
-    right = { x = 335, y = 133, s = 1 },  -- RT bar
-    both = { x = 335, y = 45, s = 1 },    -- LT + RT bar
-    bottom = { x = 0, y = 238, s = 1 },   -- sub-menu buttons at (±138, 188)
+    top = { x = -248, y = 39, s = REAL_BAR_SCALE },    -- main bar (no trigger)
+    left = { x = -248, y = 113, s = REAL_BAR_SCALE },  -- LT bar
+    right = { x = 248, y = 39, s = REAL_BAR_SCALE },   -- RT bar
+    both = { x = 248, y = 113, s = REAL_BAR_SCALE },   -- LT + RT bar
+    bottom = { x = 0, y = 238, s = 1 },                -- sub-menu buttons at (±138, 188)
 }
+-- Which face group each real bar spot is.
+local SPOT_FACE = { top = "main", left = "lt", right = "rt", both = "both" }
+
+-- Pocket Essentials' own round button at its default spot (Hub.lua:30-37, 115-127: LEFT
+-- of the screen, 10 px in, centred up and down), for the size presets of UI.lua:22-24 (56,
+-- 60 and 72 px on a 720 px screen, 768 / 720 UI units each). The largest one is used.
+local HUB = { margin = 10 * 768 / 720, size = 72 * 768 / 720 }
+
+-- The quest tracker, top left where the game's controller hint box was (TOPLEFT 5, -5,
+-- Blizzard_Gamepad/UI/PersistentInputLegend/GamepadPersistentInputLegend.xml), moved 87
+-- right so it clears that round button at any size: with Height 0 the tracker is 400
+-- tall (the Edit Mode setting's least, EditModeSettingDisplayInfo.lua:609-618, and
+-- Blizzard_ObjectiveTracker/Blizzard_ObjectiveTrackerContainer.lua:206-217) and would
+-- reach down past the round button (352 to 416 up at the medium size). 260 wide (probe).
+local TRACKER = { x = 92, y = -5, w = 260, h = 400 }
 
 -- The options with every missing or unusable value replaced by its default.
 -- Values saved by older versions for rows that are gone are ignored.
@@ -175,10 +231,16 @@ local function DeepCopy(v)
     return out
 end
 
--- Where each bar group's centre goes, and its scale (always 1). x and y are UI
--- units from the screen's bottom centre.
+-- Where each real bar group's centre goes, and its scale. x and y are UI units from
+-- the screen's bottom centre.
 function Plan.BarSpots()
     return DeepCopy(SPOTS)
+end
+
+-- Where each bar's two halves are drawn (see FACE_SPOTS): { main, lt, rt, both } each
+-- { dpad = { x, y }, face = { x, y } }, a fresh copy.
+function Plan.FaceSpots()
+    return DeepCopy(FACE_SPOTS)
 end
 
 -- A frame's rectangle from its anchor point (on UIParent's bottom) and its size.
@@ -188,16 +250,30 @@ local function RectAt(point, x, y, w, h)
     return { left, bottom, left + w, bottom + h }
 end
 
+local SCREEN_W, SCREEN_H = 1365.33, 768
+
+-- The chat box: 430 by 210 (its Edit Mode width and height settings below), TOPRIGHT
+-- -30, -40.
+local CHAT = { x = -30, y = -40, w = 430, h = 210 }
+-- The buffs and debuffs under it, as one area: the game's default rows of 11 buffs and 8
+-- debuffs, each icon 30 by 40 (Blizzard_BuffFrame/BuffFrameTemplates.xml:5) with 10
+-- between (IconPadding 5, EditModeSettingDisplayInfo.lua:496-503;
+-- Mainline/EditModePresetLayouts.lua:434-458), the frame (icon + 10) a slot
+-- (BuffFrame.lua:289-302), plus the 15 wide fold-out button (BuffFrame.xml:15). About:
+-- from the buffs' top (292 down) to the debuff row's bottom (330 + 50 down), 455 wide.
+local AURAS = { right = -30, top = -292, w = 11 * 40 + 15, bottom = -330 - 50 }
+
 -- The rectangles the template puts on screen, for the overlap check:
 -- { name = { left, bottom, right, top } } in UI units from the bottom centre,
--- worked out from the spots and sizes above. The quest tracker is taken at the
--- height the probe measured (264). The target's two aura rows are the part above
--- the frame; its cast bar is the spot it takes with the target of target shown.
+-- worked out from the spots and sizes above. The face diamonds are listed; the
+-- real bars under them are not (Plan.RealBarRects). The quest tracker is taken at
+-- its least height (400). The target's two aura rows are the part above the
+-- frame; its cast bar is the spot it takes with the target of target shown.
 function Plan.Rects()
     local r = {}
     local function box(name, cx, cy, w, h) r[name] = { cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2 } end
-    for name, s in pairs(SPOTS) do
-        if name ~= "bottom" then box(name .. " bar", s.x, s.y, BAR.w, BAR.h) end
+    for bar, halves in pairs(FACE_SPOTS) do
+        for half, c in pairs(halves) do box(bar .. " " .. half, c.x, c.y, FACE_W, FACE_H) end
     end
     local roundCentre = MAP.y + MAP.frameUp + MAP.frame * MAP.size / 100 / 2
     local round = MAP.round * MAP.size / 100
@@ -223,8 +299,31 @@ function Plan.Rects()
     for _, side in ipairs({ -1, 1 }) do
         box(side < 0 and "LB+LT button" or "RB+RT button", side * 138, SPOTS.bottom.y - 50, 38, 38)
     end
-    local W, H = 1365.33, 768
-    r["quest tracker"] = { W / 2 - 260, H - 375 - 264, W / 2, H - 375 }
+    local sl, sr = Plan.SHOULDERS.left, Plan.SHOULDERS.right
+    r["LB targeting picture"] = RectAt(sl[1], sl[2], sl[3], SHOULDER.w, SHOULDER.h)
+    r["RB targeting picture"] = RectAt(sr[1], sr[2], sr[3], SHOULDER.w, SHOULDER.h)
+    local W, H = SCREEN_W, SCREEN_H
+    local tl = -W / 2 + TRACKER.x
+    r["quest tracker"] = { tl, H + TRACKER.y - TRACKER.h, tl + TRACKER.w, H + TRACKER.y }
+    local cr = W / 2 + CHAT.x
+    r.chat = { cr - CHAT.w, H + CHAT.y - CHAT.h, cr, H + CHAT.y }
+    r["buffs and debuffs"] = { W / 2 + AURAS.right - AURAS.w, H + AURAS.bottom, W / 2 + AURAS.right, H + AURAS.top }
+    r["XP bars"] = { -596 / 2, H + XP_TOP_Y - 2 * XP_H, 596 / 2, H + XP_TOP_Y }
+    local hubLeft = -W / 2 + HUB.margin
+    r["round button"] = { hubLeft, H / 2 - HUB.size / 2, hubLeft + HUB.size, H / 2 + HUB.size / 2 }
+    return r
+end
+
+-- The game's four real bars, invisible under the face grids: { main, lt, rt, both }
+-- each { left, bottom, right, top }. Not part of Plan.Rects: they sit under the
+-- face by design.
+function Plan.RealBarRects()
+    local r = {}
+    for spot, bar in pairs(SPOT_FACE) do
+        local s = SPOTS[spot]
+        local w, h = BAR.w * s.s, BAR.h * s.s
+        r[bar] = { s.x - w / 2, s.y - h / 2, s.x + w / 2, s.y + h / 2 }
+    end
     return r
 end
 
@@ -255,22 +354,22 @@ function Plan.Pieces(opts)
     -- HeaderUnderneath 1 puts the map's title strip under the map (0.11.1 spec, 3); left
     -- out by Plan.Apply when the game has no such setting.
     add("Minimap", nil, Spot("BOTTOM", "BOTTOM", MAP.x, MAP.y), { Size = (MAP.size - 50) / 10, HeaderUnderneath = 1 })
-    add("ChatFrame", nil, Spot("TOPRIGHT", "TOPRIGHT", -30, -40),
+    add("ChatFrame", nil, Spot("TOPRIGHT", "TOPRIGHT", CHAT.x, CHAT.y),
         { WidthHundreds = 4, WidthTensAndOnes = 30, HeightHundreds = 2, HeightTensAndOnes = 10 })
     -- Buffs and debuffs under the chat's last lines (0.11.1 spec, 4). The quest tracker
-    -- flush with the right edge: it is 260 wide (probe), not the mockup's 218, and this
-    -- keeps it clear of the RT bar until it holds a long list.
+    -- top left, where the game's controller hint box was (0.13.0, see TRACKER).
     add("AuraFrame", "BuffFrame", Spot("TOPRIGHT", "TOPRIGHT", -30, -292), nil)
     add("AuraFrame", "DebuffFrame", Spot("TOPRIGHT", "TOPRIGHT", -30, -330), nil)
-    add("ObjectiveTracker", nil, Spot("TOPRIGHT", "TOPRIGHT", 0, -375), { Height = 0 })
+    add("ObjectiveTracker", nil, Spot("TOPLEFT", "TOPLEFT", TRACKER.x, TRACKER.y), { Height = 0 })
     -- The XP bars along the top edge, centred, at 100% (0.11.1 spec, 1).
     add("StatusTrackingBar", "StatusTrackingBar1", Spot("TOP", "TOP", 0, XP_TOP_Y), { Size = 10 })
     add("StatusTrackingBar", "StatusTrackingBar2", Spot("TOP", "TOP", 0, XP_TOP_Y - XP_H), { Size = 10 })
     add("GamepadMainActionBar", nil, nil, { Compact = 0, ShowEmptyBars = 0, ShouldExpand = 0 })
     add("UnitFrame", "Player", Anchor(FRAMES.Player), nil)
     add("UnitFrame", "Pet", Anchor(FRAMES.Pet), nil)
-    -- BuffsOnTop 1 (as the game's Gamepad preset has it): the target's auras grow up, away
-    -- from the RT bar. Left out by Plan.Apply when the game has no such setting.
+    -- BuffsOnTop 1 (as the game's Gamepad preset has it): the target's auras grow up, so
+    -- the cast bar keeps its spot under the frame. Left out by Plan.Apply when the game has
+    -- no such setting.
     add("UnitFrame", "Target", Anchor(FRAMES.Target), { BuffsOnTop = 1 })
     local visibility = { Ranged = o.ranged, MainHand = o.mainHand, OffHand = o.offHand }
     for _, name in ipairs({ "MainHand", "OffHand", "Ranged" }) do
@@ -429,6 +528,8 @@ local CHAT_UPDATED = "The controller layout was updated to the new arrangement (
 -- Status lines while the login check waits (0.12.0 spec, "Getting it without taps"): no silent waiting.
 local TEXT_WAIT_FIGHT = "Updating the layout after this fight."
 local TEXT_WAIT_LAYOUTS = "Waiting for the game's layouts."
+-- Under the "Using" line while our spell pictures are off for a reason (PE.FaceBars:Status()).
+local TEXT_FACE_OFF = "Showing the game's own spell bars: "
 local MAX_LAYOUTS = 5 -- per type (EditModeManagerConstantsDocumentation.lua, EditModeMaxLayoutsPerType)
 
 local mod
@@ -840,6 +941,8 @@ end
 -- only the Top, Left and Right anchors, in PageUnit:RefreshCompactLayout
 -- (PageUnit.lua:292-315). The both-triggers bar is moved itself, because the
 -- sub-menu buttons follow the bottom anchor (ClassActionFlyout.lua:24-25).
+-- Since 0.13.0 the four bars are placed at 90% under the face grids; FaceBars.lua
+-- makes them invisible (their anchors' alpha) once its pictures show.
 --
 -- These frames hold protected spell buttons: nothing here runs in combat
 -- (everything goes through PE:RunOutOfCombat), and nothing is ever written
@@ -1026,14 +1129,113 @@ local function RestoreExtras()
     end
 end
 
+---------------------------------------------------------------------------
+-- The game's controller hint box (0.13.0): the box top left that lists LB / RB
+-- targeting, ping and auto-run. It is the game's own setting "Show persistent
+-- controls information" (Blizzard_SettingsDefinitions_Shared/Gamepad.lua:140), the
+-- console setting GamepadShowPersistentInputLegend; the box hides itself as soon as
+-- it changes (Blizzard_Gamepad/UI/PersistentInputLegend/GamepadPersistentInputLegend.lua:
+-- 201-203, 273, 297). Set to "0" when the layout is placed, the player's value saved
+-- once (opts.hintsWas) and written back when the layout is put back or switched off.
+-- While a value is saved it is not set again, so a player who turns the box back on
+-- while the layout is on keeps it. Out of a fight only (both callers run there).
+---------------------------------------------------------------------------
+
+local HINTS_SETTING = "GamepadShowPersistentInputLegend"
+
+-- The setting's value as a string, or nil when it cannot be read.
+local function ReadHints()
+    if not (C_CVar and type(C_CVar.GetCVar) == "function") then return nil end
+    local ok, v = pcall(C_CVar.GetCVar, HINTS_SETTING)
+    if not ok or v == nil or (issecretvalue and issecretvalue(v)) then return nil end
+    return tostring(v)
+end
+
+-- True if the game took the value.
+local function WriteHints(value)
+    if not (C_CVar and type(C_CVar.SetCVar) == "function") then return false end
+    local ok, took = pcall(C_CVar.SetCVar, HINTS_SETTING, value)
+    return ok and took ~= false
+end
+
+local function HideHints()
+    local opts = mod and mod.opts
+    if type(opts) ~= "table" or opts.hintsWas ~= nil then return end
+    local was = ReadHints()
+    if was == nil then return end
+    if not WriteHints("0") then
+        if PE.debugOn then PE:Debug("ctrlLayout", "the game's hint box setting could not be changed") end
+        return
+    end
+    opts.hintsWas = was
+    if PE.debugOn then PE:Debug("ctrlLayout", "the game's hint box hidden (it was " .. was .. ")") end
+end
+
+local function ShowHints()
+    local opts = mod and mod.opts
+    if type(opts) ~= "table" or type(opts.hintsWas) ~= "string" then return end
+    if not WriteHints(opts.hintsWas) then
+        -- Kept: the next put-back tries again.
+        if PE.debugOn then PE:Debug("ctrlLayout", "the game's hint box setting could not be put back") end
+        return
+    end
+    opts.hintsWas = nil
+    if PE.debugOn then PE:Debug("ctrlLayout", "the game's hint box setting put back") end
+end
+
+---------------------------------------------------------------------------
+-- Our own spell pictures (FaceBars.lua, PE.FaceBars): started after the bars are
+-- placed, stopped before they are put back and whenever the feature goes off.
+-- PE.FaceBars:Start() builds the pictures and only then fades the real bars, so a
+-- face that cannot work leaves the game's bars showing; Stop() works at any time,
+-- also in a fight; Status() is the reason the game's own bars show, or nil.
+-- Every call is guarded: an older or missing FaceBars changes nothing here.
+---------------------------------------------------------------------------
+
+-- PE.FaceBars and one of its functions by name, or nil.
+local function FaceCall(name)
+    local face = PE.FaceBars
+    if type(face) ~= "table" then return nil end
+    local fn = face[name]
+    if type(fn) ~= "function" then return nil end
+    return face, fn
+end
+
+local function StartFace()
+    local face, start = FaceCall("Start")
+    if not face then return end
+    local ok, started, why = PE:Safe("ctrlLayout", start, face)
+    if ok and not started and PE.debugOn then
+        PE:Debug("ctrlLayout", "spell pictures not shown: " .. tostring(why))
+    end
+end
+
+local function StopFace()
+    local face, stop = FaceCall("Stop")
+    if face then PE:Safe("ctrlLayout", stop, face) end
+end
+
+-- The reason the game's own bars are showing, or nil. Reads only.
+local function FaceStatus()
+    local face, status = FaceCall("Status")
+    if not face then return nil end
+    local ok, why = pcall(status, face)
+    if ok and type(why) == "string" and why ~= "" then return why end
+    return nil
+end
+
 -- Puts the bars back. The bottom anchor and the both-triggers bar, which the
 -- game never re-anchors, go back to the points read before the first change.
 -- The Top, Left and Right anchors follow the game's current Compact setting
 -- (PageUnit:RefreshCompactLayout, PageUnit.lua:292-315), because a layout
 -- picked meanwhile may have changed it: Compact on, all points on the bottom
 -- anchor; Compact off, the game's own points for each, or ours if the game
--- keeps none. Every scale comes from what was read.
+-- keeps none. Every scale comes from what was read. The spell pictures stop first
+-- (the real bars show again) and the hint box setting comes back, placed or not:
+-- a value saved at an earlier session is put back too.
 local function RestoreNow()
+    StopFace()
+    ShowHints()
     if not placed then return end
     placed = false
     local frames = BarFrames()
@@ -1068,6 +1270,7 @@ local function RestoreNow()
 end
 
 local function PlaceNow()
+    HideHints() -- the game's hint box goes with our layout, bars or not
     local frames = BarFrames()
     if not frames then return end
     -- Every frame read before any is changed.
@@ -1086,6 +1289,7 @@ local function PlaceNow()
     end
     PlaceExtras()
     if PE.debugOn then PE:Debug("ctrlLayout", "bars placed") end
+    StartFace()
 end
 
 -- Places the bars while the feature is on and our layout is the active one,
@@ -1600,7 +1804,11 @@ mod = PE:RegisterModule({
         local state = ReadState()
         if not state then return nil end
         local index = OursIndex(state)
-        if index and state.active == index then return TEXT_USING end
+        if index and state.active == index then
+            local why = FaceStatus()
+            if why then return { TEXT_USING, TEXT_FACE_OFF .. why .. (why:find("[.!]$") and "" or ".") } end
+            return TEXT_USING
+        end
         return TEXT_ANOTHER
     end,
 
@@ -1646,7 +1854,8 @@ mod = PE:RegisterModule({
     OnDisable = function(self)
         wanted = false
         rowNote = nil
-        RestoreBars() -- first: bars placed by any path are always put back
+        StopFace() -- at once, also in a fight: the game's bars show again
+        RestoreBars() -- bars placed by any path are always put back
         if not ThisPrev() and not HasOldEntry() then return end -- nothing was changed for this character
         PE:RunOutOfCombat("ctrlLayout:off", function() SwitchOff(false) end)
     end,

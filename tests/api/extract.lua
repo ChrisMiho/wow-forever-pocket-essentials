@@ -71,6 +71,8 @@ local INDIRECT = {
     { "namespace", "C_EditMode.IsValidLayoutName", "ControllerLayout.lua", "state.api.IsValidLayoutName" },
     -- Controller layout: the gamepad bar's PageUnit method it hooks is named in a constant.
     { "method", "RefreshCompactLayout", "ControllerLayout.lua", '"RefreshCompactLayout"' },
+    -- Controller layout 0.13.0: the game's controller hint box setting, held in a constant.
+    { "cvar", "GamepadShowPersistentInputLegend", "ControllerLayout.lua", '"GamepadShowPersistentInputLegend"' },
     -- The restriction probe also uses these; the stand-in client offers them for its tests too.
     { "method", "IsEditModeActive", "../../probe/PocketProbe/Trials.lua", "IsEditModeActive" },
     { "frame", "EditModeManagerFrame", "../../probe/PocketProbe/Trials.lua", "EditModeManagerFrame" },
