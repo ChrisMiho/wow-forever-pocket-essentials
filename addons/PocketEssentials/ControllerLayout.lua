@@ -70,6 +70,13 @@ local ADDON_NAME, PE = ...
 -- the game's hint box (while the "Controls reminder" option shows it) and the place-name
 -- strip with its two buttons (while "Map buttons" shows them), so the overlap check covers
 -- every state.
+--
+-- 0.17.0 (spec 2026-11-24-0.17.0-slim-bars.md): the slim bars. This file holds their numbers
+-- (Plan.SLIM, Plan.SlimRects), their switch (opts.slim, the row "Slim bars", Off by default,
+-- counts from the next reload) and the tooltip's corner spot that goes with them; SlimBars.lua
+-- (PE.SlimBars) draws them and makes the game's four unit frames invisible. It is started
+-- when the layout is placed and stopped when it is put back (Snap.SlimCall), and never
+-- called at all in a session that began with the switch Off.
 
 local type, pairs, ipairs = type, pairs, ipairs
 local sort = table.sort
@@ -101,6 +108,9 @@ Plan.DEFAULTS = {
     -- (device-proven, 2026-11-24). 1: a hook on PageUnit.SetActiveActionBar (never run on a
     -- device yet). Not one of the six parts: 0 leaves nothing out. See FaceBars.lua.
     tHook = 0,
+    -- 0.17.0: the slim bars (SlimBars.lua): 0 Off, 1 On. Off, the game's unit frames and the
+    -- tooltip are as 0.16.4 has them and SlimBars.lua is never called.
+    slim = 0,
 }
 -- The part rows' keys, in the order shown.
 Plan.TEST_PARTS = { "tHints", "tChat", "tMap", "tBars", "tExtras", "tFace" }
@@ -316,7 +326,7 @@ local function Fill(opts)
     opts = type(opts) == "table" and opts or {}
     for k, default in pairs(Plan.DEFAULTS) do
         local v = opts[k]
-        local onOff = k == "hints" or k == "mapButtons" or k:sub(1, 1) == "t"
+        local onOff = k == "hints" or k == "mapButtons" or k == "slim" or k:sub(1, 1) == "t"
         if v == 0 or v == 1 or (v == 2 and not onOff) then out[k] = v else out[k] = default end
     end
     return out
@@ -459,6 +469,47 @@ local AURAS = { right = AURA_X, top = AURA_TOP, w = 11 * 40 + 15, bottom = AURA_
 -- frames rise), it moves left and lines up with the buffs' right edge, 10 clear of the tracker.
 local TOOLTIP = { x = -10, over = 6, w = 200, h = 100 }
 
+-- 0.17.0: the slim bars (spec 2026-11-24-0.17.0-slim-bars.md, "Where each bar is"). On a
+-- table, not locals: this file is at Lua's limit of 200 locals. UI units; a pixel of the
+-- design's 1280 by 720 screen is 768 / 720 units.
+--   x, y, w, h  a main bar (player left, target right, mirrored): its inner edge 218 from the
+--               centre, 4 outside the LB / RB targeting pictures (Plan.SHOULDERS, 178 to 214);
+--               its bottom 141 up (the design's 132 px); 280 by 28 (264 by 26 px)
+--   health, power  inside a main bar: 1 border, the power bar 6, 1 line, the health bar 19,
+--               1 border
+--   cast        the target's cast bar: 12 tall, 2 under the target bar (127 to 139 up; the
+--               diamonds end 124.8 up at the largest Spell panel size)
+--   small       the pet bar and the target of target bar: 136 by 17 (128 by 16 px), 3 over
+--               the main bars, lined up with their outer ends
+--   boxes       the room kept for the buff and debuff boxes, which are not built yet: a row
+--               21 tall (20 px); the pet's 3 over the pet bar, the target's over the target
+--               bar and 4 short of the target of target bar
+--   tooltip     the tooltip's corner while the slim bars are on: BOTTOMRIGHT -10, 10, where
+--               the game's target frame was
+-- The same at every Spell panel size: nothing here scales or moves.
+Plan.SLIM = { x = 218, y = 141, w = 280, h = 28, health = 19, power = 6,
+    cast = { h = 12, gap = 2 }, small = { w = 136, h = 17, gap = 3 },
+    boxes = { h = 21, gap = 3, short = 4 }, tooltip = { x = -10, y = 10 } }
+
+-- The slim bars' rectangles, { name = { left, bottom, right, top } } in UI units from the
+-- screen's bottom centre, a fresh table: the five bars and the two rows kept for the boxes.
+-- SlimBars.lua places from these, and Plan.Rects lists them while the switch is on.
+function Plan.SlimRects()
+    local S = Plan.SLIM
+    local l, r, b, t = S.x, S.x + S.w, S.y, S.y + S.h
+    local row = t + S.small.gap
+    local petBoxes = row + S.small.h + S.boxes.gap
+    return {
+        ["player bar"] = { -r, b, -l, t },
+        ["target bar"] = { l, b, r, t },
+        ["cast bar"] = { l, b - S.cast.gap - S.cast.h, r, b - S.cast.gap },
+        ["pet bar"] = { -r, row, -r + S.small.w, row + S.small.h },
+        ["target of target bar"] = { r - S.small.w, row, r, row + S.small.h },
+        ["pet boxes room"] = { -r, petBoxes, -l, petBoxes + S.boxes.h },
+        ["target boxes room"] = { l, row, r - S.small.w - S.boxes.short, row + S.boxes.h },
+    }
+end
+
 -- 0.16.0: the spots that follow the frames' height at Spell panel size v (as Plan.PanelSize
 -- takes it): the round button's bottom (hubY), the chat's bottom (chatY) and the tooltip's
 -- corner (tipX, tipY).
@@ -498,7 +549,9 @@ end
 -- frame; its cast bar is the spot it takes with the target of target shown.
 -- v: the options (panelSize, hints, mapButtons), or a Spell panel size (as
 -- Plan.PanelSize takes it); nil is the defaults. The hint box is listed only while
--- hints is 1; the title strip includes its two buttons while mapButtons is 1.
+-- hints is 1; the title strip includes its two buttons while mapButtons is 1. While slim is 1
+-- (0.17.0) the game's four unit frames are invisible, so their six rectangles are left out,
+-- the slim bars' seven are listed and the tooltip is in its corner.
 function Plan.Rects(v)
     local o = Fill(type(v) == "table" and v or nil)
     local rise = Rising(v)
@@ -556,6 +609,12 @@ function Plan.Rects(v)
     if o.hints == 1 then
         local hl = -W / 2 + HINTS.x
         r["hint box"] = { hl, H + HINTS.y - HINTS.h, hl + HINTS.w, H + HINTS.y }
+    end
+    if o.slim == 1 then
+        for _, name in ipairs({ "player", "pet", "target", "target of target", "target auras", "target cast bar" }) do r[name] = nil end
+        for name, rect in pairs(Plan.SlimRects()) do r[name] = rect end
+        local tip = Plan.SLIM.tooltip
+        r.tooltip = { W / 2 + tip.x - TOOLTIP.w, tip.y, W / 2 + tip.x, tip.y + TOOLTIP.h }
     end
     return r
 end
@@ -623,8 +682,13 @@ function Plan.Pieces(opts)
     -- no such setting.
     add("UnitFrame", "Target", Anchor(FRAMES.Target), { BuffsOnTop = 1 })
     -- 0.16.0: the tooltip above the target of target (see TOOLTIP). Left out by Plan.Apply
-    -- when the game has no such system.
-    add("HudTooltip", nil, Spot("BOTTOMRIGHT", "BOTTOMRIGHT", rise.tipX, rise.tipY), nil)
+    -- when the game has no such system. 0.17.0: in the bottom right corner while the slim
+    -- bars are on (Plan.SLIM.tooltip).
+    if o.slim == 1 then
+        add("HudTooltip", nil, Spot("BOTTOMRIGHT", "BOTTOMRIGHT", Plan.SLIM.tooltip.x, Plan.SLIM.tooltip.y), nil)
+    else
+        add("HudTooltip", nil, Spot("BOTTOMRIGHT", "BOTTOMRIGHT", rise.tipX, rise.tipY), nil)
+    end
     local visibility = { Ranged = o.ranged, MainHand = o.mainHand, OffHand = o.offHand }
     local timers = Timers()
     for _, name in ipairs(TIMER.order) do
@@ -1476,6 +1540,24 @@ local PlaceScreen, RestoreScreen -- the block below; in a do block, as the file 
 -- (mod:AddSnapshotSource).
 local Snap = { sources = {} }
 
+-- 0.17.0: the slim bars (SlimBars.lua, PE.SlimBars), reached the way the spell pictures are
+-- (FaceCall below) and hung on the same table for want of a local.
+--   Snap.slimOn    the "Slim bars" switch as this session found it at the first placement
+--                  (nil before that). A change counts from the next reload, so this never
+--                  changes afterwards.
+--   Snap.SlimCall  calls PE.SlimBars[name] and returns its first two answers. Does nothing,
+--                  and so SlimBars.lua does nothing, unless slimOn is true. Guarded: a
+--                  missing or older SlimBars, or a call that raises, changes nothing here.
+Snap.SlimCall = function(name, ...)
+    if Snap.slimOn ~= true then return nil end
+    local slim = PE.SlimBars
+    local fn = type(slim) == "table" and slim[name] or nil
+    if type(fn) ~= "function" then return nil end
+    local ok, a, b = PE:Safe("ctrlLayout", fn, slim, ...)
+    if ok then return a, b end
+    return nil
+end
+
 do
     local screenPlaced = false -- these pieces are placed (the hooks below do nothing otherwise)
     local missingSaid = {}
@@ -1804,6 +1886,7 @@ end
 -- not: a hint box value saved at an earlier session is put back too.
 local function RestoreNow()
     StopFace()
+    Snap.SlimCall("Stop") -- the game's unit frames show again (0.17.0)
     RestoreScreen()
     if not placed then return end
     placed = false
@@ -1841,6 +1924,12 @@ end
 
 local function PlaceNow()
     PlaceScreen() -- the hint box, the chat's box, the map's border and buttons go with our layout, bars or not
+    -- 0.17.0: and so do the slim bars, when the session began with their switch on.
+    if Snap.slimOn == nil then Snap.slimOn = type(mod and mod.opts) == "table" and mod.opts.slim == 1 end
+    if Snap.slimOn then
+        local started, why = Snap.SlimCall("Start")
+        if started == false and PE.debugOn then PE:Debug("ctrlLayout", "slim bars not shown: " .. tostring(why)) end
+    end
     local frames = BarFrames()
     if not frames then return end
     -- Every frame read before any is changed.
@@ -2191,6 +2280,8 @@ local REWRITES = {
     -- the chat over them and the tooltip over the target of target. The pictures and the
     -- real bars take the new size after the reload asked for.
     panelSize = function(p) return p.system == "UnitFrame" or p.system == "ChatFrame" or p.system == "HudTooltip" end,
+    -- 0.17.0, Slim bars: the tooltip's spot (the corner while they are on).
+    slim = function(p) return p.system == "HudTooltip" end,
 }
 
 local function RunRewrites()
@@ -2339,6 +2430,15 @@ do
     -- On: a hook on the game's SetActiveActionBar, to be tried in its own test step.
     OPTIONS[#OPTIONS + 1] = { key = "tHook", label = "Part: follow the triggers with a hook", choices = ON_OFF,
         OnChange = OPTIONS[#OPTIONS].OnChange }
+    -- 0.17.0: the slim bars (SlimBars.lua), Off by default. The tooltip's spot is a piece of
+    -- our Edit Mode layout, so a change rewrites that piece (out of a fight) and asks for the
+    -- reload; the bars themselves start or stop with that reload (Snap.slimOn).
+    OPTIONS[#OPTIONS + 1] = { key = "slim", label = "Slim bars", choices = ON_OFF, OnChange = function()
+        if RewritePieces(REWRITES.slim, "slim") and not Snap.slimTold then
+            Snap.slimTold = true
+            PE:Print("Slim bars count from the next reload.")
+        end
+    end }
 end
 -- 0.16.4, for the device test (spec 2026-11-24-0.16.4-cleanup.md, 6 and 7): a numbered mark
 -- in the debug log, and the snapshot (the block at the end of the file). `always`: the two
@@ -2459,9 +2559,15 @@ mod = PE:RegisterModule({
         if not state then return nil end
         local index = OursIndex(state)
         if index and state.active == index then
+            local lines = { TEXT_USING }
             local why = FaceStatus()
-            if why then return { TEXT_USING, TEXT_FACE_OFF .. why .. (why:find("[.!]$") and "" or ".") } end
-            return TEXT_USING
+            if why then lines[2] = TEXT_FACE_OFF .. why .. (why:find("[.!]$") and "" or ".") end
+            -- 0.17.0: and why the slim bars are off, when their switch is on and they are not.
+            why = Snap.SlimCall("Status")
+            if type(why) == "string" and why ~= "" then
+                lines[#lines + 1] = "Pocket Essentials' slim bars are off: " .. why .. (why:find("[.!]$") and "" or ".")
+            end
+            return #lines == 1 and TEXT_USING or lines
         end
         return TEXT_ANOTHER
     end,

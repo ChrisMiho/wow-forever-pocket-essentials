@@ -1366,6 +1366,8 @@ test("rows: Spell panel size, the three timer rows and Start over", function()
         "Part: targeting pictures", "Part: spell pictures",
         -- 0.16.4: the hook, a way to follow the triggers that is Off until tried on the device
         "Part: follow the triggers with a hook",
+        -- 0.17.0: the slim bars, Off until tried on the device
+        "Slim bars",
         -- 0.16.4: for the device test
         "Mark a test section", "Save a snapshot" })
     eq(list[1].key, "panelSize")
@@ -3789,6 +3791,286 @@ test("0.16.4 snapshot: with the layout off it still lists every piece, and makes
     eq(pieceLine(lines, "main d-pad panel"), "piece: main d-pad panel | not found")
     eq(#c:frames(), frames, "a frame was made")
     eq(#c:callsTo("hooksecurefunc"), hooks, "a hook was made")
+    c:assertClean()
+end)
+
+---------------------------------------------------------------------------
+-- 0.17.0: the slim bars' place in the plan, their switch, and how the layout starts and
+-- stops them (spec 2026-11-24-0.17.0-slim-bars.md; the bars themselves: slimbars_test.lua)
+---------------------------------------------------------------------------
+
+local SLIM_RECTS = {
+    ["player bar"] = { -498, 141, -218, 169 },
+    ["target bar"] = { 218, 141, 498, 169 },
+    ["cast bar"] = { 218, 127, 498, 139 },
+    ["pet bar"] = { -498, 172, -362, 189 },
+    ["target of target bar"] = { 362, 172, 498, 189 },
+    ["pet boxes room"] = { -498, 192, -218, 213 },
+    ["target boxes room"] = { 218, 172, 358, 193 },
+}
+-- The game's own pieces that are invisible while the slim bars show.
+local GAME_FRAME_RECTS = { "player", "pet", "target", "target of target", "target auras", "target cast bar" }
+
+test("0.17.0 plan: the seven slim rectangles, the same at every size, the two sides mirrored", function()
+    local Plan = plan()
+    eq(Plan.SlimRects(), SLIM_RECTS)
+    local r = Plan.SlimRects()
+    for _, pair in ipairs({ { "player bar", "target bar" }, { "pet bar", "target of target bar" } }) do
+        local a, b = r[pair[1]], r[pair[2]]
+        eq({ a[1], a[2], a[3], a[4] }, { -b[3], b[2], -b[1], b[4] }, pair[1] .. " mirrors " .. pair[2])
+    end
+    -- A fresh table each time.
+    r["player bar"][1] = 0
+    eq(Plan.SlimRects(), SLIM_RECTS)
+    -- The design's sizes, in units: 264 by 26 px and 128 by 16 px on a 720 px screen.
+    local px = 768 / 720
+    check(math.abs(280 - 264 * px) < 2 and math.abs(28 - 26 * px) < 1, "the main bar is not the design's size")
+    check(math.abs(136 - 128 * px) < 1 and math.abs(17 - 16 * px) < 1, "the small bar is not the design's size")
+end)
+
+test("0.17.0 plan: Slim bars is Off by default, and Off leaves the plan exactly as it was", function()
+    local Plan = plan()
+    eq(Plan.DEFAULTS.slim, 0)
+    for _, size in ipairs(Plan.PANEL_SIZES) do
+        local base = Plan.Rects({ panelSize = size })
+        eq(Plan.Rects({ panelSize = size, slim = 0 }), base, size .. "%")
+        eq(Plan.Rects({ panelSize = size, slim = 2 }), base, size .. "%: a value that is not 0 or 1")
+        eq(Plan.Rects({ panelSize = size, slim = "yes" }), base, size .. "%: a value that is not a number")
+        for name in pairs(SLIM_RECTS) do eq(base[name], nil, size .. "%: " .. name .. " while off") end
+        for _, name in ipairs(GAME_FRAME_RECTS) do check(base[name], size .. "%: no " .. name .. " while off") end
+        eq(Plan.Pieces({ panelSize = size, slim = 0 }), Plan.Pieces({ panelSize = size }), size .. "% pieces")
+    end
+    eq(Plan.TEMPLATE, 5, "the template number must not change: nobody's layout is rebuilt for this")
+end)
+
+test("0.17.0 plan: with Slim bars on no piece overlaps another, at every size and in every state", function()
+    local Plan = plan()
+    local W = 1365.33
+    local SPOT_RECT = { innerLeft = "inner left diamond", outerLeft = "outer left diamond",
+        innerRight = "inner right diamond", outerRight = "outer right diamond" }
+    for _, size in ipairs(Plan.PANEL_SIZES) do
+        for _, hints in ipairs({ 0, 1 }) do
+            for _, mapButtons in ipairs({ 0, 1 }) do
+                local what = "slim, " .. size .. "%, hints " .. hints .. ", map buttons " .. mapButtons
+                local r = Plan.Rects({ panelSize = size, hints = hints, mapButtons = mapButtons, slim = 1 })
+                for name, want in pairs(SLIM_RECTS) do eq(r[name], want, what .. ": " .. name) end
+                -- The game's frames are invisible then: not pieces of the screen.
+                for _, name in ipairs(GAME_FRAME_RECTS) do eq(r[name], nil, what .. ": " .. name) end
+                -- The tooltip in the bottom right corner, taken 200 by 100.
+                for i, want in ipairs({ W / 2 - 10 - 200, 10, W / 2 - 10, 110 }) do near(r.tooltip[i], want, what .. ": tooltip " .. i) end
+                checkClear(r, what)
+                -- Each trigger state by name: what is drawn then is clear of every slim piece.
+                for state, halves in pairs(Plan.FaceStates()) do
+                    for _, h in ipairs(halves) do
+                        local diamond = r[SPOT_RECT[h.spot]]
+                        check(diamond, what .. ": no rectangle for " .. h.spot)
+                        for name in pairs(SLIM_RECTS) do
+                            check(not overlapArea(diamond, r[name]), what .. ", " .. state .. ": " .. h.spot .. " overlaps the " .. name)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    -- The tightest spots: the largest diamonds end 2.2 under the cast bar, the LB / RB
+    -- pictures 4 inside the bars, the room for the pet's boxes under the chat.
+    local r = Plan.Rects({ panelSize = 120, slim = 1 })
+    near(r["cast bar"][2] - r["outer right diamond"][4], 2.2, "cast bar over the diamonds at 120%")
+    eq(r["target bar"][1] - r["RB targeting picture"][3], 4)
+    eq(r["LB targeting picture"][1] - r["player bar"][3], 4)
+    check(Plan.Rects({ slim = 1 })["pet boxes room"][4] < Plan.Rects({ slim = 1 }).chat[2], "the pet's boxes would reach the chat")
+end)
+
+test("0.17.0 plan: the tooltip's piece is in the corner with Slim bars on; no other piece changes", function()
+    local Plan = plan()
+    for _, size in ipairs(Plan.PANEL_SIZES) do
+        local on, off = Plan.Pieces({ panelSize = size, slim = 1 }), Plan.Pieces({ panelSize = size })
+        eq(#on, #off)
+        for i, p in ipairs(on) do
+            if p.system == "HudTooltip" then
+                eq(p.anchor, { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOMRIGHT", x = -10, y = 10 }, size .. "%")
+            else
+                eq(p, off[i], size .. "% " .. p.system)
+            end
+        end
+    end
+end)
+
+test("0.17.0 switch: the row is Off by default; a change rewrites only the tooltip, asks for the reload and says once that it counts from then", function()
+    local c, PE = onClient()
+    local row = optRow(PE, "slim")
+    check(row ~= nil, "no Slim bars row")
+    eq(row.label, "Slim bars")
+    eq(choicesOf(row), { { 0, "Off" }, { 1, "On" } })
+    eq(opts(PE).slim, 0)
+    for _, e in ipairs(ours(c).systems) do if e.anchorInfo then e.anchorInfo.offsetX = 222 end end
+    choose(c, PE, "slim", 1)
+    local rewritten = {}
+    for _, e in ipairs(ours(c).systems) do
+        if e.anchorInfo and e.anchorInfo.offsetX ~= 222 then rewritten[e.system] = true end
+    end
+    eq(rewritten, { [SYS.HudTooltip] = true })
+    eq(systemEntry(ours(c), SYS.HudTooltip).anchorInfo,
+        { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOMRIGHT", offsetX = -10, offsetY = 10 })
+    eq(reloadReason(PE), RELOAD)
+    -- Off again: the tooltip goes back over the target of target.
+    choose(c, PE, "slim", 0)
+    eq(systemEntry(ours(c), SYS.HudTooltip).anchorInfo.offsetY, 236)
+    local said = 0
+    for _, line in ipairs(T.chatLines(c)) do
+        if line == "Slim bars count from the next reload." then said = said + 1 end
+    end
+    eq(said, 1)
+    c:assertClean()
+end)
+
+test("0.17.0 switch: a change in a fight waits for the fight to end", function()
+    local c, PE = onClient()
+    c:enterCombat()
+    choose(c, PE, "slim", 1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), 1, "the layout was written in a fight")
+    eq(systemEntry(ours(c), SYS.HudTooltip).anchorInfo.offsetY, 236)
+    eq(statusText(PE), "Updating the layout after this fight.")
+    c:leaveCombat()
+    c:advance(0.1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), 2)
+    eq(systemEntry(ours(c), SYS.HudTooltip).anchorInfo.offsetY, 10)
+    eq(reloadReason(PE), RELOAD)
+    c:assertClean()
+end)
+
+test("0.17.0 switch: refused while Edit Mode is open, and put back", function()
+    local c, PE = onClient()
+    c.world.editMode = true
+    choose(c, PE, "slim", 1)
+    eq(opts(PE).slim, 0)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), 1)
+    eq(reloadReason(PE), nil)
+    c:assertClean()
+end)
+
+-- A stand-in for PE.SlimBars that records each call (as faceStub does for the spell pictures).
+local function slimStub(c, PE)
+    local s = { calls = {}, reason = nil }
+    function s:Start()
+        s.calls[#s.calls + 1] = { "Start", combat = c.world.inCombat }
+        if s.startFails then error("slim start failed") end
+        if s.refuse then return false, s.refuse end
+        return true
+    end
+    function s:Stop()
+        s.calls[#s.calls + 1] = { "Stop", combat = c.world.inCombat }
+        if s.stopFails then error("slim stop failed") end
+    end
+    function s:Status() return s.reason end
+    PE.SlimBars = s
+    return s
+end
+
+test("0.17.0 layout: with the switch Off the slim bars' file is never called", function()
+    local c, PE = layoutClient({}, 3)
+    local slim = slimStub(c, PE)
+    switchOn(c, PE)
+    c:fire("PLAYER_ENTERING_WORLD")
+    c:advance(0.1)
+    switchOff(c, PE)
+    eq(#slim.calls, 0)
+    -- Switching the row On counts from the next reload: still nothing this session.
+    local c2, PE2 = layoutClient({}, 3)
+    local slim2 = slimStub(c2, PE2)
+    switchOn(c2, PE2)
+    choose(c2, PE2, "slim", 1)
+    c2:fire("PLAYER_ENTERING_WORLD")
+    c2:advance(0.1)
+    eq(#slim2.calls, 0, "started without a reload")
+end)
+
+test("0.17.0 layout: with the switch On the bars start when the layout is placed, out of a fight, and stop when it goes", function()
+    local c, PE = layoutClient({}, 3)
+    local slim = slimStub(c, PE)
+    opts(PE).slim = 1
+    switchOn(c, PE)
+    check(count(slim, "Start") >= 1, "not started")
+    eq(count(slim, "Stop"), 0)
+    for _, call in ipairs(slim.calls) do check(not call.combat, "called in a fight") end
+    -- Switching the row Off counts from the next reload: the bars stay this session.
+    choose(c, PE, "slim", 0)
+    eq(count(slim, "Stop"), 0, "stopped without a reload")
+    opts(PE).slim = 1
+    -- Another layout picked: stopped. Ours again: started.
+    local starts = count(slim, "Start")
+    c.world.layouts.activeLayout = 3
+    c:fire("EDIT_MODE_LAYOUTS_UPDATED")
+    c:advance(0.1)
+    eq(slim.calls[#slim.calls][1], "Stop")
+    c.world.layouts.activeLayout = 4
+    c:fire("EDIT_MODE_LAYOUTS_UPDATED")
+    c:advance(0.1)
+    eq(slim.calls[#slim.calls][1], "Start")
+    check(count(slim, "Start") > starts, "not started again")
+    -- The layout switched off: stopped.
+    switchOff(c, PE)
+    eq(slim.calls[#slim.calls][1], "Stop")
+    c:assertClean()
+end)
+
+test("0.17.0 layout: the layout going off in a fight stops the slim bars only when the fight is over", function()
+    local c, PE = layoutClient({}, 3)
+    local slim = slimStub(c, PE)
+    opts(PE).slim = 1
+    switchOn(c, PE)
+    c:enterCombat()
+    switchOff(c, PE)
+    eq(count(slim, "Stop"), 0, "stopped in a fight")
+    c:leaveCombat()
+    c:advance(0.1)
+    check(count(slim, "Stop") >= 1, "not stopped after the fight")
+    for _, call in ipairs(slim.calls) do check(not call.combat, "called in a fight") end
+    -- Switched on in a fight: nothing until it ends.
+    local c2, PE2 = layoutClient({}, 3)
+    local slim2 = slimStub(c2, PE2)
+    opts(PE2).slim = 1
+    c2:enterCombat()
+    switchOn(c2, PE2)
+    eq(#slim2.calls, 0)
+    c2:leaveCombat()
+    c2:advance(0.1)
+    check(count(slim2, "Start") >= 1, "not started after the fight")
+end)
+
+test("0.17.0 layout: a start that refuses or fails is logged and the layout carries on; the card says why the bars are off", function()
+    local c, PE = layoutClient({}, 3)
+    PE:SetDebug(true)
+    local slim = slimStub(c, PE)
+    slim.refuse = "the game's player frame was not found"
+    opts(PE).slim = 1
+    switchOn(c, PE)
+    local found = false
+    for _, l in ipairs(logTexts(c, "ctrlLayout")) do
+        if l == "slim bars not shown: the game's player frame was not found" then found = true end
+    end
+    check(found, "the refusal is not in the debug log")
+    check(barCalls(c, "SetScale") > 0, "the bars were not placed")
+    slim.reason = "they hit an error"
+    check(statusText(PE):find("Pocket Essentials' slim bars are off: they hit an error.", 1, true), "the card: " .. tostring(statusText(PE)))
+    slim.reason = nil
+    eq(statusText(PE), USING)
+    -- A start that raises: one error for the feature, the layout still placed.
+    local c2, PE2 = layoutClient({}, 3)
+    local slim2 = slimStub(c2, PE2)
+    slim2.startFails = true
+    opts(PE2).slim = 1
+    switchOn(c2, PE2)
+    check(barCalls(c2, "SetScale") > 0, "the bars were not placed")
+    check(#PE2.errors >= 1, "the failure was not logged")
+end)
+
+test("0.17.0 layout: a missing slim bars file changes nothing", function()
+    local c, PE = layoutClient({}, 3)
+    PE.SlimBars = nil
+    opts(PE).slim = 1
+    switchOn(c, PE)
+    switchOff(c, PE)
     c:assertClean()
 end)
 
