@@ -46,3 +46,7 @@ if [ "$actual" != "$EXPECTED" ]; then
 fi
 
 luajit tests/api/audit.lua "$PWD" "$clone"
+
+# The check for calls into Blizzard's Lua, with the same source: it rewrites
+# tests/taint/names.txt (the names Blizzard defines in Lua) when a call was added.
+luajit tests/taint/audit.lua "$PWD" "$clone"

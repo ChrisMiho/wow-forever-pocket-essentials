@@ -123,6 +123,9 @@ local INDIRECT = {
     { "cvar", "OutlineEngineMode", "../../probe/PocketProbe/Errors.lua", '"OutlineEngineMode"' },
     { "cvar", "SoftTargetIconInteract", "../../probe/PocketProbe/Errors.lua", '"SoftTargetIconInteract"' },
     { "cvar", "SoftTargetIconGameObject", "../../probe/PocketProbe/Errors.lua", '"SoftTargetIconGameObject"' },
+    -- The probe's fight watch still registers the active-bar callback (the addon itself hooks
+    -- SetActiveActionBar since 0.16.4); the stand-in client offers it for the probe's tests.
+    { "method", "RegisterActiveActionBarUpdatedCallback", "../../probe/PocketProbe/Watch.lua", "RegisterActiveActionBarUpdatedCallback" },
     -- Restriction probe 0.4.0, controller layout trials: names reached through Find("...") strings.
     { "namespace", "C_EditMode.SaveLayouts", "../../probe/PocketProbe/Trials.lua", '"C_EditMode.SaveLayouts"' },
     { "global", "EditModePresetLayoutManager", "../../probe/PocketProbe/Trials.lua", '"EditModePresetLayoutManager"' },

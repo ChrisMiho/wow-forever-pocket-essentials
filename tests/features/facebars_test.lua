@@ -413,11 +413,36 @@ test("face: the swap works in a fight and changes no frame of the game's", funct
     c:assertClean()
 end)
 
-test("face: without the active-bar callback the main bar shows (the nothing-held state)", function()
+test("face: without the game's SetActiveActionBar to hook the main bar shows (the nothing-held state)", function()
     local c, PE, Face = started({ setup = function(cl)
-        rawset(cl.env.GamepadMainActionBarFrame.PageUnit, "RegisterActiveActionBarUpdatedCallback", nil)
+        rawset(cl.env.GamepadMainActionBarFrame.PageUnit, "SetActiveActionBar", nil)
     end })
-    checkState(c, Face, REST, "no callback")
+    checkState(c, Face, REST, "no hook")
+    c:assertClean()
+end)
+
+-- 0.16.4 (charter rule 2): the active bar is followed with a hook, not with the game's
+-- RegisterActiveActionBarUpdatedCallback, which writes our function into the game's own table
+-- (PageUnit.lua:705-707, CallbackRegistry.lua:112).
+test("0.16.4 face: the active bar is followed by a hook on SetActiveActionBar; the game's callback list is never written", function()
+    local registered = 0
+    local c, PE, Face = started({ setup = function(cl)
+        local pageUnit = cl.env.GamepadMainActionBarFrame.PageUnit
+        local real = rawget(pageUnit, "RegisterActiveActionBarUpdatedCallback")
+        rawset(pageUnit, "RegisterActiveActionBarUpdatedCallback", function(...)
+            registered = registered + 1
+            return real(...)
+        end)
+    end })
+    eq(registered, 0, "the game's callback list was written")
+    local hooked = false
+    for _, call in ipairs(c:callsTo("hooksecurefunc")) do
+        if call.args[1] == c.env.GamepadMainActionBarFrame.PageUnit and call.args[2] == "SetActiveActionBar" then hooked = true end
+    end
+    check(hooked, "no hook on SetActiveActionBar")
+    c:pressTriggers(true, false)
+    c:advance(0.1)
+    checkState(c, Face, LT, "LT held")
     c:assertClean()
 end)
 

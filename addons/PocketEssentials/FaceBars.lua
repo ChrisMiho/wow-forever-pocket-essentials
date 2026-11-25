@@ -89,9 +89,13 @@ local ADDON_NAME, PE = ...
 --     (SetDrawBling, SetDrawEdge: DOC/FrameAPICooldownDocumentation.lua:390, 401).
 --   * The real bars' size, 208 by 68 when they do not grow (G/ActionBarStyles.lua:172),
 --     each button inside them at most 32 (G/ActionBarStyles.lua:158-195).
---   * The active bar: PageUnit:RegisterActiveActionBarUpdatedCallback(fn, name)
---     (G/PageUnit.lua:705-707), called as fn(name) from SetActiveActionBar (:527-540)
---     on every trigger check, changed or not; PageUnit:GetActiveBar() (:542-544).
+--   * The active bar: hooksecurefunc on PageUnit.SetActiveActionBar (G/PageUnit.lua:527-540),
+--     which the game calls on every trigger check, changed or not; then PageUnit:GetActiveBar()
+--     (:542-544, it only returns a field). Until 0.16.3 this was
+--     PageUnit:RegisterActiveActionBarUpdatedCallback (:705-707). That is a Lua function of
+--     the game's which writes our function into the game's own callback table
+--     (Blizzard_SharedXMLBase/CallbackRegistry.lua:112), so by the rule of 0.16.4 it went
+--     (tests/taint/calls.txt); a hook writes nothing of ours into the game's tables.
 --   * Page changes: hooksecurefunc on PageUnit.SetCurrentPage (G/PageUnit.lua:420);
 --     never PageUnit:AddPageChangeCallback, which would taint the page change (:415-417, 450-452).
 --   * The real bars' strata is LOW (G/ActionBarTemplates.xml:147, :375) at frame
@@ -110,7 +114,6 @@ local Face = {}
 PE.FaceBars = Face
 
 local KEY = "ctrlLayout"
-local CALLBACK_NAME = "PocketEssentialsFace"   -- a string: a number is refused (CallbackRegistry.lua:121-122)
 local ERROR_LIMIT = 3                          -- errors in a session before the pictures turn off
 local QUIET_ALPHA = 0.3                        -- a half drawn quiet (the main diamond across from a held trigger)
 local BASE_BUTTON = 28                         -- the picture size the glyph, range dot and count were drawn for
@@ -1230,8 +1233,8 @@ local function HookOnce(root)
         if type(manager.ShowAlert) == "function" then Hook(manager, "ShowAlert", glow) end
         if type(manager.HideAlert) == "function" then Hook(manager, "HideAlert", glow) end
     end
-    if not callbackSet and type(pageUnit.RegisterActiveActionBarUpdatedCallback) == "function" then
-        callbackSet = pcall(pageUnit.RegisterActiveActionBarUpdatedCallback, pageUnit, onActiveBar, CALLBACK_NAME) and true or false
+    if not callbackSet and type(pageUnit.SetActiveActionBar) == "function" then
+        callbackSet = Hook(pageUnit, "SetActiveActionBar", onActiveBar)
     end
     for _, g in ipairs(groups) do
         local anchor = g.anchor
@@ -1340,7 +1343,7 @@ local function StartNow(size)
     holder:SetShown(not barsHidden)
     faded = true
     SetAnchorsAlpha(0)
-    Note("on" .. (callbackSet and "" or " (no active-bar callback: the main bar only)"))
+    Note("on" .. (callbackSet and "" or " (no active-bar hook: the main bar only)"))
     return true
 end
 

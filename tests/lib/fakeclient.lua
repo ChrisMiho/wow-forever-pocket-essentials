@@ -1483,9 +1483,13 @@ function Client.new(opts)
     -- c:setRange(button, checksRange, inRange) (ActionBarButton.lua:533-564),
     -- c:spellAlert(button, on) (ActionButtonSpellAlertManager ShowAlert / HideAlert)
     local OVERRIDE_KEYS = { "friendlyTargetingBar", "hostileTargetingBar", "shortcutsBar", "possessBar", "stanceBar" }
-    function c:setActiveBar(bar)
+    -- PageUnit.lua:527-540: SetActiveActionBar keeps the bar and sends the event to the callbacks.
+    BlizzMethod(pageUnit, "SetActiveActionBar", function(_, bar)
         world.activeBar = bar
         for owner, fn in pairs(activeCallbacks) do Protect("active bar callback", fn, owner) end
+    end)
+    function c:setActiveBar(bar)
+        Protect("SetActiveActionBar", function() c.barParts[gamepadBar].PageUnit:SetActiveActionBar(bar) end)
     end
     world.triggers = { false, false }
     function c:pressTriggers(lt, rt)

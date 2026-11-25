@@ -1,5 +1,5 @@
 #!/bin/bash
-# Offline tests: the fast API check (tests/api/), the debug log reader's tests (tests/readlog/), the restriction probe
+# Offline tests: the fast API check (tests/api/), the check for calls into Blizzard's Lua (tests/taint/), the debug log reader's tests (tests/readlog/), the restriction probe
 # reader's tests (tests/readprobe/) and the probe's own tests (tests/probe/, skipped when not there), then the QuestieDB harness,
 # which puts every quest in the pinned QuestieDB release through our QuestData.lua under WoW API stand-ins (tests/questiedb/),
 # then the whole-addon smoke test in the stand-in game client (tests/smoke/, tests/lib/fakeclient.lua),
@@ -30,6 +30,12 @@ fi
 # source (tests/api/). Needs no network. A new name fails until scripts/audit-api.sh
 # has been run.
 luajit tests/api/extract.lua "$PWD" | luajit tests/api/fastcheck.lua "$PWD"
+
+# Calls into Blizzard's Lua (tests/taint/): every function Blizzard wrote in Lua that the
+# addon or the probe calls is listed in tests/taint/calls.txt with what it writes; an
+# unlisted call, or one listed as "writes", fails. Uses Blizzard's source when it is at
+# ~/.cache/wow-ui-source/forever (scripts/audit-api.sh fetches it), else tests/taint/names.txt.
+luajit tests/taint/audit.lua "$PWD"
 
 # The debug log reader (scripts/read-log.lua): the order of a wrapped log, the
 # output, and that a saved file is loaded with nothing in reach. Needs no network.
