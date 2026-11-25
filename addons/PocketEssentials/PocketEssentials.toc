@@ -22,6 +22,7 @@ QuestIcons.lua
 QuestArrow.lua
 Bags.lua
 Vendor.lua
+QuickSlots.lua
 Chat.lua
 MenuBackground.lua
 LootSparkles.lua

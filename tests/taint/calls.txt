@@ -246,6 +246,7 @@ Maximize	addons/PocketEssentials/Hub.lua	engine	WorldMapFrame.Maximize is hooked
 Minimize	addons/PocketEssentials/Hub.lua	engine	WorldMapFrame.Minimize is hooked with hooksecurefunc only (after a type check), never called
 Move	*	ours	PE.Move, the addon's Move module table (Move.lua), read into a local; in probe Panel.lua the local function Move
 Name	*	ours	local Name in QuestData.lua
+Next	addons/PocketEssentials/QuickSlots.lua	ours	QS.Next (QuickSlots.lua): the next saved mount choice, worked out from our own list; Blizzard's Next (Blizzard_GlueXML/Shared/CharacterServicesTemplates.lua:33) is a login-screen function that is never reached
 Next	addons/PocketEssentials/Setup.lua	engine	never called: the string is a button label
 OnCanvasScaleChanged	addons/PocketEssentials/QuestIcons.lua	engine	WorldMapFrame.OnCanvasScaleChanged is hooked with hooksecurefunc only (after a type check), never called
 OnChanged	*	ours	QD:OnChanged (QuestData.lua)
