@@ -205,6 +205,8 @@ function Client.new(opts)
         money = 0,
         merchant = { open = false, canRepair = false, repairCost = 0 },
         inCombat = false,
+        mounts = {},                 -- the mount journal: { { id =, name =, icon =, usable =, favourite =, collected = }, ... }
+        mounted = nil,               -- the id of the mount the player is on, or nil
         group = "none",              -- "none" | "party" | "raid"
         channels = {},               -- { { id = 1, name = "General", disabled = false }, ... }
         guild = nil,                 -- guild name, or nil
@@ -2270,6 +2272,35 @@ function Client.new(opts)
     }, { SetCVar = true })
 
     Namespace("C_ChatInfo", { InChatMessagingLockdown = function() return world.chatLockdown and true or false end })
+
+    -- The mount journal (MountJournalDocumentation.lua: GetMountIDs 264, GetMountInfoByID 273,
+    -- SummonByID 614, Dismiss 49), over world.mounts; none owned unless a test adds some.
+    -- SummonByID puts the player on an owned, usable mount (world.mounted); Dismiss takes them off.
+    local function MountById(id)
+        for _, m in ipairs(world.mounts) do
+            if m.id == id then return m end
+        end
+    end
+    Namespace("C_MountJournal", {
+        GetMountIDs = function()
+            local out = {}
+            for i, m in ipairs(world.mounts) do out[i] = m.id end
+            return out
+        end,
+        GetMountInfoByID = function(id)
+            local m = MountById(id)
+            if not m then return end
+            return m.name, 5000 + id, m.icon or (1000 + id), world.mounted == id, m.usable ~= false, 1,
+                m.favourite and true or false, false, nil, false, m.collected ~= false, id, false
+        end,
+        SummonByID = function(id)
+            local m = MountById(id)
+            if m and m.collected ~= false and m.usable ~= false then world.mounted = id end
+        end,
+        Dismiss = function() world.mounted = nil end,
+    }, { SummonByID = true, Dismiss = true })
+    -- PlayerScriptDocumentation.lua:1399.
+    Global("IsMounted", function() return world.mounted ~= nil end)
 
     local function ItemAt(bag, slot)
         local b = world.bags[bag]

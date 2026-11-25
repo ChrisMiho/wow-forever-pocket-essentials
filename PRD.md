@@ -123,6 +123,20 @@ Chatting is hard on a handheld because targets are too small to tap.
 
 ## Status
 
+**0.21.0, Quick slots (the mount square), built 2026-11-25, not yet tested
+on a device** (branch `playing-screen-0.17.0`, on top of 0.20.0): a row
+"Quick slots" in the Chat picker's settings, Off by default; with it On the
+window the round button opens ends with a "Quick slots" line holding one
+square, the mount. A tap gets on the chosen mount or gets off
+(`C_MountJournal.SummonByID` / `Dismiss`, as the game's own Mount button
+does) and closes the window; in a fight a tap asks nothing of the game. A
+row "Mount" steps through the character's mounts ("First favourite" until
+one is picked; saved per character). Nothing listens or ticks, and nothing
+is put on a spell bar. Not known off the device: whether an addon's tap may
+summon at all (`docs/ARCHITECTURE.md`, "Unverified API"). Waiting for the
+device test: `docs/TESTING.md` 36. Spec
+`docs/superpowers/specs/2026-11-25-0.21.0-mount-slot.md` (with "As built").
+
 **0.20.0, after the first sitting, built 2026-11-25, not yet tested on a
 device** (branch `playing-screen-0.17.0`, on top of 0.19.0): whole names on
 the slim bars (row "Names on the bars", Whole name by default); the

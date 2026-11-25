@@ -2513,3 +2513,103 @@ Things to watch for (known, not fixed):
   bars show at full size and the upper one on each side touches the LB or RB
   picture.
 - Buffs and debuffs on the target are still not shown with Slim bars On.
+
+### 36. Version 0.21.0: Quick slots, the mount square
+
+Not yet tested on a device. This is the build for getting on your mount
+without a spell slot: one square in the window the round PE button opens.
+It also has 0.19.0 and 0.20.0 in it, so sections 34 and 35 can be done in
+the same sitting. Same setup as before: Debug log On, Catch all errors on.
+**Chat picker must be On** (the square lives in its window). The marks go on
+counting; the numbers below assume the first one here is 34.
+
+**The one thing nobody knows yet:** whether the game lets an addon's tap
+call your mount at all. Step 3 answers it. If nothing happens there, or the
+game says "Interface action failed" or shows a "blocked" pop-up, stop,
+screenshot it, switch **Quick slots** Off, and send the files (step 13).
+Nothing else is affected by that.
+
+Section 34, switching it on.
+
+1. Settings, Chat tab. Screenshot the rows. New: **Quick slots** (Off) and
+   **Mount** (it should read "First favourite", with the name of one of your
+   mounts in small letters under it; with no mount it reads "No mount yet").
+2. **Mark** (34). Tap **On** on Quick slots. Close the settings and tap the
+   round PE button. Under the chat buttons and the whisper names there
+   should be a line "Quick slots" with one square showing your mount's
+   picture and its name beside it. Screenshot. Is the square easy to hit
+   with a thumb?
+
+Section 35, getting on and off.
+
+3. **Mark** (35). Stand outdoors, out of a fight. Tap PE, tap the square. You should get on
+   your mount and the window should close. Did it work? Was there any
+   message in chat or in red on the screen?
+4. Tap PE again. The square should have a gold edge and read "Get off".
+   Screenshot. Tap it: you should get off and the window should close.
+5. Do steps 3 and 4 once more with the controller only: open the window,
+   move with the d-pad down past the chat buttons to the square (it gets the
+   blue outline), press A. Can you reach it? Does A get you on and off?
+6. After getting on and off, cast a spell or two and use a controller
+   button or two. Does everything still work as before? (This is the check
+   for "anything that stops spells casting".)
+
+Section 36, a fight and indoors.
+
+7. **Mark** (36). Pull something. During the fight tap PE: the square
+   should be greyed. Tap it: nothing should happen except the line beside
+   it reading "Not in a fight", and the window should stay open.
+   Screenshot.
+8. Open the window before a fight, leave it open, and get into the fight.
+   The square will still look normal (nothing redraws it until it is
+   tapped). Tap it: it should grey and read "Not in a fight", and you should
+   not get on.
+9. Go indoors (an inn or a cave). Tap PE: is the picture greyed? (It should
+   be if the game tells the addon the mount cannot be used there; that is
+   not known yet.) Screenshot. Tap it anyway: the window closes and the game
+   should say why you cannot mount, in its own red text. Screenshot what it
+   says.
+
+Section 37, picking the mount (skip if you own only one).
+
+10. **Mark** (37). Settings, Chat tab, row **Mount**. Tap + a few times: it
+    should step through the mounts this character owns, one by one, with "2
+    of 5" and the like under the name, and come back round to "First
+    favourite". Tap - to go the other way. Screenshot one of them.
+11. Leave it on a mount that is not your favourite. Tap PE: the square
+    should show that mount's picture and name. Tap it: do you get on that
+    one?
+12. If you have another character with mounts: log in on it. Its Mount row
+    should read "First favourite" again (each character has its own choice).
+
+13. Settings, Errors tab: screenshot it. Tap **Save** (reload). Send
+    `SavedVariables/PocketEssentials.lua` and
+    `SavedVariables/<your character>/PocketEssentials.lua` with the
+    screenshots.
+
+What I most want to hear:
+- Did the tap get you on the mount, and off again? This has never been
+  tried on a device.
+- Any "Interface action failed", a "blocked" pop-up, or a controller button
+  that does nothing afterwards?
+- Is two taps (PE, then the square) quick enough, or do you want it one
+  press away? A controller button for it and a square on the playing screen
+  were both left out of this build on purpose.
+
+Things to look at while you are there:
+- **Which mount "First favourite" picks.** Star a mount in the Collections
+  menu and open the window again: does the square show that one?
+- **A mount you cannot use** (too low a riding skill, the wrong zone): is
+  its picture greyed?
+- **Switching the row Off** with the window open, then tapping PE: the line
+  and the square should be gone and the window as it was in 0.20.0.
+- **Chat picker Off:** the row should read "Quick slots: Needs Chat picker",
+  and a tap on PE opens the settings as before.
+
+Things to watch for (known, not fixed):
+- The square is not redrawn while the window stays open, so it does not
+  grey by itself when a fight starts or brighten when you get on some other
+  way. It is right again the next time the window opens.
+- With "Chat picker size" small, a long mount name beside the square may be
+  cut at the window's edge.
+- The setup guide does not show the two new rows; they are in the settings.

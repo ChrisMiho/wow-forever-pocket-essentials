@@ -21,6 +21,7 @@ addons/PocketEssentials/
   QuestArrow.lua  feature: quest arrow
   Bags.lua        feature: bag sorter (key `bags`; called "One big bag" before 0.1.0)
   Vendor.lua      features: sell junk, repair (two switches)
+  QuickSlots.lua  part of Chat picker, row "Quick slots" (Off by default; 0.21.0): the rules of the mount square at the bottom of the Chat picker's window (PE.QuickSlots: which mount, what the square says, the tap). No frame, no event, no timer; Chat.lua draws the square
   Chat.lua        feature: Chat picker (key `chat`; "Big chat buttons" until 0.8.1)
   MenuBackground.lua  feature: menu background (key `menuBg`): a dark panel of ours behind the game's pop-up menus
   LootSparkles.lua    feature: loot sparkles (key `sparkles`): keeps the engine setting `outlineModeShowLootEffectWhenDisabled` at 1
@@ -261,6 +262,17 @@ are not.
   (`Blizzard_SharedXMLBase/CvarUtil.lua:33`; it only returns
   `C_CVar.GetCVarBool`), so `C_CVar.GetCVar` is asked instead. No field is
   written on a game frame. Each call has its line in `calls.txt`.
+- **0.21.0 adds no call into Blizzard's Lua.** The mount square's five new
+  game calls are the engine's: `C_MountJournal.GetMountIDs`,
+  `GetMountInfoByID`, `SummonByID`, `Dismiss`
+  (`MountJournalDocumentation.lua:264, 273, 614, 49`) and `IsMounted`
+  (`PlayerScriptDocumentation.lua:1399`). The game's own Lua for the same
+  job (`MountJournalMountButton_UseMount`,
+  `Blizzard_Collections/Classic/Blizzard_MountCollection.lua:498-511`) is
+  read, not called, and the Collections window is never opened or touched.
+  The square is a button of ours with a texture of ours; `SetDesaturated`
+  on it is the engine's texture method (its line in `calls.txt` says why
+  the name matches a Blizzard function). `QS.Next` is our own.
 - **0.20.0 adds no call into Blizzard's Lua.** Whole names on the slim bars
   come from two engine functions, each through `pcall`: `UnitName` (already
   used, now with its second answer); the separator is read from the
@@ -327,6 +339,10 @@ group, the spell wheels moved) has been done.
 
 | What | Used by | If it is wrong |
 |---|---|---|
+| A tap on a plain button of ours may call `C_MountJournal.SummonByID(mountID)` and `C_MountJournal.Dismiss()` out of a fight. By the source: neither is marked as locked (`MountJournalDocumentation.lua:614`, `:49`; `SummonByID` only says `SecretArguments = "AllowedWhenUntainted"`, and the id given is a plain number from `GetMountIDs`), and the game's own Mount button calls them from plain Lua (`Blizzard_Collections/Classic/Blizzard_MountCollection.lua:498-511`, `Mainline/Blizzard_MountCollection.lua:833`). Whether the game also takes them from addon code on this client has never been tried. New in 0.21.0, only with "Quick slots" On | Quick slots: the mount square (`QuickSlots.lua` `QS:Tap`) | The tap does nothing, or the game refuses it and the Errors page shows a blocked `SummonByID` or `Dismiss`; the window has already closed. Not known: whether a refused summon leaves the game refusing other actions until a reload, as an addon-opened chat box did (sixth device test). Switch the row Off; nothing else uses these calls. The call is inside `PE:Safe`, so a raised error is logged, not shown |
+| What `C_MountJournal.GetMountIDs()` and `GetMountInfoByID(id)` answer on this client: that the ids cover the mounts in the Collections menu, that `isCollected` is true for the ones the character owns, `isFavorite` for the starred ones, `isUsable` false indoors or while swimming, `isActive` true for the mount being ridden, and that none of them is a hidden ("secret") value (`MountJournalDocumentation.lua:264`, `:273`; `GetMountInfoByID` "may return nothing") | Quick slots: which mount the square stands for, its grey-out, "Get off", the "Mount" row | No mount is found though the character has one (the square reads "No mount yet" and a tap does nothing); or "First favourite" picks another mount than expected; or the picture is not greyed indoors (a tap then still asks the game, which says why). A hidden or missing answer counts as "no" and is never compared or joined; each call is in a `pcall` |
+| `IsMounted()` is true on any mount and false on a flight path (documented, `PlayerScriptDocumentation.lua:1399`); it is asked next to the picked mount's own `isActive` | Quick slots: "Get off" and the bright edge | Mounted on a mount other than the picked one, the square offers to get on instead of off (the tap then asks the game to summon); or on a flight path it reads "Get off" and the tap asks the game to dismiss |
+| How many ids `GetMountIDs()` returns on this client. Every id is asked once each time the window is drawn with the row On, on a tap, and when the settings draw the "Mount" row; nothing is kept between | Quick slots | With a very long list (other clients have over a thousand) opening the window could hitch for a moment. Nothing ticks, so it cannot cost frames while playing |
 | `Minimap:SetMaskTexture("Interface\\Buttons\\WHITE8X8")` from addon code gives a square map, and that file exists on this client. The method is the engine's (`MinimapFrameAPIDocumentation.lua:141`); the game's only call gives `ui-hud-minimap-frame-generic-mask` (`Blizzard_Minimap/Camelot/Minimap.lua:11, 42`). New in 0.19.0, only with "Map look" on Square | Square map (`MapLook.lua`) | The map stays round at 100% with a square edge round it, and the words in the corners sit outside the circle. If the call raises, the fallback draws the round map's disc and the card says so; a call that is silently ignored cannot be told apart from one that worked |
 | Nothing but `MinimapClusterMixin:UpdateMinimapConfig` gives the round mask back (the only `SetMaskTexture` call on the map in the source, `Camelot/Minimap.lua:42`; hooked since 0.16.0) | Square map | The map turns round until the next placement; the debug log shows no "given again after a redraw" line at that moment |
 | The game's quest areas, the player arrow and the group dots draw into the corners of a square mask | Square map | Corners are empty, or the game's own icons are cut at the old circle (our quest icons are placed by us and are not) |

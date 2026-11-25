@@ -8,6 +8,10 @@
 -- Nothing here hooks, filters or replaces the chat frames. The only game
 -- events used are the two character-whisper events, and only while the
 -- feature is on. (Battle.net whispers are not tracked in this version.)
+--
+-- Since 0.21.0 the window can end with a "Quick slots" line holding one
+-- square, the mount (row "Quick slots", Off by default). Its rules are in
+-- QuickSlots.lua; this file only draws the square and passes on the tap.
 local ADDON_NAME, PE = ...
 
 local type, tostring, pcall, select, pairs = type, tostring, pcall, select, pairs
@@ -463,6 +467,7 @@ local UI, M, S
 local panel, area
 local settingsButton, clearButton
 local talkText, whispersText, emptyText
+local quickText, slotButton, slotText -- the "Quick slots" line; made the first time it is drawn
 local targetButtons = {} -- reused on every redraw
 local navList = {}       -- tappable buttons in reading order
 local built, buildFailed = false, false
@@ -476,6 +481,11 @@ local SCALE_MIN, SCALE_MAX, SCALE_DEFAULT = 70, 150, 100
 local COLOR_HEAD = { 1, 0.82, 0 }
 local COLOR_DIM = { 0.62, 0.62, 0.62 }
 local COLOR_DOT = { 0.88, 0.08, 0.08 }
+local COLOR_PLAIN = { 1, 1, 1 }
+
+local SLOT_SIZE = 1.5                   -- the mount square's side, in buttons
+local NOTE_FIGHT = "Not in a fight"
+local NOTE_MISSING = "Not available on this version of the game"
 
 local function Scale()
     local n = tonumber(mod and mod.opts and mod.opts.scale)
@@ -659,6 +669,124 @@ local function TargetButton(index)
     return btn
 end
 
+---------------------------------------------------------------------------
+-- The "Quick slots" line: a heading and one square, the mount, under the
+-- whisper names. Drawn only while the row "Quick slots" is On. The square is
+-- a button of our own from the window's button maker with a picture of our
+-- own on it; QuickSlots.lua says what it shows (QS:Line) and does the tap
+-- (QS:Tap). The game is asked when the window is drawn and on a tap, never
+-- in between: nothing listens while the window is open or closed.
+---------------------------------------------------------------------------
+
+local function QuickOn()
+    return PE.QuickSlots ~= nil and type(mod.opts) == "table" and mod.opts.quickSlots == 1
+end
+
+-- What the square should show right now, or nil when the line is not drawn.
+local function QuickState()
+    if not QuickOn() then return nil end
+    local ok, state = mod:Safe(PE.QuickSlots.Line, PE.QuickSlots)
+    if ok and type(state) == "table" then return state end
+    return nil
+end
+
+local Refresh
+
+-- A tap on the square. Getting on or off closes the window. In a fight
+-- nothing is asked of the game and the line says so; the window stays open.
+local function SlotClicked()
+    local QS = PE.QuickSlots
+    if not QS then return end
+    local action = QS:Tap()
+    if action == "summon" or action == "dismiss" then
+        panel:Hide()
+        return
+    end
+    -- Drawn again first: a fight may have started since the window opened.
+    Refresh()
+    if not (slotText and slotText:IsShown()) then return end
+    if action == "combat" then
+        slotText:SetText(NOTE_FIGHT)
+    elseif action == "missing" then
+        slotText:SetText(NOTE_MISSING)
+    end
+    slotText:SetTextColor(COLOR_HEAD[1], COLOR_HEAD[2], COLOR_HEAD[3], 1)
+end
+
+local function QuickBuild()
+    if slotButton then return end
+    quickText = UI:CreateText(area.child, "small")
+    UseFont(quickText, "small")
+    quickText:SetWordWrap(false)
+    slotText = UI:CreateText(area.child, "font")
+    UseFont(slotText, "font")
+    slotText:SetWordWrap(false)
+    slotText:SetJustifyH("LEFT")
+    local btn = UI:CreateButton(area.child, "")
+    UseFont(btn.peText, "font")
+    -- Above the button's fill, under its pressed flash.
+    btn.peSlotIcon = btn:CreateTexture(nil, "BORDER", nil, 1)
+    btn:SetScript("OnClick", mod:Wrap(SlotClicked))
+    slotButton = btn
+end
+
+local function QuickHide()
+    if not slotButton then return end
+    quickText:Hide()
+    slotText:Hide()
+    slotButton:Hide()
+end
+
+-- The height the line adds to the window's content.
+local function QuickHeight(head)
+    return S.gap * 1.5 + head + S.button * SLOT_SIZE
+end
+
+-- Draws the line with its heading's top at y. Returns the y under the square.
+local function PlaceQuick(state, y, head, contentWidth)
+    QuickBuild()
+    PlaceText(quickText, "Quick slots", y, contentWidth, COLOR_HEAD)
+    local top = y + head
+    local side = S.button * SLOT_SIZE
+    local btn = slotButton
+    btn:SetStyle(state.greyed and "disabled" or "normal")
+    btn:SetSelected(state.bright and true or false)   -- the bright edge while mounted
+    btn:ClearAllPoints()
+    btn:SetSize(side, side)
+    btn:SetPoint("TOPLEFT", area.child, "TOPLEFT", 0, -top)
+    FitLabel(btn)
+    local icon = btn.peSlotIcon
+    if state.icon ~= nil then
+        -- Inside the button's edge, so the edge (gold while mounted) shows round it.
+        local inset = S.border * 3
+        icon:ClearAllPoints()
+        icon:SetPoint("TOPLEFT", btn, "TOPLEFT", inset, -inset)
+        icon:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -inset, inset)
+        icon:SetTexture(state.icon)
+        icon:SetDesaturated(state.greyed and true or false)
+        local shade = state.greyed and 0.45 or 1
+        icon:SetVertexColor(shade, shade, shade, 1)
+        icon:Show()
+        btn:SetLabel("")
+    else
+        icon:Hide()
+        btn:SetLabel("?")
+    end
+    -- The heading counts as part of the stop, so the d-pad brings it into view too.
+    btn.peScrollTop, btn.peScrollBottom = y, top + side
+    btn:Show()
+    navList[#navList + 1] = btn
+
+    local color = state.greyed and COLOR_DIM or COLOR_PLAIN
+    slotText:ClearAllPoints()
+    slotText:SetPoint("LEFT", btn, "RIGHT", S.gap, 0)
+    slotText:SetWidth(max(contentWidth - side - S.gap, 10))
+    slotText:SetText(state.label)
+    slotText:SetTextColor(color[1], color[2], color[3], 1)
+    slotText:Show()
+    return top + side
+end
+
 -- The height of n chips in rows of three.
 local function GridHeight(n)
     local rows = ceil(n / COLS)
@@ -691,6 +819,8 @@ local function DoRefresh()
     local head = lineHeight + gap * 0.4
     local contentHeight = head + GridHeight(#targets) + gap * 1.5 + head
         + (#shown > 0 and GridHeight(#shown + 1) or lineHeight)
+    local quick = QuickState()
+    if quick then contentHeight = contentHeight + QuickHeight(head) end
 
     -- As tall as the content. Only if that is taller than the screen allows
     -- does the list scroll, with its bar beside the chips.
@@ -743,6 +873,12 @@ local function DoRefresh()
     end
 
     for i = used + 1, #targetButtons do targetButtons[i]:Hide() end
+
+    if quick then
+        y = PlaceQuick(quick, y + gap * 1.5, head, contentWidth)
+    else
+        QuickHide()
+    end
     area:SetContentHeight(max(y, 1))
 
     if scroll and area.upButton:IsShown() then
@@ -755,7 +891,7 @@ local function DoRefresh()
 end
 
 -- Does nothing unless the window is open.
-local function Refresh()
+Refresh = function()
     if built and panel:IsShown() then mod:Safe(DoRefresh) end
 end
 
@@ -1113,6 +1249,58 @@ local function TextSizeStepper()
 end
 
 ---------------------------------------------------------------------------
+-- The two "Quick slots" rows.
+-- "Quick slots" Off / On is saved as opts.quickSlots (1 for On; nothing is
+-- saved until the row is tapped, and nothing saved means Off). It is drawn
+-- with Chat picker off too, where it says what it needs: the square lives in
+-- the Chat picker's window, so with Chat picker off there is no window to
+-- hold it and nothing is built. "Mount" steps through the mounts this
+-- character owns (QuickSlots.lua keeps the choice in the character's own
+-- saved file).
+---------------------------------------------------------------------------
+
+local OFF_ON = { { value = 0, label = "Off" }, { value = 1, label = "On" } }
+
+local function QuickGet(self)
+    return (type(self.opts) == "table" and self.opts.quickSlots == 1) and 1 or 0
+end
+
+local function QuickSet(self, value)
+    self.opts.quickSlots = (value == 1) and 1 or 0
+    if PE.debugOn then PE:Debug("chat", "quick slots: " .. (value == 1 and "on" or "off")) end
+    Refresh()
+end
+
+local function QuickValue(self)
+    if not self:IsEnabled() then return "Needs Chat picker" end
+    return nil
+end
+
+-- The text after "Mount": nothing, the control shows the choice.
+local function MountValue()
+    local QS = PE.QuickSlots
+    if QS == nil then return "Not available" end
+    return nil
+end
+
+-- The number control with the chosen mount between - and +, and under it
+-- which mount "First favourite" stands for, or the mount's place in the
+-- list. With no mount owned it reads "No mount yet" and both ends are dim:
+-- there is nothing to step through.
+local function MountStepper()
+    local QS = PE.QuickSlots
+    if not QS then return nil end
+    local label, note = QS:MountLabel()
+    if note == nil then return { text = label, downDim = true, upDim = true } end
+    return {
+        text = Escape(label),
+        unit = Escape(note),
+        down = function() QS:StepMount(-1) Refresh() end,
+        up = function() QS:StepMount(1) Refresh() end,
+    }
+end
+
+---------------------------------------------------------------------------
 -- The module
 ---------------------------------------------------------------------------
 
@@ -1128,6 +1316,12 @@ mod = PE:RegisterModule({
           help = "All chat windows, even with Chat picker off." },
         { key = "scale", label = "Chat picker size",
           number = { min = SCALE_MIN, max = SCALE_MAX, step = 10, default = SCALE_DEFAULT, suffix = "%", unit = "of normal" } },
+        -- guide = false: the setup guide leaves these two out (its Chat screen is full, and
+        -- this part is new and untried); they are in the settings only.
+        { label = "Quick slots", value = QuickValue, choices = OFF_ON, get = QuickGet, set = QuickSet, always = true,
+          guide = false, help = "A mount square in the Chat picker's window." },
+        { label = "Mount", value = MountValue, stepper = MountStepper, guide = false,
+          help = "The mount the square uses." },
     },
 
     -- Before 0.15.0 the whisper list was in the account-wide file

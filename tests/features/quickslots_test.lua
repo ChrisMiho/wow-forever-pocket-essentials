@@ -454,6 +454,313 @@ test("quick slots: a damaged saved value reads as First favourite", function()
 end)
 
 ---------------------------------------------------------------------------
+-- The line in the chat window
+---------------------------------------------------------------------------
+
+-- Plan, Task 2: with the row Off the window is exactly as before.
+test("quick slots window: Off, the window has the same stops and height as with no journal at all", function()
+    local c0, PE0 = new(nil, { on = { "chat" } })
+    tapHub(c0, PE0)
+    local c, PE, _, j = new({ HORSE() }, { on = { "chat" } })
+    tapHub(c, PE)
+    eq(stops(c), stops(c0))
+    eq(height(c, panelOf(c)), height(c0, panelOf(c0)))
+    eq(square(c), nil)
+    eq(texts(c)["Quick slots"], nil)
+    eq(j.calls.GetMountIDs, 0, "the journal was asked with the row Off")
+    c:assertClean("row off")
+end)
+
+test("quick slots window: On, one more d-pad stop and the window is taller by the line", function()
+    local c0, PE0 = new({ HORSE() }, { on = { "chat" } })
+    tapHub(c0, PE0)
+    local c, PE = new({ HORSE() }, { on = { "chat" }, quick = true })
+    tapHub(c, PE)
+    eq(stops(c), stops(c0) + 1)
+    local M = PE.UI:Metrics()
+    local head = M.smallFontSize * 1.15 + M.gap * 0.4
+    local grew = height(c, panelOf(c)) - height(c0, panelOf(c0))
+    check(math.abs(grew - (M.gap * 1.5 + head + M.button * 1.5)) < 1e-6, "the window grew by " .. tostring(grew))
+    check(texts(c)["Quick slots"], "no Quick slots heading")
+    check(texts(c)["Brown Horse"], "the mount's name is not shown")
+    local b = square(c)
+    check(b ~= nil, "no square")
+    local l, r, t, bottom = c._rect(b)
+    check(math.abs((r - l) - (t - bottom)) < 1e-6, "the square is not square")
+    eq(c._state(b.peSlotIcon).texture, 1011)
+    eq(b.peSelected, false)
+    c:assertClean("row on")
+end)
+
+test("quick slots window: the square is the stop after the chat buttons and before Settings and Close", function()
+    local c, PE = new({ HORSE() }, { on = { "chat" }, quick = true })
+    tapHub(c, PE)
+    local list = panelOf(c).peNavGet()
+    local at
+    for i, b in ipairs(list) do if b == square(c) then at = i end end
+    check(at ~= nil, "the square is not a d-pad stop")
+    eq(T.labelOf(list[at + 1]), "Settings")
+    eq(T.labelOf(list[at + 2]), "Close")
+    eq(#list, at + 2)
+    check(list[at - 1].peChatTarget ~= nil or T.labelOf(list[at - 1]) == "Clear marks", "the stop before the square is not a chat button")
+    -- It sits under every chat button.
+    local _, _, top = c._rect(square(c))
+    for i = 1, at - 1 do
+        local _, _, _, bottom = c._rect(list[i])
+        check(bottom >= top, "a chat button is not above the square")
+    end
+end)
+
+test("quick slots window: a tap gets on the mount and closes the window", function()
+    local c, PE, _, j = new({ HORSE(), RAM({ favourite = true }) }, { on = { "chat" }, quick = true })
+    tapHub(c, PE)
+    c:click(square(c))
+    eq(j.summoned, { 22 })
+    eq(j.calls.Dismiss, 0)
+    eq(panelOf(c):IsShown(), false)
+    c:assertClean("tap to mount")
+end)
+
+test("quick slots window: mounted, the square has the bright edge, reads Get off, and a tap gets off and closes", function()
+    local c, PE, _, j = new({ HORSE() }, { on = { "chat" }, quick = true, mounted = true })
+    tapHub(c, PE)
+    eq(square(c).peSelected, true)
+    check(texts(c)["Get off"], "the label does not read Get off")
+    c:click(square(c))
+    eq(j.calls.Dismiss, 1)
+    eq(j.calls.SummonByID, 0)
+    eq(panelOf(c):IsShown(), false)
+    c:assertClean("tap to get off")
+end)
+
+-- Spec: "In a fight the square is greyed and a tap does nothing but say Not in a fight".
+test("quick slots window: in a fight the square is greyed, a tap calls nothing, says so and leaves the window open", function()
+    local c, PE, _, j = new({ HORSE() }, { on = { "chat" }, quick = true })
+    c:enterCombat()
+    tapHub(c, PE)
+    local b = square(c)
+    eq(b.peStyle, "disabled")
+    eq(c._state(b.peSlotIcon).desaturated, true)
+    c:click(b)
+    eq(j.calls.SummonByID + j.calls.Dismiss, 0)
+    eq(panelOf(c):IsShown(), true)
+    check(texts(c)["Not in a fight"], "the window does not say Not in a fight")
+    eq(#c.blocked, 0)
+    c:assertClean("tap in a fight")
+end)
+
+test("quick slots window: a fight that starts while the window is open still stops the tap", function()
+    local c, PE, _, j = new({ HORSE() }, { on = { "chat" }, quick = true })
+    tapHub(c, PE)
+    eq(square(c).peStyle, "normal")
+    c:enterCombat()
+    c:click(square(c))
+    eq(j.calls.SummonByID + j.calls.Dismiss, 0)
+    eq(panelOf(c):IsShown(), true)
+    check(texts(c)["Not in a fight"], "the window does not say Not in a fight")
+    eq(square(c).peStyle, "disabled")
+    c:assertClean("fight started with the window open")
+end)
+
+test("quick slots window: a mount that cannot be used here is greyed and a tap still asks the game", function()
+    local c, PE, _, j = new({ HORSE({ usable = false }) }, { on = { "chat" }, quick = true })
+    tapHub(c, PE)
+    eq(square(c).peStyle, "disabled")
+    c:click(square(c))
+    eq(j.summoned, { 11 })
+    c:assertClean("unusable mount")
+end)
+
+-- Review Focus: no mounts, or no journal: "No mount yet", a tap does nothing, no error.
+test("quick slots window: with no mount the square shows ? and No mount yet, and a tap does nothing", function()
+    for _, mounts in ipairs({ false, {} }) do
+        local c, PE, _, j = new(mounts or nil, { on = { "chat" }, quick = true })
+        tapHub(c, PE)
+        local b = square(c)
+        check(b ~= nil, "no square")
+        eq(T.labelOf(b), "?")
+        eq(b.peSlotIcon:IsShown(), false)
+        check(texts(c)["No mount yet"], "the label does not read No mount yet")
+        c:click(b)
+        eq(panelOf(c):IsShown(), true)
+        if j then eq(j.calls.SummonByID + j.calls.Dismiss, 0) end
+        c:assertClean("no mount")
+    end
+end)
+
+test("quick slots window: opened again after getting on, the square is drawn anew", function()
+    local c, PE, _, _, world = new({ HORSE() }, { on = { "chat" }, quick = true })
+    tapHub(c, PE)
+    c:click(square(c))
+    world.mounted = true
+    tapHub(c, PE)
+    eq(square(c).peSelected, true)
+    check(texts(c)["Get off"], "the label does not read Get off")
+end)
+
+-- Review Focus: Quick slots On with Chat picker Off: nothing is built.
+test("quick slots window: On with Chat picker off, nothing is built and the journal is not asked by a tap on the round button", function()
+    local c, PE, _, j = new({ HORSE() }, { quick = true })
+    tapHub(c, PE)
+    eq(panelOf(c), nil)
+    c:advance(5)
+    for _, rec in ipairs(c:frames()) do
+        check(rec.addonFile ~= "QuickSlots.lua", "QuickSlots.lua made a frame")
+    end
+    eq(j.calls.SummonByID + j.calls.Dismiss, 0)
+    c:assertClean("chat picker off")
+end)
+
+-- The stand-in client's own journal (tests/lib/fakeclient.lua, world.mounts), end to end:
+-- the calls are the logged ones, and a summon there really mounts.
+test("quick slots window: with the stand-in's journal, two taps get on and two more get off", function()
+    local c, PE = T.new({ on = { "chat" }, setup = function(c)
+        c.world.mounts = { { id = 11, name = "Brown Horse" }, { id = 22, name = "Gray Ram", favourite = true } }
+    end })
+    PE:GetModule("chat").opts.quickSlots = 1
+    tapHub(c, PE)
+    check(texts(c)["Gray Ram"], "the favourite is not the one shown")
+    c:click(square(c))
+    eq(#c:callsTo("C_MountJournal.SummonByID"), 1)
+    eq(c:callsTo("C_MountJournal.SummonByID")[1].args[1], 22)
+    eq(c.world.mounted, 22)
+    eq(panelOf(c):IsShown(), false)
+    tapHub(c, PE)
+    check(texts(c)["Get off"], "the label does not read Get off")
+    c:click(square(c))
+    eq(#c:callsTo("C_MountJournal.Dismiss"), 1)
+    eq(#c:callsTo("C_MountJournal.SummonByID"), 1)
+    eq(c.world.mounted, nil)
+    eq(panelOf(c):IsShown(), false)
+    c:assertClean("stand-in journal")
+end)
+
+---------------------------------------------------------------------------
+-- The two settings rows
+---------------------------------------------------------------------------
+
+local function row(PE, label)
+    for _, opt in ipairs(PE:GetModule("chat").options) do
+        if opt.label == label then return opt end
+    end
+    error("no row " .. label, 2)
+end
+
+test("quick slots rows: Quick slots is Off / On, Off by default, and saves nothing until tapped", function()
+    local _, PE = new({ HORSE() }, { on = { "chat" } })
+    local mod, opt = PE:GetModule("chat"), row(PE, "Quick slots")
+    eq(opt.choices, { { value = 0, label = "Off" }, { value = 1, label = "On" } })
+    eq(opt.get(mod), 0)
+    eq(mod.opts.quickSlots, nil)
+    eq(opt.value(mod), nil)
+    opt.set(mod, 1)
+    eq(mod.opts.quickSlots, 1)
+    eq(opt.get(mod), 1)
+    opt.set(mod, 0)
+    eq(opt.get(mod), 0)
+end)
+
+test("quick slots rows: with Chat picker off the Quick slots row is still drawn and says what it needs", function()
+    local c, PE = new({ HORSE() })
+    local mod, opt = PE:GetModule("chat"), row(PE, "Quick slots")
+    eq(opt.always, true)
+    eq(opt.value(mod), "Needs Chat picker")
+    eq(row(PE, "Mount").always, nil)
+    PE:OpenSettings("chat")
+    c:advance(0.2)
+    local found = false
+    for _, rec in ipairs(c:frames()) do
+        for _, r in ipairs(rec.regions) do
+            local st = c._state(r)
+            if st.type == "FontString" and r:IsVisible() and st.text == "Quick slots: Needs Chat picker" then found = true end
+        end
+    end
+    check(found, "the settings do not show 'Quick slots: Needs Chat picker'")
+    c:assertClean("row with chat picker off")
+end)
+
+test("quick slots rows: switching the row On redraws an open window with the square, Off takes it away", function()
+    local c, PE = new({ HORSE() }, { on = { "chat" } })
+    tapHub(c, PE)
+    local before = stops(c)
+    local mod, opt = PE:GetModule("chat"), row(PE, "Quick slots")
+    opt.set(mod, 1)
+    eq(stops(c), before + 1)
+    check(square(c) ~= nil, "no square after On")
+    opt.set(mod, 0)
+    eq(stops(c), before)
+    eq(square(c), nil)
+    eq(texts(c)["Quick slots"], nil)
+    c:assertClean("row toggled")
+end)
+
+test("quick slots rows: Mount shows the choice between - and +, and each end steps it", function()
+    local _, PE = new({ HORSE(), RAM({ favourite = true }) }, { on = { "chat" } })
+    local mod, opt = PE:GetModule("chat"), row(PE, "Mount")
+    eq(opt.value(mod), nil)
+    local box = opt.stepper(mod)
+    eq(box.text, "First favourite")
+    eq(box.unit, "Gray Ram")
+    box.up()
+    box = opt.stepper(mod)
+    eq(box.text, "Brown Horse")
+    eq(box.unit, "1 of 2")
+    eq(PE.charDB.quickSlots.mount, 11)
+    box.down()
+    eq(opt.stepper(mod).text, "First favourite")
+    box.down()
+    eq(opt.stepper(mod).text, "Gray Ram")
+    eq(opt.stepper(mod).unit, "2 of 2")
+end)
+
+test("quick slots rows: with no mount the Mount row reads No mount yet between two dim ends", function()
+    for _, mounts in ipairs({ false, {} }) do
+        local c, PE = new(mounts or nil, { on = { "chat" } })
+        local mod, opt = PE:GetModule("chat"), row(PE, "Mount")
+        eq(opt.value(mod), nil)
+        eq(opt.stepper(mod), { text = "No mount yet", downDim = true, upDim = true })
+        PE:OpenSettings("chat")
+        c:advance(0.2)
+        c:assertClean("mount row with no mount")
+    end
+end)
+
+test("quick slots rows: both rows are left out of the setup guide", function()
+    local c, PE = new({ HORSE() }, { on = { "chat" }, quick = true })
+    eq(row(PE, "Quick slots").guide, false)
+    eq(row(PE, "Mount").guide, false)
+    PE.Setup:Open()
+    c:advance(0.2)
+    local guide = rawget(c.env, "PocketEssentialsSetupPanel")
+    check(guide and guide:IsShown(), "the setup guide is not open")
+    for _ = 1, 12 do
+        walk(c, guide, function(w)
+            for _, r in ipairs(c._state(w).regions) do
+                local st = c._state(r)
+                if st.type == "FontString" and r:IsVisible() and st.text then
+                    check(st.text:sub(1, 11) ~= "Quick slots" and st.text:sub(1, 5) ~= "Mount", "the guide shows " .. st.text)
+                end
+            end
+        end)
+        local nextButton
+        walk(c, guide, function(w)
+            if c._state(w).type == "Button" and w:IsVisible() and T.labelOf(w) == "Next" then nextButton = w end
+        end)
+        if not nextButton then break end
+        c:click(nextButton)
+        c:advance(0.1)
+    end
+    c:assertClean("guide without the rows")
+end)
+
+test("quick slots rows: the settings draw both rows with Chat picker on and a mount owned, without error", function()
+    local c, PE = new({ HORSE() }, { on = { "chat" }, quick = true })
+    PE:OpenSettings("chat")
+    c:advance(0.2)
+    c:assertClean("settings with both rows")
+end)
+
+---------------------------------------------------------------------------
 -- No event, no tick
 ---------------------------------------------------------------------------
 

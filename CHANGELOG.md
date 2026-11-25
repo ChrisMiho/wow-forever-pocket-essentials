@@ -4,6 +4,54 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.21.0] - 2026-11-25
+
+Forty-first test build: a way to get on your mount without a spell slot.
+**Not yet tested on a device, and nothing here can run the game: whether the
+game lets an addon's tap call the mount at all is the first thing to find
+out.** Spec `docs/superpowers/specs/2026-11-25-0.21.0-mount-slot.md`. It sits
+on top of 0.20.0 and 0.19.0.
+
+### Added
+
+- **Quick slots, first slot: the mount.** A new row in the Chat tab,
+  **Quick slots** (Off by default). With it On, the window the round PE
+  button opens ends with a "Quick slots" line holding one square with your
+  mount's picture. Tap PE, tap the square: you get on and the window closes.
+  The same two taps get you off (the square has a gold edge and reads "Get
+  off" while you are mounted). Nothing is put on your spell bars.
+- **Which mount: the row "Mount".** It steps through the mounts this
+  character owns with - and +. Until you pick one it reads **First
+  favourite**: a mount you starred in the Collections menu if there is one,
+  else the first mount you can use; the small line under it names the mount
+  that means right now. The choice is saved for each character.
+- **In a fight** the square is greyed, and a tap asks nothing of the game:
+  the line reads "Not in a fight" and the window stays open.
+- **Where you cannot mount** (indoors, swimming) the picture is greyed, and
+  a tap still asks the game, which says why in its own red text.
+- **With no mount** the square shows "?" and reads "No mount yet".
+- The square is one more stop for the d-pad in that window, after the chat
+  buttons and before Settings and Close.
+
+### Notes
+
+- Quick slots needs **Chat picker** On: the square lives in its window. With
+  Chat picker Off the row reads "Quick slots: Needs Chat picker" and nothing
+  is built.
+- The two new rows are in the settings only, not in the setup guide.
+- Nothing listens or ticks for this, On or Off. The game is asked about your
+  mounts only when the window is drawn, when the square is tapped, and when
+  the settings show the Mount row. So a square drawn before a fight started
+  is not greyed until you tap it or open the window again; the tap is still
+  stopped.
+- The game's "random favourite" call is not used: the game's own button for
+  it is switched off on this client.
+- For the technically minded: four new game calls, all found in Blizzard's
+  source for this build (`C_MountJournal.GetMountIDs`, `GetMountInfoByID`,
+  `SummonByID`, `Dismiss`) plus `IsMounted`. Not known until the device:
+  whether a tap from an addon may summon. If the game refuses it, the Errors
+  page will show a blocked `SummonByID`; switch the row Off and tell me.
+
 ## [0.20.0] - 2026-11-25
 
 Fortieth test build: the rest of what you asked for after the first sitting

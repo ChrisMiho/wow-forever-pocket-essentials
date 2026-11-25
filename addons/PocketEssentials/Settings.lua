@@ -405,9 +405,10 @@ end
 
 -- Option rows: the list `options` of a feature, drawn in its card while the
 -- feature is on. A row with `always = true` is also drawn while the feature
--- is not on (it must not need the feature). Rows show in list order. Each row
--- is a table of one of these kinds; any of them may have help = "text", a
--- grey line under the row name:
+-- is not on (it must not need the feature). A row with `guide = false` is
+-- drawn in the settings only: the setup guide leaves it out. Rows show in
+-- list order. Each row is a table of one of these kinds; any of them may
+-- have help = "text", a grey line under the row name:
 --   choices: { key, label, choices = { { value, label }, ... }, OnChange }
 --            a segmented choice; the tapped part is saved as mod.opts[key].
 --            Instead of key, a row may have get = function(mod) -> value and
@@ -554,7 +555,7 @@ function Drawer:OptionList(mod, opts)
         if type(opt) == "table"
             and (not onlyAlways or opt.always == true)
             and (not only or (opt.key ~= nil and only[opt.key]) or (opt.key == nil and opt.label ~= nil and only[opt.label]))
-            and not (opts.setup and opt.page ~= nil) then
+            and not (opts.setup and (opt.page ~= nil or opt.guide == false)) then
             rows[#rows + 1] = opt
         end
     end

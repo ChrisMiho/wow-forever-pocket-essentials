@@ -1754,11 +1754,14 @@ end
 
 -- The screen of the guide that holds this row of a feature: "card" (the
 -- feature's own screen), "details" (Quest icon details) or nil (not in the
--- guide: rows that open another settings page, and Controller layout's rows,
--- which its card leaves out: Setup.lua's "controller" screen has only = {}).
+-- guide: rows that open another settings page, Controller layout's rows,
+-- which its card leaves out: Setup.lua's "controller" screen has only = {},
+-- and rows marked guide = false).
 local function guideScreenOf(mod, opt)
     if opt.page ~= nil then return nil end
     if mod.key == "ctrlLayout" then return nil end
+    -- A row marked guide = false is in the settings only (0.21.0: the two Quick slots rows).
+    if opt.guide == false then return nil end
     if mod.key == "questIcons" then
         if QUEST_SCREEN_ROWS[opt.label] then return "card" end
         if QUEST_DETAIL_ROWS[opt.label] then return "details" end
@@ -1807,6 +1810,10 @@ end
 
 -- The buttons of a row: right of its name, left to right. The row's control
 -- is the one whose middle is nearest the name's; its parts share that middle.
+-- A control whose middle is above the name's top belongs to the row above (a
+-- row's name is never lower than the middle of its own control): without
+-- this, a row with a help line right under a row without one would be read
+-- as the control above it.
 -- The scroll tabs (^ and v) on the right edge are never part of a row.
 local function rowButtons(c, top, label, PE)
     local at = textRegion(c, top, label)
@@ -1822,7 +1829,7 @@ local function rowButtons(c, top, label, PE)
     for _, b in ipairs(buttons) do
         local l, _, t, bottom = c._rect(b)
         local d = math.abs((t + bottom) / 2 - mid)
-        if l > nl and d <= reach and (not best or d < best.d) then best = { d = d, y = (t + bottom) / 2 } end
+        if l > nl and d <= reach and (t + bottom) / 2 <= nt + 1 and (not best or d < best.d) then best = { d = d, y = (t + bottom) / 2 } end
     end
     local out = {}
     for _, b in ipairs(buttons) do

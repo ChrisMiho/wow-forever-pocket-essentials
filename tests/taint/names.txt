@@ -954,6 +954,7 @@ ModuleBlockedReason	-
 ModuleLabel	-
 Money	-
 Mount	-
+MountLabel	-
 Mounted	-
 Mounts	-
 Movable	-
@@ -1111,6 +1112,7 @@ PlaceLive	-
 PlaceMapPin	-
 PlaceNow	-
 PlaceOutline	-
+PlaceQuick	-
 PlaceRing	-
 PlaceRound	-
 PlaceScreen	-
@@ -1215,6 +1217,12 @@ QuestieDB	-
 QueueDraw	-
 QueueNav	-
 QueuePopup	-
+QuickBuild	-
+QuickHeight	-
+QuickHide	-
+QuickOn	-
+QuickSlots	-
+QuickState	-
 Raid	-
 RaiseTestError	-
 RangeIndicator	-
@@ -1521,6 +1529,7 @@ StatusTrackingBar	-
 StatusTrackingBar1	-
 StatusTrackingBar2	-
 Step	-
+StepMount	-
 StepSizes	-
 StillFaded	-
 StillThere	-

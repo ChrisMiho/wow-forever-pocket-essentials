@@ -347,6 +347,7 @@ SetClickHandler	*	ours	Hub:SetClickHandler (Hub.lua)
 SetColor	*	ours	disc:SetColor (UI.lua, UI:CreateDisc), on the addon's own disc objects
 SetCooldown	probe/PocketProbe/Trials.lua	engine	Cooldown widget method, called by name through RunSweep on the probe's own cooldown frame (CooldownFrameTemplate has no mixin)
 SetCurrentPage	addons/PocketEssentials/FaceBars.lua	engine	PageUnit.SetCurrentPage is hooked with hooksecurefunc only (after a type check), never called
+SetDesaturated	addons/PocketEssentials/Chat.lua	engine	Texture widget method on our own texture (the mount square's picture, made with CreateTexture on our own button); Blizzard's SpinnerMixin:SetDesaturated (Blizzard_SharedXML/Spinner.lua:23) is on a frame type this file never makes
 SetDesaturated	addons/PocketEssentials/FaceBars.lua	engine	Texture widget method on our own texture; the string is a name given to hooksecurefunc on a game button's icon (hooked, never called)
 SetDuration	*	engine	Animation widget method on the addon's own animations
 SetEndPoint	addons/PocketEssentials/QuestArrow.lua	engine	Line widget method on the addon's own lines
