@@ -23,6 +23,7 @@ if type(PE) ~= "table" or type(PE.RegisterModule) ~= "function" then return end
 
 local type, pairs, tonumber, tostring, pcall, next = type, pairs, tonumber, tostring, pcall, next
 local max, min, sqrt, sin, cos, floor = math.max, math.min, math.sqrt, math.sin, math.cos, math.floor
+local abs = math.abs
 
 local KEY = "questIcons"
 
@@ -152,6 +153,9 @@ local mapHooked = false
 local miniPins, miniShown = {}, 0
 local miniList, miniMapID, miniW, miniH = EMPTY, nil, nil, nil
 local last = {}            -- last player position/facing/zoom, to skip work when nothing moved
+-- 0.19.0: the map is square (MapLook.lua's square map of the Controller layout). Asked when the
+-- pin list is refreshed and when MapLook says the shape changed, never by the tick.
+local miniSquare, lookHeard = false, false
 local ticker, tickerOn, tickBusy, acc = nil, false, false, 0
 
 local label, labelTried, labelSerial = nil, false, 0
@@ -764,6 +768,18 @@ local RetryMinimapData -- set below
 local function RefreshMinimapData()
     if not active or not QD then return end
     last.x = nil -- forces the next update to redraw
+    -- 0.19.0: round or square. No MapLook (or one that raises) means round. The first time it
+    -- is there, one listener is added: a change of the shape refreshes here again.
+    local look = PE.MapLook
+    miniSquare = false
+    if type(look) == "table" and type(look.IsSquare) == "function" then
+        local ok, answer = pcall(look.IsSquare, look)
+        miniSquare = ok and answer == true
+        if not lookHeard and type(look.OnChange) == "function" then
+            lookHeard = true
+            pcall(look.OnChange, look, PE:Wrap(KEY, function() if active then RefreshMinimapData() end end))
+        end
+    end
     local mm = Minimap
     if not Opt("mini") or type(mm) ~= "table" or type(mm.GetWidth) ~= "function" then
         ClearMinimap()
@@ -851,6 +867,7 @@ local function UpdateMinimap()
     baseLevel = (IsNumber(baseLevel) and baseLevel or 0) + 5
     local list, worldW, worldH = miniList, miniW, miniH
     local all, set = showAll, showSet
+    local square = miniSquare
     local n = 0
 
     for i = 1, #list do
@@ -861,11 +878,25 @@ local function UpdateMinimap()
             if rotate then dx, dy = dx * c + dy * s, dy * c - dx * s end
             local distSq = dx * dx + dy * dy
             local alpha = 1
-            local show = distSq <= edgeSq
-            if not show and d.kind == "turnin" then
-                -- keep hand-in spots on the rim so the direction is visible
-                local k = edge / sqrt(distSq)
-                dx, dy, alpha, show = dx * k, dy * k, 0.6, true
+            local show
+            if square then
+                -- 0.19.0, the square map: inside while both distances are within the half-width;
+                -- a hand-in spot beyond it is slid along its direction to the square's edge.
+                -- With the map rotating the game turns the ground inside the mask, not the mask,
+                -- so the same rule holds for the turned dx, dy.
+                local far = max(abs(dx), abs(dy))
+                show = far <= edge
+                if not show and d.kind == "turnin" then
+                    local k = edge / far
+                    dx, dy, alpha, show = dx * k, dy * k, 0.6, true
+                end
+            else
+                show = distSq <= edgeSq
+                if not show and d.kind == "turnin" then
+                    -- keep hand-in spots on the rim so the direction is visible
+                    local k = edge / sqrt(distSq)
+                    dx, dy, alpha, show = dx * k, dy * k, 0.6, true
+                end
             end
             if show then
                 n = n + 1

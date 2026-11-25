@@ -813,4 +813,130 @@ test("quest icons: the spec's labels; the haze is Hide / Show with Hide as hideH
         "Explore: A place to go to, or someone to talk to.", "Turn in: Where to hand the quest in." })
 end)
 
+---------------------------------------------------------------------------
+-- 0.19.0: the square map (spec 2026-11-25-0.19.0-square-map.md, "Quest icons"; MapLook.lua
+-- says whether the map is square). The limit is then the square: an icon shows while both its
+-- x and y distance are inside the half-width, and a hand-in spot beyond it is slid along its
+-- direction to the square's edge. Round keeps the circle.
+---------------------------------------------------------------------------
+
+-- Puts the player so that `spot` is dx right and dy up of the minimap's middle, in the
+-- map's own units (zoom 0, outdoors, the map not rotating), and lets the minimap update.
+local function standSoThat(c, spot, dx, dy)
+    local perYardUnits = c.minimap:GetWidth() / MINI_YARDS
+    c.world.player.x = spot.x - dx / (QW.WIDTH * perYardUnits)
+    c.world.player.y = spot.y + dy / (QW.HEIGHT * perYardUnits)
+    c:advance(0.5)
+end
+
+local function oneSpot() return basicSpec({ quests = { { id = QW.ONE } }, focus = QW.ONE, watched = {} }) end
+
+local function squareOn(c, PE)
+    PE.MapLook:Place({ mapLook = 1 }, false)
+    check(PE.MapLook:IsSquare() == true, "the stand-in's map did not take the square mask")
+    c:advance(0.5)
+end
+
+local function offsetOf(icon)
+    local _, _, _, dx, dy = icon:GetPoint(1)
+    return dx, dy
+end
+
+test("quest icons square: an icon in the square's corner shows; the round map hides it", function()
+    local c, PE = newIcons(oneSpot())
+    eq(c.minimap:GetWidth(), 198)
+    local spot = PE.QuestData:GetPinsForQuest(QW.ONE)[QW.HOME][1]
+    standSoThat(c, spot, 90, 90)
+    eq(#iconsOn(c, c.minimap), 0, "the round rule: 127 from the middle is outside the circle")
+    squareOn(c, PE)
+    local icons = iconsOn(c, c.minimap)
+    eq(#icons, 1, "the square rule")
+    local dx, dy = offsetOf(icons[1])
+    check(math.abs(dx - 90) < 0.01 and math.abs(dy - 90) < 0.01, "not at 90, 90: " .. dx .. ", " .. dy)
+    eq(icons[1]:GetAlpha(), 1)
+    -- Round again: hidden again, at once.
+    PE.MapLook:Restore()
+    c:advance(0.5)
+    eq(#iconsOn(c, c.minimap), 0, "round again")
+    c:assertClean()
+end)
+
+test("quest icons square: an icon beyond the square's side is hidden", function()
+    local c, PE = newIcons(oneSpot())
+    local spot = PE.QuestData:GetPinsForQuest(QW.ONE)[QW.HOME][1]
+    squareOn(c, PE)
+    standSoThat(c, spot, 120, 10)
+    eq(#iconsOn(c, c.minimap), 0)
+    -- Just inside and just outside the limit, which is the half-width less 0.4 of an icon.
+    local edge = c.minimap:GetWidth() / 2 - PE.UI:Px(18) * 0.4
+    standSoThat(c, spot, edge - 0.5, -(edge - 0.5))
+    eq(#iconsOn(c, c.minimap), 1, "just inside")
+    standSoThat(c, spot, 10, -(edge + 0.5))
+    eq(#iconsOn(c, c.minimap), 0, "just outside, below")
+    standSoThat(c, spot, -(edge + 0.5), 0)
+    eq(#iconsOn(c, c.minimap), 0, "just outside, left")
+    c:assertClean()
+end)
+
+test("quest icons square: a hand-in spot beyond the square is slid along its direction to the square's edge", function()
+    local c, PE = newIcons(handInWorld(0.45, 0.62))
+    local spot = PE.QuestData:GetPinsForQuest(QW.HANDIN)[QW.HOME][1]
+    local edge = c.minimap:GetWidth() / 2 - PE.UI:Px(18) * 0.4
+    -- Round: on the circle, along the same direction.
+    standSoThat(c, spot, 200, 100)
+    local icons = iconsOn(c, c.minimap)
+    eq(#icons, 1)
+    local dx, dy = offsetOf(icons[1])
+    local far = math.sqrt(200 * 200 + 100 * 100)
+    check(math.abs(dx - 200 * edge / far) < 0.01 and math.abs(dy - 100 * edge / far) < 0.01, "round: " .. dx .. ", " .. dy)
+    eq(icons[1]:GetAlpha(), 0.6)
+    -- Square: x on the edge, y half of it.
+    squareOn(c, PE)
+    icons = iconsOn(c, c.minimap)
+    eq(#icons, 1)
+    dx, dy = offsetOf(icons[1])
+    check(math.abs(dx - edge) < 0.01 and math.abs(dy - edge / 2) < 0.01, "square: " .. dx .. ", " .. dy .. " (edge " .. edge .. ")")
+    eq(icons[1]:GetAlpha(), 0.6)
+    -- Up and to the left, further up than across: y on the edge.
+    standSoThat(c, spot, -150, 300)
+    dx, dy = offsetOf(iconsOn(c, c.minimap)[1])
+    check(math.abs(dx + edge / 2) < 0.01 and math.abs(dy - edge) < 0.01, "square, up: " .. dx .. ", " .. dy)
+    -- Inside the square's corner: in place, at full alpha (the circle would have slid it).
+    standSoThat(c, spot, 90, -90)
+    icons = iconsOn(c, c.minimap)
+    dx, dy = offsetOf(icons[1])
+    check(math.abs(dx - 90) < 0.01 and math.abs(dy + 90) < 0.01, "square, in the corner: " .. dx .. ", " .. dy)
+    eq(icons[1]:GetAlpha(), 1)
+    c:assertClean()
+end)
+
+test("quest icons square: the shape is asked from the map look once per refresh, and one listener is added", function()
+    local c, PE = newIcons(oneSpot())
+    local asked, added = 0, 0
+    local real = PE.MapLook
+    PE.MapLook = { IsSquare = function() asked = asked + 1 return false end, OnChange = function() added = added + 1 end }
+    c:fire("ZONE_CHANGED_NEW_AREA")
+    c:advance(2)
+    local after = asked
+    check(after >= 1, "the shape was not asked at a refresh")
+    c:advance(5) -- ticks alone ask nothing
+    eq(asked, after, "the shape was asked by the tick")
+    check(added <= 1, "more than one listener was added: " .. added)
+    PE.MapLook = real
+    c:assertClean()
+end)
+
+test("quest icons square: without the map look file the map counts as round", function()
+    local c, PE = newIcons(oneSpot())
+    local spot = PE.QuestData:GetPinsForQuest(QW.ONE)[QW.HOME][1]
+    PE.MapLook = nil
+    c:fire("ZONE_CHANGED_NEW_AREA")
+    c:advance(2)
+    standSoThat(c, spot, 90, 90)
+    eq(#iconsOn(c, c.minimap), 0)
+    standSoThat(c, spot, 40, 40)
+    eq(#iconsOn(c, c.minimap), 1)
+    c:assertClean()
+end)
+
 return { known = KNOWN_FAILURES }
