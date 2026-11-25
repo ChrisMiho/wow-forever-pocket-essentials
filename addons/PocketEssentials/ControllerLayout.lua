@@ -77,6 +77,13 @@ local ADDON_NAME, PE = ...
 -- (PE.SlimBars) draws them and makes the game's four unit frames invisible. It is started
 -- when the layout is placed and stopped when it is put back (Snap.SlimCall), and never
 -- called at all in a session that began with the switch Off.
+--
+-- 0.18.0 (spec 2026-11-24-0.18.0-arrange.md): arrange it yourself. This file holds the list
+-- of pieces that can be moved (Plan.ARRANGE), adds each one's saved offset inside the plan
+-- (Plan.Moved), and has the two switches (opts.arrange, opts.arrangeWheel, both Off by
+-- default) and the "Arrange the screen" row. Arrange.lua (PE.Arrange) is the window and its
+-- rules; it is never called in a session that began with the switch Off, and Plan.session
+-- is never set then, so every number of the plan is 0.17.0's.
 
 local type, pairs, ipairs = type, pairs, ipairs
 local sort = table.sort
@@ -111,6 +118,9 @@ Plan.DEFAULTS = {
     -- 0.17.0: the slim bars (SlimBars.lua): 0 Off, 1 On. Off, the game's unit frames and the
     -- tooltip are as 0.16.4 has them and SlimBars.lua is never called.
     slim = 0,
+    -- 0.18.0: arrange it yourself (Arrange.lua): 0 Off, 1 On. Off, no saved offset is added
+    -- anywhere and Arrange.lua is never called. arrangeWheel: the spell wheels as a piece.
+    arrange = 0, arrangeWheel = 0,
 }
 -- The part rows' keys, in the order shown.
 Plan.TEST_PARTS = { "tHints", "tChat", "tMap", "tBars", "tExtras", "tFace" }
@@ -326,7 +336,7 @@ local function Fill(opts)
     opts = type(opts) == "table" and opts or {}
     for k, default in pairs(Plan.DEFAULTS) do
         local v = opts[k]
-        local onOff = k == "hints" or k == "mapButtons" or k == "slim" or k:sub(1, 1) == "t"
+        local onOff = k == "hints" or k == "mapButtons" or k == "slim" or k:sub(1, 1) == "t" or k:sub(1, 7) == "arrange"
         if v == 0 or v == 1 or (v == 2 and not onOff) then out[k] = v else out[k] = default end
     end
     return out
@@ -337,6 +347,86 @@ local function DeepCopy(v)
     local out = {}
     for k, x in pairs(v) do out[k] = DeepCopy(x) end
     return out
+end
+
+-- 0.18.0 (spec 2026-11-24-0.18.0-arrange.md): the pieces that can be arranged, in the order
+-- the Arrange screen lists them. On tables, not locals (this file is at Lua's limit of 200).
+--   key    the name its offset is saved under
+--   label  the name on screen
+--   kind   "apply": a piece of the Edit Mode layout, moved by rewriting the layout and a
+--          reload (its offset is saved with the options, opts.offsets); "live": placed by the
+--          addon, moved at once (its offset is saved per character)
+--   twin   the key of its mirror on the other side of the screen; pair: the pair's name (the
+--          left one's key)
+--   rects  the rectangles of Plan.Rects that move with it, the first one its main one
+--   when   listed only then: "slim" (Slim bars On), "noslim" (Off), "wheel" (its own switch)
+--   gate   the option that must be 1 for its offset to count at all
+--   axis   "y": moves up and down only
+Plan.ARRANGE = {
+    { key = "map", label = "Map", kind = "apply", rects = { "map", "title strip" } },
+    { key = "swing timers", label = "Swing timers", kind = "apply", rects = { "MainHand timer", "OffHand timer", "Ranged timer" } },
+    { key = "XP bars", label = "XP bars", kind = "apply", rects = { "XP bars" } },
+    { key = "chat", label = "Chat", kind = "apply", rects = { "chat" } },
+    { key = "quest tracker", label = "Quest list", kind = "apply", rects = { "quest tracker" } },
+    { key = "buffs and debuffs", label = "Buffs and debuffs", kind = "apply", rects = { "buffs and debuffs" } },
+    { key = "tooltip", label = "Tooltip", kind = "apply", rects = { "tooltip" } },
+    { key = "player", label = "Player and pet frames", kind = "apply", twin = "target", pair = "player", when = "noslim",
+      rects = { "player", "pet" } },
+    { key = "target", label = "Target frames", kind = "apply", twin = "player", pair = "player", when = "noslim",
+      rects = { "target", "target of target", "target auras", "target cast bar" } },
+    { key = "inner left diamond", label = "Inner spell panel, left", kind = "live", twin = "inner right diamond",
+      pair = "inner left diamond", rects = { "inner left diamond" } },
+    { key = "inner right diamond", label = "Inner spell panel, right", kind = "live", twin = "inner left diamond",
+      pair = "inner left diamond", rects = { "inner right diamond" } },
+    { key = "outer left diamond", label = "Outer spell panel, left", kind = "live", twin = "outer right diamond",
+      pair = "outer left diamond", rects = { "outer left diamond" } },
+    { key = "outer right diamond", label = "Outer spell panel, right", kind = "live", twin = "outer left diamond",
+      pair = "outer left diamond", rects = { "outer right diamond" } },
+    { key = "LB targeting picture", label = "LB targeting picture", kind = "live", twin = "RB targeting picture",
+      pair = "LB targeting picture", rects = { "LB targeting picture" } },
+    { key = "RB targeting picture", label = "RB targeting picture", kind = "live", twin = "LB targeting picture",
+      pair = "LB targeting picture", rects = { "RB targeting picture" } },
+    { key = "player bar", label = "Slim bars, you and pet", kind = "live", twin = "target bar", pair = "player bar", when = "slim",
+      rects = { "player bar", "pet bar", "pet boxes room" } },
+    { key = "target bar", label = "Slim bars, target", kind = "live", twin = "player bar", pair = "player bar", when = "slim",
+      rects = { "target bar", "cast bar", "target of target bar", "target boxes room" } },
+    -- Both sub-menu buttons, their prompts and where both wheels open hang on one frame of
+    -- the game's (PageUnit.BottomCenteredAnchor: Blizzard_GamepadActionBars/MainActionBarFrame.xml:94-135,
+    -- FlyoutRadial.lua:218-220), which the layout already places: so one piece, and up and
+    -- down only (a sideways move would push both sides the same way).
+    { key = "spell wheels", label = "Spell wheels and their buttons", kind = "live", when = "wheel", gate = "arrangeWheel", axis = "y",
+      rects = { "LB+LT button", "LB+LT prompt", "RB+RT button", "RB+RT prompt" } },
+}
+Plan.ARRANGE_BY = {}
+for i = 1, #Plan.ARRANGE do Plan.ARRANGE_BY[Plan.ARRANGE[i].key] = Plan.ARRANGE[i] end
+-- A saved offset further than this either way is not believed.
+Plan.ARRANGE_LIMIT = 1500
+-- The offsets of the session: set by the module, once, when the session began with
+-- "Arrange it yourself" On ({ arrange = 1, arrangeWheel, offsets, charOffsets }); nil
+-- otherwise, and then nothing below adds anything.
+Plan.session = nil
+
+-- A piece's offset from its built-in spot: dx, dy in UI units (x right, y up); 0, 0 when
+-- there is none. v: an options table that has an `arrange` value decides for itself (1: its
+-- offsets, v.offsets for the Edit Mode pieces and v.charOffsets for the live ones; anything
+-- else: none); any other v (a Spell panel size, nil) means the session's (Plan.session).
+-- A value that is not a table of two finite numbers within ARRANGE_LIMIT, or whose key
+-- names no piece, counts as none: never an error.
+Plan.Moved = function(v, key)
+    local src = v
+    if type(src) ~= "table" or src.arrange == nil then src = Plan.session end
+    if type(src) ~= "table" or src.arrange ~= 1 then return 0, 0 end
+    local def = Plan.ARRANGE_BY[key]
+    if not def or (def.gate and src[def.gate] ~= 1) then return 0, 0 end
+    local store = def.kind == "live" and src.charOffsets or src.offsets
+    local e = type(store) == "table" and store[key] or nil
+    if type(e) ~= "table" then return 0, 0 end
+    local x, y = e.x, e.y
+    if type(x) ~= "number" or type(y) ~= "number" or x ~= x or y ~= y
+        or math.abs(x) > Plan.ARRANGE_LIMIT or math.abs(y) > Plan.ARRANGE_LIMIT then
+        return 0, 0
+    end
+    return x, y
 end
 
 -- 0.15.0 (spec 2026-11-24-controller-layout-0.15.0-panel-size.md): the Spell panel
@@ -396,15 +486,22 @@ end
 
 -- Where each real bar group's centre goes, and its scale, for size v (nil: 100%). x and
 -- y are UI units from the screen's bottom centre.
+-- 0.18.0: the two bars of a side follow that side's inner spell panel when it is moved, and
+-- the bottom anchor (the sub-menu buttons and the wheels) follows "spell wheels", up and down.
 local function BarSpots(v)
     local g = Geometry(v)
     local up, down = FACE_Y + g.barStep, FACE_Y - g.barStep
+    local lx, ly = Plan.Moved(v, "inner left diamond")
+    local rx, ry = Plan.Moved(v, "inner right diamond")
+    local _, wy = Plan.Moved(v, "spell wheels")
+    local bottom = DeepCopy(SPOTS.bottom)
+    bottom.y = bottom.y + wy
     return {
-        top = { x = -g.inner, y = up, s = g.barScale },     -- main bar (no trigger)
-        left = { x = -g.inner, y = down, s = g.barScale },  -- LT bar
-        right = { x = g.inner, y = up, s = g.barScale },    -- RT bar
-        both = { x = g.inner, y = down, s = g.barScale },   -- LT + RT bar
-        bottom = DeepCopy(SPOTS.bottom),
+        top = { x = -g.inner + lx, y = up + ly, s = g.barScale },     -- main bar (no trigger)
+        left = { x = -g.inner + lx, y = down + ly, s = g.barScale },  -- LT bar
+        right = { x = g.inner + rx, y = up + ry, s = g.barScale },    -- RT bar
+        both = { x = g.inner + rx, y = down + ry, s = g.barScale },   -- LT + RT bar
+        bottom = bottom,
     }
 end
 Plan.BarSpots = BarSpots
@@ -418,10 +515,17 @@ end
 -- { inner = { left, right }, outer = { left, right } }, each { x, y }, a fresh table.
 local function FaceSpots(v)
     local g = Geometry(v)
-    return {
+    local spots = {
         inner = { left = { x = -g.inner, y = FACE_Y }, right = { x = g.inner, y = FACE_Y } },
         outer = { left = { x = -g.outer, y = FACE_Y }, right = { x = g.outer, y = FACE_Y } },
     }
+    for ring, sides in pairs(spots) do -- 0.18.0: each where the player moved it
+        for side, c in pairs(sides) do
+            local dx, dy = Plan.Moved(v, ring .. " " .. side .. " diamond")
+            c.x, c.y = c.x + dx, c.y + dy
+        end
+    end
+    return spots
 end
 Plan.FaceSpots = FaceSpots
 
@@ -494,12 +598,14 @@ Plan.SLIM = { x = 218, y = 141, w = 280, h = 28, health = 19, power = 6,
 -- The slim bars' rectangles, { name = { left, bottom, right, top } } in UI units from the
 -- screen's bottom centre, a fresh table: the five bars and the two rows kept for the boxes.
 -- SlimBars.lua places from these, and Plan.Rects lists them while the switch is on.
-function Plan.SlimRects()
+-- 0.18.0: v as Plan.Moved takes it; each side's rectangles carry that side's offset (the
+-- pieces "player bar" and "target bar" of Plan.ARRANGE).
+function Plan.SlimRects(v)
     local S = Plan.SLIM
     local l, r, b, t = S.x, S.x + S.w, S.y, S.y + S.h
     local row = t + S.small.gap
     local petBoxes = row + S.small.h + S.boxes.gap
-    return {
+    local out = {
         ["player bar"] = { -r, b, -l, t },
         ["target bar"] = { l, b, r, t },
         ["cast bar"] = { l, b - S.cast.gap - S.cast.h, r, b - S.cast.gap },
@@ -508,6 +614,93 @@ function Plan.SlimRects()
         ["pet boxes room"] = { -r, petBoxes, -l, petBoxes + S.boxes.h },
         ["target boxes room"] = { l, row, r - S.small.w - S.boxes.short, row + S.boxes.h },
     }
+    for _, key in ipairs({ "player bar", "target bar" }) do
+        local dx, dy = Plan.Moved(v, key)
+        if dx ~= 0 or dy ~= 0 then
+            for _, name in ipairs(Plan.ARRANGE_BY[key].rects) do
+                local q = out[name]
+                q[1], q[2], q[3], q[4] = q[1] + dx, q[2] + dy, q[3] + dx, q[4] + dy
+            end
+        end
+    end
+    return out
+end
+
+-- 0.18.0: the two targeting pictures' spots with their offsets: { left = { point, x, y },
+-- right = { point, x, y } } on UIParent's bottom, a fresh table. Plan.SHOULDERS stays the
+-- built-in numbers.
+function Plan.Shoulders(v)
+    local out = {}
+    for side, key in pairs({ left = "LB targeting picture", right = "RB targeting picture" }) do
+        local s = Plan.SHOULDERS[side]
+        local dx, dy = Plan.Moved(v, key)
+        out[side] = { s[1], s[2] + dx, s[3] + dy }
+    end
+    return out
+end
+
+-- 0.18.0: the overlap check (until 0.17.0 only the tests had it). rects: { name = { left,
+-- bottom, right, top } }, as Plan.Rects gives them. Returns every pair that overlaps,
+-- { { a =, b =, w =, h = }, ... }, a before b by name, the list in that order. Each sub-menu
+-- button and the prompt under it are one piece of the game's (the prompt 1 unit into the
+-- button, Blizzard_GamepadActionBars/MainActionBarFrame.xml:94-135) and are not a pair.
+function Plan.Overlaps(rects)
+    local names, out = {}, {}
+    for name in pairs(type(rects) == "table" and rects or {}) do names[#names + 1] = name end
+    sort(names)
+    for i = 1, #names do
+        local a = rects[names[i]]
+        for j = i + 1, #names do
+            local b = rects[names[j]]
+            local one = (names[i] == "LB+LT button" and names[j] == "LB+LT prompt")
+                or (names[i] == "RB+RT button" and names[j] == "RB+RT prompt")
+            if not one then
+                local w = math.min(a[3], b[3]) - math.max(a[1], b[1])
+                local h = math.min(a[4], b[4]) - math.max(a[2], b[2])
+                if w > 1e-9 and h > 1e-9 then out[#out + 1] = { a = names[i], b = names[j], w = w, h = h } end
+            end
+        end
+    end
+    return out
+end
+
+-- 0.18.0: the screen the plan is drawn for, in UI units.
+Plan.SCREEN = { w = SCREEN_W, h = SCREEN_H }
+
+-- 0.18.0: the Edit Mode pieces whose offset (as opts asks for it now: none while
+-- opts.arrange is not 1) differs from the one our Edit Mode layout holds
+-- (opts.offsetsWritten, kept by Plan.MarkWritten): their keys, in Plan.ARRANGE's order.
+function Plan.Pending(opts)
+    local out = {}
+    local written = type(opts) == "table" and type(opts.offsetsWritten) == "table" and opts.offsetsWritten or {}
+    for _, def in ipairs(Plan.ARRANGE) do
+        if def.kind == "apply" then
+            local dx, dy = Plan.Moved(type(opts) == "table" and opts or { arrange = 0 }, def.key)
+            local w = written[def.key]
+            local wx = type(w) == "table" and type(w.x) == "number" and w.x or 0
+            local wy = type(w) == "table" and type(w.y) == "number" and w.y or 0
+            if dx ~= wx or dy ~= wy then out[#out + 1] = def.key end
+        end
+    end
+    return out
+end
+
+-- 0.18.0: after a successful write of `pieces` (from Plan.Pieces) into our layout: notes in
+-- opts.offsetsWritten the offset each arranged piece was written with.
+function Plan.MarkWritten(opts, pieces)
+    if type(opts) ~= "table" or type(pieces) ~= "table" then return end
+    for _, p in ipairs(pieces) do
+        if p.arrange then
+            if p.dx == 0 and p.dy == 0 then
+                if type(opts.offsetsWritten) == "table" then opts.offsetsWritten[p.arrange] = nil end
+            else
+                -- The table is only made once there is something to note: a player who never
+                -- arranged anything keeps the saved options 0.17.0 wrote.
+                if type(opts.offsetsWritten) ~= "table" then opts.offsetsWritten = {} end
+                opts.offsetsWritten[p.arrange] = { x = p.dx, y = p.dy }
+            end
+        end
+    end
 end
 
 -- 0.16.0: the spots that follow the frames' height at Spell panel size v (as Plan.PanelSize
@@ -588,11 +781,13 @@ function Plan.Rects(v)
     r["target cast bar"] = { target[1] + TARGET_CAST.x, castTop - TARGET_CAST.h, target[1] + TARGET_CAST.x + TARGET_CAST.w, castTop }
     -- The sub-menu buttons, 38 across (CIRCULAR_BUTTON_EXPANDED_SIZE,
     -- Blizzard_GamepadActionBars/ActionBarStyles.lua:20), and their prompts under them.
+    local _, wheelY = Plan.Moved(v, "spell wheels") -- 0.18.0: both hang on the bottom anchor
     for _, side in ipairs({ -1, 1 }) do
-        box(side < 0 and "LB+LT button" or "RB+RT button", side * 138, SPOTS.bottom.y - 50, 38, 38)
-        box(side < 0 and "LB+LT prompt" or "RB+RT prompt", side * PROMPT.x, PROMPT.y, PROMPT.w, PROMPT.h)
+        box(side < 0 and "LB+LT button" or "RB+RT button", side * 138, SPOTS.bottom.y - 50 + wheelY, 38, 38)
+        box(side < 0 and "LB+LT prompt" or "RB+RT prompt", side * PROMPT.x, PROMPT.y + wheelY, PROMPT.w, PROMPT.h)
     end
-    local sl, sr = Plan.SHOULDERS.left, Plan.SHOULDERS.right
+    local shoulders = Plan.Shoulders(v)
+    local sl, sr = shoulders.left, shoulders.right
     r["LB targeting picture"] = RectAt(sl[1], sl[2], sl[3], SHOULDER.w, SHOULDER.h)
     r["RB targeting picture"] = RectAt(sr[1], sr[2], sr[3], SHOULDER.w, SHOULDER.h)
     local W, H = SCREEN_W, SCREEN_H
@@ -612,9 +807,22 @@ function Plan.Rects(v)
     end
     if o.slim == 1 then
         for _, name in ipairs({ "player", "pet", "target", "target of target", "target auras", "target cast bar" }) do r[name] = nil end
-        for name, rect in pairs(Plan.SlimRects()) do r[name] = rect end
+        for name, rect in pairs(Plan.SlimRects(v)) do r[name] = rect end
         local tip = Plan.SLIM.tooltip
         r.tooltip = { W / 2 + tip.x - TOOLTIP.w, tip.y, W / 2 + tip.x, tip.y + TOOLTIP.h }
+    end
+    -- 0.18.0: the Edit Mode pieces where the player moved them (the live ones were worked
+    -- out moved above: FaceSpots, Shoulders, SlimRects, the bottom anchor).
+    for _, def in ipairs(Plan.ARRANGE) do
+        if def.kind == "apply" then
+            local dx, dy = Plan.Moved(v, def.key)
+            if dx ~= 0 or dy ~= 0 then
+                for _, name in ipairs(def.rects) do
+                    local q = r[name]
+                    if q then q[1], q[2], q[3], q[4] = q[1] + dx, q[2] + dy, q[3] + dx, q[4] + dy end
+                end
+            end
+        end
     end
     return r
 end
@@ -635,8 +843,9 @@ end
 
 -- The two sub-menu wheels: centred on the sub-menu buttons, 175 across (the
 -- mockup's ring; the game puts its eight buttons 60 out, FlyoutRadial.lua:28).
-function Plan.Wheels()
-    local y = SPOTS.bottom.y - 50
+function Plan.Wheels(v)
+    local _, wheelY = Plan.Moved(v, "spell wheels") -- 0.18.0
+    local y = SPOTS.bottom.y - 50 + wheelY
     return { { x = -138, y = y, r = 87.5 }, { x = 138, y = y, r = 87.5 } }
 end
 
@@ -656,44 +865,52 @@ function Plan.Pieces(opts)
     local FRAMES = Frames(opts) -- they rise at the larger Spell panel sizes
     local rise = Rising(opts)   -- and the chat and the tooltip with them (0.16.0)
     local list = {}
-    local function add(system, index, anchor, settings)
-        list[#list + 1] = { system = system, index = index, anchor = anchor, settings = settings, moved = anchor and true or nil }
+    -- key (0.18.0): the piece of Plan.ARRANGE this one belongs to; its offset is added to the
+    -- spot, and the piece carries the key and the offset (arrange, dx, dy) for Plan.MarkWritten.
+    local function add(system, index, anchor, settings, key)
+        local p = { system = system, index = index, anchor = anchor, settings = settings, moved = anchor and true or nil }
+        if key and anchor then
+            local dx, dy = Plan.Moved(opts, key)
+            anchor.x, anchor.y = anchor.x + dx, anchor.y + dy
+            p.arrange, p.dx, p.dy = key, dx, dy
+        end
+        list[#list + 1] = p
     end
     -- HeaderUnderneath 1 puts the map's title strip under the map (0.11.1 spec, 3); left
     -- out by Plan.Apply when the game has no such setting.
-    add("Minimap", nil, Spot("BOTTOM", "BOTTOM", MAP.x, MAP.y), { Size = (MAP.size - 50) / 10, HeaderUnderneath = 1 })
+    add("Minimap", nil, Spot("BOTTOM", "BOTTOM", MAP.x, MAP.y), { Size = (MAP.size - 50) / 10, HeaderUnderneath = 1 }, "map")
     -- 0.16.0: the chat bottom left, over the PE button and the pet frame (see CHAT).
     add("ChatFrame", nil, Spot("BOTTOMLEFT", "BOTTOMLEFT", CHAT.x, rise.chatY),
         { WidthHundreds = math.floor(CHAT.w / 100), WidthTensAndOnes = CHAT.w % 100,
-          HeightHundreds = math.floor(CHAT.h / 100), HeightTensAndOnes = CHAT.h % 100 })
+          HeightHundreds = math.floor(CHAT.h / 100), HeightTensAndOnes = CHAT.h % 100 }, "chat")
     -- 0.16.0: the buffs and debuffs under the XP bars, left of the quest tracker, which is
     -- top right (see AURAS and TRACKER).
-    add("AuraFrame", "BuffFrame", Spot("TOPRIGHT", "TOPRIGHT", AURAS.right, AURAS.top), nil)
-    add("AuraFrame", "DebuffFrame", Spot("TOPRIGHT", "TOPRIGHT", AURAS.right, AURAS.top - AURA_DEBUFF_GAP), nil)
-    add("ObjectiveTracker", nil, Spot("TOPRIGHT", "TOPRIGHT", TRACKER.x, TRACKER.y), { Height = 0 })
+    add("AuraFrame", "BuffFrame", Spot("TOPRIGHT", "TOPRIGHT", AURAS.right, AURAS.top), nil, "buffs and debuffs")
+    add("AuraFrame", "DebuffFrame", Spot("TOPRIGHT", "TOPRIGHT", AURAS.right, AURAS.top - AURA_DEBUFF_GAP), nil, "buffs and debuffs")
+    add("ObjectiveTracker", nil, Spot("TOPRIGHT", "TOPRIGHT", TRACKER.x, TRACKER.y), { Height = 0 }, "quest tracker")
     -- The XP bars along the top edge, centred, at 100% (0.11.1 spec, 1).
-    add("StatusTrackingBar", "StatusTrackingBar1", Spot("TOP", "TOP", 0, XP_TOP_Y), { Size = 10 })
-    add("StatusTrackingBar", "StatusTrackingBar2", Spot("TOP", "TOP", 0, XP_TOP_Y - XP_H), { Size = 10 })
+    add("StatusTrackingBar", "StatusTrackingBar1", Spot("TOP", "TOP", 0, XP_TOP_Y), { Size = 10 }, "XP bars")
+    add("StatusTrackingBar", "StatusTrackingBar2", Spot("TOP", "TOP", 0, XP_TOP_Y - XP_H), { Size = 10 }, "XP bars")
     add("GamepadMainActionBar", nil, nil, { Compact = 0, ShowEmptyBars = 0, ShouldExpand = 0 })
-    add("UnitFrame", "Player", Anchor(FRAMES.Player), nil)
-    add("UnitFrame", "Pet", Anchor(FRAMES.Pet), nil)
+    add("UnitFrame", "Player", Anchor(FRAMES.Player), nil, "player")
+    add("UnitFrame", "Pet", Anchor(FRAMES.Pet), nil, "player")
     -- BuffsOnTop 1 (as the game's Gamepad preset has it): the target's auras grow up, so
     -- the cast bar keeps its spot under the frame. Left out by Plan.Apply when the game has
     -- no such setting.
-    add("UnitFrame", "Target", Anchor(FRAMES.Target), { BuffsOnTop = 1 })
+    add("UnitFrame", "Target", Anchor(FRAMES.Target), { BuffsOnTop = 1 }, "target")
     -- 0.16.0: the tooltip above the target of target (see TOOLTIP). Left out by Plan.Apply
     -- when the game has no such system. 0.17.0: in the bottom right corner while the slim
     -- bars are on (Plan.SLIM.tooltip).
     if o.slim == 1 then
-        add("HudTooltip", nil, Spot("BOTTOMRIGHT", "BOTTOMRIGHT", Plan.SLIM.tooltip.x, Plan.SLIM.tooltip.y), nil)
+        add("HudTooltip", nil, Spot("BOTTOMRIGHT", "BOTTOMRIGHT", Plan.SLIM.tooltip.x, Plan.SLIM.tooltip.y), nil, "tooltip")
     else
-        add("HudTooltip", nil, Spot("BOTTOMRIGHT", "BOTTOMRIGHT", rise.tipX, rise.tipY), nil)
+        add("HudTooltip", nil, Spot("BOTTOMRIGHT", "BOTTOMRIGHT", rise.tipX, rise.tipY), nil, "tooltip")
     end
     local visibility = { Ranged = o.ranged, MainHand = o.mainHand, OffHand = o.offHand }
     local timers = Timers()
     for _, name in ipairs(TIMER.order) do
         add("SwingTimer", name, Spot("BOTTOM", "BOTTOM", timers.x, timers.y[name]),
-            { Scale = 3, Width = 0, Height = 0, Visibility = visibility[name] })
+            { Scale = 3, Width = 0, Height = 0, Visibility = visibility[name] }, "swing timers")
     end
     return list
 end
@@ -1399,9 +1616,9 @@ end
 
 local EXTRAS = {
     { name = "LB targeting picture", get = function() return Child(Child(GamepadBar(), "PageUnit"), "LeftShoulderBackground") end,
-      point = function() local s = Plan.SHOULDERS.left return s[1], UIParent, "BOTTOM", s[2], s[3] end },
+      point = function() local s = Plan.Shoulders().left return s[1], UIParent, "BOTTOM", s[2], s[3] end },
     { name = "RB targeting picture", get = function() return Child(Child(GamepadBar(), "PageUnit"), "RightShoulderBackground") end,
-      point = function() local s = Plan.SHOULDERS.right return s[1], UIParent, "BOTTOM", s[2], s[3] end },
+      point = function() local s = Plan.Shoulders().right return s[1], UIParent, "BOTTOM", s[2], s[3] end },
     { name = "target of target", get = function() return Child(type(TargetFrame) == "table" and TargetFrame or nil, "totFrame") end,
       point = function() local t = Plan.TOT_SPOT return t.point, TargetFrame, t.relativePoint, t.x, t.y end },
 }
@@ -1556,6 +1773,30 @@ Snap.SlimCall = function(name, ...)
     local ok, a, b = PE:Safe("ctrlLayout", fn, slim, ...)
     if ok then return a, b end
     return nil
+end
+
+-- 0.18.0: arrange it yourself (Arrange.lua, PE.Arrange), hung on the same table.
+--   Snap.arrangeLogin  the "Arrange it yourself" switch as the login found it (OnLoad)
+--   Snap.arrangeOn     that value once the session has asked for it (Snap.View, below
+--                      PlaceNow); a change of the switch counts from the next reload
+--   Snap.ArrangeCall   calls PE.Arrange[name], as SlimCall does; nothing unless arrangeOn
+--   Snap.ArrangeFilter the Edit Mode pieces whose offset in our layout is not the one the
+--                      options ask for now (for RewritePieces)
+Snap.ArrangeCall = function(name, ...)
+    if Snap.arrangeOn ~= true then return nil end
+    local arrange = PE.Arrange
+    local fn = type(arrange) == "table" and arrange[name] or nil
+    if type(fn) ~= "function" then return nil end
+    local ok, a, b = PE:Safe("ctrlLayout", fn, arrange, ...)
+    if ok then return a, b end
+    return nil
+end
+Snap.ArrangeFilter = function(p)
+    if not p.arrange then return false end
+    for _, key in ipairs(Plan.Pending(mod.opts)) do
+        if key == p.arrange then return true end
+    end
+    return false
 end
 
 do
@@ -1887,6 +2128,7 @@ end
 local function RestoreNow()
     StopFace()
     Snap.SlimCall("Stop") -- the game's unit frames show again (0.17.0)
+    Snap.ArrangeCall("Close", "the layout was put back") -- 0.18.0: the Arrange screen, if open
     RestoreScreen()
     if not placed then return end
     placed = false
@@ -1922,7 +2164,44 @@ local function RestoreNow()
     if PE.debugOn then PE:Debug("ctrlLayout", "bars put back" .. (compact and " (compact)" or "")) end
 end
 
+-- 0.18.0: what this session is drawn with, as one options table for the plan: the Spell panel
+-- size and Slim bars of the session, the rows that count at once, and, when the session
+-- began with "Arrange it yourself" On, the saved offsets themselves (by reference: a step in
+-- the Arrange screen is seen at once). The first call decides the session: On sets
+-- Plan.session, so every function of the plan adds the offsets, and tells Arrange.lua once;
+-- Off sets nothing. nil before the options are loaded.
+Snap.View = function()
+    local opts = type(mod and mod.opts) == "table" and mod.opts or nil
+    if not opts then return nil end
+    if Snap.arrangeOn == nil then
+        if Snap.arrangeLogin == nil then Snap.arrangeLogin = opts.arrange == 1 end
+        Snap.arrangeOn = Snap.arrangeLogin
+        if Snap.arrangeOn then
+            if type(opts.offsets) ~= "table" then opts.offsets = {} end
+            local char = CharDB() or {} -- not loaded (never seen): the moves last for the session
+            if type(char.ctrlArrange) ~= "table" then char.ctrlArrange = {} end
+            if type(char.ctrlArrange.offsets) ~= "table" then char.ctrlArrange.offsets = {} end
+            if type(char.ctrlArrange.alone) ~= "table" then char.ctrlArrange.alone = {} end
+            Snap.view = { arrange = 1, offsets = opts.offsets, charOffsets = char.ctrlArrange.offsets,
+                alone = char.ctrlArrange.alone }
+            Plan.session = Snap.view
+        else
+            Snap.view = { arrange = 0 }
+        end
+    end
+    local view = Snap.view
+    view.panelSize = SessionSize()
+    view.hints, view.mapButtons, view.arrangeWheel = opts.hints, opts.mapButtons, opts.arrangeWheel
+    view.slim = (Snap.slimOn == true or (Snap.slimOn == nil and opts.slim == 1)) and 1 or 0
+    if Snap.arrangeOn and not Snap.arrangeStarted then
+        Snap.arrangeStarted = true
+        Snap.ArrangeCall("Started")
+    end
+    return view
+end
+
 local function PlaceNow()
+    Snap.View() -- 0.18.0: the session's offsets are known before anything is placed
     PlaceScreen() -- the hint box, the chat's box, the map's border and buttons go with our layout, bars or not
     -- 0.17.0: and so do the slim bars, when the session began with their switch on.
     if Snap.slimOn == nil then Snap.slimOn = type(mod and mod.opts) == "table" and mod.opts.slim == 1 end
@@ -1968,6 +2247,7 @@ local function PlaceNow()
         end
         if PE.debugOn then PE:Debug("ctrlLayout", "bars at full size: the spell pictures are off") end
     end
+    Snap.ArrangeCall("Placed") -- 0.18.0: our own panels and bars follow a move made this session
 end
 
 -- Places the bars while the feature is on and our layout is the active one,
@@ -2084,6 +2364,7 @@ local function AddOurs(state, e)
         return false, true
     end
     mod.opts.template = Plan.TEMPLATE
+    Plan.MarkWritten(mod.opts, Plan.Pieces(mod.opts)) -- 0.18.0: the offsets it was built with
     if PE.debugOn then PE:Debug("ctrlLayout", "saved the Pocket Essentials layout at index " .. newIndex) end
     return true, true
 end
@@ -2126,6 +2407,7 @@ local function Rebuild()
         return false
     end
     mod.opts.template = Plan.TEMPLATE
+    Plan.MarkWritten(mod.opts, Plan.Pieces(mod.opts)) -- 0.18.0
     if PE.debugOn then PE:Debug("ctrlLayout", "the Pocket Essentials layout was rebuilt from the template") end
     return true
 end
@@ -2313,9 +2595,25 @@ local function RunRewrites()
         end
         SyncBars()
         mod:RefreshPanel()
+        Snap.ArrangeCall("Written", false)
         return
     end
+    Plan.MarkWritten(mod.opts, pieces) -- 0.18.0: which offsets our layout holds now
+    if PE.debugOn then
+        local keys, seen = {}, {}
+        for _, p in ipairs(pieces) do
+            if p.arrange and not seen[p.arrange] and (p.dx ~= 0 or p.dy ~= 0) then
+                seen[p.arrange] = true
+                keys[#keys + 1] = p.arrange .. " " .. p.dx .. "," .. p.dy
+            end
+        end
+        for i = 1, #keys, 4 do -- four to a line: the log cuts a line at 200 characters
+            PE:Debug("ctrlLayout", "arrange: written into the layout with their offsets: "
+                .. table.concat(keys, "; ", i, math.min(i + 3, #keys)))
+        end
+    end
     mod:RequestReload(RELOAD_REASON)
+    Snap.ArrangeCall("Written", true)
 end
 
 -- Rewrites our layout's pieces that `filter` picks, for the option `key`.
@@ -2438,6 +2736,35 @@ do
             Snap.slimTold = true
             PE:Print("Slim bars count from the next reload.")
         end
+    end }
+    -- 0.18.0: arrange it yourself (Arrange.lua), Off by default. A change counts from the
+    -- next reload: the Edit Mode pieces whose offset in our layout is not what the new value
+    -- asks for (On: the saved offsets; Off: none) are rewritten, out of a fight, and the
+    -- reload is asked for. What the session started with decides the rest (Snap.View).
+    OPTIONS[#OPTIONS + 1] = { key = "arrange", label = "Arrange it yourself", choices = ON_OFF, OnChange = function()
+        if not RewritePieces(Snap.ArrangeFilter, "arrange") then return end
+        if PE.debugOn then
+            PE:Debug("ctrlLayout", "arrange: the switch is now " .. tostring(mod.opts.arrange) .. "; it counts from the next reload")
+        end
+        if not Snap.arrangeTold then
+            Snap.arrangeTold = true
+            PE:Print("Arrange it yourself counts from the next reload.")
+        end
+    end }
+    -- The spell wheels as a piece: live, so it counts at once (the bars are placed again).
+    OPTIONS[#OPTIONS + 1] = { key = "arrangeWheel", label = "Arrange: spell wheels", choices = ON_OFF, OnChange = function()
+        if PE.debugOn then PE:Debug("ctrlLayout", "arrange: spell wheels switch is now " .. tostring(mod.opts.arrangeWheel)) end
+        if wanted then SyncBars() end
+        Snap.ArrangeCall("Changed")
+    end }
+    OPTIONS[#OPTIONS + 1] = { label = "Arrange the screen", button = "Arrange", action = function()
+        Snap.View()
+        if Snap.arrangeOn ~= true then
+            PE:Print(mod.opts.arrange == 1 and "Arrange it yourself starts with the next reload. Tap Reload now first."
+                or "Switch on Arrange it yourself first, then reload.")
+            return
+        end
+        Snap.ArrangeCall("Open")
     end }
 end
 -- 0.16.4, for the device test (spec 2026-11-24-0.16.4-cleanup.md, 6 and 7): a numbered mark
@@ -2579,6 +2906,7 @@ mod = PE:RegisterModule({
         if type(self.opts) ~= "table" then return end
         -- A Spell panel size that is not one of the five shows and reads as 100%.
         self.opts.panelSize = Plan.PanelSize(self.opts)
+        Snap.arrangeLogin = self.opts.arrange == 1 -- 0.18.0: the session's value (Snap.View)
         if PE:IsModuleSavedOn("ctrlLayout") then
             -- Blocked at this login only because the game does not report its Gamepad UI
             -- yet: one more try at the next PLAYER_ENTERING_WORLD.
@@ -2893,6 +3221,47 @@ Snap.Build = function()
     end
 end
 Snap.Build()
+
+---------------------------------------------------------------------------
+-- 0.18.0: what Arrange.lua asks of this file (spec 2026-11-24-0.18.0-arrange.md). In a
+-- function, for the same reason as the snapshot.
+--   mod:View()           the session's options table for the plan (Snap.View)
+--   mod:ArrangeReady()   true while the session began with the switch On, the layout is on
+--                        and its bars are placed; else false and why
+--   mod:ArrangePlace()   the live pieces placed again from the plan, with the calls every
+--                        placement makes (PlaceNow); "placed", or "held" in a fight (they
+--                        are placed when it ends)
+--   mod:ArrangeApply()   the Edit Mode pieces whose offset is not in our layout yet, written
+--                        once (RewritePieces, the option rows' path), then one reload asked
+--                        for. Returns true and how many pieces wait, or false and why.
+---------------------------------------------------------------------------
+Snap.ArrangeBuild = function()
+    function mod:View()
+        return Snap.View()
+    end
+
+    function mod:ArrangeReady()
+        Snap.View()
+        if Snap.arrangeOn ~= true then return false, "Arrange it yourself was off when this session began" end
+        if not wanted then return false, "the Controller layout is off" end
+        if not placed then return false, "the Controller layout is not placed (another Edit Mode layout is active?)" end
+        return true
+    end
+
+    function mod:ArrangePlace()
+        local held = PE:InCombat()
+        SyncBars()
+        return held and "held" or "placed"
+    end
+
+    function mod:ArrangeApply()
+        local waiting = #Plan.Pending(mod.opts)
+        if waiting == 0 then return true, 0 end
+        if not RewritePieces(Snap.ArrangeFilter, nil) then return false, TEXT_EDIT_MODE end
+        return true, waiting
+    end
+end
+Snap.ArrangeBuild()
 
 -- From here on a switch-on is a tap, except the late one below.
 PE:OnLogin(function() atLogin = false end)

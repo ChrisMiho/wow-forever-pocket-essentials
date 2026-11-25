@@ -1368,6 +1368,8 @@ test("rows: Spell panel size, the three timer rows and Start over", function()
         "Part: follow the triggers with a hook",
         -- 0.17.0: the slim bars, Off until tried on the device
         "Slim bars",
+        -- 0.18.0: arrange it yourself, both Off until tried on the device, and the way in
+        "Arrange it yourself", "Arrange: spell wheels", "Arrange the screen",
         -- 0.16.4: for the device test
         "Mark a test section", "Save a snapshot" })
     eq(list[1].key, "panelSize")

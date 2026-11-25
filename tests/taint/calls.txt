@@ -27,8 +27,10 @@ Add	*	ours	local Add in probe/PocketProbe/Trials.lua (also P.Add, used by Errors
 AddAuraGroup	probe/PocketProbe/Trials.lua	writes-known	Blizzard_CustomAuraContainer.lua:286 CustomAuraContainerSharedMixin:AddAuraGroup, reached through the template's secure delegate (Blizzard_CustomAuraContainer.xml:7, secureDelegates): registers the group and writes self.layoutOptionsByAuraGroup[auraGroup] on the container, then UpdateEventRegistrations and UpdateAllAuras; the container is one the probe made itself from CustomAuraContainerTemplate (the probe's deliberate trial)
 AddMessage	addons/PocketEssentials/Core.lua	writes-known	Blizzard_ChatFrameBase/Shared/ChatFrame.lua:35 ChatFrameMixin:AddMessage (DEFAULT_CHAT_FRAME is a Lua ScrollingMessageFrame) calls ScrollingMessageFrameSecureMixin.AddMessage (ScrollingMessageFrame.lua:806) > ScrollingMessageFrameMixin.AddMessage (:10): writes the new entry into self.historyBuffer (CircularBuffer.lua:46 self.elements[i], headIndex), self.isDisplayDirty = true, and self.scrollOffset when the window is scrolled up; then reads self.addMessageObserver. Blizzard's comment (ScrollingMessageFrame.lua:797-802) calls the secure mixin's functions secure elevation barriers; whether that holds when ChatFrameMixin's own Lua wrapper is what the addon calls is not shown by the source
 AddPin	*	ours	local AddPin in QuestData.lua
-Apply	*	ours	Plan.Apply (ControllerLayout.lua) and the local Apply of LootSparkles.lua, Move.lua and UI.lua
+Apply	*	ours	Plan.Apply (ControllerLayout.lua), Arrange's own Apply (Arrange.lua, set and called as Arrange["Apply"]; the other string there is a button label) and the local Apply of LootSparkles.lua, Move.lua and UI.lua
 ApplyPressedStyle	probe/PocketProbe/Watch.lua	engine	hooked with hooksecurefunc only (after a type check), never called
+Arrange	addons/PocketEssentials/Arrange.lua	engine	never called: the string is the Arrange window's title
+Arrange	addons/PocketEssentials/ControllerLayout.lua	engine	never called: the string is a button label (the button calls PE.Arrange's own Open through Snap.ArrangeCall)
 Attach	*	ours	local Attach in MenuBackground.lua
 Begin	*	ours	local Begin (ControllerLayout.lua, probe Perf.lua) and the list drawer's Drawer:Begin (Settings.lua)
 Build	*	ours	Plan.Build and Snap.Build (ControllerLayout.lua) and the local Build of FaceBars.lua and QuestArrow.lua
@@ -45,7 +47,9 @@ ClearAllPoints	addons/PocketEssentials/Bags.lua	engine	widget method; on our own
 ClearAllPoints	addons/PocketEssentials/ControllerLayout.lua	engine	widget method; on our own disc frame and on the game's four bar anchors (plain Frames, ActionBarTemplates.xml:600-693), BottomCenteredAnchor.Bar (GamepadActionBarMixin has no ClearAllPoints), the two shoulder textures and TargetFrame.totFrame; none is an Edit Mode system (only those get a Lua ClearAllPoints, EditModeSystemTemplates.lua:17)
 ClearAllPoints	probe/PocketProbe/Trials.lua	engine	widget method on the game's bar anchors GamepadMainActionBarFrame.PageUnit.Left/TopCenteredAnchor (plain Frames, no Lua ClearAllPoints; not Edit Mode systems): the probe's deliberate trial
 ClearFocus	probe/PocketProbe/Trials.lua	engine	EditBox widget method on the game's chat edit box (ChatFrameEditBoxMixin defines no ClearFocus); the probe's deliberate chat-focus trial
+Close	addons/PocketEssentials/Arrange.lua	ours	Arrange's own Close (Arrange.lua), set and called as Arrange["Close"]; the other strings are a button label and reason texts
 Close	addons/PocketEssentials/Chat.lua	ours	Setup:Close (Setup.lua)
+Close	addons/PocketEssentials/ControllerLayout.lua	ours	the name handed to Snap.ArrangeCall, which calls PE.Arrange's own Close (Arrange.lua); never a game frame's
 Close	addons/PocketEssentials/Move.lua	ours	Move:Close (Move.lua) and Setup.Close (Setup.lua); the string is a reason text
 Close	addons/PocketEssentials/Setup.lua	ours	Setup:Close (Setup.lua); the strings are button labels and reason texts
 Close	addons/PocketEssentials/UI.lua	engine	never called: the string is a button label
@@ -224,7 +228,7 @@ IsVisible	addons/PocketEssentials/ControllerLayout.lua	engine	widget method, cal
 IsVisible	addons/PocketEssentials/FaceBars.lua	engine	widget method on the game's bar frames and buttons (read only)
 IsVisible	probe/PocketProbe/Trials.lua	engine	never called by this name here: a method name picked for a guarded read on the game's bar frames (engine widget method)
 LEFT	addons/PocketEssentials/Bags.lua	engine	never called: SMART_NAV_INPUT_DIRECTION.LEFT is a table that is read and passed as an argument
-Layout	*	ours	the addon's own: disc:Layout and AreaMethods:Layout (UI.lua), DRAW.Layout (Setup.lua) and the local Layout of Move.lua, QuestArrow.lua and probe Panel.lua
+Layout	*	ours	the addon's own: disc:Layout and AreaMethods:Layout (UI.lua), DRAW.Layout (Setup.lua) and the local Layout of Arrange.lua, Move.lua, QuestArrow.lua and probe Panel.lua
 Maximize	addons/PocketEssentials/Hub.lua	engine	WorldMapFrame.Maximize is hooked with hooksecurefunc only (after a type check), never called
 Minimize	addons/PocketEssentials/Hub.lua	engine	WorldMapFrame.Minimize is hooked with hooksecurefunc only (after a type check), never called
 Move	*	ours	PE.Move, the addon's Move module table (Move.lua), read into a local; in probe Panel.lua the local function Move
@@ -249,6 +253,8 @@ OnMouseUp	*	engine	never called by name: a script name given to SetScript or Hoo
 OnMouseWheel	*	engine	never called by name: a script name given to SetScript on the addon's own frames
 OnShow	*	engine	never called by name: a script name given to SetScript or HookScript (our own frames; with HookScript also game frames, and hooking is not calling)
 OnUpdate	*	engine	never called by name: a script name given to SetScript or GetScript on the addon's own frames
+Open	addons/PocketEssentials/Arrange.lua	ours	Arrange's own Open (Arrange.lua), set as Arrange["Open"]
+Open	addons/PocketEssentials/ControllerLayout.lua	ours	the name handed to Snap.ArrangeCall, which calls PE.Arrange's own Open (Arrange.lua)
 Open	addons/PocketEssentials/Core.lua	ours	Setup:Open (Setup.lua)
 Open	addons/PocketEssentials/QuestArrow.lua	ours	Move:Open (Move.lua)
 Open	addons/PocketEssentials/QuestIcons.lua	engine	never called: the string is a button label
@@ -259,7 +265,7 @@ OpenChat	addons/PocketEssentials/Chat.lua	writes-known	Blizzard_ChatFrameBase/Sh
 OpenMenu	*	ours	local OpenMenu in MenuBackground.lua
 PageDown	*	ours	AreaMethods:PageDown (UI.lua), on the addon's own scroll area
 PageUp	*	ours	AreaMethods:PageUp (UI.lua), on the addon's own scroll area
-Pick	*	ours	local Pick in QuestArrow.lua
+Pick	*	ours	local Pick in QuestArrow.lua; Arrange's own Pick (Arrange.lua, set as Arrange["Pick"])
 Play	*	engine	AnimationGroup widget method on the addon's own animation groups
 Print	*	ours	PE:Print and the modules' Methods:Print (Core.lua)
 QuestMapLogTitleButton_CreateContextMenu	addons/PocketEssentials/MenuBackground.lua	engine	hooked with hooksecurefunc only (the global is read for a type check), never called
@@ -267,7 +273,7 @@ RIGHT	addons/PocketEssentials/Bags.lua	engine	never called: SMART_NAV_INPUT_DIRE
 Raise	*	engine	widget method, called only on the addon's own panels
 Read	*	ours	local Read in QuestData.lua (and the snapshot's local Read in ControllerLayout.lua)
 Rebuild	*	ours	the local Rebuild of ControllerLayout.lua and QuestData.lua
-Refresh	*	ours	the addon's own: Hub:Refresh (Hub.lua), UI:Refresh (UI.lua) and the local Refresh of Chat.lua and probe Panel.lua
+Refresh	*	ours	the addon's own: Hub:Refresh (Hub.lua), UI:Refresh (UI.lua) and the local Refresh of Arrange.lua, Chat.lua and probe Panel.lua
 RefreshAll	*	ours	local RefreshAll in QuestIcons.lua
 RefreshAll	addons/PocketEssentials/SlimBars.lua	ours	local RefreshAll in SlimBars.lua
 RefreshCompactLayout	addons/PocketEssentials/ControllerLayout.lua	engine	PageUnit.RefreshCompactLayout is hooked with hooksecurefunc only (after a type check), never called
@@ -297,13 +303,15 @@ Reload	probe/PocketProbe/Panel.lua	ours	P.Reload (probe/PocketProbe/Run.lua)
 Reload	probe/PocketProbe/Run.lua	ours	local Reload in probe/PocketProbe/Run.lua
 ReloadUI	addons/PocketEssentials/Core.lua	clean	Blizzard_SharedXML/InterfaceUtil.lua:1 calls C_UI.Reload(); no write (used only when C_UI.Reload is missing)
 ReloadUI	probe/PocketProbe/Run.lua	clean	Blizzard_SharedXML/InterfaceUtil.lua:1 calls C_UI.Reload(); no write (used only when C_UI.Reload is missing)
+Reset	addons/PocketEssentials/Arrange.lua	ours	Arrange's own Reset (Arrange.lua), set and called as Arrange["Reset"]; the other string is a button label
 Reset	addons/PocketEssentials/Move.lua	engine	never called by this name: the string is a button label (the button runs Move.lua's own local Reset)
+ResetAll	addons/PocketEssentials/Arrange.lua	ours	Arrange's own ResetAll (Arrange.lua), set and called as Arrange["ResetAll"]
 ResetButton	*	ours	local ResetButton in Settings.lua
 Run	addons/PocketEssentials/Setup.lua	ours	local Run in Setup.lua
 Run	probe/PocketProbe/Panel.lua	engine	never called: the string is a button label
 SaveLayouts	addons/PocketEssentials/ControllerLayout.lua	engine	C_EditMode.SaveLayouts
 ScrollIntoView	*	ours	AreaMethods:ScrollIntoView (UI.lua), on the addon's own scroll area
-Select	*	ours	the local Select of Move.lua and QuestArrow.lua
+Select	*	ours	the local Select of Arrange.lua, Move.lua and QuestArrow.lua
 SelectTab	*	ours	local SelectTab in Settings.lua
 Set	*	ours	SegmentedMethods:Set and NumberMethods:Set (UI.lua), on the addon's own controls
 SetActiveActionBar	addons/PocketEssentials/FaceBars.lua	engine	hooked with hooksecurefunc only (Blizzard_GamepadActionBars/PageUnit.lua:527), never called; only while the layout's row "Part: follow the triggers with a hook" is On (Off by default)
@@ -440,6 +448,7 @@ UpdateName	addons/PocketEssentials/SlimBars.lua	ours	local UpdateName in SlimBar
 UpdatePower	addons/PocketEssentials/SlimBars.lua	ours	local UpdatePower in SlimBars.lua
 UpdateState	addons/PocketEssentials/FaceBars.lua	engine	a game button's UpdateState is hooked with hooksecurefunc only (after a type check), never called
 Wrap	*	ours	PE:Wrap and the modules' Methods:Wrap (Core.lua)
+Write	addons/PocketEssentials/Arrange.lua	ours	local Write in Arrange.lua: saves an offset in the addon's own saved tables
 action	*	engine	never called: the plain string "action" (a trial kind), or a game button's action slot number, which is read
 action	addons/PocketEssentials/Settings.lua	ours	a field of the addon's own option tables that holds its own function, run through PE:Safe
 atan2	addons/PocketEssentials/QuestArrow.lua	engine	math.atan2 of the Lua standard library, kept in a local
@@ -456,11 +465,13 @@ money	probe/PocketProbe/Trials.lua	engine	never called: a plain string
 msg	*	engine	never called: a text field of the addon's own error records
 new	probe/PocketProbe/Perf.lua	engine	C_Timer.NewTicker (a C function) kept in a local named new
 next	*	engine	next of the Lua standard library
+next	addons/PocketEssentials/Arrange.lua	engine	never called: the string is the name of the "Next piece" button in the window's own table of buttons (buttons.next is read)
 pet	*	engine	never called: a plain string
 print	addons/PocketEssentials/Core.lua	writes-known	Blizzard_PrintHandler/Blizzard_PrintHandler.lua:93 (used only when DEFAULT_CHAT_FRAME.AddMessage fails): securecall(pcall, print_inner) > forceinsecure() > the print handler > DEFAULT_CHAT_FRAME:AddMessage, which writes the chat window's history buffer, isDisplayDirty and possibly scrollOffset (see AddMessage); print itself writes no field and no global
 right	*	engine	never called: a plain string, or a number field of the addon's own tables
 sin	*	engine	math.sin of the Lua standard library (also kept in a local)
 text	*	engine	never called: a text field of the addon's own tables or of a quest objective record
+tooltip	addons/PocketEssentials/ControllerLayout.lua	engine	never called: the string is the key of the tooltip's piece in Plan.ARRANGE and a field name of Plan.SLIM
 up	*	engine	never called: a plain string, or a field of the addon's own tables that is read
 up	addons/PocketEssentials/Settings.lua	ours	a field of the addon's own number-control table holding its own function (Chat.lua's text size row), passed on to Step
 update	probe/PocketProbe/Perf.lua	engine	the C global UpdateAddOnMemoryUsage kept in a local named update

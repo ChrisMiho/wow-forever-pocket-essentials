@@ -28,4 +28,5 @@ LootSparkles.lua
 ControllerLayout.lua
 FaceBars.lua
 SlimBars.lua
+Arrange.lua
 ErrorCatcher.lua

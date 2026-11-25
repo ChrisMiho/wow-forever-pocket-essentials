@@ -228,6 +228,7 @@ local barsHidden = false  -- the game hides its bars now: nothing is drawn until
 local groups = {}         -- [1..4] = { def, halves = { [1] d-pad, [2] face }, pics = { [1..8] = picture }, anchor, bar, tags }
 local centres = {}        -- [spot name] = { x, y }: the four spots, read at Build
 local panelScale = 1      -- the Spell panel size as a fraction, read at Build: each half's scale
+local builtSize           -- that size in percent, once built
 local states              -- Plan.FaceStates (or the default), read at Build
 local backings = {}       -- [1] left, [2] right: the plain frames under the pictures that take a tap
 local buttonPic = {}      -- [real button] = picture, for the buttons bound now
@@ -605,10 +606,20 @@ local function BackingRects(face, spots, s, size)
     for _, r in pairs(RealBars(size)) do
         Grow(boxes[(r[1] + r[3]) < 0 and 1 or 2], r[1], r[2], r[3], r[4])
     end
+    -- 0.18.0 (Arrange it yourself): an inner panel the player moved takes its two cuts with
+    -- it, so the frame under it keeps its shape and still lies under every picture and real
+    -- button of that side. No offset (the switch Off, or the panel not moved): 0, 0.
+    local plan = PE.LayoutPlan
+    local moved = type(plan) == "table" and plan.Moved
     for side, box in ipairs(boxes) do
+        local dx, dy = 0, 0
+        if type(moved) == "function" then
+            local ok, x, y = pcall(moved, nil, side == 1 and "inner left diamond" or "inner right diamond")
+            if ok and type(x) == "number" and type(y) == "number" then dx, dy = x, y end
+        end
         box[1], box[2], box[3], box[4] = box[1] - BACKING_MARGIN, box[2] - BACKING_MARGIN, box[3] + BACKING_MARGIN, box[4] + BACKING_MARGIN
-        if side == 1 then box[1] = max(box[1], -FRAME_EDGE) else box[3] = min(box[3], FRAME_EDGE) end
-        box[4] = min(box[4], SHOULDER_BOTTOM)
+        if side == 1 then box[1] = max(box[1], -FRAME_EDGE + dx) else box[3] = min(box[3], FRAME_EDGE + dx) end
+        box[4] = min(box[4], SHOULDER_BOTTOM + dy)
     end
     return boxes
 end
@@ -630,6 +641,7 @@ local function Build(size)
     local face, spots
     face, spots, states, size = FaceNumbers(PanelSize(size))
     panelScale = size / 100
+    builtSize = size
     for name, key in pairs(SPOT_KEYS) do
         local c = spots[key[1]][key[2]]
         centres[name] = { x = c.x, y = c.y }
@@ -1395,6 +1407,30 @@ function Public.Reason()
     return status
 end
 
+-- 0.18.0 (Arrange it yourself): the spots read again from the plan, and the panels and the
+-- two frames under them placed there. For a move made while the pictures show; a session
+-- that starts with the pieces moved is built there by Build. Our own frames only. Out of a
+-- fight (its one caller, ControllerLayout.lua's placement, runs there). True when placed.
+function Public.Place()
+    if not holder or not builtSize or PE:InCombat() then return false end
+    local face, spots = FaceNumbers(builtSize)
+    for name, key in pairs(SPOT_KEYS) do
+        local c = spots[key[1]][key[2]]
+        centres[name] = { x = c.x, y = c.y }
+    end
+    for side, r in ipairs(BackingRects(face, spots, panelScale, builtSize)) do
+        local f = backings[side]
+        if f then
+            f:ClearAllPoints()
+            f:SetPoint("BOTTOMLEFT", UIParent, "BOTTOM", r[1], r[2])
+            f:SetSize(r[3] - r[1], r[4] - r[2])
+        end
+    end
+    ApplyState()
+    return true
+end
+
 Face["Start"] = function(_, whenOff, size, useHook) return Public.Start(whenOff, size, useHook) end
+Face["Place"] = function() local ok, placed = PE:Safe(KEY, Public.Place) return ok and placed or false end
 Face["Stop"] = function() Public.Halt() end
 Face["Status"] = function() return Public.Reason() end

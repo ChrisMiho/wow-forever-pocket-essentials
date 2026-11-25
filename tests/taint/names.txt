@@ -5,6 +5,7 @@ AddMessage	Blizzard_ChatFrameBase/Shared/ChatFrame.lua:35
 AddPin	Blizzard_HouseEditor/Blizzard_HouseEditorLayoutMode.lua:202
 Apply	Blizzard_SharedXMLBase/AnchorUtil.lua:602
 ApplyPressedStyle	Blizzard_GamepadActionBars/ActionBarButton.lua:421
+Arrange	Blizzard_SharedXML/TableBuilder.lua:290
 Attach	Blizzard_FrameEffects/EffectFactory.lua:21
 Begin	Blizzard_BoostTutorial/Blizzard_Tutorial.lua:10
 Build	Blizzard_CombatLogBase/CombatLogUtil.lua:165
@@ -158,6 +159,7 @@ ReleaseAll	Blizzard_SharedMapDataProviders/FrameCloneManager.lua:14
 Reload	Blizzard_TransmogShared/Blizzard_TransmogShared.lua:830
 ReloadUI	Blizzard_SharedXML/InterfaceUtil.lua:1
 Reset	Blizzard_AddFriend/AddFriendTemplates.lua:41
+ResetAll	Blizzard_FrameXML/IconIntroAnimation.lua:79
 ResetButton	Blizzard_MovePad/Blizzard_MovePad.lua:110
 Run	Blizzard_RestrictedAddOnEnvironment/RestrictedFrames.lua:705
 SaveLayouts	Blizzard_CooldownViewer/CooldownViewerSettingsLayoutManager.lua:111
@@ -254,6 +256,7 @@ UpdateName	Blizzard_Channels/Classic/RosterButton.lua:245
 UpdatePower	Blizzard_NamePlates/Mainline/Blizzard_ClassNameplateBar.lua:110
 UpdateState	Blizzard_ActionBar/Shared/ActionButton.lua:1974
 Wrap	Blizzard_SharedXMLBase/MathUtil.lua:32
+Write	Blizzard_CooldownViewer/CooldownViewerSettingsDataStoreSerialization.lua:276
 action	Blizzard_Gamepad/UI/Radials/GamepadRadial.lua:159
 atan2	Blizzard_SharedXMLBase/Compat.lua:25
 cos	Blizzard_SharedXMLBase/Compat.lua:27
@@ -273,8 +276,10 @@ print	Blizzard_PrintHandler/Blizzard_PrintHandler.lua:93
 right	Blizzard_PlayerSpells/Blizzard_PlayerSpellsFrame.lua:867
 sin	Blizzard_SharedXMLBase/Compat.lua:41
 text	Blizzard_ChatFrame/Mainline/ChatConfigFrame.lua:341
+tooltip	Blizzard_CharacterCreate/Camelot/Blizzard_CharacterCreate.lua:101
 up	Blizzard_PlayerSpells/Blizzard_PlayerSpellsFrame.lua:972
 update	Blizzard_Channels/Classic/ChannelRoster.lua:143
+ARRANGE	-
 Account	-
 AcquirePanel	-
 ActionRow	-
@@ -320,6 +325,12 @@ AreaMetrics	-
 AreaName	-
 Arm	-
 Armed	-
+ArrangeApply	-
+ArrangeBuild	-
+ArrangeCall	-
+ArrangeFilter	-
+ArrangePlace	-
+ArrangeReady	-
 Ask	-
 AskGuided	-
 AskReload	-
@@ -338,6 +349,7 @@ Back	-
 BackFill	-
 BackFromMove	-
 BackingRects	-
+BadEntry	-
 BagExcluded	-
 BagExcludedBody	-
 BagFrame	-
@@ -525,6 +537,7 @@ DebugWatchFights	-
 DebugWrite	-
 DecodeIdMap	-
 DeepCopy	-
+Def	-
 Describe	-
 DetailsFor	-
 DisableModule	-
@@ -784,6 +797,7 @@ IsInGroup	-
 IsInGuild	-
 IsInRaid	-
 IsIndoors	-
+IsListed	-
 IsMenuFrame	-
 IsModifierKeyDown	-
 IsModuleEnabled	-
@@ -800,6 +814,7 @@ IsQuestInLog	-
 IsRect	-
 IsResting	-
 IsRestingNow	-
+IsRoom	-
 IsSecret	-
 IsShownNow	-
 IsTab	-
@@ -833,14 +848,17 @@ Line	-
 LineHeight	-
 List	-
 ListIndex	-
+Listed	-
 Listen	-
 Listing	-
 Loaded	-
 Lockdown	-
 Log	-
+LogAll	-
 LogDrawn	-
 LogError	-
 LogErrorBody	-
+LogMirrors	-
 LogNameOnce	-
 LogQuestError	-
 Login	-
@@ -852,6 +870,7 @@ MainChatWindow	-
 MainHand	-
 MainStatusTrackingBarContainer	-
 MakeArrow	-
+MakeBox	-
 MakeButton	-
 MakeHandlers	-
 MakePicture	-
@@ -866,6 +885,7 @@ MarkAll	-
 MarkPart	-
 MarkSection	-
 MarkWhole	-
+MarkWritten	-
 Measure	-
 MeasureCounters	-
 MeasureEnd	-
@@ -885,6 +905,9 @@ MinimapCluster	-
 MinimapCompassTexture	-
 MinimapCompassTextureUnderlay	-
 MinimapYards	-
+MirrorCheck	-
+MirrorList	-
+MirrorTwin	-
 Missing	-
 MissingNeed	-
 ModuleBlockedReason	-
@@ -893,6 +916,7 @@ Money	-
 Movable	-
 MoveButton	-
 MovePicture	-
+Moved	-
 MovedTable	-
 NAME	-
 NavActivate	-
@@ -952,6 +976,8 @@ ObjectiveTrackerFrame	-
 Off	-
 OffHand	-
 OffStatus	-
+OffsetLines	-
+OffsetText	-
 OldNamedPrev	-
 On	-
 OnActionBlocked	-
@@ -995,8 +1021,11 @@ OursIndex	-
 Out	-
 OutlineEngineMode	-
 Overflow	-
+OverlapList	-
 Overlaps	-
+OverlapsOf	-
 Owner	-
+OwnerLabel	-
 PANEL_SIZES	-
 PANEL_SIZE_DEFAULT	-
 Pack	-
@@ -1013,10 +1042,12 @@ PassDone	-
 PassOver	-
 PassResults	-
 PeakTime	-
+Pending	-
 PerfPause	-
 PerfResume	-
 Pet	-
 PetFrame	-
+Picked	-
 PieceRect	-
 Pieces	-
 Place	-
@@ -1029,6 +1060,7 @@ PlaceExtras	-
 PlaceFight	-
 PlaceGuards	-
 PlaceLabel	-
+PlaceLive	-
 PlaceMapPin	-
 PlaceNow	-
 PlaceOutline	-
@@ -1038,15 +1070,18 @@ PlaceScreen	-
 PlaceShape	-
 PlaceText	-
 PlaceThumb	-
+Placed	-
 Placement	-
 Plain	-
 PlainMoney	-
 PlainNumber	-
+Plan	-
 PlanCells	-
 PlaySound	-
 Player	-
 PlayerFrame	-
 PocketEssentials	-
+PocketEssentialsArrangePanel	-
 PocketEssentialsBagSortConfirm	-
 PocketEssentialsBagSortKey	-
 PocketEssentialsChatFont	-
@@ -1153,6 +1188,7 @@ ReadPosition	-
 ReadSetting	-
 ReadState	-
 ReadTags	-
+Ready	-
 RealBarRects	-
 RealBars	-
 ReapplyMinimapHaze	-
@@ -1167,6 +1203,7 @@ RecordingOffered	-
 RecordingText	-
 Rect	-
 RectAt	-
+RectText	-
 Rects	-
 RefreshAside	-
 RefreshCast	-
@@ -1258,6 +1295,7 @@ ScaledMetrics	-
 ScanJunk	-
 Schedule	-
 ScheduleRebuild	-
+Screen	-
 ScreenById	-
 ScreenIds	-
 ScreenPicture	-
@@ -1345,8 +1383,10 @@ Shorten	-
 Shot	-
 ShotsNote	-
 ShouldExpand	-
+Shoulders	-
 ShowBar	-
 ShowBig	-
+ShowBox	-
 ShowDistance	-
 ShowEmpty	-
 ShowEmptyBars	-
@@ -1367,10 +1407,12 @@ Signal	-
 Since	-
 Situation	-
 SituationCount	-
+SizeAndPlace	-
 SizeRow	-
 SizeStep	-
 Skip	-
 SlashCommand	-
+SlimBars	-
 SlimCall	-
 SlimRects	-
 SlotOf	-
@@ -1408,6 +1450,7 @@ StartRefusal	-
 StartTicker	-
 StartWaiting	-
 StartWatch	-
+Started	-
 StatusBar	-
 StatusTrackingBar	-
 StatusTrackingBar1	-
@@ -1483,6 +1526,9 @@ TitleContainer	-
 TitleFor	-
 ToggleOption	-
 ToggleSettings	-
+ToggleStep	-
+ToggleTwins	-
+Tooltip	-
 Top	-
 TopAnchor	-
 TopCenteredAnchor	-
@@ -1496,6 +1542,7 @@ Try	-
 TryFull	-
 TryQuestHook	-
 TryVendor	-
+Twins	-
 TypeKeyArm	-
 TypeKeyDisarm	-
 U	-
@@ -1542,6 +1589,7 @@ VendorOn	-
 VendorWindowShown	-
 Vendors	-
 Version	-
+View	-
 ViewerEntries	-
 ViewerRow	-
 ViewerStep	-
@@ -1550,6 +1598,8 @@ Visible	-
 VisibleRows	-
 WaitForFightEnd	-
 Waiting	-
+WaitingLabels	-
+Walk	-
 WantCombined	-
 WantedAtLogin	-
 Watch	-
@@ -1587,6 +1637,7 @@ WriteHints	-
 WriteList	-
 WritePixels	-
 WriteSetting	-
+Written	-
 Yards	-
 Yell	-
 YesNo	-
@@ -1594,6 +1645,7 @@ ZeroMinimapBlobs	-
 ZoneDB	-
 ZoneName	-
 ZoneTextButton	-
+a	-
 abs	-
 accepted	-
 actionBars	-
@@ -1607,6 +1659,7 @@ alive	-
 all	-
 alliance	-
 allowed	-
+alone	-
 alpha	-
 anchor	-
 anchorPoints	-
@@ -1620,6 +1673,8 @@ area	-
 areaIdToUiMapId	-
 areaIdToUiMapIdOverride	-
 arena	-
+arrange	-
+arrangeWheel	-
 arrow	-
 aside	-
 asideQuest	-
@@ -1630,6 +1685,8 @@ atFightEnd	-
 aura	-
 auto	-
 available	-
+ax	-
+ay	-
 b	-
 backing	-
 bag	-
@@ -1637,6 +1694,7 @@ bagWindow	-
 bags	-
 bar	-
 barStep	-
+bars	-
 base	-
 big	-
 bigFace	-
@@ -1655,6 +1713,8 @@ box	-
 buffs	-
 button	-
 buttons	-
+bx	-
+by	-
 byMap	-
 bySource	-
 byte	-
@@ -1674,6 +1734,7 @@ change	-
 channel	-
 channelling	-
 charDB	-
+charOffsets	-
 chat	-
 chatFrame	-
 chatPrompt	-
@@ -1709,6 +1770,7 @@ corner	-
 cost	-
 count	-
 create	-
+ctrlArrange	-
 ctrlLayout	-
 cvarFailed	-
 cvarPrev	-
@@ -1895,6 +1957,7 @@ line	-
 lines	-
 list	-
 lit	-
+live	-
 loading	-
 locked	-
 log	-
@@ -1937,6 +2000,7 @@ ms	-
 msgBig	-
 n	-
 name	-
+names	-
 nav	-
 navColumn	-
 navCross	-
@@ -1949,6 +2013,7 @@ noStep	-
 none	-
 nopos	-
 normal	-
+noslim	-
 notarget	-
 note	-
 notes	-
@@ -1969,6 +2034,8 @@ objectives	-
 off	-
 offHand	-
 offset	-
+offsets	-
+offsetsWritten	-
 ok	-
 old	-
 oldScriptErrors	-
@@ -1991,6 +2058,7 @@ outerLeft	-
 outerRight	-
 outline	-
 outlineModeShowLootEffectWhenDisabled	-
+overlap	-
 owner	-
 ox	-
 oy	-
@@ -2026,6 +2094,7 @@ peMinus	-
 peNavFocus	-
 peNavGet	-
 pePiece	-
+peRect	-
 peScrollBottom	-
 peScrollTop	-
 peSortIcon	-
@@ -2038,11 +2107,13 @@ peWidth	-
 perf	-
 pi	-
 pick	-
+picked	-
 pics	-
 picture	-
 pin	-
 pinMap	-
 place	-
+placed	-
 plain	-
 player	-
 point	-
@@ -2100,6 +2171,7 @@ ready	-
 reason	-
 rebuilt	-
 rect	-
+rects	-
 refresh	-
 refused	-
 rel	-
@@ -2113,6 +2185,7 @@ reloads	-
 remove	-
 repair	-
 reset	-
+resetAll	-
 resolve	-
 rest	-
 restHide	-
@@ -2285,6 +2358,8 @@ tsort	-
 turn	-
 turnin	-
 tw	-
+twin	-
+twins	-
 tx	-
 ty	-
 type	-
@@ -2317,6 +2392,7 @@ warning	-
 watch	-
 welcome	-
 what	-
+wheel	-
 where	-
 whisper	-
 why	-
