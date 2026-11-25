@@ -2392,3 +2392,126 @@ Things to watch for (known, not fixed):
 - A tap on the place name (world map) and on the clock (the game's clock
   window) is not there with the square map.
 - The spell wheels still open over the map and the timers.
+
+### 35. Version 0.20.0: whole names, your arrangement built in, fewer rows
+
+Not yet tested on a device. Made while you were away, from what you asked
+for after the first sitting of 0.18.0. This build also has 0.19.0's square
+map, so section 34 can be done in the same sitting, before or after this
+one. Same setup as before: Debug log On, Catch all errors on, Controller
+layout on. **Before you install it, do not change any row:** the first login
+is the test. The marks go on counting; the numbers below assume the first
+one here is 29.
+
+**What should happen at the first login, by how your switches are set.**
+Yours are Slim bars On and Arrange it yourself On, so the first line is the
+one for you.
+
+- **Arrange it yourself On (you):** nothing moves. Every piece is exactly
+  where it was in 0.18.0 and 0.19.0. No reload is asked for and chat says
+  nothing about the layout. In the Arrange window every piece you had moved
+  reads "At its built-in spot", except the map ("Moved 2 down", as you left
+  it).
+- **Arrange it yourself Off:** the pieces go to your arrangement of
+  2026-11-25. The spell panels, the LB and RB pictures and the slim bars at
+  once; the buffs and debuffs 4 higher after one reload, which the card asks
+  for (chat: "The controller layout has a new built-in arrangement").
+- **Another character of yours, Arrange it yourself On:** its pieces stay
+  where that character had them. If it was played with 0.18.0 or 0.19.0 and
+  never moved anything, they stay at the old spots (not your arrangement);
+  **Reset all** in the Arrange window then gives it your arrangement. A
+  character not played since before 0.18.0 gets your arrangement at once.
+- **Either way:** the split spell panels are there even if a "Part" row was
+  left Off, and the spell wheels are where they were.
+
+Section 29, the first login: does anything move?
+
+1. Before installing, take a screenshot of the screen as it is now, standing
+   still with a target picked.
+2. Install the build and log in on the same character. **Mark** (29).
+   **Snapshot**. Take the same screenshot. Did anything move, even a little?
+   The spell panels, the LB and RB pictures, the two slim bars, the buffs
+   top right? Did the card ask for a reload, or chat say anything about the
+   layout? (It should not.)
+3. Settings, Controller tab. Screenshot the rows. Gone: the seven "Part:
+   ..." rows and "Arrange: spell wheels". New: **Names on the bars** under
+   Slim bars.
+
+Section 30, names.
+
+4. **Mark** (30). Look at your own bar: does it read your whole name
+   ("Forgot Shards")? Screenshot.
+5. Target another player, then a creature, then a player with a long name if
+   you can find one. Screenshot each. Whole names for players? Plain names
+   for creatures? Is a long name cut with "..." before it reaches the health
+   number? With a pet out, look at the pet bar and, with a target that
+   targets you, the small bar over the target bar.
+6. Tap **First name** on the row. The bars should change at once, no reload.
+   Tap **Whole name** again. Screenshot both.
+7. A fight: pull something. Do the names stay as they were through it? Any
+   "Interface action failed" or a controller button that does nothing?
+   Screenshot at once and say what you did just before.
+
+Section 31, the Arrange window.
+
+8. **Mark** (31). Open **Arrange the screen**. Step through the pieces with
+   Next piece. Does each piece you had moved read "At its built-in spot"?
+   (The map: "Moved 2 down".) Do all pairs read "Twins are an exact mirror"?
+9. Find **Spell wheels and their buttons** in the list (the last piece). It
+   should read "Up and down only. Both sides move together." Tap Up a few
+   times: do both round buttons and both "LB + LT" / "RB + RT" prompts rise
+   together, at once? Left and Right should do nothing.
+10. Close the window. Open the left wheel (LB+LT) and the right one (RB+RT).
+    Screenshot each. Do the wheels open around the buttons where they are
+    now, or where the buttons were before? This is the part that has never
+    been tried on a device.
+11. Back in the Arrange window, pick the wheels and tap **Reset**. They
+    should go back at once. Then pick the LB targeting picture, tap Up once,
+    then **Reset**: it should return to where you had it, not to the old spot
+    out by the prompts.
+12. **Snapshot**.
+
+Section 32, the square map with your arrangement (if you use it).
+
+13. **Mark** (32). Set **Map look** to **Square, bigger** and reload when
+    asked (or leave it if it already is). The card should **not** say "With
+    the square map ... pairs of pieces overlap" any more. Do the LB and RB
+    pictures sit just beside the square map, not on it? Screenshot.
+
+Section 33, optional: the other way round.
+
+14. Only if you are curious, and you can skip it. **Mark** (33). Switch
+    **Arrange it yourself** Off and reload. The screen should look the same
+    as with it On (your arrangement is the built-in one now), except the
+    map, which goes back up by the 2 you had moved it, if that ever showed.
+    Switch it On again and reload.
+15. Settings, Errors tab: screenshot it. Tap **Save** (reload). Send
+    `SavedVariables/PocketEssentials.lua` and
+    `SavedVariables/<your character>/PocketEssentials.lua` with the
+    screenshots.
+
+What I most want to hear:
+- Did anything move at the first login? If so, which piece and about how
+  far.
+- Are the names right: whole for you and other players, cut cleanly when
+  long?
+- Do the spell wheels open where their buttons are after you move them?
+
+Things to look at while you are there:
+- **If your bar still reads only "Forgot",** the game told the addon that
+  second names are not surnames here. The debug log then has the line "a
+  second name was not joined"; send the file and say so.
+- **If a name shows a realm** (a server's name after a player's name), that
+  is wrong: screenshot it.
+- **A second character:** log in on one. Nothing of the layout should move
+  there either, and no reload should be asked for.
+
+Things to watch for (known, not fixed):
+- At Spell panel size 110% and 120% your arrangement does not fit: the
+  panels reach a little under the bottom edge and into the LB and RB
+  pictures, and the card says "2 pairs of pieces overlap". 100% and smaller
+  fit.
+- If the spell pictures are ever off (the card says why), the game's own
+  bars show at full size and the upper one on each side touches the LB or RB
+  picture.
+- Buffs and debuffs on the target are still not shown with Slim bars On.

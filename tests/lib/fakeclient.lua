@@ -1588,7 +1588,10 @@ function Client.new(opts)
     -- c:spellAlert(button, on) (ActionButtonSpellAlertManager ShowAlert / HideAlert)
     local OVERRIDE_KEYS = { "friendlyTargetingBar", "hostileTargetingBar", "shortcutsBar", "possessBar", "stanceBar" }
     -- PageUnit.lua:527-540: SetActiveActionBar keeps the bar and sends the event to the callbacks.
-    BlizzMethod(pageUnit, "SetActiveActionBar", function(_, bar)
+    -- Set directly, not through BlizzMethod: since 0.20.0 the addon does not name this method
+    -- (its hook on it is gone), so it is not in the API snapshot; the game still has it, and the
+    -- tests check that it is never hooked.
+    rawset(pageUnit, "SetActiveActionBar", function(_, bar)
         world.activeBar = bar
         for owner, fn in pairs(activeCallbacks) do Protect("active bar callback", fn, owner) end
     end)

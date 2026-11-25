@@ -4,6 +4,80 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.20.0] - 2026-11-25
+
+Fortieth test build: the rest of what you asked for after the first sitting
+of 0.18.0. **Made while you were at work: tell me what to change. Not yet
+tested on a device.** Spec
+`docs/superpowers/specs/2026-11-25-0.20.0-after-first-sitting.md`. It sits on
+top of 0.19.0 (the square map), so this one build has both.
+
+### Added
+
+- **Whole names on the slim bars.** "Forgot Shards" now reads "Forgot
+  Shards", not "Forgot". A new row on the Controller tab, under Slim bars:
+  **Names on the bars**, with **Whole name** (the default) and **First
+  name**. It changes the bars at once, no reload. A name too long for its bar
+  is cut with "..."; the small pet and target of target bars cut sooner. The
+  level and the health number stay where they are.
+
+### Changed
+
+- **Your arrangement is the built-in one.** The pieces now start where you
+  put them on 2026-11-25: the four spell panels 16 lower, the LB and RB
+  targeting pictures in beside the map, the slim bars a little further out
+  and lower, the buffs and debuffs 4 higher. "Reset" and "Reset all" in the
+  Arrange window go back to this arrangement, and every piece you had moved
+  now reads "At its built-in spot".
+- **Nothing on your screen should move.** Your saved moves are counted from
+  the new spots, once, at the first login. With **Arrange it yourself On**
+  every piece stays exactly where it was and no reload is asked for. Your
+  other characters are done the same way at their own first login.
+- **With Arrange it yourself Off the screen does take the new spots:** the
+  spell panels, targeting pictures and slim bars at once, and the buffs and
+  debuffs after one reload (chat says "The controller layout has a new
+  built-in arrangement" and the card asks for the reload). If you had moved
+  the buffs yourself in Edit Mode, that move is replaced.
+- **The spell wheel buttons can be moved without a second switch.** They are
+  the two round buttons over "LB + LT" and "RB + RT" (the ones that open your
+  pet's and other spells). With Arrange it yourself On, the piece **Spell
+  wheels and their buttons** is always in the Arrange window. It moves up and
+  down only, both sides together, and the window says so.
+- **The square map's warning is gone.** 0.19.0 said "With the square map 3
+  pairs of pieces overlap" with Slim bars On and nothing moved. With your
+  arrangement built in nothing overlaps there, so the card says nothing.
+
+### Removed
+
+- **The seven "Part: ..." rows.** They were for finding the refused actions
+  of 0.16.0 to 0.16.2. Every part of the layout is always on now; an Off you
+  had left on one of them is forgotten, so the split spell panels are back
+  without you doing anything. The seventh, "Part: follow the triggers with a
+  hook", was never tried on a device and is gone with its code.
+- **The row "Arrange: spell wheels"** (see above). If you had moved the
+  wheels while it was On, they stay moved. A move saved while it was Off was
+  never used and is dropped.
+
+### Good to know
+
+- **Names:** a realm's name is never shown. The game tells the addon whether
+  a second name is a surname; if it says no, or hides the name in a fight,
+  the bar shows the first name, or keeps the whole name it already had.
+- **Spell panel size 110% and 120%:** your arrangement was made at 100%. At
+  the two larger sizes the panels reach a little under the screen's bottom
+  edge and up into the LB and RB pictures, and the card says "2 pairs of
+  pieces overlap. Arrange the screen shows which, and moves them." 80%, 90%
+  and 100% fit.
+- **The map's "2 down"** from your arrangement is not built in: the game
+  does not let the map go under the screen's edge, so it did nothing. Your
+  saved move is kept as it is.
+- **The Debug log knows all of it:** `slim bars: names: whole` or `first`,
+  and once `a surname was joined for the player bar`; `arrange: built-in
+  arrangement 2`, and one line per piece counted from the new spots
+  (`arrange: moved into the built-in spots: player bar -18,-16 -> 0,0`).
+- Buff and debuff boxes on the bars are still to come (they wait for the
+  probe's "Buffs in a fight" run).
+
 ## [0.19.0] - 2026-11-25
 
 Thirty-ninth test build: the square map. **Made while you were at work, from

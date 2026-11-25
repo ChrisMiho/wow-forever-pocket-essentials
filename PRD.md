@@ -123,6 +123,18 @@ Chatting is hard on a handheld because targets are too small to tap.
 
 ## Status
 
+**0.20.0, after the first sitting, built 2026-11-25, not yet tested on a
+device** (branch `playing-screen-0.17.0`, on top of 0.19.0): whole names on
+the slim bars (row "Names on the bars", Whole name by default); the
+arrangement saved on the device on 2026-11-25 is the built-in one, and saved
+offsets are counted from it once, so with Arrange it yourself On nothing
+moves; the seven "Part: ..." rows and the untried trigger hook are removed;
+the spell wheel buttons are a piece of the Arrange window without a second
+switch. Waiting for the device test: `docs/TESTING.md` 35 (with 34 for the
+square map). What the offline tests cannot show: `docs/ARCHITECTURE.md`
+("Unverified API": the surname read, the wheels after a move) and the spec's
+"As built" (`2026-11-25-0.20.0-after-first-sitting.md`).
+
 **0.19.0, the square map, built 2026-11-25, not yet tested on a device**
 (branch `playing-screen-0.17.0`): a row "Map look" on the Controller tab,
 Round by default; "Square, bigger" gives a 200-across square map at the
