@@ -2285,3 +2285,110 @@ Things to watch for (known, not fixed):
 - The pieces that need Apply are shared by all your characters; the ones
   that move at once are per character.
 - The spell wheels move only as a pair, and only up and down.
+
+### 34. Version 0.19.0: the square map
+
+Not yet tested on a device. Made while you were away, from the look you
+picked on the mockup (the square, bigger map): say what you would change.
+Same setup as before: Debug log On, Catch all errors on, Controller layout
+on, and your own arrangement and Slim bars as you left them. **Mark** and
+**Snapshot** are the same two buttons at the bottom of the Controller tab.
+The marks go on counting from wherever you are; the numbers below assume the
+first one here is 26. If yours differ, just say which numbers you saw.
+
+**What this is.** One new row on the Controller tab, under Slim bars: **Map
+look**, with **Round** (today's map) and **Square, bigger**. Square makes the
+map square and bigger, with the place name, the clock and your coordinates
+inside it, and no strip underneath.
+
+Section 26, Round: nothing changed.
+
+1. Install the build and log in. **Mark** (26). **Snapshot**. The row **Map
+   look** should read **Round**. Is the screen exactly as 0.18.0 left it: the
+   round map, the strip with the place name and clock under it, your pieces
+   where you put them? Screenshot.
+
+Section 27, Square.
+
+2. **Mark** (27). Tap **Square, bigger**. Expected at once: the map turns
+   square (still small), the strip under it goes, and the card asks for a
+   reload. Screenshot this in-between look. Tap Save (it reloads).
+3. After the reload: the map should be a square about as wide as two spell
+   panels are tall, sitting at the bottom middle between the two inner spell
+   panels, with a thin black edge and a small gap to the screen's bottom.
+   **Snapshot**, and a screenshot standing outdoors. Look for:
+   - Is the map really square, or round with a square edge around it?
+   - Are the corners filled with ground, or empty?
+   - Place name at the top middle, clock bottom right, coordinates bottom
+     left: can you read all three? Is any of them cut off or missing?
+   - Do the two inner spell panels, the LB and RB pictures and the "LB + LT"
+     / "RB + RT" prompts sit clear of the map? Does anything touch it?
+   - The swing timers (make one show, or set a timer row to Always): are
+     they just over the map?
+4. Look at the small pieces on the map: the sun or moon mark, the mail mark
+   if you have mail, anything else. Where do they sit now? Screenshot. They
+   were not moved in this version; say what you want done with each.
+5. Track a quest with spots nearby (Quest icons on). Screenshot. Do icons
+   show in the map's corners? Does a far hand-in spot sit on the square's
+   edge, not on a circle inside it?
+6. Walk into an inn or a building. Screenshot. Does the place name change
+   to the building's? Is the map still square indoors?
+7. Walk across a zone border and wait a minute. Do the place name, its
+   colour and the clock keep up? Do the coordinates change as you walk?
+8. A fight: pull something. Does the map stay square through the fight and
+   after it? Any "Interface action failed" or a controller button that does
+   nothing? Screenshot at once and say what you did just before.
+9. Open both spell wheels (LB+LT, RB+RT) with the square map. Screenshot
+   each. Do they open over the map or the timers? (They did over the round
+   map too; say whether it is worse.)
+10. Open the world map and close it again; open and close Edit Mode once
+    (Escape, Edit Mode, then leave it without changing anything). Is the map
+    still square, at the same low spot, the strip still gone? If the map
+    jumps up for a moment and comes back, say so. **Snapshot**.
+11. The row **Map buttons** should read "Map buttons: Round map only". Tap
+    it: nothing should appear on the screen.
+
+Section 28, back to Round.
+
+12. **Mark** (28). Tap **Round**. Expected at once: the map is round again
+    (still big, and sitting higher, until the reload), the strip is back, the
+    words inside the map are gone. Screenshot. Tap Save (it reloads).
+13. After the reload: is everything exactly as in step 1? **Snapshot**.
+    Leave the row however you like.
+14. Settings, Errors tab: screenshot it. Tap **Save** (reload). Send
+    `SavedVariables/PocketEssentials.lua` and
+    `SavedVariables/<your character>/PocketEssentials.lua` with the
+    screenshots.
+
+What I most want to hear:
+- Is the size right, and the spot?
+- Are the three texts the right ones, in the right corners, big enough?
+- Which of the small pieces on the map should stay, move or go?
+- Do you miss tapping the place name to open the world map?
+
+Things to look at while you are there:
+- **If the map stays round** after step 3 (bigger, with a black round
+  border), the game did not take the square shape. The card then says "The
+  square map is not possible on this game version". Screenshot it; that is
+  the answer I need.
+- **If the map sits about 50 higher than the bottom edge,** with an empty
+  gap under it, the game did not let the addon lower it. Screenshot and
+  **Snapshot**: the snapshot's lines "map's edge" and "round map" say by how
+  much.
+- **The coordinates:** with the game's own "coordinates on the minimap"
+  option on, the text bottom left is the game's (plain, no outline); with it
+  off, the addon's (outlined). If you see none at all, say which way your
+  option is set.
+- **The card says "With the square map ... pairs of pieces overlap"** only
+  when pieces really overlap in the plan. With your saved arrangement it
+  should not say it.
+
+Things to watch for (known, not fixed):
+- The day and night mark and the mail mark sit where the game puts them for
+  a round map; the day and night mark may poke a little over the square's
+  top right corner.
+- The zoom buttons, if they show when you touch the map, sit inside the
+  bottom right corner, near the clock.
+- A tap on the place name (world map) and on the clock (the game's clock
+  window) is not there with the square map.
+- The spell wheels still open over the map and the timers.

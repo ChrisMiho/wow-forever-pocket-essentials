@@ -123,6 +123,14 @@ Chatting is hard on a handheld because targets are too small to tap.
 
 ## Status
 
+**0.19.0, the square map, built 2026-11-25, not yet tested on a device**
+(branch `playing-screen-0.17.0`): a row "Map look" on the Controller tab,
+Round by default; "Square, bigger" gives a 200-across square map at the
+bottom middle with the place name, clock and coordinates inside it. Round is
+0.18.0 unchanged. Waiting for the device test: `docs/TESTING.md` 34. What
+the offline tests cannot show is listed in `docs/ARCHITECTURE.md`
+("Unverified API", the square map's rows) and in the spec's "As built".
+
 **Playing screen, first device sitting of 0.18.0, 2026-11-25** (pre-release
 v0.18.0 on branch `playing-screen-0.17.0`; `main` is 0.15.0): Slim bars and
 Arrange it yourself both work, no errors and no refused action, "the overall

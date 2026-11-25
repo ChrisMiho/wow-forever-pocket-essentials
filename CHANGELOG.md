@@ -4,6 +4,74 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.19.0] - 2026-11-25
+
+Thirty-ninth test build: the square map. **Made while you were at work, from
+the look you picked ("C for sure, i like the bigger map"): tell me what to
+change. Not yet tested on a device.** Spec
+`docs/superpowers/specs/2026-11-25-0.19.0-square-map.md`.
+
+### Added
+
+- **Map look** (Controller tab, a new row under Slim bars): **Round** (the
+  map as it is today, and the default) or **Square, bigger**. Square gives a
+  square map 200 across (the round one is 139), at the bottom middle between
+  the two inner spell panels, with a thin black edge like the slim bars.
+  Changing the row asks for one reload, because the game sets the map's size
+  itself; the square shape, the edge and the words appear at once.
+- **Inside the square map:** the place name at the top middle, in the
+  game's own colour for the kind of zone; the clock at the bottom right, the
+  same time the game's own clock shows (local or realm, 12 or 24 hours, as
+  you have it set); your coordinates at the bottom left. A place name too
+  long for the map is cut with "...".
+- **No strip under the map** with Square: the place name and the clock are
+  in the map now.
+- **Quest icons use the corners.** On the square map an icon shows anywhere
+  inside the square, and a hand-in spot that is further away sits on the
+  square's edge in its direction, as it sits on the round map's rim today.
+- **The Debug log knows all of it:** lines starting `map look:` say when the
+  square was put on, where its edge is, which coordinates text is used and
+  where each small piece on the map sits. **Save a snapshot** lists them too.
+
+### Changed (only with Square)
+
+- The three swing timers sit 14 higher, just over the bigger map.
+- The LB and RB targeting pictures start 20 further out. With the moves you
+  saved on 2026-11-25 they end up right beside the square map, as on the
+  picture you chose; nothing else you moved changes place.
+
+### Good to know
+
+- **Round is exactly 0.18.0.** With the row on Round nothing of this runs
+  and every piece is where it was.
+- **Two taps are gone with Square.** A tap on the place name used to open
+  the world map, and a tap on the clock the game's clock window (stopwatch
+  and alarm). With the strip hidden neither is there; the world map still
+  opens the usual way.
+- **Map buttons** (the magnifier and the calendar) belong to the strip, so
+  with Square that row reads "Map buttons: Round map only". Your choice is
+  kept for the round map.
+- **The small pieces on the map are not moved yet:** the day and night mark,
+  the mail mark, the zoom buttons. They were placed for a round map. Look
+  where they sit on the square one and say what you want done with them.
+- **The coordinates:** if the game's own "coordinates on the minimap" option
+  is on, the game's own text is moved into the corner; otherwise the addon
+  draws its own. Either way they sit bottom left.
+- **If the game will not take the square shape,** the map stays round (at
+  the bigger size, with its black border) and the Controller card says "The
+  square map is not possible on this game version: the map stays round."
+- **Slim bars On, Square, and nothing moved with Arrange it yourself:** the
+  LB and RB targeting pictures then reach a little into the inner ends of
+  the slim bars, and the card says "With the square map 3 pairs of pieces
+  overlap." Arrange it yourself moves them. With your saved arrangement
+  nothing overlaps.
+- **The map cannot be pushed under the screen's bottom edge with Arrange it
+  yourself.** The game holds the map's box on the screen, so a move further
+  down than the edge does nothing (your saved "2 down" on the map is such a
+  move). The square map's own low spot is done another way and is not
+  affected.
+- Nothing is changed in a fight: a change of the row waits for its end.
+
 ## [0.18.0] - 2026-11-24
 
 Thirty-eighth test build: arrange it yourself. **A first version, made
