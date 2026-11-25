@@ -273,6 +273,17 @@ of the changes reaches the addon (spec `2026-11-24-0.16.4-cleanup.md`, 9).
 These are the things that could **not** be confirmed there. Each is guarded
 so that being wrong cannot raise an error; the worst case is listed.
 
+**First device sitting of 0.16.4 to 0.18.0, 2026-11-25** (free play on a
+warlock with a pet, one 56 second fight; the numbered steps of TESTING 31-33
+were not walked through): Slim bars and Arrange it yourself were On, the saved
+file holds no refused action and no stopped bar, the bars followed the fight,
+the game's four unit frames stayed invisible, the tap guards took the taps,
+live moves and Apply with a reload put the pieces (the map and the buffs
+among the Edit Mode ones) where the plan said, and the Arrange window was
+usable with the controller. The rows below for those points held in that
+sitting; they stay listed until a longer test (other classes, a vehicle, a
+group, the spell wheels moved, the hook row) has been done.
+
 | What | Used by | If it is wrong |
 |---|---|---|
 | A live move places the whole layout again at every tap (`mod:ArrangePlace` is `SyncBars`, so `PlaceNow` in `ControllerLayout.lua`), out of a fight. Per tap, on the game's regions: `C_EditMode.GetLayouts` (read); `Put` on `PageUnit.TopCenteredAnchor`, `LeftCenteredAnchor`, `RightCenteredAnchor`, `BottomCenteredAnchor` and `BottomCenteredAnchor.Bar` (`ClearAllPoints`, `SetScale`, `SetPoint`; a second time at full size while the spell pictures are off); `PlaceExtras` on the two shoulder textures and `TargetFrame.totFrame` (`ClearAllPoints`, `SetPoint`); `PlaceChat` (`Hide` on every chat box texture that shows); `PlaceRing` (`Hide` on the compass texture and its underlay if shown, and size reads on `Minimap`); `PlaceButtons` (`Hide` on the map's tracking, calendar and addon-count buttons if shown and the row hides them); `PlaceHints` (the hint box setting, only if its row was tapped since); with Slim bars On, `GetAlpha` on the four unit frames and `SetAlpha(0)` only on one that is not already 0, and position reads on them for the tap guards. Then our own frames: the map's disc, the PE button, the spell panels and their tap guards, the slim bars. Every one of these calls has run on the device at each login and layout event (0.12.0 to 0.16.x; the slim bars' never yet), but never many times in a minute. New in 0.18.0, only with "Arrange it yourself" On and the window in use | Arrange it yourself (`Arrange.lua`, `mod:ArrangePlace`) | "Interface action blocked", or the game refusing its own actions until a reload. Do not use the window; or switch "Arrange it yourself" Off and reload: `Arrange.lua` is then never called and nothing is placed more often than in 0.17.0 |

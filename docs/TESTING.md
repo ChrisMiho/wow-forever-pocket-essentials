@@ -1849,7 +1849,14 @@ Things to watch for (known, not fixed):
 
 ### 31. Version 0.16.4: clean-up, and the tools for the long test
 
-Nothing here is tested on the device yet. This section is the first part of
+**First device sitting, 2026-11-25 (0.18.0, a warlock with a Voidwalker):**
+free play rather than these numbered steps (one mark, one snapshot). No refused action in any 0.18.0 sitting; Mark and Snapshot wrote to
+the log (snapshot 1: 53 pieces, 11 not found, 6 overlaps, before any
+arranging). The Part rows still held Off values from 2026-11-24 and hid the
+split panels until set to On; the rows are to be removed.
+The steps below have not been walked through one by one.
+
+This section is the first part of
 one long sitting; later sections (0.17.0, 0.18.0) carry on in the same log.
 Wherever a step says **Mark**, tap "Mark a test section" (Settings, Debug log
 tab, or the bottom of the Controller tab) and check that chat says the number
@@ -1953,7 +1960,14 @@ Things to watch for (known, not fixed):
 
 ### 32. Version 0.17.0: the slim bars
 
-Nothing here is tested on the device yet. This carries on from section 31 in
+**First device sitting, 2026-11-25 (0.18.0, a warlock with a Voidwalker):**
+free play rather than these numbered steps (one mark, one snapshot). Slim bars On: no errors, the bars followed a 56 second fight (target and
+target of target came and went), no stopped bar, no refused action, and
+taps where the game's frames were do nothing. Only the first word of a name
+shows. Step 18 (the probe's Buffs in a fight) was not done.
+The steps below have not been walked through one by one.
+
+This carries on from section 31 in
 the same sitting and the same log: Debug log On, Catch all errors on,
 Controller layout on, no probe folder (it is only needed for the very last
 step). **Mark** and **Snapshot** mean the same two buttons as in section 31.
@@ -2103,7 +2117,14 @@ device):
 
 ### 33. Version 0.18.0: arrange it yourself
 
-Nothing here is tested on the device yet, and this is a first version made
+**First device sitting, 2026-11-25 (0.18.0, a warlock with a Voidwalker):**
+free play rather than these numbered steps (one mark, one snapshot). Arrange it yourself On: "working great". Live pieces and Edit Mode pieces
+(map, buffs) moved; every Apply logged 0 overlaps and exact mirrors, and the
+offsets were back after each reload. Arrange: spell wheels stayed Off, so
+the two wheel buttons could not be moved.
+The steps below have not been walked through one by one.
+
+This is a first version made
 without you: say what you would change. It carries on from section 32 in the
 same sitting and the same log: Debug log On, Catch all errors on, Controller
 layout on. **Mark** and **Snapshot** are the same two buttons as before. The

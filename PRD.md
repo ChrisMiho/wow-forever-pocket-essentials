@@ -123,6 +123,15 @@ Chatting is hard on a handheld because targets are too small to tap.
 
 ## Status
 
+**Playing screen, first device sitting of 0.18.0, 2026-11-25** (pre-release
+v0.18.0 on branch `playing-screen-0.17.0`; `main` is 0.15.0): Slim bars and
+Arrange it yourself both work, no errors and no refused action, "the overall
+experience was incredible". Asked for next: a better-looking map (bigger,
+ElvUI-like), the owner's arrangement as the built-in one, whole names on the
+bars, the Part rows removed, the spell wheel buttons movable. Buff and debuff
+boxes wait for the probe's "Buffs in a fight" run. Details: CHANGELOG 0.16.4
+to 0.18.0 and `docs/TESTING.md` 31-33.
+
 Offline test suite (2026-11-15): the API audit found all 236 game names the addon uses in Blizzard's source for this build (169 documented, 67 seen only in Blizzard's own code, whose restrictions are unknown), and the rule tests and smoke test pass offline; no addon bug has been found by them so far. None of this proves behaviour in the game; see `docs/TESTING.md`.
 
 In progress: device testing. Version 0.0.3 (test build) carries the fixes from

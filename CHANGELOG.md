@@ -8,8 +8,12 @@ All notable changes to this project are recorded here. The format follows
 
 Thirty-eighth test build: arrange it yourself. **A first version, made
 without you: tell me what to change.** Spec
-`docs/superpowers/specs/2026-11-24-0.18.0-arrange.md`. Not yet tested on a
-device.
+`docs/superpowers/specs/2026-11-24-0.18.0-arrange.md`. **First device
+sitting, 2026-11-25** (a warlock with a Voidwalker, free play, not the
+numbered steps): pieces moved and applied, "working great"; the saved file
+shows every Apply with 0 overlaps and exact mirrors, and no refused action.
+Asked for: a better built-in arrangement (theirs), and the spell wheel
+buttons could not be moved (their switch was Off).
 
 ### Added
 
@@ -84,8 +88,12 @@ device.
 ## [0.17.0] - 2026-11-24
 
 Thirty-seventh test build: the slim bars, the second half of the new playing
-screen. Spec `docs/superpowers/specs/2026-11-24-0.17.0-slim-bars.md`. Not yet
-tested on a device.
+screen. Spec `docs/superpowers/specs/2026-11-24-0.17.0-slim-bars.md`. **First device
+sitting, 2026-11-25** (free play, not the numbered steps): no errors; the
+bars followed one fight (14:25, 56 seconds) with no stopped bar and no
+refused action; taps where the game's frames were do nothing. Asked for:
+the whole name on a bar ("Forgot Shards" shows as "Forgot"). Buff and
+debuff boxes still wait for the probe run.
 
 ### Added
 
@@ -149,8 +157,11 @@ tested on a device.
 
 Thirty-sixth test build: clean-up after the refused controller actions, and
 the tools for one long device test of everything that follows. Spec
-`docs/superpowers/specs/2026-11-24-0.16.4-cleanup.md`. Not yet tested on a
-device.
+`docs/superpowers/specs/2026-11-24-0.16.4-cleanup.md`. **On the device
+2026-11-25** as part of 0.18.0: no refused action in any 0.18.0 sitting;
+marks and snapshots write to the log. The Part rows kept the Off values of
+the day before and hid the split panels until set back to On: they are to be
+removed. The hook row was not tried.
 
 ### Added
 
