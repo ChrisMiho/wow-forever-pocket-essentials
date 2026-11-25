@@ -92,12 +92,13 @@ Plan.DEFAULTS = {
     offHand = 2,
     hints = 0,          -- 0.16.0: the game's hint box ("Controls reminder"): 0 Off, 1 On
     mapButtons = 0,     -- 0.16.0: the magnifier and calendar beside the place name: 0 Hidden, 1 Shown
-    -- 0.16.2, testing rows: which parts of the layout are done at all (1) or left out (0).
-    -- For finding the part that makes the game refuse its controller actions
-    -- (docs/superpowers/plans/2026-11-24-blocked-action-0.16.1.md); they go when it is found.
+    -- The parts of the layout: each done at all (1) or left out (0). 0.16.2 added them as
+    -- testing rows, to find the part that made the game refuse its controller actions
+    -- (docs/superpowers/plans/2026-11-24-blocked-action-0.16.1.md: the chat's box). 0.16.4
+    -- keeps them as the switches for the parts ("Part: ..."), On by default.
     tHints = 1, tChat = 1, tMap = 1, tBars = 1, tExtras = 1, tFace = 1,
 }
--- The testing rows' keys, in the order shown.
+-- The part rows' keys, in the order shown.
 Plan.TEST_PARTS = { "tHints", "tChat", "tMap", "tBars", "tExtras", "tFace" }
 
 -- The template's version, saved with our layout whenever it is built
@@ -1853,7 +1854,7 @@ local function PlaceNow()
     if PE.debugOn then
         local left = {}
         for _, k in ipairs(Plan.TEST_PARTS) do if o[k] == 0 then left[#left + 1] = k end end
-        PE:Debug("ctrlLayout", "bars placed" .. (#left > 0 and (" (testing, left out: " .. table.concat(left, " ") .. ")") or ""))
+        PE:Debug("ctrlLayout", "bars placed" .. (#left > 0 and (" (parts left out: " .. table.concat(left, " ") .. ")") or ""))
     end
     if face then StartFace() end
     -- Our pictures are off (FaceStatus says why): the game's bars show, at full size.
@@ -2305,18 +2306,19 @@ local OPTIONS = {
       OnChange = function() if wanted then SyncBars() end end },
     { label = "Rebuild the layout", button = "Start over", action = function() StartOver() end },
 }
--- 0.16.2: the testing rows (Plan.TEST_PARTS). A change counts from the next reload: what a
--- part already did this session cannot be undone by leaving it out.
+-- The part rows (Plan.TEST_PARTS; 0.16.2's testing rows, named "Part: ..." since 0.16.4). A
+-- change counts from the next reload: what a part already did this session cannot be undone
+-- by leaving it out.
 do
     local ON_OFF = { { value = 0, label = "Off" }, { value = 1, label = "On" } }
-    local LABELS = { tHints = "Test: hint box", tChat = "Test: chat box", tMap = "Test: map ring and buttons",
-        tBars = "Test: move the game's bars", tExtras = "Test: targeting pictures", tFace = "Test: spell pictures" }
+    local LABELS = { tHints = "Part: hint box", tChat = "Part: chat box", tMap = "Part: map ring and buttons",
+        tBars = "Part: move the game's bars", tExtras = "Part: targeting pictures", tFace = "Part: spell pictures" }
     local told = false
     for _, key in ipairs(Plan.TEST_PARTS) do
         OPTIONS[#OPTIONS + 1] = { key = key, label = LABELS[key], choices = ON_OFF, OnChange = function()
             if told then return end
             told = true
-            PE:Print("Testing rows count from the next reload.")
+            PE:Print("Part switches count from the next reload.")
         end }
     end
 end

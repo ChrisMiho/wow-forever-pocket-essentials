@@ -1361,9 +1361,9 @@ test("rows: Spell panel size, the three timer rows and Start over", function()
     for i, o in ipairs(list) do labels[i] = o.label end
     eq(labels, { "Spell panel size", "Ranged timer", "Main hand timer", "Off hand timer", "Controls reminder", "Map buttons",
         "Rebuild the layout",
-        -- 0.16.2: the testing rows, until the refused actions are found
-        "Test: hint box", "Test: chat box", "Test: map ring and buttons", "Test: move the game's bars",
-        "Test: targeting pictures", "Test: spell pictures" })
+        -- 0.16.4: the six part rows (0.16.2's testing rows, kept as the switches for the parts)
+        "Part: hint box", "Part: chat box", "Part: map ring and buttons", "Part: move the game's bars",
+        "Part: targeting pictures", "Part: spell pictures" })
     eq(list[1].key, "panelSize")
     local n = list[1].number
     eq({ n.min, n.max, n.step, n.default, n.suffix }, { 80, 120, 10, 100, "%" })
@@ -3075,6 +3075,27 @@ test("0.16.2: with every testing row Off the layout leaves each part alone", fun
         check(call.args[1] ~= HINTS_CVAR_162, "the hint box setting was written")
     end
     c:assertClean()
+end)
+
+test("0.16.4: the six rows are named Part, stay On by default, and say once that they count from the next reload", function()
+    local Plan = plan()
+    local c, PE = layoutClient({}, 3)
+    local want = { tHints = "Part: hint box", tChat = "Part: chat box", tMap = "Part: map ring and buttons",
+        tBars = "Part: move the game's bars", tExtras = "Part: targeting pictures", tFace = "Part: spell pictures" }
+    for _, key in ipairs(Plan.TEST_PARTS) do
+        local row = optRow(PE, key)
+        eq(row.label, want[key])
+        eq(Plan.DEFAULTS[key], 1, key .. " default")
+        eq(opts(PE)[key], 1, key .. " at first install")
+    end
+    optRow(PE, "tChat").OnChange()
+    optRow(PE, "tMap").OnChange()
+    local said = 0
+    for _, line in ipairs(T.chatLines(c)) do
+        if line == "Part switches count from the next reload." then said = said + 1 end
+        check(not line:find("Testing rows", 1, true), "the old wording is still said")
+    end
+    eq(said, 1)
 end)
 
 test("0.16.0: the chat is bottom left, the tracker top right, the tooltip is a piece", function()
