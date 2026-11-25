@@ -4,6 +4,65 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.17.0] - 2026-11-24
+
+Thirty-seventh test build: the slim bars, the second half of the new playing
+screen. Spec `docs/superpowers/specs/2026-11-24-0.17.0-slim-bars.md`. Not yet
+tested on a device.
+
+### Added
+
+- **Slim bars** (Controller tab, a new row, Off by default). On, the game's
+  player, pet, target and target-of-target frames go invisible and five flat
+  bars of the addon's take their place, a little out from the map on each
+  side, above the spell panels:
+  - **You:** health with your level and name on the left and the health
+    number on the right, and a thin power bar under it.
+  - **Your target:** the same on the right side. Red for something you can
+    attack, grey when someone else's group tagged it, green otherwise.
+  - **Your pet:** a small bar with its name, above the left end of yours.
+  - **Your target's target:** a small bar above the right end of the
+    target's.
+  - **Your target's cast:** a thin yellow bar under the target bar while it
+    casts or channels, with the spell's name.
+- **The tooltip moves to the bottom right corner** while Slim bars is On,
+  where the game's target frame used to be.
+- **Debug log and Save a snapshot know the bars:** a line when they start and
+  stop with where each one is, a line each time a bar appears or goes and
+  why, and the snapshot lists them.
+
+### Not in yet
+
+- **The buff and debuff boxes are not built.** They wait for the probe's
+  "buffs in a fight" test. Their room is kept free. Until they are in,
+  **with Slim bars On you do not see your target's buffs and debuffs
+  anywhere**: the game draws them on its target frame, which is invisible.
+  Your own buffs along the top are not touched.
+- Also not shown while Slim bars is On, because the game draws them on the
+  frames that are now invisible: portraits, the target's level badge and
+  elite border, raid marks, the resting and fighting marks on your own frame,
+  your pet's mood, and whatever your class adds to your frame.
+
+### Good to know
+
+- **The switch counts from the next reload,** and asks for it: the tooltip's
+  spot is part of the Edit Mode layout, which only changes with a reload.
+- **The game's frames are still there, only invisible,** and are put back
+  exactly as they were when you switch Slim bars or the Controller layout
+  off. Nothing of the game's is changed during a fight: if the layout goes
+  off in a fight, the bars stay until the fight is over.
+- **A tap where the game's frames used to be does nothing.** Without that, a
+  tap on what looks like empty ground would target yourself or open a menu.
+  The cost: the right-click menus of those frames cannot be reached while
+  Slim bars is On.
+- The bars are the same size and in the same place at every Spell panel
+  size.
+- The target-of-target bar's health may be a moment behind when your
+  target is attacking someone other than you or your pet: the game sends no
+  signal for it. A channelled spell fills up like a normal cast.
+- If the bars hit an error three times they turn themselves off for the
+  session, bring the game's frames back and say so in chat.
+
 ## [0.16.4] - 2026-11-24
 
 Thirty-sixth test build: clean-up after the refused controller actions, and

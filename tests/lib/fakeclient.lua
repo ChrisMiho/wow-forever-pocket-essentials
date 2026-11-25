@@ -79,7 +79,7 @@ local M_FONT_INSTANCE = list("SetFont GetFont SetFontObject SetTextColor SetShad
 local M_FONTSTRING = list("SetText GetText SetWordWrap SetMaxLines GetStringHeight GetUnboundedStringWidth SetRotation")
 local M_FRAME = list([[GetAlpha SetAlpha GetScale SetScale GetEffectiveScale CreateTexture CreateFontString CreateLine
     CreateAnimationGroup RegisterEvent UnregisterEvent UnregisterAllEvents IsEventRegistered SetFrameStrata
-    GetFrameStrata SetFrameLevel GetFrameLevel SetClampedToScreen SetHitRectInsets Raise]])
+    GetFrameStrata SetFrameLevel GetFrameLevel SetClampedToScreen SetHitRectInsets Raise RegisterUnitEvent]])
 local M_BUTTON = list("RegisterForClicks IsEnabled SetText GetText GetAttribute")
 local M_SCROLLFRAME = list("SetScrollChild SetVerticalScroll")
 local M_EDITBOX = list("SetText GetText IsEnabled SetFont GetFont SetFontObject SetTextColor")
@@ -89,6 +89,8 @@ local M_MINIMAP = list([[GetZoom SetQuestBlobInsideAlpha SetQuestBlobOutsideAlph
 -- FrameAPICooldownDocumentation.lua (SetCooldown is added to each Cooldown frame by
 -- CreateFrame below, so that a call is recorded rather than raising).
 local M_COOLDOWN = list("SetCooldownFromDurationObject Clear SetHideCountdownNumbers SetDrawBling SetDrawEdge")
+-- SimpleStatusBarAPIDocumentation.lua:229, 282, 318, 355 (0.17.0, the slim bars).
+local M_STATUSBAR = list("SetMinMaxValues SetValue SetStatusBarTexture SetStatusBarColor")
 local M_ANIMGROUP = list("CreateAnimation Play Stop SetToFinalAlpha SetScript GetScript HookScript GetParent IsForbidden")
 local M_ANIM = list("SetFromAlpha SetToAlpha SetDuration Play Stop SetScript GetScript HookScript GetParent IsForbidden")
 local M_FONT = list("SetFont GetFont SetFontObject SetTextColor SetShadowColor SetShadowOffset SetJustifyH SetJustifyV GetAlpha SetAlpha IsForbidden")
@@ -110,13 +112,14 @@ local TYPE_METHODS = {
     ScrollingMessageFrame = concat(M_OBJECT, M_SCRIPT_REGION, M_FRAME, M_MESSAGEFRAME),
     Minimap = concat(M_OBJECT, M_SCRIPT_REGION, M_FRAME, M_MINIMAP),
     Cooldown = concat(M_OBJECT, M_SCRIPT_REGION, M_FRAME, M_COOLDOWN),
+    StatusBar = concat(M_OBJECT, M_SCRIPT_REGION, M_FRAME, M_STATUSBAR),
     AnimationGroup = M_ANIMGROUP,
     Alpha = M_ANIM,
     Font = M_FONT,
 }
 local IS_FRAME = { Frame = true, Button = true, ScrollFrame = true, EditBox = true, ScrollingMessageFrame = true, Minimap = true,
-    Cooldown = true }
-local CREATABLE = { Frame = true, Button = true, ScrollFrame = true, Cooldown = true } -- what CreateFrame accepts here
+    Cooldown = true, StatusBar = true }
+local CREATABLE = { Frame = true, Button = true, ScrollFrame = true, Cooldown = true, StatusBar = true } -- what CreateFrame accepts here
 
 local FRAME_SCRIPTS = list([[OnEvent OnUpdate OnShow OnHide OnMouseDown OnMouseUp OnMouseWheel OnEnter OnLeave
     OnSizeChanged OnLoad OnAttributeChanged OnDragStart OnDragStop OnReceiveDrag OnKeyDown OnKeyUp
@@ -129,6 +132,7 @@ local SCRIPTS = {
     ScrollingMessageFrame = concat(FRAME_SCRIPTS, list("OnHyperlinkClick OnHyperlinkEnter OnHyperlinkLeave")),
     Minimap = FRAME_SCRIPTS,
     Cooldown = concat(FRAME_SCRIPTS, list("OnCooldownDone")),
+    StatusBar = FRAME_SCRIPTS,
     AnimationGroup = list("OnPlay OnFinished OnStop OnLoop OnPause OnUpdate"),
     Alpha = list("OnPlay OnFinished OnStop OnLoop OnPause OnUpdate"),
     Texture = {}, Line = {}, FontString = {},
@@ -246,6 +250,20 @@ function Client.new(opts)
         iconSet = "Xbox",            -- InputDeviceIconSetManager:GetActiveInputDeviceIconSet()
         barAlphaBlocked = false,     -- true: SetAlpha on a gamepad bar frame in a fight is refused
                                      -- (ADDON_ACTION_BLOCKED) and does nothing
+        -- The units the Unit... functions below answer for (0.17.0, the slim bars):
+        -- [unit] = { name, level, health, healthMax, power, powerMax, powerToken, attackable,
+        -- tapped, cast = { text, startMs, endMs, channel, trade } }; a unit not listed does
+        -- not exist. The player's name is world.playerName unless a name is given here.
+        units = { player = { level = 10, health = 100, healthMax = 100, power = 50, powerMax = 100, powerToken = "MANA" } },
+        unitSecret = false,          -- true: the answers the game may hide in a fight come back as secret
+                                     -- values (c:secret; UnitDocumentation.lua: UnitHealth 1526,
+                                     -- UnitHealthMax 1472, UnitPower 2732, UnitPowerMax 2801, UnitName 2489,
+                                     -- and the cast functions' name, text, picture and two times, 828-894)
+        unitCallFails = {},          -- [function name] = true: that Unit... function raises
+        unitAnswerHidden = {},       -- [function name] = true: its (documented as never hidden) answer is secret
+        barRefusesSecrets = false,   -- true: StatusBar:SetMinMaxValues and SetValue raise for a secret value
+        textRefusesSecrets = false,  -- true: FontString:SetText raises for a secret value
+        noStatusBars = false,        -- true: CreateFrame("StatusBar") raises
     }
     c.world = world
 
@@ -272,6 +290,23 @@ function Client.new(opts)
     end
     c._protect = Protect
     c._record = Record
+
+    -- A value the game hides from addons in a fight: a table that issecretvalue() knows, and that
+    -- raises when addon code adds, joins, compares (<, <=), indexes, calls or converts it, as the
+    -- game does. Equality and a plain truth test cannot be caught here. c.secretValue[s] is what
+    -- it stands for, for a test to check that the very same value reached a widget.
+    c.secretValue = setmetatable({}, { __mode = "k" })
+    local secretMeta = {}
+    for _, ev in ipairs({ "__add", "__sub", "__mul", "__div", "__mod", "__pow", "__unm", "__concat", "__lt", "__le",
+        "__call", "__index", "__newindex", "__tostring" }) do
+        secretMeta[ev] = function() error("attempt to use a secret value (" .. ev .. ")", 2) end
+    end
+    function c:secret(v)
+        local s = setmetatable({}, secretMeta)
+        world.secrets[s] = true
+        c.secretValue[s] = v
+        return s
+    end
 
     local function Miss(kind, name)
         local key = kind .. " " .. tostring(name)
@@ -686,8 +721,15 @@ function Client.new(opts)
         if v ~= "TOP" and v ~= "MIDDLE" and v ~= "BOTTOM" then error("SetJustifyV(): TOP, MIDDLE or BOTTOM expected", 2) end
         St(self).justifyV = v
     end
+    -- SimpleFontStringAPIDocumentation.lua:664: SetText takes a secret value from addon code
+    -- (SecretArguments "AllowedWhenTainted"); it is kept as it came. world.textRefusesSecrets: it raises.
     function METHODS:SetText(text)
         local st = St(self)
+        if text ~= nil and world.secrets[text] then
+            if world.textRefusesSecrets then error("SetText(): Secret values are only allowed during untainted execution", 2) end
+            st.text = text
+            return
+        end
         if text ~= nil and type(text) ~= "string" and type(text) ~= "number" then error("SetText(): string expected", 2) end
         st.text = text ~= nil and tostring(text) or nil
     end
@@ -751,6 +793,7 @@ function Client.new(opts)
         if type(event) ~= "string" or not c.snapshot.event[event] then
             error("Frame:RegisterEvent(): Attempt to register unknown event \"" .. tostring(event) .. "\"", 2)
         end
+        if st.unitFilter then st.unitFilter[event] = nil end
         if not st.events[event] then
             st.events[event] = true
             local order = eventOrder[event] or {}
@@ -759,9 +802,25 @@ function Client.new(opts)
         end
         return true
     end
+    -- SimpleFrameAPIDocumentation.lua:1064: the event only for the units named (c:fire looks at
+    -- the event's first value).
+    function METHODS:RegisterUnitEvent(event, ...)
+        METHODS.RegisterEvent(self, event)
+        local st = St(self)
+        local set = {}
+        for i = 1, select("#", ...) do
+            local unit = select(i, ...)
+            if type(unit) ~= "string" then error("Frame:RegisterUnitEvent(): unit expected", 2) end
+            set[unit] = true
+        end
+        st.unitFilter = st.unitFilter or {}
+        st.unitFilter[event] = set
+        return true
+    end
     local function DropEvent(self, event)
         local st = W[self]
         st.events[event] = nil
+        if st.unitFilter then st.unitFilter[event] = nil end
         local order = eventOrder[event]
         if order then
             for i = #order, 1, -1 do if order[i] == self then table.remove(order, i) end end
@@ -891,6 +950,38 @@ function Client.new(opts)
             animGroups[self] = nil
             RunScript(self, "OnStop", true)
         end
+    end
+
+    -- Status bars (SimpleStatusBarAPIDocumentation.lua:229, 282, 318, 355). SetMinMaxValues and
+    -- SetValue take a secret value from addon code (SecretArguments "AllowedWhenTainted") and keep
+    -- it as it came: rec.barMin, rec.barMax, rec.barValue. world.barRefusesSecrets: they raise.
+    local function BarNumber(v, what)
+        if v ~= nil and world.secrets[v] then
+            if world.barRefusesSecrets then error(what .. ": Secret values are only allowed during untainted execution", 3) end
+            return
+        end
+        CheckNumber(v, what)
+    end
+    function METHODS:SetMinMaxValues(lo, hi)
+        BarNumber(lo, "SetMinMaxValues()")
+        BarNumber(hi, "SetMinMaxValues()")
+        local st = St(self)
+        st.barMin, st.barMax = lo, hi
+    end
+    function METHODS:SetValue(v)
+        BarNumber(v, "SetValue()")
+        St(self).barValue = v
+    end
+    function METHODS:SetStatusBarTexture(asset)
+        if type(asset) ~= "string" then error("SetStatusBarTexture(): texture asset expected", 2) end
+        St(self).barTexture = asset
+        return true
+    end
+    function METHODS:SetStatusBarColor(r, g, b, a)
+        CheckNumber(r, "SetStatusBarColor()")
+        CheckNumber(g, "SetStatusBarColor()")
+        CheckNumber(b, "SetStatusBarColor()")
+        St(self).barColor = { r, g, b, a or 1 }
     end
 
     -- Per-type method tables, limited to the allowed names.
@@ -1532,6 +1623,62 @@ function Client.new(opts)
             c.barParts[pageUnit][t[1]] = bar
             actionBars[t[2]] = bar
         end
+    end
+    -- 0.17.0: the game's player and pet frames, and all three unit frames guarded as Edit Mode
+    -- systems (PlayerFrame.xml:14, PetFrame.xml:11, TargetFrame.xml:549). A test calls this in its
+    -- setup; without it the stand-in has only the plain target frame above (the probe's tests
+    -- count on a missing player frame). On a guarded frame:
+    --   * SetAlpha and GetAlpha are logged as "<Name>:SetAlpha" / ":GetAlpha"; SetAlpha in a fight
+    --     is refused and kept in c.blocked (nothing of the game's may be changed in a fight);
+    --   * SetScale, SetPoint, ClearAllPoints, SetShown and Hide are Lua of the game's on such a
+    --     frame (EditModeSystemTemplates.lua:11-18, 33-36): a call is recorded as an error;
+    --   * a key written on it is recorded as an error and raises.
+    -- The pet frame is on UIParent, as Edit Mode puts it once it has a spot (:335-343).
+    function c:addUnitFrames()
+        local EDIT_MODE_LUA = { SetScale = true, SetPoint = true, ClearAllPoints = true, SetShown = true, Hide = true }
+        local function GuardUnitFrame(w, label)
+            local mt = getmetatable(w)
+            local base = mt.__index
+            setmetatable(w, {
+                __index = function(t, k)
+                    local f = base(t, k)
+                    if type(f) ~= "function" then return f end
+                    if EDIT_MODE_LUA[k] then
+                        return function(self, ...)
+                            Record(label, "the addon called " .. k .. " on an Edit Mode system frame, where it is the game's Lua")
+                            return f(self, ...)
+                        end
+                    end
+                    if k == "SetAlpha" or k == "GetAlpha" then
+                        return function(self, ...)
+                            Log(label .. ":" .. k, ...)
+                            if k == "SetAlpha" and world.inCombat then
+                                c.blocked[#c.blocked + 1] = { name = label .. ":SetAlpha", stack = debug.traceback("", 2) }
+                                return
+                            end
+                            return f(self, ...)
+                        end
+                    end
+                    return f
+                end,
+                __newindex = function(_, k)
+                    Record(label, "the addon wrote the key " .. tostring(k) .. " on a Blizzard frame")
+                    error("the stand-in's " .. label .. " takes no new key (" .. tostring(k) .. ")", 2)
+                end,
+                __tostring = mt.__tostring,
+            })
+        end
+        local player = Blizz("Button", "PlayerFrame", UIParent)
+        player:SetSize(232, 100)
+        player:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOM", -395, 56)
+        local pet = Blizz("Button", "PetFrame", UIParent)
+        pet:SetSize(120, 49)
+        pet:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOM", -395, 181)
+        GuardUnitFrame(player, "PlayerFrame")
+        GuardUnitFrame(pet, "PetFrame")
+        local target = rawget(env, "TargetFrame")
+        if target then GuardUnitFrame(target, "TargetFrame") end
+        return player, pet, target
     end
     function c:setPage(n)
         Protect("SetCurrentPage", function() c.barParts[gamepadBar].PageUnit:SetCurrentPage(n) end)
@@ -2200,7 +2347,8 @@ function Client.new(opts)
     -- hidden, all points on its parent). world.noCooldownFrames: this client has no
     -- Cooldown frame type; world.noCooldownTemplate: it has no such template.
     Global("CreateFrame", function(kind, name, parent, template)
-        if not CREATABLE[kind] or (kind == "Cooldown" and world.noCooldownFrames) then
+        if not CREATABLE[kind] or (kind == "Cooldown" and world.noCooldownFrames)
+            or (kind == "StatusBar" and world.noStatusBars) then
             error("CreateFrame(): Unknown frame type '" .. tostring(kind) .. "'", 2)
         end
         local cooldownTemplate = kind == "Cooldown" and template == "CooldownFrameTemplate" and not world.noCooldownTemplate
@@ -2244,9 +2392,62 @@ function Client.new(opts)
         st.portrait, st.atlas, st.color = unit, nil, nil
         st.texture = "Portrait:" .. tostring(unit)
     end, true)
-    Global("UnitName", function(unit)
-        if unit == "player" then return world.playerName end
-        return nil
+    -- 0.17.0: the unit functions the slim bars read (UnitDocumentation.lua; see world.units).
+    local function UnitFn(name, fn)
+        Global(name, function(...)
+            if world.unitCallFails[name] then error(name .. " failed", 2) end
+            return fn(...)
+        end)
+    end
+    -- A value the game may hide in a fight: secret while world.unitSecret is set.
+    local function Hid(v)
+        if world.unitSecret and v ~= nil then return c:secret(v) end
+        return v
+    end
+    -- An answer documented as never hidden: secret only when a test says so (unitAnswerHidden).
+    local function Open(name, v)
+        if world.unitAnswerHidden[name] then return c:secret(v) end
+        return v
+    end
+    UnitFn("UnitName", function(unit)
+        local u = world.units[unit]
+        if unit == "player" and not (u and u.name) then return world.playerName end
+        if not u then return nil end
+        return Hid(u.name)
+    end)
+    UnitFn("UnitExists", function(unit) return Open("UnitExists", world.units[unit] ~= nil) end)
+    UnitFn("UnitHealth", function(unit) local u = world.units[unit] return Hid(u and u.health or 0) end)
+    UnitFn("UnitHealthMax", function(unit) local u = world.units[unit] return Hid(u and u.healthMax or 0) end)
+    UnitFn("UnitPower", function(unit) local u = world.units[unit] return Hid(u and u.power or 0) end)
+    UnitFn("UnitPowerMax", function(unit) local u = world.units[unit] return Hid(u and u.powerMax or 0) end)
+    -- :2859: the power's number and its token; nothing for a unit that is not there.
+    UnitFn("UnitPowerType", function(unit)
+        local u = world.units[unit]
+        if not u then return end
+        local token = u.powerToken or "MANA"
+        return ({ MANA = 0, RAGE = 1, FOCUS = 2, ENERGY = 3 })[token] or 0, Open("UnitPowerType", token)
+    end)
+    UnitFn("UnitLevel", function(unit) local u = world.units[unit] return Open("UnitLevel", u and u.level or 0) end)
+    UnitFn("UnitCanAttack", function(_, unit)
+        local u = world.units[unit]
+        return Open("UnitCanAttack", u ~= nil and u.attackable == true)
+    end)
+    UnitFn("UnitIsTapDenied", function(unit) local u = world.units[unit] return u ~= nil and u.tapped == true end)
+    -- :828-852 and :870-894. Nothing while the unit casts nothing. isTradeskill (the sixth answer)
+    -- is never hidden; the name, the text, the picture and the two times may be.
+    UnitFn("UnitCastingInfo", function(unit)
+        local u = world.units[unit]
+        local k = u and u.cast
+        if not k or k.channel then return end
+        return Hid(k.text), Hid(k.text), Hid(136243), Hid(k.startMs), Hid(k.endMs), k.trade == true,
+            Hid("Cast-3-0"), Hid(false), Hid(133), nil, 0
+    end)
+    UnitFn("UnitChannelInfo", function(unit)
+        local u = world.units[unit]
+        local k = u and u.cast
+        if not k or not k.channel then return end
+        return Hid(k.text), Hid(k.text), Hid(136243), Hid(k.startMs), Hid(k.endMs), k.trade == true,
+            Hid(false), Hid(5143), false, 0
     end)
     Global("GetRealmName", function() return world.realm end)
     Global("CanMerchantRepair", function() return world.merchant.open and world.merchant.canRepair and true or false end)
@@ -2591,7 +2792,9 @@ function Client:fire(event, ...)
     if not self.snapshot.event[event] then error("fakeclient: c:fire(): unknown event " .. tostring(event), 2) end
     for _, f in ipairs(self:_eventOrder(event)) do
         local rec = self._state(f)
-        if rec.events[event] then -- an earlier handler may have unregistered it
+        local units = rec.unitFilter and rec.unitFilter[event]
+        -- an earlier handler may have unregistered it; a unit event only for its units
+        if rec.events[event] and (not units or units[(...)]) then
             local fn = rec.scripts.OnEvent
             if fn then self._protect(rec.type .. ":OnEvent " .. event, fn, rec.frame, event, ...) end
             local hooks = rec.hooks.OnEvent

@@ -145,6 +145,13 @@ local function install(c)
         c.typeMethods[kind].SetParent = SetParent
         c.typeMethods[kind].GetName = GetName
     end
+    -- The stand-in has RegisterUnitEvent since Pocket Essentials 0.17.0 (its slim bars use it).
+    -- The probe's tests were written against a client without it, where the probe registers the
+    -- plain event and sorts the units itself (Trials.lua, CountCasts): kept that way here, so
+    -- these tests still cover that path and its count of unreadable units.
+    for kind, methods in pairs(c.typeMethods) do
+        if type(methods) == "table" then methods.RegisterUnitEvent = nil end
+    end
     local focused
     c.typeMethods.EditBox.SetFocus = function(self) focused = self end
     c.typeMethods.EditBox.ClearFocus = function(self) if focused == self then focused = nil end end

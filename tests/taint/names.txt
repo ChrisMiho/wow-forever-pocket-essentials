@@ -191,6 +191,7 @@ SetJustifyH	Blizzard_PlayerChoice/Blizzard_PlayerChoiceOptionBase.lua:346
 SetJustifyV	Blizzard_SharedXML/FontableFrameMixin.lua:92
 SetLabel	Blizzard_AuctionHouseUI/Shared/Blizzard_AuctionHouseSellFrame.lua:8
 SetMaxLines	Blizzard_SharedXML/ScrollingMessageFrame.lua:240
+SetMinMaxValues	Blizzard_SharedXML/Shared/InputBox/InputBoxTemplates.lua:282
 SetParent	Blizzard_RestrictedAddOnEnvironment/RestrictedFrames.lua:614
 SetPoint	Blizzard_RestrictedAddOnEnvironment/RestrictedFrames.lua:446
 SetPressed	Blizzard_SharedXML/Mainline/SharedUIPanelTemplates.lua:1802
@@ -205,6 +206,7 @@ SetShown	Blizzard_CatalogShop/Blizzard_CatalogShop_Inbound.lua:7
 SetSize	Blizzard_PersonalResourceDisplay/Blizzard_PersonalResourceDisplay.lua:610
 SetStartPoint	Blizzard_SharedXML/MixinUtil.lua:76
 SetStatus	Blizzard_UnitFrame/Shared/CompactUnitFrame.lua:2112
+SetStatusBarColor	Blizzard_DamageMeter/DamageMeterEntry.lua:357
 SetStyle	Blizzard_ArtifactUI/Blizzard_ArtifactPowerButton.lua:230
 SetTellTarget	Blizzard_ChatFrameBase/Shared/ChatFrameEditBox.lua:48
 SetText	Blizzard_AccessibilityTemplates/UserScaledElementTemplates.lua:79
@@ -215,6 +217,7 @@ SetThickness	Blizzard_FrameXMLBase/PowerDependencyLine.lua:16
 SetTitle	Blizzard_FrameXML/AchievementDisplayFrame.lua:14
 SetTop	Blizzard_SharedXML/Shared/Scroll/ScrollBoxPadding.lua:14
 SetUnit	Blizzard_AuraContainer/Blizzard_AuraContainer.lua:40
+SetValue	Blizzard_GroupFinder_VanillaStyle/Blizzard_LFGVanilla_Browse.lua:1093
 SetVertexColor	Blizzard_NamePlates/Blizzard_NamePlates.lua:645
 SetWidth	Blizzard_PlayerChoice/Blizzard_PlayerChoiceOptionBase.lua:302
 Setup	Blizzard_ActionBar/Shared/ActionButton.lua:1797
@@ -233,7 +236,10 @@ Status	Blizzard_TutorialManager/Blizzard_TutorialBase.lua:466
 Stop	Blizzard_AnimatedShine/Shared/AnimatedShine.lua:33
 Switch	Blizzard_GlueXML/Mainline/CreditsFrame.lua:120
 TogglePanel	Blizzard_CooldownViewer/CooldownViewerSettings.lua:1720
+UnitExists	Blizzard_FrameXMLUtil/ArenaUtil.lua:3
 UnitName	Blizzard_SharedXMLGame/Tooltip/TooltipDataRules.lua:7
+UnitPower	Blizzard_UnitFrame/Mainline/ShardBar.lua:43
+Unregister	Blizzard_AuraContainer/Blizzard_AuraContainer.lua:12
 UnregisterAllEvents	Blizzard_Dispatcher/Blizzard_Dispatcher.lua:191
 UnregisterCallback	Blizzard_FrameXMLUtil/ItemUtil.lua:72
 UnregisterEvent	Blizzard_Dispatcher/Blizzard_Dispatcher.lua:160
@@ -242,7 +248,10 @@ UpdateAddOnMemoryUsage	Blizzard_AddOnList/AddonList.lua:775
 UpdateContainerFrameAnchors	Blizzard_UIPanels_Game/Mainline/ContainerFrame.lua:1380
 UpdateFonts	Blizzard_AccessibilityTemplates/TextSizeManager.lua:63
 UpdateHeader	Blizzard_ChatFrameBase/Shared/ChatFrameEditBox.lua:56
+UpdateHealth	Blizzard_PersonalResourceDisplay/Blizzard_PersonalResourceDisplay.lua:346
 UpdateMinimapConfig	Blizzard_Minimap/Camelot/Minimap.lua:31
+UpdateName	Blizzard_Channels/Classic/RosterButton.lua:245
+UpdatePower	Blizzard_NamePlates/Mainline/Blizzard_ClassNameplateBar.lua:110
 UpdateState	Blizzard_ActionBar/Shared/ActionButton.lua:1974
 Wrap	Blizzard_SharedXMLBase/MathUtil.lua:32
 action	Blizzard_Gamepad/UI/Radials/GamepadRadial.lua:159
@@ -275,6 +284,7 @@ AddEntrances	-
 AddItemSources	-
 AddOurs	-
 AddPool	-
+AddSnapshotSource	-
 AddSpawns	-
 AddStop	-
 AddTarget	-
@@ -295,6 +305,7 @@ Always	-
 Ambiguate	-
 Anchor	-
 AnchorBar	-
+Answer	-
 AnswerGuided	-
 AnyDown	-
 AnyShown	-
@@ -386,6 +397,8 @@ CancelAllGuided	-
 CancelGuided	-
 CancelReload	-
 Card	-
+CastInfo	-
+CastTick	-
 Cell	-
 CenterDisc	-
 CenterOn	-
@@ -614,6 +627,7 @@ FrameXML	-
 Frames	-
 FromPlan	-
 FullBarSpots	-
+Game	-
 GameFontHighlight	-
 GameFontHighlightLarge	-
 GameFontNormal	-
@@ -708,8 +722,10 @@ Here	-
 Hidden	-
 HiddenForRest	-
 HideBig	-
+HideCast	-
 HideCustom	-
 HideDisplay	-
+HideGame	-
 HideLabel	-
 HideMapPins	-
 HideMiniPins	-
@@ -829,6 +845,7 @@ LogNameOnce	-
 LogQuestError	-
 Login	-
 Loot	-
+MANA	-
 MESSAGE_MAX	-
 MainButton	-
 MainChatWindow	-
@@ -917,6 +934,7 @@ NoteConfirm	-
 NoteIcons	-
 NoteNav	-
 NoteStick	-
+Nothing	-
 NothingToPutBack	-
 NotifyTracked	-
 Now	-
@@ -948,13 +966,16 @@ OnEnteringWorld	-
 OnLayoutAdded	-
 OnLogin	-
 OnMetricsChanged	-
+OnPlainEvent	-
 OnPress	-
 OnRecord	-
 OnResting	-
 OnStatus	-
 OnSwitch	-
+OnUnitEvent	-
 OnWatchChanged	-
 OnWheel	-
+Once	-
 OpenChatTo	-
 OpenPanel	-
 OpenSettings	-
@@ -983,6 +1004,7 @@ PageColumn	-
 PageUnit	-
 Paint	-
 PairedStamp	-
+Panel	-
 PanelLayout	-
 PanelSize	-
 ParentOf	-
@@ -1005,6 +1027,7 @@ PlaceDisc	-
 PlaceDistText	-
 PlaceExtras	-
 PlaceFight	-
+PlaceGuards	-
 PlaceLabel	-
 PlaceMapPin	-
 PlaceNow	-
@@ -1018,6 +1041,7 @@ PlaceThumb	-
 Placement	-
 Plain	-
 PlainMoney	-
+PlainNumber	-
 PlanCells	-
 PlaySound	-
 Player	-
@@ -1116,6 +1140,7 @@ RawStack	-
 Reach	-
 ReadActive	-
 ReadAllDim	-
+ReadApi	-
 ReadCVar	-
 ReadDim	-
 ReadEnums	-
@@ -1144,6 +1169,7 @@ Rect	-
 RectAt	-
 Rects	-
 RefreshAside	-
+RefreshCast	-
 RefreshChecked	-
 RefreshCount	-
 RefreshGlow	-
@@ -1151,8 +1177,12 @@ RefreshHub	-
 RefreshMarked	-
 RefreshMinimapData	-
 RefreshPanel	-
+RefreshPet	-
+RefreshPlayer	-
 RefreshSettings	-
 RefreshSortJump	-
+RefreshTarget	-
+RefreshTot	-
 RefreshWorldMap	-
 Refusal	-
 Refuse	-
@@ -1206,6 +1236,7 @@ RunOne	-
 RunOutOfCombat	-
 RunSweep	-
 RunTrial	-
+SLIM	-
 Safe	-
 SafeList	-
 SafeUpdate	-
@@ -1283,6 +1314,7 @@ SetQuestBlobOutsideAlpha	-
 SetQuestBlobRingAlpha	-
 SetQuestBlobRingScalar	-
 SetScrollChild	-
+SetStatusBarTexture	-
 SetSuperTrackedQuestID	-
 SetSweep	-
 SetSwitch	-
@@ -1313,11 +1345,13 @@ Shorten	-
 Shot	-
 ShotsNote	-
 ShouldExpand	-
+ShowBar	-
 ShowBig	-
 ShowDistance	-
 ShowEmpty	-
 ShowEmptyBars	-
 ShowFooter	-
+ShowGame	-
 ShowLabel	-
 ShowOutline	-
 ShowPin	-
@@ -1337,6 +1371,8 @@ SizeRow	-
 SizeStep	-
 Skip	-
 SlashCommand	-
+SlimCall	-
+SlimRects	-
 SlotOf	-
 Small	-
 SmallText	-
@@ -1372,6 +1408,7 @@ StartRefusal	-
 StartTicker	-
 StartWaiting	-
 StartWatch	-
+StatusBar	-
 StatusTrackingBar	-
 StatusTrackingBar1	-
 StatusTrackingBar2	-
@@ -1469,12 +1506,23 @@ UI_BAG_SORTING_01	-
 Unchain	-
 UndoCurrent	-
 UnfadeMain	-
+UnitCanAttack	-
+UnitCastingInfo	-
+UnitChannelInfo	-
 UnitFrame	-
+UnitHealth	-
+UnitHealthMax	-
+UnitIsTapDenied	-
+UnitLevel	-
+UnitPowerMax	-
+UnitPowerType	-
 Unknown	-
 UnregisterCoreEvent	-
 Up	-
 UpdateBadge	-
+UpdateColour	-
 UpdateFightButton	-
+UpdateLevel	-
 UpdateLogoutWatch	-
 UpdateMinimap	-
 UpdateQuest	-
@@ -1525,6 +1573,7 @@ WheelText	-
 Where	-
 Whispers	-
 Whole	-
+Widget	-
 Width	-
 WidthHundreds	-
 WidthTensAndOnes	-
@@ -1615,11 +1664,15 @@ can	-
 canRepair	-
 card	-
 cards	-
+cast	-
+casting	-
 casts	-
 cd	-
 ceil	-
 challenge	-
 change	-
+channel	-
+channelling	-
 charDB	-
 chat	-
 chatFrame	-
@@ -1705,6 +1758,7 @@ duration	-
 dx	-
 dy	-
 e	-
+each	-
 empty	-
 enabled	-
 encounter	-
@@ -1749,6 +1803,7 @@ format	-
 found	-
 frame	-
 frameRight	-
+friend	-
 friendly	-
 friendlyTargetingBar	-
 full	-
@@ -1777,6 +1832,7 @@ h	-
 halves	-
 has	-
 hasQuestieDB	-
+health	-
 held	-
 help	-
 here	-
@@ -1810,6 +1866,7 @@ insert	-
 inside	-
 installed	-
 instance	-
+interrupted	-
 ipairs	-
 isActive	-
 isHeader	-
@@ -1833,6 +1890,7 @@ layoutIndex	-
 layoutName	-
 layoutType	-
 layouts	-
+level	-
 line	-
 lines	-
 list	-
@@ -1920,6 +1978,7 @@ onDone	-
 onFight	-
 onOff	-
 onShot	-
+onUpdate	-
 only	-
 open	-
 options	-
@@ -1993,6 +2052,7 @@ popup	-
 position	-
 possess	-
 possessBar	-
+power	-
 ppAnswer	-
 ppChip	-
 ppChipText	-
@@ -2007,6 +2067,7 @@ pressIndex	-
 presses	-
 prev	-
 probe	-
+put	-
 putback	-
 pvp	-
 pw	-
@@ -2038,6 +2099,7 @@ readable	-
 ready	-
 reason	-
 rebuilt	-
+rect	-
 refresh	-
 refused	-
 rel	-
@@ -2106,6 +2168,7 @@ setter	-
 settings	-
 setup	-
 shape	-
+short	-
 shortcuts	-
 shortcutsBar	-
 shot	-
@@ -2123,6 +2186,7 @@ skipped	-
 slash	-
 slay	-
 slay_mono	-
+slim	-
 slot	-
 slots	-
 small	-
@@ -2186,6 +2250,7 @@ tag	-
 take	-
 taken	-
 target	-
+targettarget	-
 tconcat	-
 tex	-
 texture	-
@@ -2204,6 +2269,7 @@ titleText	-
 tonumber	-
 top	-
 tostring	-
+tot	-
 totFrame	-
 touch	-
 touched	-

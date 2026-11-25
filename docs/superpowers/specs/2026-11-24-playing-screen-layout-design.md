@@ -214,6 +214,39 @@ display only; nothing is clicked on them.
 Fallback if the performance reading shows a cost the owner can feel: Blizzard's frames come
 back, placed above the diamonds as closely as their size allows.
 
+### As built (0.17.0)
+
+Built with nobody to ask and before the probe's buff trials were run (the away batch,
+`2026-11-24-away-batch.md`); the builder's spec is `2026-11-24-0.17.0-slim-bars.md`, with
+every number's source. Not yet tested on a device. In game units, x from the centre, y up
+from the bottom:
+
+- Behind a switch, "Slim bars", Off by default; it counts from the next reload (the
+  tooltip's spot is an Edit Mode piece).
+- Player bar: x -498 to -218, 141 to 169 up (280 by 28). Target bar: the mirror, 218 to 498.
+  **115 further out than the table's "above the diamonds, spanning both" (103 to 383):** the
+  game's "LB + LT" prompt, sub-menu button and LB targeting picture fill x 102 to 214 at
+  that height. The height, the sizes and the stacking are the table's. The same at every
+  Spell panel size.
+- Pet bar: -498 to -362, 172 to 189 up. Target of target bar: 362 to 498, same height.
+- Target's cast bar: 218 to 498, 127 to 139 up: 12 tall, not hair-thin, so the spell's name
+  fits (the largest diamonds end 124.8 up).
+- **The buff and debuff boxes are not built.** Their room is kept and checked: the pet's
+  row -498 to -218, 192 to 213 up; the target's 218 to 358, 172 to 193 up.
+- Tooltip: BOTTOMRIGHT -10, 10. A tooltip taller than 117 reaches beside the target bar's
+  last 25 units.
+- The game's four frames: see-through 0 with their own `SetAlpha`, out of a fight, and
+  put back as read; a plain frame of ours over each takes a tap so it cannot target or open
+  a menu.
+- Hidden values go straight into `SetMinMaxValues`, `SetValue` and `SetText`. The cast
+  bar's ends are the game's two times and its value is `GetTime() * 1000`; a channel fills
+  up like a cast.
+- The target of target's health is read with the other bars' health events (the game
+  sends none for it); nothing ticks.
+- Gone with the invisible frames and not replaced: portraits, the level badge and elite
+  border, raid marks, the threat number, resting and fighting marks, the pet's mood, a
+  class's own pieces on the player frame.
+
 ## The probe (Pocket Probe 0.8.0, shipped with 0.16.0)
 
 - In a real fight, on the target and the pet: which buff and debuff facts an addon can read

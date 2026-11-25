@@ -1950,3 +1950,133 @@ Things to watch for (known, not fixed):
 - The grey button face is a first guess at the look; say if it reads badly.
 - If the log line says the count went down by itself, that is the log making
   room: the start of each session, the marks and the snapshots are kept.
+
+### 32. Version 0.17.0: the slim bars
+
+Nothing here is tested on the device yet. This carries on from section 31 in
+the same sitting and the same log: Debug log On, Catch all errors on,
+Controller layout on, no probe folder (it is only needed for the very last
+step). **Mark** and **Snapshot** mean the same two buttons as in section 31.
+The marks go on counting; straight after section 31 the first one here is 9.
+If your numbers differ, just say which numbers you saw.
+
+**What this is.** A new row at the bottom of the Controller tab, **Slim
+bars**, Off until you switch it on. On, the game's own player, pet, target and
+target-of-target frames go invisible and five flat bars take their place: you
+on the left, your target on the right, your pet and your target's target as
+small bars above them, and your target's cast as a thin bar under the target.
+
+**What is not in yet.** The buff and debuff boxes. With Slim bars On you will
+not see your target's buffs and debuffs anywhere. Portraits, raid marks and
+the elite border are gone too. That is expected.
+
+Section 9, before:
+
+1. **Mark** (9). Controller tab: the row **Slim bars** should be there and
+   read Off. Target something and screenshot the screen as it is now (the
+   game's own frames). **Snapshot**.
+
+Section 10, switching on:
+
+2. **Mark** (10). Switch **Slim bars** On. Chat should say "Slim bars count
+   from the next reload." and the card should ask for a reload. Nothing else
+   should change yet. Tap Save (it reloads).
+3. After the reload, with no target and no pet: screenshot. Expected: the
+   game's player frame at the bottom left is gone. A flat dark bar sits on
+   the left, above where the outer spell panel opens: your level and name on
+   its left, your health as a number on its right, a thin power bar under the
+   health. Nothing on the right side. **Snapshot**.
+4. Tap the spot where the game's player frame used to be (bottom left,
+   below and left of the new bar). Expected: nothing happens. Tell me if it
+   targets you or opens a menu.
+5. Point at a character and at an item in your bag. Is the tooltip in the
+   bottom right corner now? Does it cover any part of a bar?
+
+Section 11, the pet:
+
+6. **Mark** (11). Call your pet. A small bar with its name should appear
+   above the left end of your bar. Screenshot. Dismiss the pet: the small bar
+   should go. Call it again.
+
+Section 12, the target and its target:
+
+7. **Mark** (12). Target a friendly character: a bar on the right, the mirror
+   of yours, green, with its level, name and health number. Screenshot.
+   Target an enemy: red. Screenshot. Clear your target: the bar goes.
+8. Send your pet at an enemy and target that enemy. A small bar above the
+   right end of the target bar should show who the enemy is attacking (your
+   pet's name). With all four bars showing: screenshot at rest, then holding
+   LT, RT and both, and **Snapshot**. Does a spell panel or anything else
+   touch a bar?
+
+Section 13, a cast:
+
+9. **Mark** (13). The easy way first: target **yourself** and use your
+   hearthstone (or any spell with a cast time). A thin yellow bar should
+   appear under the target bar, fill from left to right with the spell's name
+   on it, and go when the cast is done. Screenshot it half way. Start again
+   and step forward to cancel: the bar should go at once.
+10. Then find an enemy that casts spells, target it and fight it. Does the
+    bar show its casts? If you can interrupt one, does the bar go at that
+    moment? Screenshot one cast.
+
+Section 14, a fight:
+
+11. **Mark** (14). Fight two or three enemies with your pet. While fighting,
+    look at each bar: does your health move, and its number? Your power? The
+    target's health and name? The pet's bar? Does the small bar on the right
+    switch between you and your pet as the enemy changes its mind? Screenshot
+    in the middle of a fight. Tap **Snapshot** once in a fight (it is saved
+    when the fight ends).
+12. Tell me about any bar that was empty, stuck or blank **during** the fight
+    but right again afterwards: that is the thing only your device can show.
+13. Did one of the game's own frames come back into view at any time, in or
+    after a fight? Screenshot it.
+14. Any "Interface action failed because of an AddOn" or "The game blocked
+    Pocket Essentials", or a button or targeting that stopped answering?
+    Screenshot it at once and say what you did just before.
+
+Section 15, the panel size:
+
+15. **Mark** (15). Spell panel size 120%, Save (reload). Screenshot at rest
+    and holding LT and RT. The bars should be exactly where they were, and
+    the bigger panels should stop just under them. **Snapshot**. Put the size
+    back to yours and reload.
+
+Section 16, layout off:
+
+16. **Mark** (16). Out of a fight, switch the Controller layout off (do not
+    reload yet). The game's four frames should be back at once and the five
+    bars gone. **Snapshot**. Reload, **Snapshot** again. Switch the layout on
+    again and reload: are the bars back?
+
+Section 17, switching off again:
+
+17. **Mark** (17). Switch **Slim bars** Off and Save (reload). Expected:
+    everything as it was in step 1: the game's frames, and the tooltip above
+    the target of target again. Tap the game's player frame: it should target
+    you again. **Snapshot**.
+
+Last, for the boxes that are still to come:
+
+18. With Slim bars still Off, do steps 11 and 12 of section 30 (the probe's
+    Fight tests with your pet out and a debuff on your target, then the Risky
+    pass). That needs the `PocketProbe` folder and a full restart of the
+    game, so keep it for the very end of the sitting.
+19. Settings, Debug log tab: note the line count. Tab Errors: screenshot it.
+    Tap **Save** (reload). Send `SavedVariables/PocketEssentials.lua` (and
+    `PocketProbe.lua` after step 18) with the screenshots.
+
+Things to watch for (known, not fixed):
+- No buff or debuff boxes yet, so nothing shows your target's debuffs while
+  Slim bars is On.
+- The small bar on the right may be a moment behind when the enemy attacks
+  someone who is neither you nor your pet.
+- A channelled spell fills the cast bar up; the game's own empties it.
+- An open spell wheel covers the inner end of a bar while it is open, and a
+  very tall tooltip reaches the right end of the target bar.
+- The right-click menus of the game's player, pet and target frames cannot be
+  reached while Slim bars is On.
+- In Edit Mode the game's four frames are invisible too while Slim bars is
+  On.
+- The bars' black outline is a very thin line; say if it looks uneven.
