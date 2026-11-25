@@ -2237,6 +2237,26 @@ What I most want to hear:
   map and chat?
 - Is the window in the way?
 
+Things to look at while you are there:
+- **The map and the swing timers start 4 to the right of the centre line**
+  (that is the built-in layout). So the very first tap **Left** on either
+  jumps 4, not 2, and lands on the centre. That is the pull to the centre,
+  not a fault. With **Map buttons** set to Shown, the centred map's
+  place-name strip then reaches about 4 into the inner left spell panel and
+  the overlap warning shows: say whether you would rather have the map
+  centred or the strip clear.
+- **The stance bar and the possess bar** (a warrior's or druid's stances, a
+  mind-controlled creature) sit on the same anchor as the main bar, so they
+  move with **Inner spell panel, left**, not with the spell wheels. If you
+  have a character with stances, look where its stance pictures are after
+  moving that panel.
+- **A wheel that is open while you move the spell wheels piece stays where
+  it opened** until you close it and open it again.
+- If **Apply** ever says "NOT written", the window stays open and nothing
+  changed in the game: screenshot it and the Errors tab.
+- With **Part: spell pictures** Off the four spell panels are not in the
+  list (nothing is drawn there); the window says so.
+
 Things to watch for (known, not fixed):
 - The yellow outline is the planned spot, not a measurement: the quest list
   and tooltip are drawn at a standard size.

@@ -65,7 +65,8 @@ local function client(o)
     o = o or {}
     local saved = { options = { ctrlLayout = { arrange = o.arrange == nil and 1 or o.arrange, arrangeWheel = o.wheel,
         slim = o.slim, panelSize = o.panelSize, offsets = o.offsets, offsetsWritten = o.written } } }
-    local c, PE = T.new({ gamepadUI = true, saved = saved, savedChar = o.char, setup = function(c)
+    for k, v in pairs(o.more or {}) do saved.options.ctrlLayout[k] = v end
+    local c, PE = T.new({ gamepadUI = true, saved = saved, savedChar = o.char, screen = o.screen, setup = function(c)
         c.world.layouts = { layouts = {}, activeLayout = 3 }
         if o.slim == 1 then c:addUnitFrames() end
         if o.setup then o.setup(c) end
@@ -1061,13 +1062,22 @@ test("arrange apply: refused while Edit Mode is open; a write the game refuses l
     check(chatHas(c, "Arrange: Close Edit Mode first."), "not said")
     c.world.editMode = false
     c.world.layoutCallFails.SaveLayouts = true
-    eq({ A:Apply() }, { true, 1 })
+    open(c, PE, "chat")
+    local ok, why = A:Apply()
     c:advance(0.1)
+    eq(ok, false)
+    check(type(why) == "string" and why:find("SaveLayouts", 1, true), "the reason: " .. tostring(why))
     check(#PE.errors >= 1, "the failure is not on the Errors page")
     eq(A:Waiting(), { "Chat" })
     eq(written(PE), {})
     eq(reloadReason(PE), nil)
-    check(noted(c, "the layout could not be written (see the Errors page); the pieces go on waiting"), "not in the log")
+    check(panel(c):IsShown(), "the window closed though nothing was written")
+    check(not chatHas(c, "Arrangement written. Tap Reload now in the settings to see the moved pieces."), "it said written")
+    check(chatHas(c, "Arrange: NOT written. Your moves are kept; tap Apply again. See Settings > Errors."), "not said: " .. T.show(T.chatLines(c)))
+    check(windowText(c):find("Not moved: the layout was not written", 1, true), "the window: " .. windowText(c))
+    check(notedLike(c, "^the layout could not be written %(C_EditMode.SaveLayouts failed"), "not in the log: " .. T.show(notes(c)))
+    A:Close("test")
+    c:advance(0.1)
     c.world.layoutCallFails.SaveLayouts = nil
     eq({ A:Apply() }, { true, 1 })
     c:advance(0.1)
@@ -1364,6 +1374,155 @@ test("arrange snapshot: Save a snapshot lists the offsets, what waits and a pair
         check(not line:find("arrange: ", 1, true), "an arrange line while Off: " .. line)
     end
     c:assertClean()
+end)
+
+---------------------------------------------------------------------------
+-- After the review of 0.18.0
+---------------------------------------------------------------------------
+
+test("arrange review M1: a row that rewrites one swing timer writes all three with the piece's offset, and a part of a piece is never noted as written", function()
+    local c, PE, A = client()
+    eq(A:ToggleStep(), 10)
+    eq(A:Step("swing timers", 0, 1), true)
+    eq(A:Waiting(), { "Swing timers" })
+    local before = {}
+    for i = 1, 3 do before[i] = entry(c, SYS.SwingTimer, i).anchorInfo.offsetY end
+    choose(c, PE, "ranged", 0)
+    for i = 1, 3 do eq(entry(c, SYS.SwingTimer, i).anchorInfo.offsetY, before[i] + 10, "timer " .. i) end
+    eq(written(PE), { ["swing timers"] = { x = 0, y = 10 } })
+    eq(A:Waiting(), {})
+    -- The plan's half: only a whole piece is noted.
+    local Plan = PE.LayoutPlan
+    local o = { arrange = 1, offsets = { ["swing timers"] = { x = 0, y = 4 }, chat = { x = 2, y = 0 } } }
+    local all, part = Plan.Pieces(o), {}
+    for _, p in ipairs(all) do
+        if (p.system == "SwingTimer" and p.index == "Ranged") or p.system == "ChatFrame" then part[#part + 1] = p end
+    end
+    Plan.MarkWritten(o, part, all)
+    eq(o.offsetsWritten, { chat = { x = 2, y = 0 } })
+    eq(Plan.Pending(o), { "swing timers" })
+    c:assertClean()
+end)
+
+test("arrange review W1: Apply with our layout gone says it was not written, keeps the window open and logs why", function()
+    local c, PE, A = client()
+    eq(A:Step("chat", 1, 0), true)
+    open(c, PE, "chat")
+    c.world.layouts.layouts = {}
+    c.world.layouts.activeLayout = 3
+    local ok, why = A:Apply()
+    c:advance(0.1)
+    eq(ok, false)
+    eq(why, "the Pocket Essentials layout could not be read or is not saved")
+    check(panel(c):IsShown(), "the window closed")
+    check(not chatHas(c, "Arrangement written. Tap Reload now in the settings to see the moved pieces."), "it said written")
+    eq(reloadReason(PE), nil)
+    eq(A:Waiting(), { "Chat" })
+    check(noted(c, "the layout could not be written (the Pocket Essentials layout could not be read or is not saved); the pieces go on waiting"),
+        "not in the log: " .. T.show(notes(c)))
+end)
+
+test("arrange review W2: with the spell pictures off the wheels' offset still applies and the spell panels are not listed", function()
+    local char = { ctrlArrange = { offsets = { ["spell wheels"] = { x = 0, y = 30 } } } }
+    local c, PE, A = client({ wheel = 1, char = char, more = { tFace = 0 } })
+    local f = barFrames(c)
+    eq({ barAt(c, f.bottom) }, { 0, 268 })
+    eq(c._state(f.top).scale, 1, "the bars are not at full size")
+    eq(A:Step("spell wheels", 0, 1), true)
+    eq({ barAt(c, f.bottom) }, { 0, 270 })
+    eq({ A:Step("inner left diamond", 0, 1) }, { false, "that piece is not on the screen now" })
+    open(c, PE)
+    local seen = {}
+    for _ = 1, 30 do
+        seen[A:Picked()] = true
+        c:click(button(c, "Next piece"))
+    end
+    check(not seen["inner left diamond"] and not seen["outer right diamond"], "a spell panel is listed while the pictures are off")
+    check(seen["LB targeting picture"] and seen["spell wheels"], "the other live pieces are gone")
+    check(windowText(c):find("Spell panels not listed: the spell pictures are off.", 1, true), "the window: " .. windowText(c))
+    check(noted(c, "the spell panels are not listed: the spell pictures are off"), "not in the log: " .. T.show(notes(c)))
+    c:assertClean()
+end)
+
+test("arrange review W3: a login that finds the switch Off and moved pieces still in the layout puts them back once; unapplied moves of an On session are never written by themselves", function()
+    local c, PE, A = client({ offsets = { chat = { x = 30, y = 20 } } })
+    eq(entry(c, SYS.ChatFrame).anchorInfo.offsetX, 47)
+    -- An On session with a move not applied: a new world load writes nothing.
+    eq(A:Step("map", 0, 1), true)
+    c:fire("PLAYER_ENTERING_WORLD")
+    c:advance(0.1)
+    eq(saves(c), 1, "an unapplied move was written by itself")
+    eq(A:Reset("map"), true)
+    -- The switch saved Off though the layout still holds the offset (tapped in a fight, then a reload).
+    opts(PE).arrange = 0
+    c:fire("PLAYER_ENTERING_WORLD")
+    c:advance(0.1)
+    eq(saves(c), 2)
+    eq({ entry(c, SYS.ChatFrame).anchorInfo.offsetX, entry(c, SYS.ChatFrame).anchorInfo.offsetY }, { 17, 245 })
+    eq(written(PE), {})
+    eq(reloadReason(PE), RELOAD)
+    eq(opts(PE).offsets, { chat = { x = 30, y = 20 } }, "the saved offset was lost")
+    check(chatHas(c, "Arrange it yourself is Off: the pieces you had moved go back. Open the settings and tap Reload now to finish."), "not said")
+    c:fire("PLAYER_ENTERING_WORLD")
+    c:advance(0.1)
+    eq(saves(c), 2, "it wrote again")
+    -- In a fight it waits; a write that fails is not tried again and again.
+    local c2, PE2 = client({ offsets = { chat = { x = 30, y = 20 } } })
+    opts(PE2).arrange = 0
+    c2.world.layoutCallFails.SaveLayouts = true
+    c2:enterCombat()
+    c2:fire("PLAYER_ENTERING_WORLD")
+    c2:advance(0.1)
+    eq(saves(c2), 1)
+    c2:leaveCombat()
+    c2:advance(0.1)
+    local tries = saves(c2)
+    c2:fire("PLAYER_ENTERING_WORLD")
+    c2:advance(0.1)
+    c2:fire("PLAYER_ENTERING_WORLD")
+    c2:advance(0.1)
+    eq(saves(c2), tries, "it tried again in the same session")
+end)
+
+test("arrange review W4: the screen's edge is the plan's screen whatever size UIParent has, and the session's first lines give UIParent's size", function()
+    local c, PE, A = client({ screen = { 1024, 768 } })
+    check(c.env.UIParent:GetWidth() < 1300, "the stand-in's screen is not smaller: " .. tostring(c.env.UIParent:GetWidth()))
+    eq(A:Step("chat", 0, 1), true)
+    eq(A:Step("quest tracker", 0, -1), true)
+    eq(A:Step("tooltip", 0, 1), true)
+    eq(A:Step("XP bars", -1, 0), true)
+    eq(A:ToggleStep(), 10)
+    eq(A:Step("chat", -1, 0), true)
+    eq({ A:Step("chat", -1, 0) }, { false, "the edge of the screen" })
+    check(notedLike(c, "^screen: UIParent [%d%.]+ by [%d%.]+, effective scale [%d%.]+; the plan is drawn for 1365.3 by 768$"),
+        "no screen line: " .. T.show(notes(c)))
+end)
+
+test("arrange review: the slim bars' frames are found by the names SlimBars.lua gives them, and a missing one is logged", function()
+    local c, PE, A = client({ slim = 1 })
+    local view = PE.SlimBars.view
+    for _, key in ipairs({ "player", "pet", "target", "tot" }) do
+        check(type(view.bars[key]) == "table" and type(view.bars[key].frame) == "table", "PE.SlimBars.view.bars." .. key .. ".frame is gone")
+    end
+    check(type(view.cast) == "table" and type(view.cast.frame) == "table", "PE.SlimBars.view.cast.frame is gone")
+    eq(A:Step("player bar", 0, 1), true)
+    check(not notedLike(c, "^slim bars not placed again"), "a frame was not found: " .. T.show(notes(c)))
+    view.bars.pet.frame = nil
+    eq(A:Step("player bar", 0, 1), true)
+    check(noted(c, "slim bars not placed again: no frame found for the pet bar (PE.SlimBars.view)"), "not in the log: " .. T.show(notes(c)))
+end)
+
+test("arrange review: switched Off but not reloaded yet, the window does not open and nothing is moved", function()
+    local c, PE, A = client()
+    open(c, PE, "map")
+    choose(c, PE, "arrange", 0)
+    check(not panel(c):IsShown(), "the window stayed open")
+    tapArrangeRow(c, PE)
+    check(chatHas(c, "Arrange it yourself is Off from the next reload."), "not said: " .. T.show(T.chatLines(c)))
+    check(not panel(c):IsShown(), "the window opened")
+    eq({ A:Step("chat", 1, 0) }, { false, "Arrange it yourself is Off from the next reload" })
+    eq(opts(PE).offsets, {})
+    eq(A:Open(), false)
 end)
 
 return { known = KNOWN_FAILURES }

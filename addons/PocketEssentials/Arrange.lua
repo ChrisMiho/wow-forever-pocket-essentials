@@ -64,6 +64,8 @@ local BOXES = 20                     -- outlines made, at most shown at once
 local TEXT_FIGHT = "Arrange cannot be opened during a fight. Try again afterwards."
 local TEXT_CLOSED_FIGHT = "Arrange closed for the fight. Your moves are kept."
 local TEXT_SAVED = "Your arrangement is saved. Nothing needs a reload."
+local TEXT_NOT_WRITTEN = "Arrange: NOT written. Your moves are kept; tap Apply again. See Settings > Errors."
+local TEXT_HELD = "In a fight: the arrangement is written when the fight is over. Then tap Reload now in the settings."
 local TEXT_WRITTEN = "Arrangement written. Tap Reload now in the settings to see the moved pieces."
 
 local stepBig = false      -- the step size picked in the window
@@ -124,6 +126,7 @@ local function IsListed(view, def)
     if def.when == "slim" then return view.slim == 1 end
     if def.when == "noslim" then return view.slim ~= 1 end
     if def.when == "wheel" then return view.arrangeWheel == 1 end
+    if def.when == "face" then return not view.faceOff end
     return true
 end
 
@@ -154,14 +157,11 @@ local function Write(view, def, x, y)
     e.x, e.y = x, y
 end
 
+-- The screen the plan's rectangles are worked out for (1365.33 by 768), not UIParent's own
+-- size: a piece pinned to an edge of the plan's screen is on its edge, whatever the UI scale.
 local function Screen()
     local plan = Plan()
-    local w, h = plan.SCREEN.w, plan.SCREEN.h
-    if type(UIParent) == "table" then
-        local uw, uh = UIParent:GetWidth(), UIParent:GetHeight()
-        if type(uw) == "number" and type(uh) == "number" and uw > 0 and uh > 0 then w, h = uw, uh end
-    end
-    return w, h
+    return plan.SCREEN.w, plan.SCREEN.h
 end
 
 -- How far a piece's rectangles stick out of the screen, added up (0: wholly on it).
@@ -269,6 +269,7 @@ end
 
 -- The slim bars' frames (SlimBars.lua, PE.SlimBars.view; all the addon's own) to their
 -- rectangles of the plan, the way SlimBars.lua places them when it starts.
+local slimMissing = {}
 local SLIM_FRAMES = { player = "player bar", pet = "pet bar", target = "target bar", tot = "target of target bar" }
 
 local function PlaceSlim()
@@ -276,19 +277,33 @@ local function PlaceSlim()
     local view = type(slim) == "table" and slim.view or nil
     if type(view) ~= "table" or not plan or type(plan.SlimRects) ~= "function" then return end
     local rects = plan.SlimRects()
+    local missing = {}
     local function put(frame, name)
         local r = rects[name]
-        if type(frame) ~= "table" or type(frame.SetPoint) ~= "function" or not r then return end
+        if type(frame) ~= "table" or type(frame.SetPoint) ~= "function" or not r then
+            missing[#missing + 1] = name
+            return
+        end
         frame:ClearAllPoints()
         frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOM", r[1], r[2])
     end
-    if type(view.bars) == "table" then
-        for key, name in pairs(SLIM_FRAMES) do
-            local bar = view.bars[key]
-            put(type(bar) == "table" and bar.frame or nil, name)
+    local bars = type(view.bars) == "table" and view.bars or {}
+    for key, name in pairs(SLIM_FRAMES) do
+        local bar = bars[key]
+        put(type(bar) == "table" and bar.frame or nil, name)
+    end
+    put(type(view.cast) == "table" and view.cast.frame or nil, "cast bar")
+    -- Slim bars are on this session and a frame was not where SlimBars.lua keeps it: said, once each.
+    local session = View()
+    if session and session.slim == 1 then
+        table.sort(missing)
+        for _, name in ipairs(missing) do
+            if not slimMissing[name] then
+                slimMissing[name] = true
+                Note("slim bars not placed again: no frame found for the " .. name .. " (PE.SlimBars.view)")
+            end
         end
     end
-    if type(view.cast) == "table" then put(view.cast.frame, "cast bar") end
 end
 
 -- After the layout placed everything (every login, layout event and live step of a session
@@ -584,6 +599,10 @@ Arrange["Started"] = function()
     Note(format("on (spell wheels=%s, steps %d and %d, centre snap %d)", tostring(view.arrangeWheel), STEP_SMALL, STEP_BIG, SNAP))
     local good, bad, keys = OffsetLines(view)
     local plan = Plan()
+    if type(UIParent) == "table" then
+        Note(format("screen: UIParent %s by %s, effective scale %s; the plan is drawn for %s by %s", Fmt(UIParent:GetWidth()),
+            Fmt(UIParent:GetHeight()), Fmt(UIParent:GetEffectiveScale()), Fmt(plan.SCREEN.w), Fmt(plan.SCREEN.h)))
+    end
     local rects = plan.Rects(view)
     for i, l in ipairs(good) do
         local def = keys[i] and plan.ARRANGE_BY[keys[i]]
@@ -602,12 +621,12 @@ Arrange["Started"] = function()
 end
 
 -- The layout's write finished (ControllerLayout.lua, RunRewrites).
-Arrange["Written"] = function(_, ok)
+Arrange["Written"] = function(_, ok, why)
     if ok then
         local waiting = WaitingLabels()
         Note("the layout was written; still waiting: " .. (#waiting > 0 and concat(waiting, ", ") or "nothing") .. "; one reload asked for")
     else
-        Note("the layout could not be written (see the Errors page); the pieces go on waiting")
+        Note("the layout could not be written (" .. tostring(why or "see the Errors page") .. "); the pieces go on waiting")
     end
     if Refresh then Refresh() end
 end
@@ -626,7 +645,16 @@ Arrange["Apply"] = function()
     if not ready then return Refuse("apply", why) end
     lastNote, confirmAll = nil, false
     LogAll(view, "apply: ")
-    local ok, n = layout:ArrangeApply()
+    local waiting = #WaitingLabels()
+    local ok, n, held = layout:ArrangeApply()
+    if not ok and waiting > 0 and #WaitingLabels() > 0 and n ~= "Close Edit Mode first." then
+        -- The write itself failed: nothing changed in the game's layout.
+        Note("apply: NOT written: " .. tostring(n))
+        PE:Print(TEXT_NOT_WRITTEN)
+        lastNote = "the layout was not written"
+        if Refresh then Refresh() end
+        return false, n
+    end
     if not ok then
         Note("apply refused: " .. tostring(n))
         PE:Print("Arrange: " .. tostring(n))
@@ -641,8 +669,8 @@ Arrange["Apply"] = function()
         return true, 0
     end
     Note("apply: " .. n .. (n == 1 and " piece" or " pieces") .. " sent to the layout in one write"
-        .. (PE:InCombat() and " (held for after the fight)" or ""))
-    PE:Print(TEXT_WRITTEN)
+        .. (held and " (held for after the fight)" or ""))
+    PE:Print(held and TEXT_HELD or TEXT_WRITTEN)
     Arrange["Close"](Arrange, "Apply")
     return true, n
 end
@@ -812,7 +840,8 @@ Refresh = function()
     local centred = main and not def.twin and abs((main[1] + main[3]) / 2) < TINY
     lines[1]:SetText(OffsetText(x, y) .. (centred and " On the centre line." or ""))
     lines[2]:SetText((def.kind == "live" and "Moves as you press." or "Moves after Apply and a reload.")
-        .. (lastNote and (" Not moved: " .. tostring(lastNote) .. ".") or ""))
+        .. (lastNote and (" Not moved: " .. tostring(lastNote) .. ".") or "")
+        .. (view.faceOff and " Spell panels not listed: the spell pictures are off." or ""))
     local others, mine = 0, nil
     for _, m in ipairs(MirrorList(view)) do
         if m.a == def.pair then mine = m elseif not m.ok then others = others + 1 end
@@ -996,6 +1025,8 @@ Arrange["Open"] = function()
     if not panel:IsShown() then panel:Show() end
     panel:Raise()
     Note("window opened")
+    local view = View()
+    if view and view.faceOff then Note("the spell panels are not listed: the spell pictures are off") end
     Refresh()
     return true
 end

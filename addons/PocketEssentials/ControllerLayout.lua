@@ -359,7 +359,8 @@ end
 --   twin   the key of its mirror on the other side of the screen; pair: the pair's name (the
 --          left one's key)
 --   rects  the rectangles of Plan.Rects that move with it, the first one its main one
---   when   listed only then: "slim" (Slim bars On), "noslim" (Off), "wheel" (its own switch)
+--   when   listed only then: "slim" (Slim bars On), "noslim" (Off), "wheel" (its own switch),
+--          "face" (our spell pictures show: with them off nothing is drawn at the panels' spots)
 --   gate   the option that must be 1 for its offset to count at all
 --   axis   "y": moves up and down only
 Plan.ARRANGE = {
@@ -374,13 +375,13 @@ Plan.ARRANGE = {
       rects = { "player", "pet" } },
     { key = "target", label = "Target frames", kind = "apply", twin = "player", pair = "player", when = "noslim",
       rects = { "target", "target of target", "target auras", "target cast bar" } },
-    { key = "inner left diamond", label = "Inner spell panel, left", kind = "live", twin = "inner right diamond",
+    { key = "inner left diamond", when = "face", label = "Inner spell panel, left", kind = "live", twin = "inner right diamond",
       pair = "inner left diamond", rects = { "inner left diamond" } },
-    { key = "inner right diamond", label = "Inner spell panel, right", kind = "live", twin = "inner left diamond",
+    { key = "inner right diamond", when = "face", label = "Inner spell panel, right", kind = "live", twin = "inner left diamond",
       pair = "inner left diamond", rects = { "inner right diamond" } },
-    { key = "outer left diamond", label = "Outer spell panel, left", kind = "live", twin = "outer right diamond",
+    { key = "outer left diamond", when = "face", label = "Outer spell panel, left", kind = "live", twin = "outer right diamond",
       pair = "outer left diamond", rects = { "outer left diamond" } },
-    { key = "outer right diamond", label = "Outer spell panel, right", kind = "live", twin = "outer left diamond",
+    { key = "outer right diamond", when = "face", label = "Outer spell panel, right", kind = "live", twin = "outer left diamond",
       pair = "outer left diamond", rects = { "outer right diamond" } },
     { key = "LB targeting picture", label = "LB targeting picture", kind = "live", twin = "RB targeting picture",
       pair = "LB targeting picture", rects = { "LB targeting picture" } },
@@ -686,11 +687,16 @@ function Plan.Pending(opts)
 end
 
 -- 0.18.0: after a successful write of `pieces` (from Plan.Pieces) into our layout: notes in
--- opts.offsetsWritten the offset each arranged piece was written with.
-function Plan.MarkWritten(opts, pieces)
+-- opts.offsetsWritten the offset each arranged piece was written with. all (optional): the
+-- whole list the pieces were picked from; a piece of Plan.ARRANGE that is several Edit Mode
+-- pieces (the three swing timers) is then only noted when every one of them was written.
+function Plan.MarkWritten(opts, pieces, all)
     if type(opts) ~= "table" or type(pieces) ~= "table" then return end
+    local have, need = {}, {}
+    for _, p in ipairs(pieces) do if p.arrange then have[p.arrange] = (have[p.arrange] or 0) + 1 end end
+    for _, p in ipairs(type(all) == "table" and all or {}) do if p.arrange then need[p.arrange] = (need[p.arrange] or 0) + 1 end end
     for _, p in ipairs(pieces) do
-        if p.arrange then
+        if p.arrange and have[p.arrange] >= (need[p.arrange] or 0) then
             if p.dx == 0 and p.dy == 0 then
                 if type(opts.offsetsWritten) == "table" then opts.offsetsWritten[p.arrange] = nil end
             else
@@ -2193,11 +2199,33 @@ Snap.View = function()
     view.panelSize = SessionSize()
     view.hints, view.mapButtons, view.arrangeWheel = opts.hints, opts.mapButtons, opts.arrangeWheel
     view.slim = (Snap.slimOn == true or (Snap.slimOn == nil and opts.slim == 1)) and 1 or 0
+    -- Our spell pictures are off (their part row, or FaceBars.lua says why): no panel is drawn.
+    view.faceOff = (opts.tFace == 0 or FaceStatus() ~= nil) and true or nil
     if Snap.arrangeOn and not Snap.arrangeStarted then
         Snap.arrangeStarted = true
         Snap.ArrangeCall("Started")
     end
     return view
+end
+
+-- 0.18.0: "Arrange it yourself" is Off, yet our Edit Mode layout still holds moved pieces: the
+-- row was tapped in a fight and the game reloaded before it ended, or the write failed. Once
+-- a session, when the layout is placed (out of a fight): the pieces are written back to their
+-- built-in spots and the reload is asked for. Only while Off: a move not yet applied in an
+-- On session is never written by itself. After the write nothing waits, so it cannot loop;
+-- a write that fails is not tried again until the next login.
+Snap.ArrangeBack = function()
+    local o = mod and mod.opts
+    if type(o) ~= "table" or o.arrange == 1 or Snap.arrangeBack or not Snap.RewritePieces or Snap.RewritesWaiting() > 0 then return end
+    if #Plan.Pending(o) == 0 or EditModeOpen() then return end
+    Snap.arrangeBack = true
+    if PE.debugOn then
+        PE:Debug("ctrlLayout", "arrange: the switch is Off but the layout still holds moved pieces ("
+            .. table.concat(Plan.Pending(o), ", ") .. "): written back to their built-in spots")
+    end
+    if Snap.RewritePieces(Snap.ArrangeFilter, nil) and Snap.lastWrite and Snap.lastWrite.ok then
+        PE:Print("Arrange it yourself is Off: the pieces you had moved go back. Open the settings and tap Reload now to finish.")
+    end
 end
 
 local function PlaceNow()
@@ -2241,6 +2269,7 @@ local function PlaceNow()
     -- Our pictures are off (FaceStatus says why): the game's bars show, at full size.
     if bars and (not face or FaceStatus()) then
         local full = Plan.FullBarSpots()
+        full.bottom = spots.bottom -- 0.18.0: the same anchor either way, so with the spell wheels' offset
         for _, b in ipairs(BAR_FRAMES) do
             local spot = full[b.spot]
             Put(frames[b.spot], spot.x, spot.y, spot.s)
@@ -2248,6 +2277,7 @@ local function PlaceNow()
         if PE.debugOn then PE:Debug("ctrlLayout", "bars at full size: the spell pictures are off") end
     end
     Snap.ArrangeCall("Placed") -- 0.18.0: our own panels and bars follow a move made this session
+    Snap.ArrangeBack()
 end
 
 -- Places the bars while the feature is on and our layout is the active one,
@@ -2571,20 +2601,34 @@ local function RunRewrites()
     local list = pendingRewrites
     pendingRewrites = {}
     local state, pos, e = ReadOurs()
-    if not state then return end
-    local pieces = {}
-    for _, p in ipairs(Plan.Pieces(mod.opts)) do
+    if not state then
+        -- 0.18.0: every way out says how it went (Snap.lastWrite, and Arrange.lua when its session is on).
+        Snap.lastWrite = { ok = false, why = "the Pocket Essentials layout could not be read or is not saved" }
+        Snap.ArrangeCall("Written", false, Snap.lastWrite.why)
+        return
+    end
+    local all = Plan.Pieces(mod.opts)
+    local picked, keys = {}, {}
+    for i, p in ipairs(all) do
         for _, r in ipairs(list) do
             if r.keep(p) then
-                pieces[#pieces + 1] = p
+                picked[i] = true
+                if p.arrange then keys[p.arrange] = true end
                 break
             end
         end
+    end
+    -- 0.18.0: a piece of Plan.ARRANGE that is several Edit Mode pieces (the three swing timers)
+    -- is written whole, so its parts can never hold different offsets.
+    local pieces = {}
+    for i, p in ipairs(all) do
+        if picked[i] or (p.arrange and keys[p.arrange]) then pieces[#pieces + 1] = p end
     end
     Plan.Apply(state.saved[pos], pieces, e) -- our entry, in place (GetLayouts gave a copy)
     local ok, err = SaveAll(state, state.saved)
     if not ok then
         PE:LogError("ctrlLayout", err)
+        Snap.lastWrite = { ok = false, why = tostring(err) }
         -- Nothing was written: the options go back to what the layout has, and the bars with them.
         for i = #list, 1, -1 do
             local r = list[i]
@@ -2595,10 +2639,11 @@ local function RunRewrites()
         end
         SyncBars()
         mod:RefreshPanel()
-        Snap.ArrangeCall("Written", false)
+        Snap.ArrangeCall("Written", false, Snap.lastWrite.why)
         return
     end
-    Plan.MarkWritten(mod.opts, pieces) -- 0.18.0: which offsets our layout holds now
+    Snap.lastWrite = { ok = true }
+    Plan.MarkWritten(mod.opts, pieces, all) -- 0.18.0: which offsets our layout holds now
     if PE.debugOn then
         local keys, seen = {}, {}
         for _, p in ipairs(pieces) do
@@ -2633,6 +2678,10 @@ local function RewritePieces(filter, key)
     PE:RunOutOfCombat("ctrlLayout:rewrite", RunRewrites)
     return true
 end
+
+-- 0.18.0: for Snap.ArrangeBack, which is defined above it.
+Snap.RewritePieces = function(filter, key) return RewritePieces(filter, key) end
+Snap.RewritesWaiting = function() return #pendingRewrites end
 
 -- OnChange of a row: rewrites its pieces in our layout.
 local function NONE() return false end
@@ -2743,6 +2792,7 @@ do
     -- reload is asked for. What the session started with decides the rest (Snap.View).
     OPTIONS[#OPTIONS + 1] = { key = "arrange", label = "Arrange it yourself", choices = ON_OFF, OnChange = function()
         if not RewritePieces(Snap.ArrangeFilter, "arrange") then return end
+        if mod.opts.arrange ~= 1 then Snap.ArrangeCall("Close", "the switch was set to Off") end
         if PE.debugOn then
             PE:Debug("ctrlLayout", "arrange: the switch is now " .. tostring(mod.opts.arrange) .. "; it counts from the next reload")
         end
@@ -2762,6 +2812,10 @@ do
         if Snap.arrangeOn ~= true then
             PE:Print(mod.opts.arrange == 1 and "Arrange it yourself starts with the next reload. Tap Reload now first."
                 or "Switch on Arrange it yourself first, then reload.")
+            return
+        end
+        if mod.opts.arrange ~= 1 then
+            PE:Print("Arrange it yourself is Off from the next reload.")
             return
         end
         Snap.ArrangeCall("Open")
@@ -3233,7 +3287,9 @@ Snap.Build()
 --                        are placed when it ends)
 --   mod:ArrangeApply()   the Edit Mode pieces whose offset is not in our layout yet, written
 --                        once (RewritePieces, the option rows' path), then one reload asked
---                        for. Returns true and how many pieces wait, or false and why.
+--                        for. Returns true and how many pieces were written (a third answer
+--                        "held": in a fight, they are written when it ends), or false and
+--                        why (Edit Mode is open, or the write itself failed).
 ---------------------------------------------------------------------------
 Snap.ArrangeBuild = function()
     function mod:View()
@@ -3243,6 +3299,7 @@ Snap.ArrangeBuild = function()
     function mod:ArrangeReady()
         Snap.View()
         if Snap.arrangeOn ~= true then return false, "Arrange it yourself was off when this session began" end
+        if mod.opts.arrange ~= 1 then return false, "Arrange it yourself is Off from the next reload" end
         if not wanted then return false, "the Controller layout is off" end
         if not placed then return false, "the Controller layout is not placed (another Edit Mode layout is active?)" end
         return true
@@ -3257,7 +3314,11 @@ Snap.ArrangeBuild = function()
     function mod:ArrangeApply()
         local waiting = #Plan.Pending(mod.opts)
         if waiting == 0 then return true, 0 end
+        Snap.lastWrite = nil
         if not RewritePieces(Snap.ArrangeFilter, nil) then return false, TEXT_EDIT_MODE end
+        local result = Snap.lastWrite
+        if result == nil then return true, waiting, "held" end -- in a fight: written when it ends
+        if not result.ok then return false, result.why end
         return true, waiting
     end
 end

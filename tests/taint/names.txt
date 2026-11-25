@@ -326,6 +326,7 @@ AreaName	-
 Arm	-
 Armed	-
 ArrangeApply	-
+ArrangeBack	-
 ArrangeBuild	-
 ArrangeCall	-
 ArrangeFilter	-
@@ -1250,6 +1251,7 @@ RestoreScaleNow	-
 RestoreScreen	-
 RestrictionOn	-
 RewritePieces	-
+RewritesWaiting	-
 Right	-
 RightCenteredAnchor	-
 RightClassAction	-

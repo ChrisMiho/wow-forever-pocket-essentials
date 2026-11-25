@@ -69,6 +69,17 @@ device.
   without a call the addon must not make.
 - One tap is one step; holding a button does not repeat (use the big step).
 - The PE button is still moved with Move on screen.
+- **Apply tells the truth.** If the game does not take the write, the window
+  stays open and says "NOT written"; your moves are kept and you can tap
+  Apply again.
+- **Changing a swing timer's row** (Ranged, Main hand, Off hand) writes all
+  three timers with the move you gave them, so they always stay stacked.
+- **Switched Off but not yet reloaded,** the Arrange button says so and does
+  not open. And if the game was reloaded before an Off could be written
+  (tapped in a fight), the next login puts the moved pieces back and asks
+  for one more reload.
+- With the spell pictures off (their Part row, or after an error) the four
+  spell panels are not in the list; the spell wheels still move.
 
 ## [0.17.0] - 2026-11-24
 
