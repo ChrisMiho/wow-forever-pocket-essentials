@@ -2080,3 +2080,147 @@ Things to watch for (known, not fixed):
 - In Edit Mode the game's four frames are invisible too while Slim bars is
   On.
 - The bars' black outline is a very thin line; say if it looks uneven.
+
+### 33. Version 0.18.0: arrange it yourself
+
+Nothing here is tested on the device yet, and this is a first version made
+without you: say what you would change. It carries on from section 32 in the
+same sitting and the same log: Debug log On, Catch all errors on, Controller
+layout on. **Mark** and **Snapshot** are the same two buttons as before. The
+marks go on counting; straight after section 32 the first one here is 18. If
+your numbers differ, just say which numbers you saw.
+
+**What this is.** Three new rows at the bottom of the Controller tab:
+**Arrange it yourself** (Off), **Arrange: spell wheels** (Off) and **Arrange
+the screen** with a button **Arrange**. The button opens a small window: pick
+a piece with **Previous piece** / **Next piece**, move it with **Up, Down,
+Left, Right**. Some pieces move as you press. Others (the game places them
+itself) only move after **Apply** and a reload; the window says which.
+
+Do sections 18 to 21 with **Slim bars Off**, so the game's own frames show.
+
+Section 18, before, and switching on:
+
+1. **Mark** (18). **Snapshot**. Tap **Arrange** while the row above it still
+   reads Off: chat should say "Switch on Arrange it yourself first, then
+   reload." and no window opens.
+2. Switch **Arrange it yourself** On. Chat should say "Arrange it yourself
+   counts from the next reload." and the card should ask for a reload.
+   Nothing on the screen should move. Tap Save (it reloads).
+3. After the reload: is everything exactly where it was? **Snapshot**.
+
+Section 19, a piece that moves at once, and a mirrored pair:
+
+4. **Mark** (19). Out of a fight, tap **Arrange**. The settings go away and a
+   small window appears, top left, titled "Arrange: Map", with a yellow
+   outline around the map. Screenshot. Can you read it? Is it too big?
+5. Tap **Next piece** until the title reads "Arrange: Inner spell panel,
+   left". The window should say "Moves as you press." and "Twins are an exact
+   mirror.", with a yellow outline on the left panel and a thinner one on the
+   right panel.
+6. Tap **Up** three times, then **Left** three times. Expected: the left
+   panel moves up and out a little each tap, and the **right panel moves up
+   and out the same amount, as its mirror**. The window reads "Moved 6 left,
+   6 up." Screenshot. Does the pair look perfectly even to you?
+7. Tap **Step: small (2)** (it becomes "Step: big (10)") and **Up** once: a
+   bigger jump. Hold LT, then RT: do the panels that open sit right against
+   the moved ones? Screenshot each.
+8. Tap **Twins: mirrored** (it becomes "Twins: free") and **Down** twice: now
+   only the left panel moves, and the window says "NOT a mirror of its
+   twin." Screenshot. Tap **Twins: free** again: the right panel should jump
+   to the mirror of the left one, and the warning goes.
+9. Now with the controller: d-pad to **Right** and press A a few times, then
+   d-pad to **Reset** and press A. Both panels should be back where they
+   started. Did the d-pad reach every button? Press B: the window closes and
+   the settings come back. **Snapshot**.
+10. Cast a spell from a moved panel before and after step 9, and tap a
+    picture: does it still behave as before (a tap does nothing)?
+
+Section 20, the centre line and an Edit Mode piece:
+
+11. **Mark** (20). **Arrange**, pick **Map** (step small). Tap **Left**
+    once. Expected: the window says "Moved 4 left. On the centre line." (the
+    map sits a little right of the middle by default, and the first step
+    toward the middle lands it exactly there), and "Waiting for Apply: Map."
+    The yellow outline moved; **the map itself did not**. That is right: the
+    game places the map.
+12. Pick **Chat**, step big, tap **Down** four times. Expected: the window
+    names what the chat would now cover ("Overlaps: ...") and those pieces
+    get a red outline. Screenshot. It only warns.
+13. Tap **Up** twice, so the chat is 20 lower than it was. Tap **Apply**.
+    Expected: the window closes, chat says "Arrangement written...", and the
+    settings ask for a reload once. Tap Save (it reloads).
+14. After the reload: is the map in the exact middle now, and the chat a
+    little lower? Screenshot and **Snapshot**. Did the map's black border and
+    its place-name strip come along?
+
+Section 21, the game's frames as a pair:
+
+15. **Mark** (21). **Arrange**, pick **Player and pet frames**. Tap **Up**
+    twice (step big). The outlines of both sides should rise together. Tap
+    **Apply**, Save. After the reload: did your frame and the target's frame
+    both move up by the same amount? Target something. Screenshot,
+    **Snapshot**.
+
+Section 22, the spell wheels:
+
+16. **Mark** (22). First open both wheels (LB+LT, RB+RT) and screenshot where
+    they open now. Then switch **Arrange: spell wheels** On (no reload).
+    **Arrange**, pick **Spell wheels and their buttons** (the last piece).
+    Tap **Left**: the window should say it only moves up and down. Step big,
+    tap **Up** three times: the two round buttons and the prompts under them
+    should rise at once.
+17. Close the window. Open both wheels again: do they open higher, on their
+    buttons, clear of the swing timers and the map? Screenshot each.
+    **Snapshot**. Any "Interface action failed" or a wheel that will not
+    open? Screenshot at once and say what you did just before.
+
+Section 23, with the slim bars:
+
+18. **Mark** (23). Switch **Slim bars** On, Save. **Arrange**: the list should
+    now have "Slim bars, you and pet" and "Slim bars, target", and no longer
+    the game's frames. Pick one, tap **Up** and **Left** a few times: both
+    sides should move as mirrors, the pet bar and cast bar with them.
+    Screenshot with a target and your pet out. **Snapshot**.
+
+Section 24, a fight:
+
+19. **Mark** (24). Open **Arrange**, pick any spell panel, tap **Up** once,
+    and pull an enemy with the window open. Expected: the window closes at
+    once, chat says "Arrange closed for the fight. Your moves are kept." In
+    the fight, try **Arrange**: it should refuse. After the fight open it
+    again: the piece is where you left it. Any blocked action? Screenshot.
+
+Section 25, the resets and Off:
+
+20. **Mark** (25). **Arrange**, pick a spell panel, tap **Reset**: it and
+    its twin go back at once. Then tap **Reset all**: the button should read
+    "Tap again"; tap it. Every piece that moves at once is back; the window
+    says which pieces wait for Apply. Tap **Apply**, Save. After the reload:
+    is everything back where 0.17.0 had it? **Snapshot**.
+21. Move one spell panel up again and Apply the map 10 to the left (so there
+    is something saved), reload. Then switch **Arrange it yourself** Off and
+    Save. After the reload: everything should be exactly at its built-in
+    spot again, the map too. **Snapshot**. Switch it On and Save again: your
+    two moves should be back. **Snapshot**. Leave it however you like.
+22. Settings, Debug log tab: note the line count. Tab Errors: screenshot it.
+    Tap **Save** (reload). Send `SavedVariables/PocketEssentials.lua` and
+    `SavedVariables/<your character>/PocketEssentials.lua` with the
+    screenshots.
+
+What I most want to hear:
+- Are the pieces the right ones, or do you want them split (the pet bar on
+  its own) or more of them?
+- Are steps of 2 and 10 right? Is the pull to the centre line (6) helpful or
+  in the way?
+- Is moving the outline first and the piece after a reload bearable for the
+  map and chat?
+- Is the window in the way?
+
+Things to watch for (known, not fixed):
+- The yellow outline is the planned spot, not a measurement: the quest list
+  and tooltip are drawn at a standard size.
+- One tap is one step; holding does not repeat.
+- The pieces that need Apply are shared by all your characters; the ones
+  that move at once are per character.
+- The spell wheels move only as a pair, and only up and down.

@@ -4,6 +4,72 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.18.0] - 2026-11-24
+
+Thirty-eighth test build: arrange it yourself. **A first version, made
+without you: tell me what to change.** Spec
+`docs/superpowers/specs/2026-11-24-0.18.0-arrange.md`. Not yet tested on a
+device.
+
+### Added
+
+- **Arrange it yourself** (Controller tab, a new row, Off by default). On,
+  and after a reload, the row **Arrange the screen** opens a small window
+  where you pick a piece of the layout and move it with four arrow buttons.
+  Touch and the controller both work (the d-pad walks to a button, A presses
+  it, B closes), as in Move on screen.
+- **What you can move.** At once, as you press: the spell panels (inner and
+  outer, each side), the LB and RB targeting pictures, the slim bars. After
+  **Apply** and one reload, because the game places them itself: the map,
+  the swing timers, the XP bars, the chat, the quest list, the buffs and
+  debuffs, the tooltip, and the game's player and target frames. The window
+  says which kind the picked piece is.
+- **Symmetry is looked after for you.**
+  - A piece with a twin on the other side (a spell panel, a targeting
+    picture, a slim bar, a frame) moves its twin with it, as an exact
+    mirror. One button, **Twins**, lets a pair move freely if you want
+    that; switching it back makes them a mirror again.
+  - Steps are whole: **small (2)** or **big (10)**.
+  - A piece in the middle (the map, the timers, the XP bars) that comes
+    within 6 of the screen's centre line lands exactly on it, and the window
+    says "On the centre line".
+  - The window tells you when a pair is **not** an exact mirror, and counts
+    any other pair that is not.
+- **Overlap warning.** A piece that overlaps another is named in the window
+  and the other one is outlined in red. It only warns: you may leave it so.
+- **Reset** puts the picked piece back; **Reset all** (two taps) puts
+  everything back.
+- **Arrange: spell wheels** (a second row, Off by default). On, the two
+  LB+LT / RB+RT wheels, their round buttons and the prompts under them are
+  one more piece you can move **up and down**, so the wheels can open clear
+  of the swing timers and the map.
+- **The Debug log knows all of it:** every step, every refused step and why,
+  every reset, and on **Apply** the place of every piece, every overlap and
+  the mirror check, so an arrangement you like can become the built-in one.
+  **Save a snapshot** lists your moves too.
+
+### Good to know
+
+- **Off means off.** While the row is Off nothing of this runs and every
+  piece is exactly where 0.17.0 puts it, even if you have moves saved. They
+  are kept for when you switch it On again.
+- **The switch counts from the next reload,** and asks for it.
+- **Your moves sit on top of the built-in layout.** A later version that
+  moves a built-in spot moves your piece along with it.
+- **Where moves are saved.** The pieces that move at once: per character.
+  The pieces that need Apply: for all your characters, because the game
+  keeps one "Pocket Essentials" Edit Mode layout for the whole account.
+- **Nothing is moved in a fight.** A fight closes the window; your moves are
+  kept and any piece still waiting for Apply goes on waiting.
+- **The yellow outline is the planned spot,** not a measurement: for a piece
+  that needs Apply it shows where it will be after the reload, and the quest
+  list and the tooltip are drawn at a standard size.
+- **The spell wheels only move as a pair, up and down.** The game hangs both
+  on one anchor; moving one alone, or the two apart, is not possible
+  without a call the addon must not make.
+- One tap is one step; holding a button does not repeat (use the big step).
+- The PE button is still moved with Move on screen.
+
 ## [0.17.0] - 2026-11-24
 
 Thirty-seventh test build: the slim bars, the second half of the new playing
