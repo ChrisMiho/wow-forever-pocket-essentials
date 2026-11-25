@@ -878,7 +878,10 @@ MakePicture	-
 MakePin	-
 MakeTab	-
 Map	-
+MapBox	-
 MapLevel	-
+MapLook	-
+MapOf	-
 MapPortrait	-
 MapScale	-
 Mark	-
@@ -1978,6 +1981,7 @@ main	-
 mainHand	-
 map	-
 mapButtons	-
+mapLook	-
 mappedButtonKey	-
 mark	-
 match	-

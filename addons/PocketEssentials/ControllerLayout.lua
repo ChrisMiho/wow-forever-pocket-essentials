@@ -84,6 +84,12 @@ local ADDON_NAME, PE = ...
 -- default) and the "Arrange the screen" row. Arrange.lua (PE.Arrange) is the window and its
 -- rules; it is never called in a session that began with the switch Off, and Plan.session
 -- is never set then, so every number of the plan is 0.17.0's.
+--
+-- 0.19.0 (spec 2026-11-25-0.19.0-square-map.md): the square map. This file holds its numbers
+-- (MAP.square, Plan.MAP_SQUARE, Plan.MapBox) and its switch (opts.mapLook, the row "Map look",
+-- Round by default: with Round every number, rectangle and written layout is 0.18.0's).
+-- MapLook.lua (PE.MapLook) changes the map itself: the square mask, the edge, the words inside
+-- it. It is called where the ring is placed and put back (PlaceRing, RestoreRing).
 
 local type, pairs, ipairs = type, pairs, ipairs
 local sort = table.sort
@@ -121,6 +127,8 @@ Plan.DEFAULTS = {
     -- 0.18.0: arrange it yourself (Arrange.lua): 0 Off, 1 On. Off, no saved offset is added
     -- anywhere and Arrange.lua is never called. arrangeWheel: the spell wheels as a piece.
     arrange = 0, arrangeWheel = 0,
+    -- 0.19.0: the map's look: 0 Round (as 0.18.0 has it), 1 Square, bigger (MapLook.lua).
+    mapLook = 0,
 }
 -- The part rows' keys, in the order shown.
 Plan.TEST_PARTS = { "tHints", "tChat", "tMap", "tBars", "tExtras", "tFace" }
@@ -169,6 +177,75 @@ local STRIP = { w = 152, h = 23, up = 8, x = -1 }
 local STRIP_OUT = { left = 20, right = 19 }
 -- The strip's width without and with its two buttons ("Map buttons" Hidden / Shown).
 Plan.STRIP_W = { [0] = STRIP.w, [1] = STRIP.w + STRIP_OUT.left + STRIP_OUT.right }
+
+-- 0.19.0, the square map (spec 2026-11-25-0.19.0-square-map.md, "Size and spot"): Edit Mode
+-- Size 5 (100%), the map 198 across (Mainline/Minimap.xml:60) with a 1 unit edge of ours all
+-- round, so 200; its edge box centred on the screen's middle, its bottom 4 up: x -100 to 100,
+-- y 4 to 204. The strip stays underneath (HeaderUnderneath 1) and is hidden by MapLook.lua.
+--
+-- How the spot written into the layout follows. With the strip underneath the game puts the
+-- map's frame (253, the 198 map at its centre) 10 right and 30 up of the spot. Neither number
+-- grows with Size: SetHeaderUnderneath divides both by the frame's own scale and the frame
+-- multiplies them back (Blizzard_Minimap/Camelot/Minimap.lua:70-73), which is why MAP has them
+-- unscaled for 70% too.
+--   x: the map's centre is x + 10 (frameRight). Wanted 0, so x = -10.
+--   y: at 100% the map's bottom is y + 30 + (253 - 198) / 2 = y + 57.5. Wanted 5 (the edge
+--      box's bottom, 4, plus the edge, 1), which asks for y = -52.5. The game does not allow
+--      that: every Edit Mode piece is held wholly on the screen (clampedToScreen on
+--      EditModeSystemTemplate, Blizzard_EditMode/Shared/EditModeSystemTemplates.xml:4; the
+--      room it is given is its selection box, which covers the whole piece: the same file,
+--      line 113, and EditModeSystemTemplates.lua:174-185), and the map's piece starts at the
+--      spot written here, so a spot under the screen's edge is pushed back up to it. So y
+--      stays 0, the lowest spot there is, and MapLook.lua lowers the map's frame inside its
+--      piece by the rest (57.5 - 5 = 52.5 at 100%), worked out there from the frame's real
+--      size and scale, so the map's bottom lands 5 up whatever they are.
+MAP.square = { size = 100, x = -MAP.frameRight, y = 0 }
+-- The square's own numbers: its Edit Mode size in percent, the edge's width, the edge box's
+-- bottom above the screen's (so the map's bottom is bottom + edge), and what moves with it:
+--   timersUp      the three swing timers, 14 up. Round has the lowest one's bottom at 194; the
+--                 square's edge box ends at 204 and the timer sits 4 over it: 208 = 194 + 14.
+--                 Across they stay where they are (centred on x 4).
+--   shouldersOut  the LB and RB targeting pictures, 20 further out each, before a saved offset
+--                 is added: a picture moved in beside the round map (94 in and 56 down, the
+--                 arrangement of the 2026-11-25 sitting) then ends 4 short of the square
+--                 (-140 to -104 against -100) instead of 16 inside it.
+Plan.MAP_SQUARE = { size = MAP.square.size, edge = 1, bottom = 4, timersUp = 14, shouldersOut = 20 }
+-- Spell panel sizes at which a spell panel reaches the square map: none. The inner panels'
+-- inner edge is at 103 at every size (INNER_EDGE below), 3 clear of the edge box.
+Plan.SQUARE_TIGHT_SIZES = {}
+-- The map look as the module last placed it (1 Square; nil Round), for the callers that
+-- pass no options (the targeting pictures' spots). Set by Snap.View.
+Plan.look = nil
+
+-- The map look: 1 Square, 0 Round. v: an options table decides for itself (mapLook 1 is
+-- Square, anything else Round); any other v (a Spell panel size, nil) means the session's.
+function Plan.MapLook(v)
+    if type(v) == "table" then return v.mapLook == 1 and 1 or 0 end
+    return Plan.look == 1 and 1 or 0
+end
+
+-- The map's numbers for that look: { size, x, y } (the Edit Mode size in percent and the
+-- spot written into the layout). Every reader of the three goes through here, except the
+-- swing timers, which keep the round map's spot and are only lifted (see Timers).
+function Plan.MapOf(v)
+    return Plan.MapLook(v) == 1 and MAP.square or MAP
+end
+
+-- The map's box at its built-in spot, { left, bottom, right, top } in UI units from the
+-- screen's bottom centre: for Square the edge box (the map and its 1 unit edge), for Round
+-- the round map. A saved offset is not added here (Plan.Rects does that).
+function Plan.MapBox(v)
+    local m = Plan.MapOf(v)
+    local cx = m.x + MAP.frameRight
+    if m == MAP.square then
+        local q = Plan.MAP_SQUARE
+        local half = MAP.round * m.size / 100 / 2 + q.edge
+        return { cx - half, m.y + q.bottom, cx + half, m.y + q.bottom + 2 * half }
+    end
+    local cy = m.y + MAP.frameUp + MAP.frame * m.size / 100 / 2
+    local round = MAP.round * m.size / 100
+    return { cx - round / 2, cy - round / 2, cx + round / 2, cy + round / 2 }
+end
 
 -- Swing timers: Scale 3 (80%), Width 0 (213), Height 0 (15): 170.4 by 12 each
 -- (Blizzard_EditMode/Shared/EditModeSystemTemplates.lua:2784-2804, settings at
@@ -337,6 +414,7 @@ local function Fill(opts)
     for k, default in pairs(Plan.DEFAULTS) do
         local v = opts[k]
         local onOff = k == "hints" or k == "mapButtons" or k == "slim" or k:sub(1, 1) == "t" or k:sub(1, 7) == "arrange"
+            or k == "mapLook"
         if v == 0 or v == 1 or (v == 2 and not onOff) then out[k] = v else out[k] = default end
     end
     return out
@@ -629,13 +707,15 @@ end
 
 -- 0.18.0: the two targeting pictures' spots with their offsets: { left = { point, x, y },
 -- right = { point, x, y } } on UIParent's bottom, a fresh table. Plan.SHOULDERS stays the
--- built-in numbers.
+-- built-in numbers. 0.19.0: with the square map each is 20 further out before its offset is
+-- added (Plan.MAP_SQUARE.shouldersOut).
 function Plan.Shoulders(v)
     local out = {}
+    local further = Plan.MapLook(v) == 1 and Plan.MAP_SQUARE.shouldersOut or 0
     for side, key in pairs({ left = "LB targeting picture", right = "RB targeting picture" }) do
         local s = Plan.SHOULDERS[side]
         local dx, dy = Plan.Moved(v, key)
-        out[side] = { s[1], s[2] + dx, s[3] + dy }
+        out[side] = { s[1], s[2] + (side == "left" and -further or further) + dx, s[3] + dy }
     end
     return out
 end
@@ -730,11 +810,14 @@ function Plan.HubSpot(opts)
 end
 
 -- The swing timers' spots: { x, y = { MainHand, OffHand, Ranged } }, each timer's bottom.
-local function Timers()
+-- 0.19.0: worked out from the round map for both looks; with the square map (v as
+-- Plan.MapLook takes it) each is then 14 higher (Plan.MAP_SQUARE.timersUp).
+local function Timers(v)
     local s = MAP.size / 100
     local mapTop = MAP.y + MAP.frameUp + MAP.frame * s / 2 + MAP.round * s / 2
     local y, step = {}, math.floor(TIMER.h + 0.5) + TIMER.gap -- 12 + 2
     local bottom = math.ceil(mapTop + TIMER.over - 1e-9)
+    if Plan.MapLook(v) == 1 then bottom = bottom + Plan.MAP_SQUARE.timersUp end
     for i, name in ipairs(TIMER.order) do y[name] = bottom + (i - 1) * step end
     return { x = MAP.x + MAP.frameRight, y = y }
 end
@@ -750,7 +833,8 @@ end
 -- Plan.PanelSize takes it); nil is the defaults. The hint box is listed only while
 -- hints is 1; the title strip includes its two buttons while mapButtons is 1. While slim is 1
 -- (0.17.0) the game's four unit frames are invisible, so their six rectangles are left out,
--- the slim bars' seven are listed and the tooltip is in its corner.
+-- the slim bars' seven are listed and the tooltip is in its corner. While mapLook is 1
+-- (0.19.0) "map" is the square's edge box and there is no title strip (MapLook.lua hides it).
 function Plan.Rects(v)
     local o = Fill(type(v) == "table" and v or nil)
     local rise = Rising(v)
@@ -761,13 +845,17 @@ function Plan.Rects(v)
         for side, c in pairs(sides) do box(ring .. " " .. side .. " diamond", c.x, c.y, g.w, g.h) end
     end
     local FRAMES = Frames(v)
-    local roundCentre = MAP.y + MAP.frameUp + MAP.frame * MAP.size / 100 / 2
-    local round = MAP.round * MAP.size / 100
-    box("map", MAP.x + MAP.frameRight, roundCentre, round, round)
-    local out = o.mapButtons == 1 and STRIP_OUT or { left = 0, right = 0 }
-    r["title strip"] = { MAP.x + STRIP.x - STRIP.w / 2 - out.left, MAP.y + STRIP.up,
-        MAP.x + STRIP.x + STRIP.w / 2 + out.right, MAP.y + STRIP.up + STRIP.h }
-    local timers = Timers()
+    if Plan.MapLook(v) == 1 then
+        r.map = Plan.MapBox(v)
+    else
+        local roundCentre = MAP.y + MAP.frameUp + MAP.frame * MAP.size / 100 / 2
+        local round = MAP.round * MAP.size / 100
+        box("map", MAP.x + MAP.frameRight, roundCentre, round, round)
+        local out = o.mapButtons == 1 and STRIP_OUT or { left = 0, right = 0 }
+        r["title strip"] = { MAP.x + STRIP.x - STRIP.w / 2 - out.left, MAP.y + STRIP.up,
+            MAP.x + STRIP.x + STRIP.w / 2 + out.right, MAP.y + STRIP.up + STRIP.h }
+    end
+    local timers = Timers(v)
     for name, y in pairs(timers.y) do r[name .. " timer"] = { timers.x - TIMER.w / 2, y, timers.x + TIMER.w / 2, y + TIMER.h } end
     local function frame(spot, size) return RectAt(spot[1], spot[4], spot[5], size.w, size.h) end
     r.player = frame(FRAMES.Player, UNIT)
@@ -884,7 +972,9 @@ function Plan.Pieces(opts)
     end
     -- HeaderUnderneath 1 puts the map's title strip under the map (0.11.1 spec, 3); left
     -- out by Plan.Apply when the game has no such setting.
-    add("Minimap", nil, Spot("BOTTOM", "BOTTOM", MAP.x, MAP.y), { Size = (MAP.size - 50) / 10, HeaderUnderneath = 1 }, "map")
+    -- 0.19.0: the size and the spot of the map look (Round: Size 2 at -6, 0; Square: Size 5 at -10, 0).
+    local m = Plan.MapOf(o)
+    add("Minimap", nil, Spot("BOTTOM", "BOTTOM", m.x, m.y), { Size = (m.size - 50) / 10, HeaderUnderneath = 1 }, "map")
     -- 0.16.0: the chat bottom left, over the PE button and the pet frame (see CHAT).
     add("ChatFrame", nil, Spot("BOTTOMLEFT", "BOTTOMLEFT", CHAT.x, rise.chatY),
         { WidthHundreds = math.floor(CHAT.w / 100), WidthTensAndOnes = CHAT.w % 100,
@@ -913,7 +1003,7 @@ function Plan.Pieces(opts)
         add("HudTooltip", nil, Spot("BOTTOMRIGHT", "BOTTOMRIGHT", rise.tipX, rise.tipY), nil, "tooltip")
     end
     local visibility = { Ranged = o.ranged, MainHand = o.mainHand, OffHand = o.offHand }
-    local timers = Timers()
+    local timers = Timers(o)
     for _, name in ipairs(TIMER.order) do
         add("SwingTimer", name, Spot("BOTTOM", "BOTTOM", timers.x, timers.y[name]),
             { Scale = 3, Width = 0, Height = 0, Visibility = visibility[name] }, "swing timers")
@@ -2003,7 +2093,8 @@ do
 
     local function ButtonsWanted()
         local opts = mod and mod.opts
-        return type(opts) == "table" and opts.mapButtons == 1
+        -- 0.19.0: never with the square map, whose strip is hidden (the row says "Round map only").
+        return type(opts) == "table" and opts.mapButtons == 1 and Plan.MapLook(opts) ~= 1
     end
 
     local function HookButton(f)
@@ -2198,6 +2289,9 @@ Snap.View = function()
     local view = Snap.view
     view.panelSize = SessionSize()
     view.hints, view.mapButtons, view.arrangeWheel = opts.hints, opts.mapButtons, opts.arrangeWheel
+    -- 0.19.0: the map look counts at once (the size it asks of Edit Mode follows the reload).
+    view.mapLook = Plan.MapLook(opts)
+    Plan.look = view.mapLook == 1 and 1 or nil
     view.slim = (Snap.slimOn == true or (Snap.slimOn == nil and opts.slim == 1)) and 1 or 0
     -- Our spell pictures are off (their part row, or FaceBars.lua says why): no panel is drawn.
     view.faceOff = (opts.tFace == 0 or FaceStatus() ~= nil) and true or nil
@@ -2594,6 +2688,8 @@ local REWRITES = {
     panelSize = function(p) return p.system == "UnitFrame" or p.system == "ChatFrame" or p.system == "HudTooltip" end,
     -- 0.17.0, Slim bars: the tooltip's spot (the corner while they are on).
     slim = function(p) return p.system == "HudTooltip" end,
+    -- 0.19.0, Map look: the map (its size and spot) and the three swing timers (14 up with Square).
+    mapLook = function(p) return p.system == "Minimap" or p.system == "SwingTimer" end,
 }
 
 local function RunRewrites()
@@ -2753,8 +2849,11 @@ local OPTIONS = {
           hintsTapped = true
           if wanted then SyncBars() end
       end },
+    -- With the square map the strip these buttons sit beside is hidden: the row's name then
+    -- reads "Map buttons: Round map only" and a tap is only remembered for the round map.
     { key = "mapButtons", label = "Map buttons", choices = { { value = 0, label = "Hidden" }, { value = 1, label = "Shown" } },
-      OnChange = function() if wanted then SyncBars() end end },
+      value = function(m) if Plan.MapLook(m.opts) == 1 then return "Round map only" end end,
+      OnChange = function() if wanted and Plan.MapLook(mod.opts) ~= 1 then SyncBars() end end },
     { label = "Rebuild the layout", button = "Start over", action = function() StartOver() end },
 }
 -- The part rows (Plan.TEST_PARTS; 0.16.2's testing rows, named "Part: ..." since 0.16.4). A
@@ -2786,6 +2885,19 @@ do
             PE:Print("Slim bars count from the next reload.")
         end
     end }
+    -- 0.19.0: the map's look, Round by default. Square asks Edit Mode for another size and spot,
+    -- so a change goes the way the Spell panel size does: the map and the timers are rewritten
+    -- in our layout (out of a fight) and the reload is asked for. What MapLook.lua draws (the
+    -- mask, the edge, the words) follows the row at once.
+    OPTIONS[#OPTIONS + 1] = { key = "mapLook", label = "Map look",
+        choices = { { value = 0, label = "Round" }, { value = 1, label = "Square, bigger" } }, OnChange = function()
+            if not RewritePieces(REWRITES.mapLook, "mapLook") then return end
+            if PE.debugOn then
+                PE:Debug("ctrlLayout", "map look: the row is now " .. (Plan.MapLook(mod.opts) == 1 and "the square map" or "the round map")
+                    .. "; the map's size follows the next reload")
+            end
+            if wanted then SyncBars() end
+        end }
     -- 0.18.0: arrange it yourself (Arrange.lua), Off by default. A change counts from the
     -- next reload: the Edit Mode pieces whose offset in our layout is not what the new value
     -- asks for (On: the saved offsets; Off: none) are rewritten, out of a fight, and the
@@ -2947,6 +3059,14 @@ mod = PE:RegisterModule({
             why = Snap.SlimCall("Status")
             if type(why) == "string" and why ~= "" then
                 lines[#lines + 1] = "Pocket Essentials' slim bars are off: " .. why .. (why:find("[.!]$") and "" or ".")
+            end
+            -- 0.19.0: with the square map, pieces of this session's screen that overlap.
+            if type(Snap.view) == "table" and Snap.view.mapLook == 1 then
+                local n = #Plan.Overlaps(Plan.Rects(Snap.view))
+                if n > 0 then
+                    lines[#lines + 1] = "With the square map " .. n .. (n == 1 and " pair of pieces overlaps" or " pairs of pieces overlap")
+                        .. ". Arrange the screen shows which, and moves them."
+                end
             end
             return #lines == 1 and TEXT_USING or lines
         end

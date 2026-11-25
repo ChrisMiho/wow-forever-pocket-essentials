@@ -1368,6 +1368,8 @@ test("rows: Spell panel size, the three timer rows and Start over", function()
         "Part: follow the triggers with a hook",
         -- 0.17.0: the slim bars, Off until tried on the device
         "Slim bars",
+        -- 0.19.0: the map's look, Round until the square map is tried on the device
+        "Map look",
         -- 0.18.0: arrange it yourself, both Off until tried on the device, and the way in
         "Arrange it yourself", "Arrange: spell wheels", "Arrange the screen",
         -- 0.16.4: for the device test
@@ -4074,6 +4076,355 @@ test("0.17.0 layout: a missing slim bars file changes nothing", function()
     switchOn(c, PE)
     switchOff(c, PE)
     c:assertClean()
+end)
+
+---------------------------------------------------------------------------
+-- 0.19.0: the square map (spec 2026-11-25-0.19.0-square-map.md, "The switch", "Size and
+-- spot", "Tests"): the plan's numbers and the "Map look" row. What is drawn on the map is in
+-- maplook_test.lua.
+---------------------------------------------------------------------------
+
+-- Plan.Rects() as 0.18.0 gives it (printed from that code with %.17g), for the rule that
+-- Round changes nothing.
+local RECTS_0_18 = {
+    ["LB targeting picture"] = { -214, 155, -178, 187 },
+    ["LB+LT button"] = { -157, 169, -119, 207 },
+    ["LB+LT prompt"] = { -174, 146, -102, 170 },
+    ["MainHand timer"] = { -81.200000000000003, 194, 89.200000000000003, 206 },
+    ["OffHand timer"] = { -81.200000000000003, 208, 89.200000000000003, 220 },
+    ["RB targeting picture"] = { 178, 155, 214, 187 },
+    ["RB+RT button"] = { 119, 169, 157, 207 },
+    ["RB+RT prompt"] = { 102, 146, 174, 170 },
+    ["Ranged timer"] = { -81.200000000000003, 222, 89.200000000000003, 234 },
+    ["XP bars"] = { -298, 732, 298, 766 },
+    ["buffs and debuffs"] = { -47.335000000000036, 640, 407.66499999999996, 728 },
+    ["chat"] = { -665.66499999999996, 245, -215.66499999999996, 415 },
+    ["inner left diamond"] = { -237, 17, -103, 115 },
+    ["inner right diamond"] = { 103, 17, 237, 115 },
+    ["map"] = { -65.299999999999997, 49.25, 73.299999999999997, 187.84999999999999 },
+    ["outer left diamond"] = { -383, 17, -249, 115 },
+    ["outer right diamond"] = { 249, 17, 383, 115 },
+    ["pet"] = { -515, 181, -395, 230 },
+    ["player"] = { -627, 56, -395, 156 },
+    ["quest tracker"] = { 417.66499999999996, 363, 677.66499999999996, 763 },
+    ["round button"] = { -672.66499999999996, 162, -595.86500000000001, 238.80000000000001 },
+    ["target"] = { 395, 56, 627, 156 },
+    ["target auras"] = { 420, 156, 542, 178.5 },
+    ["target cast bar"] = { 518, 0, 668, 10 },
+    ["target of target"] = { 395, 181, 515, 230 },
+    ["title strip"] = { -83, 8, 69, 31 },
+    ["tooltip"] = { 472.66499999999996, 236, 672.66499999999996, 336 },
+}
+
+-- The arrangement saved on the device on 2026-11-25 (its debug log's "arrange: offset:" lines),
+-- as the plan takes a session's offsets.
+local function arranged(extra)
+    local v = { arrange = 1, arrangeWheel = 0,
+        offsets = { map = { x = 0, y = -2 }, ["buffs and debuffs"] = { x = 0, y = 4 } },
+        charOffsets = {
+            ["inner left diamond"] = { x = 0, y = -16 }, ["inner right diamond"] = { x = 0, y = -16 },
+            ["outer left diamond"] = { x = 0, y = -16 }, ["outer right diamond"] = { x = 0, y = -16 },
+            ["LB targeting picture"] = { x = 94, y = -56 }, ["RB targeting picture"] = { x = -94, y = -56 },
+            ["player bar"] = { x = -18, y = -16 }, ["target bar"] = { x = 18, y = -16 },
+        } }
+    for k, x in pairs(extra or {}) do v[k] = x end
+    return v
+end
+
+-- The overlapping pairs of a plan, as "a|b" strings in order.
+local function pairsOf(Plan, v)
+    local out = {}
+    for _, o in ipairs(Plan.Overlaps(Plan.Rects(v))) do out[#out + 1] = o.a .. "|" .. o.b end
+    return out
+end
+
+test("0.19.0: the option is Round by default and reads only 0 and 1", function()
+    local Plan = plan()
+    eq(Plan.DEFAULTS.mapLook, 0)
+    eq(Plan.MapLook(nil), 0)
+    eq(Plan.MapLook({}), 0)
+    eq(Plan.MapLook({ mapLook = 0 }), 0)
+    eq(Plan.MapLook({ mapLook = 1 }), 1)
+    for _, bad in ipairs({ 2, -1, "1", true, 0.5 }) do eq(Plan.MapLook({ mapLook = bad }), 0, "mapLook " .. tostring(bad)) end
+    eq(Plan.MapLook(100), 0, "a Spell panel size")
+    -- A saved 2 is not kept as a third look.
+    eq(Plan.Pieces({ mapLook = 2 }), Plan.Pieces({}))
+    eq(Plan.MAP_SQUARE.size, 100)
+    eq(Plan.MAP_SQUARE.edge, 1)
+    eq(Plan.MAP_SQUARE.bottom, 4)
+end)
+
+test("0.19.0: Round gives 0.18.0's rectangles and pieces, with the key 0 or absent", function()
+    local Plan = plan()
+    for what, r in pairs({ ["no options"] = Plan.Rects(), ["mapLook 0"] = Plan.Rects({ mapLook = 0 }), ["a size"] = Plan.Rects(100) }) do
+        local n = 0
+        for name, want in pairs(RECTS_0_18) do
+            n = n + 1
+            check(r[name], what .. ": no rectangle " .. name)
+            for i = 1, 4 do near(r[name][i], want[i], what .. ": " .. name .. " " .. i) end
+        end
+        for name in pairs(r) do check(RECTS_0_18[name], what .. ": a rectangle 0.18.0 did not have: " .. name) end
+        eq(n, 27)
+    end
+    eq(Plan.Rects({ mapLook = 0 }), Plan.Rects())
+    eq(Plan.Rects({ mapLook = 0, slim = 1, panelSize = 120, hints = 1, mapButtons = 1 }),
+        Plan.Rects({ slim = 1, panelSize = 120, hints = 1, mapButtons = 1 }))
+    eq(Plan.Pieces({ mapLook = 0 }), Plan.Pieces({}))
+    eq(Plan.Shoulders({ mapLook = 0 }), { left = { "BOTTOMRIGHT", -178, 155 }, right = { "BOTTOMLEFT", 178, 155 } })
+    eq(Plan.MapBox({ mapLook = 0 }), Plan.Rects().map)
+    eq(Plan.MapBox(), Plan.Rects().map)
+end)
+
+test("0.19.0: Square gives the edge box -100..100 by 4..204 and no title strip", function()
+    local Plan = plan()
+    local r = Plan.Rects({ mapLook = 1 })
+    for i, want in ipairs({ -100, 4, 100, 204 }) do
+        check(math.abs(r.map[i] - want) < 0.01, "map " .. i .. ": expected " .. want .. ", got " .. tostring(r.map[i]))
+        check(math.abs(Plan.MapBox({ mapLook = 1 })[i] - want) < 0.01, "MapBox " .. i)
+    end
+    eq(r["title strip"], nil)
+    eq(Plan.Rects({ mapLook = 1, mapButtons = 1 })["title strip"], nil, "with the map buttons asked for")
+    -- The Arrange piece "map" is then the map alone.
+    local listed = {}
+    for _, name in ipairs(Plan.ARRANGE_BY.map.rects) do if r[name] then listed[#listed + 1] = name end end
+    eq(listed, { "map" })
+    -- A saved offset moves the edge box like any Edit Mode piece.
+    local moved = Plan.Rects({ mapLook = 1, arrange = 1, offsets = { map = { x = 6, y = 10 } } }).map
+    for i, want in ipairs({ -94, 14, 106, 214 }) do check(math.abs(moved[i] - want) < 0.01, "moved map " .. i) end
+end)
+
+test("0.19.0: Square lifts the timers 14 and moves the targeting pictures 20 out; nothing else moves", function()
+    local Plan = plan()
+    for _, base in ipairs({ {}, { slim = 1 }, { panelSize = 120, hints = 1 }, arranged({ slim = 1 }) }) do
+        local round = Plan.Rects(with(base))
+        local sq = with(base)
+        sq.mapLook = 1
+        local square = Plan.Rects(sq)
+        local MOVED = { map = true, ["title strip"] = true }
+        for _, name in ipairs({ "MainHand timer", "OffHand timer", "Ranged timer" }) do
+            MOVED[name] = true
+            eq(square[name], { round[name][1], round[name][2] + 14, round[name][3], round[name][4] + 14 }, name)
+        end
+        local l, r = "LB targeting picture", "RB targeting picture"
+        MOVED[l], MOVED[r] = true, true
+        eq(square[l], { round[l][1] - 20, round[l][2], round[l][3] - 20, round[l][4] }, l)
+        eq(square[r], { round[r][1] + 20, round[r][2], round[r][3] + 20, round[r][4] }, r)
+        for name, q in pairs(round) do
+            if not MOVED[name] then eq(square[name], q, name .. " moved with the square map") end
+        end
+        for name in pairs(square) do check(round[name], "a new rectangle with the square map: " .. name) end
+    end
+    -- The lowest timer sits 4 over the edge box.
+    local r = Plan.Rects({ mapLook = 1 })
+    eq(r["MainHand timer"][2] - r.map[4], 4)
+    eq(Plan.Shoulders({ mapLook = 1 }), { left = { "BOTTOMRIGHT", -198, 155 }, right = { "BOTTOMLEFT", 198, 155 } })
+end)
+
+test("0.19.0: Square has no overlap with nothing moved, at every Spell panel size", function()
+    local Plan = plan()
+    eq(Plan.SQUARE_TIGHT_SIZES, {}, "no size brings a spell panel to the square map")
+    for _, size in ipairs(Plan.PANEL_SIZES) do
+        for _, hints in ipairs({ 0, 1 }) do
+            local o = { mapLook = 1, panelSize = size, hints = hints }
+            eq(pairsOf(Plan, o), {}, size .. "%, hints " .. hints)
+            -- The inner panels stay 3 clear of the edge box.
+            local r = Plan.Rects(o)
+            near(r.map[1] - r["inner left diamond"][3], 3, size .. "%: left panel to the map")
+            near(r["inner right diamond"][1] - r.map[3], 3, size .. "%: right panel to the map")
+        end
+    end
+end)
+
+-- The named exception (the spec's "As built"): the pictures' 20 outwards is made for a
+-- picture that was moved in beside the map. Left at their built-in spot with the slim bars on,
+-- they reach 16 into the bars' inner ends (218 from the centre). Arrange it yourself moves them.
+test("0.19.0: Square with Slim bars and nothing moved overlaps only at the targeting pictures", function()
+    local Plan = plan()
+    for _, size in ipairs(Plan.PANEL_SIZES) do
+        eq(pairsOf(Plan, { mapLook = 1, slim = 1, panelSize = size }),
+            { "LB targeting picture|player bar", "RB targeting picture|target bar", "RB targeting picture|target boxes room" }, size .. "%")
+        eq(pairsOf(Plan, { mapLook = 0, slim = 1, panelSize = size }), {}, size .. "% round")
+    end
+    local hit = Plan.Overlaps(Plan.Rects({ mapLook = 1, slim = 1 }))[1]
+    eq({ hit.w, hit.h }, { 16, 14 })
+end)
+
+test("0.19.0: Square has no overlap with the arrangement of 2026-11-25", function()
+    local Plan = plan()
+    for _, size in ipairs({ 80, 90, 100 }) do
+        eq(pairsOf(Plan, arranged({ mapLook = 1, slim = 1, panelSize = size })), {}, size .. "%")
+    end
+    -- The nearest points at 100%, as the spec lists them.
+    local r = Plan.Rects(arranged({ mapLook = 1, slim = 1 }))
+    for i, want in ipairs({ -100, 2, 100, 202 }) do check(math.abs(r.map[i] - want) < 0.01, "map " .. i) end
+    near(r.map[1] - r["LB targeting picture"][3], 4, "LB picture to the map")
+    near(r["RB targeting picture"][1] - r.map[3], 4, "RB picture to the map")
+    near(r["RB+RT prompt"][1] - r.map[3], 2, "prompt to the map")
+    near(r["inner right diamond"][1] - r.map[3], 3, "inner panel to the map")
+    -- That arrangement was made at 100%. At 110% and 120% its targeting pictures meet the
+    -- larger inner panels, with the round map as with the square one: not the square's doing.
+    local WANT = { "LB targeting picture|inner left diamond", "RB targeting picture|inner right diamond" }
+    for _, size in ipairs({ 110, 120 }) do
+        eq(pairsOf(Plan, arranged({ mapLook = 1, slim = 1, panelSize = size })), WANT, size .. "% square")
+        eq(pairsOf(Plan, arranged({ mapLook = 0, slim = 1, panelSize = size })), WANT, size .. "% round")
+    end
+end)
+
+test("0.19.0: the layout written for Square holds Size 5; for Round or no key, Size 2", function()
+    local Plan = plan()
+    local e = fakeEnums()
+    local function mapOf(o)
+        local layout = Plan.Build(baseLayout(e), o, e)
+        local entry = systemEntry(layout, e.system.Minimap)
+        return entry, settingValue(entry, e.setting.Minimap.Size), settingValue(entry, e.setting.Minimap.HeaderUnderneath)
+    end
+    local entry, size, under = mapOf({ mapLook = 1 })
+    eq({ size, under }, { 5, 1 })
+    eq(entry.anchorInfo, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = -10, offsetY = 0 })
+    for what, o in pairs({ round = { mapLook = 0 }, ["no key"] = {}, ["a bad value"] = { mapLook = "square" } }) do
+        local entry2, size2, under2 = mapOf(o)
+        eq({ size2, under2 }, { 2, 1 }, what)
+        eq(entry2.anchorInfo, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = -6, offsetY = 0 }, what)
+    end
+    -- The pieces: the map at -10, 0 (the edge box's middle on the screen's) and the timers 14 up.
+    local list = Plan.Pieces({ mapLook = 1 })
+    eq(piece(list, "Minimap").settings, { Size = 5, HeaderUnderneath = 1 })
+    eq({ piece(list, "SwingTimer", "MainHand").anchor.y, piece(list, "SwingTimer", "OffHand").anchor.y,
+        piece(list, "SwingTimer", "Ranged").anchor.y }, { 208, 222, 236 })
+    eq(piece(list, "SwingTimer", "MainHand").anchor.x, piece(Plan.Pieces({}), "SwingTimer", "MainHand").anchor.x)
+    -- Every other piece is the round plan's.
+    local round = Plan.Pieces({})
+    for i, p in ipairs(list) do
+        if p.system ~= "Minimap" and p.system ~= "SwingTimer" then eq(p, round[i], "piece " .. i .. " (" .. p.system .. ")") end
+    end
+end)
+
+test("0.19.0: the Map look row, Round and Square, bigger", function()
+    local _, PE = layoutClient({}, 3)
+    local row = optRow(PE, "mapLook")
+    check(row ~= nil, "no Map look row")
+    eq(row.label, "Map look")
+    eq(choicesOf(row), { { 0, "Round" }, { 1, "Square, bigger" } })
+    eq(opts(PE).mapLook, 0)
+end)
+
+test("0.19.0: Square rewrites the map and the timers and asks for the reload; Round puts them back", function()
+    local c, PE = onClient()
+    local function mapEntry() return systemEntry(ours(c), SYS.Minimap) end
+    local function timerY(index) return systemEntry(ours(c), SYS.SwingTimer, SWING[index]).anchorInfo.offsetY end
+    local SIZE = c.env.Enum.EditModeMinimapSetting.Size
+    eq(settingValue(mapEntry(), SIZE), 2)
+    -- Every entry moved by hand in Edit Mode; only the map and the timers lose that.
+    for _, e in ipairs(ours(c).systems) do if e.anchorInfo then e.anchorInfo.offsetX = 222 end end
+    choose(c, PE, "mapLook", 1)
+    local rewritten = {}
+    for _, e in ipairs(ours(c).systems) do
+        if e.anchorInfo and e.anchorInfo.offsetX ~= 222 then rewritten[e.system] = true end
+    end
+    eq(rewritten, { [SYS.Minimap] = true, [SYS.SwingTimer] = true })
+    eq(settingValue(mapEntry(), SIZE), 5)
+    eq({ mapEntry().anchorInfo.offsetX, mapEntry().anchorInfo.offsetY }, { -10, 0 })
+    eq({ timerY("MainHand"), timerY("OffHand"), timerY("Ranged") }, { 208, 222, 236 })
+    eq(reloadReason(PE), RELOAD)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), 2)
+    PE:GetModule("ctrlLayout"):CancelReload()
+    choose(c, PE, "mapLook", 0)
+    eq(settingValue(mapEntry(), SIZE), 2)
+    eq({ mapEntry().anchorInfo.offsetX, mapEntry().anchorInfo.offsetY }, { -6, 0 })
+    eq({ timerY("MainHand"), timerY("OffHand"), timerY("Ranged") }, { 194, 208, 222 })
+    eq(reloadReason(PE), RELOAD)
+    c:assertClean()
+end)
+
+test("0.19.0: a Map look change in a fight is written when the fight ends; with Edit Mode open it is refused", function()
+    local c, PE = onClient()
+    c:enterCombat()
+    choose(c, PE, "mapLook", 1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), 1, "written in a fight")
+    eq(reloadReason(PE), nil)
+    c:leaveCombat()
+    c:advance(0.1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), 2)
+    eq(settingValue(systemEntry(ours(c), SYS.Minimap), c.env.Enum.EditModeMinimapSetting.Size), 5)
+    eq(reloadReason(PE), RELOAD)
+    -- Edit Mode open: the row goes back and nothing is written.
+    local c2, PE2 = onClient()
+    c2.world.editMode = true
+    choose(c2, PE2, "mapLook", 1)
+    eq(opts(PE2).mapLook, 0)
+    eq(#c2:callsTo("C_EditMode.SaveLayouts"), 1)
+    eq(statusText(PE2), "Close Edit Mode first.")
+end)
+
+-- Review focus: a saved file from 0.18.0 has no mapLook key.
+test("0.19.0: a saved layout from 0.18.0 without the key is Round: nothing rewritten, no reload asked for", function()
+    local c, PE = onClient()
+    local file = deepCopy(db(c))
+    local char = deepCopy(charDB(c))
+    local list, active = deepCopy(c.world.layouts.layouts), c.world.layouts.activeLayout
+    file.options.ctrlLayout.mapLook = nil -- as 0.18.0 saved it
+    local c2, PE2 = T.new({ gamepadUI = true, saved = file, savedChar = char, setup = function(c)
+        c.world.layouts = { layouts = list, activeLayout = active }
+    end })
+    local Plan = PE2.LayoutPlan
+    eq(Plan.MapLook(opts(PE2)), 0)
+    eq(layoutCalls(c2), 0, "the layout was written at login")
+    eq(reloadReason(PE2), nil)
+    eq(statusText(PE2), USING)
+    eq(settingValue(systemEntry(ours(c2), SYS.Minimap), c2.env.Enum.EditModeMinimapSetting.Size), 2)
+    eq(Plan.Rects(PE2:GetModule("ctrlLayout"):View()).map, Plan.Rects().map)
+    c2:assertClean()
+end)
+
+test("0.19.0: with Square the Map buttons row reads Round map only and the buttons stay hidden", function()
+    local c, PE = onClient()
+    local row = optRow(PE, "mapButtons")
+    local m = PE:GetModule("ctrlLayout")
+    eq(row.value(m), nil, "the note with the round map")
+    choose(c, PE, "mapLook", 1)
+    eq(row.value(m), "Round map only")
+    allShown(mapButtons(c), false, "Square")
+    choose(c, PE, "mapButtons", 1)
+    allShown(mapButtons(c), false, "Square, Map buttons tapped to Shown")
+    -- Back to Round: the remembered choice counts again.
+    choose(c, PE, "mapLook", 0)
+    eq(row.value(m), nil)
+    allShown(mapButtons(c), true, "Round again, Shown")
+    c:assertClean()
+end)
+
+test("0.19.0: the targeting pictures follow the Map look at once, and the session's view carries it", function()
+    local c, PE = onClient()
+    local Plan = PE.LayoutPlan
+    local m = PE:GetModule("ctrlLayout")
+    local function leftX() return (select(4, (extras(c)):GetPoint(1))) end
+    eq(leftX(), -178)
+    eq(m:View().mapLook, 0)
+    choose(c, PE, "mapLook", 1)
+    eq(m:View().mapLook, 1)
+    eq(leftX(), -198)
+    eq(Plan.Shoulders().left[2], -198, "the session's look for a caller with no options")
+    choose(c, PE, "mapLook", 0)
+    eq(leftX(), -178)
+    eq(Plan.Shoulders().left[2], -178)
+end)
+
+test("0.19.0: the status line says when pieces overlap with the square map", function()
+    local c, PE = onClient()
+    eq(statusText(PE), USING)
+    choose(c, PE, "mapLook", 1)
+    PE:GetModule("ctrlLayout"):CancelReload()
+    eq(statusText(PE), USING, "Square with the game's frames: nothing overlaps")
+    -- With the slim bars on at login and nothing moved, the three pairs are said.
+    local file, char = deepCopy(db(c)), deepCopy(charDB(c))
+    local list, active = deepCopy(c.world.layouts.layouts), c.world.layouts.activeLayout
+    file.options.ctrlLayout.slim = 1
+    local c2, PE2 = T.new({ gamepadUI = true, saved = file, savedChar = char, setup = function(c)
+        c:addUnitFrames()
+        c.world.layouts = { layouts = list, activeLayout = active }
+    end })
+    check(statusText(PE2):find("With the square map 3 pairs of pieces overlap. Arrange the screen shows which, and moves them.", 1, true),
+        "the card: " .. tostring(statusText(PE2)))
 end)
 
 return { known = KNOWN_FAILURES }
