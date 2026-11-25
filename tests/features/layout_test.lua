@@ -12,6 +12,8 @@ local function near(a, b, msg)
     check(type(a) == "number" and math.abs(a - b) < 1e-9, (msg or "number") .. ": expected " .. tostring(b) .. ", got " .. tostring(a))
 end
 
+local HINTS_CVAR_162 = "GamepadShowPersistentInputLegend"
+
 local function plan()
     local c, PE = T.new({})
     local Plan = PE.LayoutPlan
@@ -1358,7 +1360,10 @@ test("rows: Spell panel size, the three timer rows and Start over", function()
     local labels = {}
     for i, o in ipairs(list) do labels[i] = o.label end
     eq(labels, { "Spell panel size", "Ranged timer", "Main hand timer", "Off hand timer", "Controls reminder", "Map buttons",
-        "Rebuild the layout" })
+        "Rebuild the layout",
+        -- 0.16.2: the testing rows, until the refused actions are found
+        "Test: hint box", "Test: chat box", "Test: map ring and buttons", "Test: move the game's bars",
+        "Test: targeting pictures", "Test: spell pictures" })
     eq(list[1].key, "panelSize")
     local n = list[1].number
     eq({ n.min, n.max, n.step, n.default, n.suffix }, { 80, 120, 10, 100, "%" })
@@ -3037,6 +3042,39 @@ test("0.16.0: the template is 5 and the two new options default to 0", function(
     eq(Plan.TEMPLATE, 5)
     eq(Plan.DEFAULTS.hints, 0)
     eq(Plan.DEFAULTS.mapButtons, 0)
+end)
+
+-- 0.16.2 (plan 2026-11-24-blocked-action-0.16.1, Update 2): testing rows that leave parts of
+-- the layout out, to find the part that makes the game refuse its controller actions.
+test("0.16.2: six testing rows, all On by default, and a saved 2 is not kept", function()
+    local Plan = plan()
+    eq(#Plan.TEST_PARTS, 6)
+    local c, PE = layoutClient({}, 3)
+    for _, key in ipairs(Plan.TEST_PARTS) do
+        eq(Plan.DEFAULTS[key], 1, key)
+        check(optRow(PE, key), "no row for " .. key)
+    end
+end)
+
+test("0.16.2: with every testing row On the layout does what it did", function()
+    local c, PE = onClient()
+    check(#c:callsTo("FCF_SetWindowAlpha") > 0, "the chat's box was not touched")
+    check(barCalls(c, "SetScale") > 0, "the bars were not placed")
+end)
+
+test("0.16.2: with every testing row Off the layout leaves each part alone", function()
+    local Plan = plan()
+    local c, PE = layoutClient({}, 3)
+    for _, key in ipairs(Plan.TEST_PARTS) do opts(PE)[key] = 0 end
+    switchOn(c, PE)
+    eq(#c:callsTo("FCF_SetWindowAlpha"), 0, "the chat's box was touched")
+    eq(barCalls(c, "SetScale"), 0, "the bars were scaled")
+    eq(barCalls(c, "SetPoint"), 0, "the bars were moved")
+    eq(barCalls(c, "SetAlpha"), 0, "the bars were faded")
+    for _, call in ipairs(c:callsTo("C_CVar.SetCVar")) do
+        check(call.args[1] ~= HINTS_CVAR_162, "the hint box setting was written")
+    end
+    c:assertClean()
 end)
 
 test("0.16.0: the chat is bottom left, the tracker top right, the tooltip is a piece", function()

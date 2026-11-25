@@ -4,6 +4,21 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.16.2] - 2026-11-24
+
+Thirty-fourth test build: a finder build, not a fix. With the Controller
+layout on, the game still refuses its controller actions. Plan
+`docs/superpowers/plans/2026-11-24-blocked-action-0.16.1.md`. Not yet tested
+on a device.
+
+### Added
+
+- **Six testing rows** at the bottom of the Controller tab, each On or Off,
+  default On: Test: hint box, chat box, map ring and buttons, move the game's
+  bars, targeting pictures, spell pictures. Off leaves that part of the layout
+  out from the next reload, to find the part that makes the game refuse its
+  controller actions. They go away once it is found.
+
 ## [0.16.1] - 2026-11-24
 
 Thirty-third test build: a diagnostic build, not a fix. On 0.16.0 with the

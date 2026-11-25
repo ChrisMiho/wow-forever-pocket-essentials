@@ -92,7 +92,13 @@ Plan.DEFAULTS = {
     offHand = 2,
     hints = 0,          -- 0.16.0: the game's hint box ("Controls reminder"): 0 Off, 1 On
     mapButtons = 0,     -- 0.16.0: the magnifier and calendar beside the place name: 0 Hidden, 1 Shown
+    -- 0.16.2, testing rows: which parts of the layout are done at all (1) or left out (0).
+    -- For finding the part that makes the game refuse its controller actions
+    -- (docs/superpowers/plans/2026-11-24-blocked-action-0.16.1.md); they go when it is found.
+    tHints = 1, tChat = 1, tMap = 1, tBars = 1, tExtras = 1, tFace = 1,
 }
+-- The testing rows' keys, in the order shown.
+Plan.TEST_PARTS = { "tHints", "tChat", "tMap", "tBars", "tExtras", "tFace" }
 
 -- The template's version, saved with our layout whenever it is built
 -- (opts.template). A login that finds an older one rebuilds our layout once.
@@ -305,7 +311,8 @@ local function Fill(opts)
     opts = type(opts) == "table" and opts or {}
     for k, default in pairs(Plan.DEFAULTS) do
         local v = opts[k]
-        if v == 0 or v == 1 or (v == 2 and k ~= "hints" and k ~= "mapButtons") then out[k] = v else out[k] = default end
+        local onOff = k == "hints" or k == "mapButtons" or k:sub(1, 1) == "t"
+        if v == 0 or v == 1 or (v == 2 and not onOff) then out[k] = v else out[k] = default end
     end
     return out
 end
@@ -1724,10 +1731,13 @@ do
     -- Every piece of this block, each on its own: one that raises does not stop the others.
     PlaceScreen = function()
         screenPlaced = true
-        PE:Safe("ctrlLayout", PlaceHints)
-        PE:Safe("ctrlLayout", PlaceChat)
-        PE:Safe("ctrlLayout", PlaceRing, false)
-        PE:Safe("ctrlLayout", PlaceButtons)
+        local o = mod and mod.opts or {}
+        if o.tHints ~= 0 then PE:Safe("ctrlLayout", PlaceHints) end
+        if o.tChat ~= 0 then PE:Safe("ctrlLayout", PlaceChat) end
+        if o.tMap ~= 0 then
+            PE:Safe("ctrlLayout", PlaceRing, false)
+            PE:Safe("ctrlLayout", PlaceButtons)
+        end
     end
 
     RestoreScreen = function()
@@ -1861,15 +1871,23 @@ local function PlaceNow()
     local spots = Plan.BarSpots(SessionSize())
     placed = true
     RefreshHub() -- the round button takes the layout's spot
-    for _, b in ipairs(BAR_FRAMES) do
-        local spot = spots[b.spot]
-        Put(frames[b.spot], spot.x, spot.y, spot.s)
+    local o = mod and mod.opts or {}
+    local bars, face = o.tBars ~= 0, o.tFace ~= 0
+    if bars then
+        for _, b in ipairs(BAR_FRAMES) do
+            local spot = spots[b.spot]
+            Put(frames[b.spot], spot.x, spot.y, spot.s)
+        end
     end
-    PlaceExtras()
-    if PE.debugOn then PE:Debug("ctrlLayout", "bars placed") end
-    StartFace()
+    if o.tExtras ~= 0 then PlaceExtras() end
+    if PE.debugOn then
+        local left = {}
+        for _, k in ipairs(Plan.TEST_PARTS) do if o[k] == 0 then left[#left + 1] = k end end
+        PE:Debug("ctrlLayout", "bars placed" .. (#left > 0 and (" (testing, left out: " .. table.concat(left, " ") .. ")") or ""))
+    end
+    if face then StartFace() end
     -- Our pictures are off (FaceStatus says why): the game's bars show, at full size.
-    if FaceStatus() then
+    if bars and (not face or FaceStatus()) then
         local full = Plan.FullBarSpots()
         for _, b in ipairs(BAR_FRAMES) do
             local spot = full[b.spot]
@@ -2317,6 +2335,21 @@ local OPTIONS = {
       OnChange = function() if wanted then SyncBars() end end },
     { label = "Rebuild the layout", button = "Start over", action = function() StartOver() end },
 }
+-- 0.16.2: the testing rows (Plan.TEST_PARTS). A change counts from the next reload: what a
+-- part already did this session cannot be undone by leaving it out.
+do
+    local ON_OFF = { { value = 0, label = "Off" }, { value = 1, label = "On" } }
+    local LABELS = { tHints = "Test: hint box", tChat = "Test: chat box", tMap = "Test: map ring and buttons",
+        tBars = "Test: move the game's bars", tExtras = "Test: targeting pictures", tFace = "Test: spell pictures" }
+    local told = false
+    for _, key in ipairs(Plan.TEST_PARTS) do
+        OPTIONS[#OPTIONS + 1] = { key = key, label = LABELS[key], choices = ON_OFF, OnChange = function()
+            if told then return end
+            told = true
+            PE:Print("Testing rows count from the next reload.")
+        end }
+    end
+end
 
 -- This character's check (see the notes above Say). Runs out of combat; waits
 -- (and is called again by the next PLAYER_ENTERING_WORLD or
