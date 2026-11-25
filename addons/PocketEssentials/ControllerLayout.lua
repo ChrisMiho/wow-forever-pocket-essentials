@@ -112,15 +112,6 @@ Plan.DEFAULTS = {
     offHand = 2,
     hints = 0,          -- 0.16.0: the game's hint box ("Controls reminder"): 0 Off, 1 On
     mapButtons = 0,     -- 0.16.0: the magnifier and calendar beside the place name: 0 Hidden, 1 Shown
-    -- The parts of the layout: each done at all (1) or left out (0). 0.16.2 added them as
-    -- testing rows, to find the part that made the game refuse its controller actions
-    -- (docs/superpowers/plans/2026-11-24-blocked-action-0.16.1.md: the chat's box). 0.16.4
-    -- keeps them as the switches for the parts ("Part: ..."), On by default.
-    tHints = 1, tChat = 1, tMap = 1, tBars = 1, tExtras = 1, tFace = 1,
-    -- 0.16.4: how the spell pictures follow the triggers. 0: the game's own callback list
-    -- (device-proven, 2026-11-24). 1: a hook on PageUnit.SetActiveActionBar (never run on a
-    -- device yet). Not one of the six parts: 0 leaves nothing out. See FaceBars.lua.
-    tHook = 0,
     -- 0.17.0: the slim bars (SlimBars.lua): 0 Off, 1 On. Off, the game's unit frames and the
     -- tooltip are as 0.16.4 has them and SlimBars.lua is never called.
     slim = 0,
@@ -132,8 +123,13 @@ Plan.DEFAULTS = {
     -- 0.19.0: the map's look: 0 Round (as 0.18.0 has it), 1 Square, bigger (MapLook.lua).
     mapLook = 0,
 }
--- The part rows' keys, in the order shown.
-Plan.TEST_PARTS = { "tHints", "tChat", "tMap", "tBars", "tExtras", "tFace" }
+-- 0.20.0: option keys of rows that are gone; a value an older version saved is removed at
+-- load (OnLoad). The seven "Part: ..." rows: 0.16.2's testing rows that left a part of the
+-- layout out, to find the part that made the game refuse its controller actions (the chat's
+-- box: docs/superpowers/plans/2026-11-24-blocked-action-0.16.1.md), and 0.16.4's row for a
+-- hook on the triggers that never ran on a device. Every part is always placed now. If
+-- refused actions come back, docs/ARCHITECTURE.md ("A refusal's call stack...") has the method.
+Plan.GONE = { "tHints", "tChat", "tMap", "tBars", "tExtras", "tFace", "tHook" }
 
 -- The template's version, saved with our layout whenever it is built
 -- (opts.template). A login that finds an older one rebuilds our layout once.
@@ -415,7 +411,7 @@ local function Fill(opts)
     opts = type(opts) == "table" and opts or {}
     for k, default in pairs(Plan.DEFAULTS) do
         local v = opts[k]
-        local onOff = k == "hints" or k == "mapButtons" or k:sub(1, 4) == "slim" or k:sub(1, 1) == "t" or k:sub(1, 7) == "arrange"
+        local onOff = k == "hints" or k == "mapButtons" or k:sub(1, 4) == "slim" or k:sub(1, 7) == "arrange"
             or k == "mapLook"
         if v == 0 or v == 1 or (v == 2 and not onOff) then out[k] = v else out[k] = default end
     end
@@ -2151,13 +2147,10 @@ do
     -- Every piece of this block, each on its own: one that raises does not stop the others.
     PlaceScreen = function()
         screenPlaced = true
-        local o = mod and mod.opts or {}
-        if o.tHints ~= 0 then PE:Safe("ctrlLayout", PlaceHints) end
-        if o.tChat ~= 0 then PE:Safe("ctrlLayout", PlaceChat) end
-        if o.tMap ~= 0 then
-            PE:Safe("ctrlLayout", PlaceRing, false)
-            PE:Safe("ctrlLayout", PlaceButtons)
-        end
+        PE:Safe("ctrlLayout", PlaceHints)
+        PE:Safe("ctrlLayout", PlaceChat)
+        PE:Safe("ctrlLayout", PlaceRing, false)
+        PE:Safe("ctrlLayout", PlaceButtons)
     end
 
     RestoreScreen = function()
@@ -2204,8 +2197,7 @@ local function StartFace()
     if not face then return end
     -- The bars go to full size once our pictures are off (PlaceNow), out of a fight.
     onFaceOff = onFaceOff or PE:Wrap("ctrlLayout", function() if wanted then SyncBars() end end)
-    local useHook = mod and type(mod.opts) == "table" and mod.opts.tHook == 1
-    local ok, started, why = PE:Safe("ctrlLayout", start, face, onFaceOff, SessionSize(), useHook)
+    local ok, started, why = PE:Safe("ctrlLayout", start, face, onFaceOff, SessionSize())
     if ok and not started and PE.debugOn then
         PE:Debug("ctrlLayout", "spell pictures not shown: " .. tostring(why))
     end
@@ -2311,8 +2303,8 @@ Snap.View = function()
     view.mapLook = Plan.MapLook(opts)
     Plan.look = view.mapLook == 1 and 1 or nil
     view.slim = (Snap.slimOn == true or (Snap.slimOn == nil and opts.slim == 1)) and 1 or 0
-    -- Our spell pictures are off (their part row, or FaceBars.lua says why): no panel is drawn.
-    view.faceOff = (opts.tFace == 0 or FaceStatus() ~= nil) and true or nil
+    -- Our spell pictures are off (FaceBars.lua says why): no panel is drawn.
+    view.faceOff = FaceStatus() ~= nil and true or nil
     if Snap.arrangeOn and not Snap.arrangeStarted then
         Snap.arrangeStarted = true
         Snap.ArrangeCall("Started")
@@ -2362,24 +2354,15 @@ local function PlaceNow()
     local spots = Plan.BarSpots(SessionSize())
     placed = true
     RefreshHub() -- the round button takes the layout's spot
-    local o = mod and mod.opts or {}
-    local bars, face = o.tBars ~= 0, o.tFace ~= 0
-    if bars then
-        for _, b in ipairs(BAR_FRAMES) do
-            local spot = spots[b.spot]
-            Put(frames[b.spot], spot.x, spot.y, spot.s)
-        end
+    for _, b in ipairs(BAR_FRAMES) do
+        local spot = spots[b.spot]
+        Put(frames[b.spot], spot.x, spot.y, spot.s)
     end
-    if o.tExtras ~= 0 then PlaceExtras() end
-    if PE.debugOn then
-        local left = {}
-        for _, k in ipairs(Plan.TEST_PARTS) do if o[k] == 0 then left[#left + 1] = k end end
-        PE:Debug("ctrlLayout", "bars placed" .. (#left > 0 and (" (parts left out: " .. table.concat(left, " ") .. ")") or "")
-            .. (o.tHook == 1 and " (triggers: the hook)" or ""))
-    end
-    if face then StartFace() end
+    PlaceExtras()
+    if PE.debugOn then PE:Debug("ctrlLayout", "bars placed") end
+    StartFace()
     -- Our pictures are off (FaceStatus says why): the game's bars show, at full size.
-    if bars and (not face or FaceStatus()) then
+    if FaceStatus() then
         local full = Plan.FullBarSpots()
         full.bottom = spots.bottom -- 0.18.0: the same anchor either way, so with the spell wheels' offset
         for _, b in ipairs(BAR_FRAMES) do
@@ -2874,26 +2857,10 @@ local OPTIONS = {
       OnChange = function() if wanted and Plan.MapLook(mod.opts) ~= 1 then SyncBars() end end },
     { label = "Rebuild the layout", button = "Start over", action = function() StartOver() end },
 }
--- The part rows (Plan.TEST_PARTS; 0.16.2's testing rows, named "Part: ..." since 0.16.4). A
--- change counts from the next reload: what a part already did this session cannot be undone
--- by leaving it out.
+-- The rows for the newer parts, each Off (or as before) until tried on the device. (0.20.0:
+-- the seven "Part: ..." rows that stood here are gone, see Plan.GONE.)
 do
     local ON_OFF = { { value = 0, label = "Off" }, { value = 1, label = "On" } }
-    local LABELS = { tHints = "Part: hint box", tChat = "Part: chat box", tMap = "Part: map ring and buttons",
-        tBars = "Part: move the game's bars", tExtras = "Part: targeting pictures", tFace = "Part: spell pictures" }
-    local told = false
-    for _, key in ipairs(Plan.TEST_PARTS) do
-        OPTIONS[#OPTIONS + 1] = { key = key, label = LABELS[key], choices = ON_OFF, OnChange = function()
-            if told then return end
-            told = true
-            PE:Print("Part switches count from the next reload.")
-        end }
-    end
-    -- 0.16.4: not one of the six (Off leaves nothing out): how the spell pictures follow the
-    -- triggers. Off, the default: the game's callback list, as up to 0.16.3 (device-proven).
-    -- On: a hook on the game's SetActiveActionBar, to be tried in its own test step.
-    OPTIONS[#OPTIONS + 1] = { key = "tHook", label = "Part: follow the triggers with a hook", choices = ON_OFF,
-        OnChange = OPTIONS[#OPTIONS].OnChange }
     -- 0.17.0: the slim bars (SlimBars.lua), Off by default. The tooltip's spot is a piece of
     -- our Edit Mode layout, so a change rewrites that piece (out of a fight) and asks for the
     -- reload; the bars themselves start or stop with that reload (Snap.slimOn).
@@ -3107,6 +3074,8 @@ mod = PE:RegisterModule({
     -- With the feature on, OnEnable (right after) does the same check.
     OnLoad = function(self)
         if type(self.opts) ~= "table" then return end
+        -- 0.20.0: values saved for rows that are gone (the "Part: ..." rows) are removed.
+        for _, key in ipairs(Plan.GONE) do self.opts[key] = nil end
         -- A Spell panel size that is not one of the five shows and reads as 100%.
         self.opts.panelSize = Plan.PanelSize(self.opts)
         Snap.arrangeLogin = self.opts.arrange == 1 -- 0.18.0: the session's value (Snap.View)

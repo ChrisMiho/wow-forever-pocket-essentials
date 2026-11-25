@@ -1424,7 +1424,7 @@ end)
 
 test("arrange review W2: with the spell pictures off the wheels' offset still applies and the spell panels are not listed", function()
     local char = { ctrlArrange = { offsets = { ["spell wheels"] = { x = 0, y = 30 } } } }
-    local c, PE, A = client({ wheel = 1, char = char, more = { tFace = 0 } })
+    local c, PE, A = client({ wheel = 1, char = char, setup = function(c) c.world.noCooldownFrames = true end })
     local f = barFrames(c)
     eq({ barAt(c, f.bottom) }, { 0, 268 })
     eq(c._state(f.top).scale, 1, "the bars are not at full size")

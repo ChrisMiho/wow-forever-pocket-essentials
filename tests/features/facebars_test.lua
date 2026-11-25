@@ -421,9 +421,9 @@ test("face: without the active-bar callback the main bar shows (the nothing-held
     c:assertClean()
 end)
 
--- 0.16.4: two ways to follow the triggers. The default is the game's callback list, as up to
--- 0.16.3 (device-proven on 2026-11-24); Start's third argument picks a hook on
--- PageUnit.SetActiveActionBar instead. Only one is ever installed in a session.
+-- The triggers are followed with the game's own callback list, as up to 0.16.3 (device-proven
+-- on 2026-11-24). 0.20.0 removed the other way 0.16.4 had added and never tried on a device
+-- (a hook on PageUnit.SetActiveActionBar, picked by Start's third argument).
 local function countRegister(cl, counter)
     local pageUnit = cl.env.GamepadMainActionBarFrame.PageUnit
     local real = rawget(pageUnit, "RegisterActiveActionBarUpdatedCallback")
@@ -450,7 +450,7 @@ local function startNote(c)
     return found
 end
 
-test("0.16.4 face: by default the triggers are followed with the game's callback, registered once, and no hook", function()
+test("0.20.0 face: the triggers are followed with the game's callback, registered once; SetActiveActionBar is never hooked, whatever Start is given", function()
     local counter = { n = 0 }
     local c, PE, Face = new({ setup = function(cl) countRegister(cl, counter) end })
     PE:SetDebug(true)
@@ -461,51 +461,22 @@ test("0.16.4 face: by default the triggers are followed with the game's callback
     c:pressTriggers(true, false)
     c:advance(0.1)
     checkState(c, Face, LT, "LT held")
-    -- Stopped and started again, also asking for the hook: still the callback, still one.
+    -- Stopped and started again with what 0.16.4 took as "use the hook": still the callback, still one.
     Face:Stop()
     check(Face:Start(nil, nil, true) == true, "second Start failed")
     eq(counter.n, 1, "registered twice")
-    eq(activeHooks(c), 0, "the hook was installed in a session that began with the callback")
+    eq(activeHooks(c), 0, "SetActiveActionBar was hooked")
     c:pressTriggers(false, true)
     c:advance(0.1)
     checkState(c, Face, RT, "RT held")
+    -- And a first Start given it.
+    local counter2 = { n = 0 }
+    local c2, PE2, Face2 = new({ setup = function(cl) countRegister(cl, counter2) end })
+    check(Face2:Start(nil, nil, true) == true, "Start failed")
+    eq(counter2.n, 1)
+    eq(activeHooks(c2), 0)
     c:assertClean()
-end)
-
-test("0.16.4 face: asked for the hook, SetActiveActionBar is hooked and the game's callback list is never written", function()
-    local counter = { n = 0 }
-    local c, PE, Face = new({ setup = function(cl) countRegister(cl, counter) end })
-    PE:SetDebug(true)
-    check(Face:Start(nil, nil, true) == true, "Start failed")
-    eq(counter.n, 0, "the game's callback list was written")
-    eq(activeHooks(c), 1)
-    eq(startNote(c), "on (triggers followed with a hook on SetActiveActionBar)")
-    c:pressTriggers(true, false)
-    c:advance(0.1)
-    checkState(c, Face, LT, "LT held")
-    c:pressTriggers(true, true)
-    c:advance(0.1)
-    checkState(c, Face, BOTH, "both held")
-    -- Started again without asking: the session keeps the hook.
-    Face:Stop()
-    check(Face:Start() == true, "second Start failed")
-    eq(counter.n, 0)
-    eq(activeHooks(c), 1)
-    c:assertClean()
-end)
-
-test("0.16.4 face: asked for the hook on a game without SetActiveActionBar: the main bar shows, the log says so, no callback either", function()
-    local counter = { n = 0 }
-    local c, PE, Face = new({ setup = function(cl)
-        countRegister(cl, counter)
-        rawset(cl.env.GamepadMainActionBarFrame.PageUnit, "SetActiveActionBar", nil)
-    end })
-    PE:SetDebug(true)
-    check(Face:Start(nil, nil, true) == true, "Start failed")
-    eq(counter.n, 0)
-    eq(startNote(c), "on (no active-bar hook: the main bar only)")
-    checkState(c, Face, REST, "no hook")
-    c:assertClean()
+    c2:assertClean()
 end)
 
 test("face: GetActiveBar raising or missing: the main bar shows, no error", function()

@@ -205,6 +205,15 @@ reload. `hooksecurefunc` and `HookScript` are fine (a hook is not a call);
 `SetScript` on a game frame and assigning a field on a game frame or table
 are not.
 
+- **A refusal's call stack does not name the cause.** The game refuses its
+  own action when its protected code reads the marked value, long after the
+  call that marked it, so the stack names the game's function and not the
+  addon's line. What found the chat's box in 0.16.2 was a row for each part of
+  the layout (hint box, chat box, map ring and buttons, the game's bars,
+  targeting pictures, spell pictures), each On or Off from the next reload,
+  tried on the device one at a time (plan
+  `2026-11-24-blocked-action-0.16.1.md`). 0.20.0 removed those rows; if
+  refused actions come back, add such rows again for the hunt.
 - The check: `tests/taint/audit.lua`, run by `scripts/test.sh`. It lists every
   name the addon and the probe call (or name in a string) that Blizzard
   defines as a Lua function, and each needs a line in `tests/taint/calls.txt`:
@@ -277,10 +286,11 @@ are not.
   it ran on the device on 2026-11-24 (0.16.2 and 0.16.3, spell pictures on, no
   refused action), and the game keeps and runs such callbacks behind its own
   barrier (`SecureInsertEvent`, `secureexecuterange`, `securecallfunction`,
-  `Blizzard_SharedXMLBase/CallbackRegistry.lua`). 0.16.4 adds the engine-only
-  way, a `hooksecurefunc` on `PageUnit.SetActiveActionBar`, behind the row
-  "Part: follow the triggers with a hook" (Off by default) until it has run
-  on a device; only one of the two is installed in a session.
+  `Blizzard_SharedXMLBase/CallbackRegistry.lua`). 0.16.4 had an engine-only
+  way behind a row, a `hooksecurefunc` on `PageUnit.SetActiveActionBar`; it
+  was never run on a device and 0.20.0 removed it with the seven "Part: ..."
+  rows (the six that left a part of the layout out were for the hunt above;
+  the method is in "A refusal's call stack..." above).
 
 ## Unverified API
 
@@ -328,7 +338,6 @@ group, the spell wheels moved, the hook row) has been done.
 | A plain frame of ours that takes the mouse, layer MEDIUM, over an invisible unit frame (LOW, `toplevel`, `PlayerFrame.xml:14`, `TargetFrame.xml:52`) takes the tap before it. Device-proven over the game's bars, not over unit frames; the guard is placed from `GetLeft`, `GetBottom`, `GetWidth`, `GetHeight`, `GetEffectiveScale` read out of a fight | Slim bars: the four tap guards | A tap where a game frame used to be targets that unit or opens its menu though nothing is seen there; or (place not readable) that guard is left out and the log says so |
 | The bar texture `Interface\TargetingFrame\UI-StatusBar` (the game's own mana bar uses it, `UnitFrame.lua:425`) with `SetStatusBarColor`, and a 1-unit black line as the border at 720p | Slim bars | A bar draws white or not at all; a border line is missing or soft |
 | That the pieces the game hangs on the invisible frames go with them, as the source says: the combo point frame makes itself a child of the target frame at load (`Blizzard_UnitFrame/Camelot/ComboFrame.lua:16`), the rogue's and druid's point bars and other class bars are children of the player frame (`Camelot/RogueComboPointBar.xml:4`, `Mainline/ClassPowerBar.xml:4`), as are totems (`Mainline/TotemFrame.xml:56`); the player's own cast bar is attached to the player frame when Edit Mode's "Lock to player frame" is on | Slim bars | By the source: combo points, class bars and totems are **not seen** while "Slim bars" is On (the addon draws none yet), and a locked cast bar is not seen either. If the source is read wrong, one of them floats where the game's frame was |
-| `hooksecurefunc` on `PageUnit.SetActiveActionBar` (`Blizzard_GamepadActionBars/PageUnit.lua:527`) fires on every trigger check, as the hook on `SetCurrentPage` does (that one is device-proven). New in 0.16.4, only while "Part: follow the triggers with a hook" is On (Off by default: the game's callback list, device-proven) | Spell pictures, with that row On | The panels do not swap when a trigger is held; the debug log says "no active-bar hook" or shows no "drawn:" line on a trigger press. Switching the row Off and reloading brings the proven way back |
 | `SetPortraitTexture(ourTexture, unit)` from addon code, in and out of a fight (documented, `UnitDocumentation.lua:572`; restrictions unknown), and `GetAttribute("type")` / `GetAttribute("unit")` readable on the game's targeting-bar buttons | Spell pictures, the targeting bars' face buttons | The portrait is not drawn; the picture falls back to a copy of the game's icon (see next row) |
 | What `GetTexture` returns for a texture a portrait was drawn on, and whether another texture given that value shows the portrait (not in the source) | Spell pictures, only as the fallback of the row above | A blank or wrong picture on the pet, self and assist buttons of a targeting bar |
 | `GetLeft`, `GetBottom`, `GetWidth`, `GetHeight`, `GetEffectiveScale` on the game's frames give plain numbers to an addon out of a fight | Save a snapshot | The line for that piece reads `<secret>` or `?` and it is left out of the overlap check |

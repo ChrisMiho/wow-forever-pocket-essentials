@@ -328,7 +328,6 @@ ScrollIntoView	*	ours	AreaMethods:ScrollIntoView (UI.lua), on the addon's own sc
 Select	*	ours	the local Select of Arrange.lua, Move.lua and QuestArrow.lua
 SelectTab	*	ours	local SelectTab in Settings.lua
 Set	*	ours	SegmentedMethods:Set and NumberMethods:Set (UI.lua), on the addon's own controls
-SetActiveActionBar	addons/PocketEssentials/FaceBars.lua	engine	hooked with hooksecurefunc only (Blizzard_GamepadActionBars/PageUnit.lua:527), never called; only while the layout's row "Part: follow the triggers with a hook" is On (Off by default)
 SetActiveLayout	addons/PocketEssentials/ControllerLayout.lua	engine	C_EditMode.SetActiveLayout
 SetAllPoints	*	engine	widget method, called only on the addon's own frames and textures (cooldown frames from CooldownFrameTemplate included: that template has no mixin)
 SetAllPoints	addons/PocketEssentials/ControllerLayout.lua	engine	widget method on the game's bar anchors (plain Frames, ActionBarTemplates.xml:600-693; no Lua SetAllPoints, not Edit Mode systems)

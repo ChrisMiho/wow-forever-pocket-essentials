@@ -167,7 +167,6 @@ ScrollIntoView	Blizzard_SharedXML/ScrollableTabsContainer.lua:142
 Select	Blizzard_ActionBar/Shared/StanceBar.lua:105
 SelectTab	Blizzard_FriendsFrame/Camelot/FriendsFrame.lua:646
 Set	Blizzard_CovenantCallings/CovenantCallings.lua:3
-SetActiveActionBar	Blizzard_GamepadActionBars/PageUnit.lua:527
 SetActiveLayout	Blizzard_CooldownViewer/CooldownViewerSettingsLayoutManager.lua:200
 SetAllPoints	Blizzard_RestrictedAddOnEnvironment/RestrictedFrames.lua:500
 SetAlpha	Blizzard_FrameXMLBase/PowerDependencyLine.lua:209
@@ -654,6 +653,7 @@ FrameXML	-
 Frames	-
 FromPlan	-
 FullBarSpots	-
+GONE	-
 Game	-
 GameFontHighlight	-
 GameFontHighlightLarge	-
@@ -1546,7 +1546,6 @@ SyncButton	-
 SyncConfirm	-
 SyncIcons	-
 SyncScale	-
-TEST_PARTS	-
 TEXT_DEBUG_FIRST	-
 TOP_Y	-
 TabById	-
