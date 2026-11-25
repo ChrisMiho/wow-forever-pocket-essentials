@@ -72,6 +72,17 @@ Then Task 2 (the audit), then a device session with this build (Task 1 Step 3): 
 1. Controller layout **off**, reload, play two minutes with fights and target changes: no "blocked" chat line expected.
 2. Controller layout **on**, reload, do nothing but change target a few times: note how soon the line appears.
 
+## Update 2: 0.16.1 on the device (2026-11-24, 18:06)
+
+`docs/11-24-errorsPostWork/PocketEssentials#2.lua`. The recorder works: every entry shows the game's callers. What they say:
+
+- The refusals come in through unrelated routes: a button binding (`GAMEPADACTIONBUTTON7` > `PressActionButton` > `Click`), the trigger binding (`GAMEPADLEFTTARGETMODIFIER` > `HoldBindings` > `TargetLogic`), a panel closing (`UIParentPanelManager` > `FrameControlsManager` > `InputBindingManager` > `UpdateActionBarFocusedState`), the spell wheel (`GamepadRadial` > `ActivateBindingGroup`), and the targeting bars (`SecureActionButton_OnClick` > `TargetUnit`, 12 times: targeting yourself or the pet).
+- No line of ours is on any stack. So this is result C: a mark on something the game's controller code shares, left earlier. A stack shows where the game noticed, never who left the mark, so more stacks will not name the line.
+- Ruled out by reading the source: accidental game-wide names (none written); the active-bar callback (`CallbackRegistry.lua:196-216` runs registered functions behind `secureexecuterange` and `securecallfunction`).
+- Not ruled out: moving and scaling the game's bar frames, the see-through on their anchors, the hooks on the buttons, the hint box setting, the chat's box, the map's ring and buttons, the targeting pictures, the saved Edit Mode layout.
+
+**Next: split the layout on the device (0.16.2, needs the owner's yes).** `PlaceNow` in `ControllerLayout.lua` does its work in separable parts: `PlaceScreen` (hint box, chat's box, map), the four `Put` calls (the game's bars), `PlaceExtras` (targeting pictures), `StartFace` (spell pictures). A testing row per part on the Controller tab, each On by default, saved per character, read at login. The owner switches one off, reloads, changes target and presses B; the chat line appears or does not. Four reloads at most name the part; the fix is then written against that part alone. Task 2 (the audit) runs alongside and is checked against the answer.
+
 ## Global Constraints
 
 - Interface 16001. No libraries. Handlers and callbacks through `PE:Safe` / `PE:Wrap`.
