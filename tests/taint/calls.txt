@@ -268,6 +268,7 @@ RefreshCooldown	*	ours	local RefreshCooldown in FaceBars.lua
 RefreshIcon	*	ours	local RefreshIcon in FaceBars.lua
 RefreshRange	*	ours	local RefreshRange in FaceBars.lua
 Register	*	ours	Move:Register (Move.lua)
+RegisterActiveActionBarUpdatedCallback	addons/PocketEssentials/FaceBars.lua	writes-known	Blizzard_GamepadActionBars/PageUnit.lua:705 calls CallbackRegistryMixin:RegisterCallback (Blizzard_SharedXMLBase/CallbackRegistry.lua:112): writes callbacks[owner] = func in PageUnit.callbackTables[Function][event] (or PageUnit.deferredCallbacks[event] while that event is being sent). Kept as the default way to follow the triggers: device-proven on 2026-11-24 (0.16.2 and 0.16.3, spell pictures on, no refused action), and the game makes the event's table and runs the callbacks behind its own taint barrier (SecureInsertEvent, secureexecuterange, securecallfunction, same file). The engine-only way, a hook on SetActiveActionBar, is behind the row "Part: follow the triggers with a hook" until it has run on a device
 RegisterActiveActionBarUpdatedCallback	probe/PocketProbe/Watch.lua	writes-known	Blizzard_GamepadActionBars/PageUnit.lua:705 > CallbackRegistryMixin:RegisterCallback (CallbackRegistry.lua:112): writes callbacks[owner] = func in PageUnit.callbackTables[Function][event] (or PageUnit.deferredCallbacks[event] while the event is being sent); the probe's fight watch
 RegisterCallback	addons/PocketEssentials/MenuBackground.lua	writes-known	EventRegistry:RegisterCallback = CallbackRegistryMixin:RegisterCallback (Blizzard_SharedXMLBase/CallbackRegistry.lua:112): writes callbacks[owner] = func (owner is our module table) in EventRegistry.callbackTables[Function][event] (or EventRegistry.deferredCallbacks[event] while that event is being sent) for "MenuProxy.OnShow", "MenuProxy.OnHide" and "MenuProxy.OnClose"; an earlier entry of the same owner is first set to nil (:225)
 RegisterEvent	*	ours	Methods:RegisterEvent (Core.lua), the addon's own module method
@@ -296,7 +297,7 @@ ScrollIntoView	*	ours	AreaMethods:ScrollIntoView (UI.lua), on the addon's own sc
 Select	*	ours	the local Select of Move.lua and QuestArrow.lua
 SelectTab	*	ours	local SelectTab in Settings.lua
 Set	*	ours	SegmentedMethods:Set and NumberMethods:Set (UI.lua), on the addon's own controls
-SetActiveActionBar	addons/PocketEssentials/FaceBars.lua	engine	hooked with hooksecurefunc only (Blizzard_GamepadActionBars/PageUnit.lua:527), never called; it replaces RegisterActiveActionBarUpdatedCallback, which wrote our function into PageUnit's callback table (CallbackRegistry.lua:112) until 0.16.3
+SetActiveActionBar	addons/PocketEssentials/FaceBars.lua	engine	hooked with hooksecurefunc only (Blizzard_GamepadActionBars/PageUnit.lua:527), never called; only while the layout's row "Part: follow the triggers with a hook" is On (Off by default)
 SetActiveLayout	addons/PocketEssentials/ControllerLayout.lua	engine	C_EditMode.SetActiveLayout
 SetAllPoints	*	engine	widget method, called only on the addon's own frames and textures (cooldown frames from CooldownFrameTemplate included: that template has no mixin)
 SetAllPoints	addons/PocketEssentials/ControllerLayout.lua	engine	widget method on the game's bar anchors (plain Frames, ActionBarTemplates.xml:600-693; no Lua SetAllPoints, not Edit Mode systems)

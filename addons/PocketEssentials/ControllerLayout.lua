@@ -97,6 +97,10 @@ Plan.DEFAULTS = {
     -- (docs/superpowers/plans/2026-11-24-blocked-action-0.16.1.md: the chat's box). 0.16.4
     -- keeps them as the switches for the parts ("Part: ..."), On by default.
     tHints = 1, tChat = 1, tMap = 1, tBars = 1, tExtras = 1, tFace = 1,
+    -- 0.16.4: how the spell pictures follow the triggers. 0: the game's own callback list
+    -- (device-proven, 2026-11-24). 1: a hook on PageUnit.SetActiveActionBar (never run on a
+    -- device yet). Not one of the six parts: 0 leaves nothing out. See FaceBars.lua.
+    tHook = 0,
 }
 -- The part rows' keys, in the order shown.
 Plan.TEST_PARTS = { "tHints", "tChat", "tMap", "tBars", "tExtras", "tFace" }
@@ -1762,7 +1766,8 @@ local function StartFace()
     if not face then return end
     -- The bars go to full size once our pictures are off (PlaceNow), out of a fight.
     onFaceOff = onFaceOff or PE:Wrap("ctrlLayout", function() if wanted then SyncBars() end end)
-    local ok, started, why = PE:Safe("ctrlLayout", start, face, onFaceOff, SessionSize())
+    local useHook = mod and type(mod.opts) == "table" and mod.opts.tHook == 1
+    local ok, started, why = PE:Safe("ctrlLayout", start, face, onFaceOff, SessionSize(), useHook)
     if ok and not started and PE.debugOn then
         PE:Debug("ctrlLayout", "spell pictures not shown: " .. tostring(why))
     end
@@ -1861,7 +1866,8 @@ local function PlaceNow()
     if PE.debugOn then
         local left = {}
         for _, k in ipairs(Plan.TEST_PARTS) do if o[k] == 0 then left[#left + 1] = k end end
-        PE:Debug("ctrlLayout", "bars placed" .. (#left > 0 and (" (parts left out: " .. table.concat(left, " ") .. ")") or ""))
+        PE:Debug("ctrlLayout", "bars placed" .. (#left > 0 and (" (parts left out: " .. table.concat(left, " ") .. ")") or "")
+            .. (o.tHook == 1 and " (triggers: the hook)" or ""))
     end
     if face then StartFace() end
     -- Our pictures are off (FaceStatus says why): the game's bars show, at full size.
@@ -2328,6 +2334,11 @@ do
             PE:Print("Part switches count from the next reload.")
         end }
     end
+    -- 0.16.4: not one of the six (Off leaves nothing out): how the spell pictures follow the
+    -- triggers. Off, the default: the game's callback list, as up to 0.16.3 (device-proven).
+    -- On: a hook on the game's SetActiveActionBar, to be tried in its own test step.
+    OPTIONS[#OPTIONS + 1] = { key = "tHook", label = "Part: follow the triggers with a hook", choices = ON_OFF,
+        OnChange = OPTIONS[#OPTIONS].OnChange }
 end
 -- 0.16.4, for the device test (spec 2026-11-24-0.16.4-cleanup.md, 6 and 7): a numbered mark
 -- in the debug log, and the snapshot (the block at the end of the file). `always`: the two

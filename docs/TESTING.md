@@ -1876,9 +1876,8 @@ Section 2, the triggers:
 
 4. **Mark** (2). Hold LT alone, let go; hold RT alone, let go; hold both, let
    go. Do the panels swap as before (LT opens two on the left, RT two on the
-   right, both show one each side)? This is the first thing to check: the way
-   the addon follows the triggers changed in this build. If the panels do not
-   swap at all, say so and carry on.
+   right, both show one each side)? They are followed the same way as in
+   0.16.3 here.
 
 Section 3, friendly targeting (LB):
 
@@ -1903,7 +1902,9 @@ Section 4, enemy targeting (RB):
 Section 5, the parts:
 
 9. **Mark** (5). Settings, Controller tab: the six rows at the bottom should
-   read "Part: ...", all On. Switch **Part: map ring and buttons** Off; chat
+   read "Part: ...", all On, and a seventh, "Part: follow the triggers with a
+   hook", Off (leave that one for step 12). Switch **Part: map ring and
+   buttons** Off; chat
    should say "Part switches count from the next reload." Tap Save (reload).
    Is the map's gold ring back while everything else is as before?
    **Snapshot**. Switch it On again and reload.
@@ -1915,19 +1916,32 @@ Section 6, layout off:
     where the game has it?
 11. Switch the layout on again and reload.
 
-Section 7, a fight:
+Section 7, the hook (a second way to follow the triggers, never tried on
+the device):
 
-12. **Mark** (7). Fight two or three enemies, using LT and RT spells and the
+12. **Mark** (7). Settings, Controller tab: switch **Part: follow the
+    triggers with a hook** On. Tap Save (reload). Hold LT alone, RT alone,
+    then both, a few times each. Do the panels swap exactly as in step 4? Does
+    "Interface action failed because of an AddOn" or "The game blocked Pocket
+    Essentials" appear? Change target and press B once or twice as well.
+    **Snapshot**.
+13. Switch the row **Off** again and tap Save (reload), whatever the result,
+    so the rest of the test runs the proven way. Say which it was: swapped
+    and clean, swapped with a blocked line, or did not swap.
+
+Section 8, a fight:
+
+14. **Mark** (8). Fight two or three enemies, using LT and RT spells and the
     targeting bars. In the fight, tap **Snapshot** once: chat should say it
     is saved when the fight is over, and then say "Snapshot N saved" after
     the fight.
-13. Any "Interface action failed because of an AddOn" or "The game blocked
+15. Any "Interface action failed because of an AddOn" or "The game blocked
     Pocket Essentials"? Screenshot it at once and say what you did just
     before.
 
 To finish this part:
 
-14. Settings, Debug log tab: note the line count. Tab Errors: screenshot it.
+16. Settings, Debug log tab: note the line count. Tab Errors: screenshot it.
     Tap **Save** (reload). If you are going on to the next section's steps,
     keep playing; the file is sent once, at the very end:
     `SavedVariables/PocketEssentials.lua`, with the screenshots.

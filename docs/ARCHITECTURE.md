@@ -238,9 +238,16 @@ are not.
     name: `Blizzard_GamepadSmartNavigation/SecureHelper.lua:46-74`).
   - The probe (a test tool): its deliberate trials, and its fight watch's
     `RegisterActiveActionBarUpdatedCallback`.
-- Gone in 0.16.4: `FaceBars.lua` registered a callback with
-  `PageUnit:RegisterActiveActionBarUpdatedCallback` (our function written into
-  the game's callback table). It now hooks `PageUnit.SetActiveActionBar`.
+- The one kept call that is part of the Controller layout: `FaceBars.lua`
+  registers a callback with `PageUnit:RegisterActiveActionBarUpdatedCallback`
+  (our function written into the game's callback table). It stays the default:
+  it ran on the device on 2026-11-24 (0.16.2 and 0.16.3, spell pictures on, no
+  refused action), and the game keeps and runs such callbacks behind its own
+  barrier (`SecureInsertEvent`, `secureexecuterange`, `securecallfunction`,
+  `Blizzard_SharedXMLBase/CallbackRegistry.lua`). 0.16.4 adds the engine-only
+  way, a `hooksecurefunc` on `PageUnit.SetActiveActionBar`, behind the row
+  "Part: follow the triggers with a hook" (Off by default) until it has run
+  on a device; only one of the two is installed in a session.
 
 ## Unverified API
 
@@ -254,7 +261,7 @@ so that being wrong cannot raise an error; the worst case is listed.
 
 | What | Used by | If it is wrong |
 |---|---|---|
-| `hooksecurefunc` on `PageUnit.SetActiveActionBar` (`Blizzard_GamepadActionBars/PageUnit.lua:527`) fires on every trigger check, as the hook on `SetCurrentPage` does (that one is device-proven). New in 0.16.4, in place of the game's callback list | Spell pictures | The panels do not swap when a trigger is held; the debug log says "no active-bar hook" or shows no "drawn:" line on a trigger press |
+| `hooksecurefunc` on `PageUnit.SetActiveActionBar` (`Blizzard_GamepadActionBars/PageUnit.lua:527`) fires on every trigger check, as the hook on `SetCurrentPage` does (that one is device-proven). New in 0.16.4, only while "Part: follow the triggers with a hook" is On (Off by default: the game's callback list, device-proven) | Spell pictures, with that row On | The panels do not swap when a trigger is held; the debug log says "no active-bar hook" or shows no "drawn:" line on a trigger press. Switching the row Off and reloading brings the proven way back |
 | `SetPortraitTexture(ourTexture, unit)` from addon code, in and out of a fight (documented, `UnitDocumentation.lua:572`; restrictions unknown), and `GetAttribute("type")` / `GetAttribute("unit")` readable on the game's targeting-bar buttons | Spell pictures, the targeting bars' face buttons | The portrait is not drawn; the picture falls back to a copy of the game's icon (see next row) |
 | What `GetTexture` returns for a texture a portrait was drawn on, and whether another texture given that value shows the portrait (not in the source) | Spell pictures, only as the fallback of the row above | A blank or wrong picture on the pet, self and assist buttons of a targeting bar |
 | `GetLeft`, `GetBottom`, `GetWidth`, `GetHeight`, `GetEffectiveScale` on the game's frames give plain numbers to an addon out of a fight | Save a snapshot | The line for that piece reads `<secret>` or `?` and it is left out of the overlap check |

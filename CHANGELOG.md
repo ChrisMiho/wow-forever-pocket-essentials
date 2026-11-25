@@ -37,9 +37,11 @@ device.
 - **The six "Test:" rows on the Controller tab are now "Part:" rows.** They
   are the switches for the parts of the layout. Still On by default, and a
   change still counts from the next reload.
-- **Spell pictures follow the triggers in a different way** (a hook in place
-  of a list the game keeps), so nothing of the addon's is written into the
-  game's own data. Nothing should look different.
+- **A seventh Part row, "Part: follow the triggers with a hook", Off by
+  default.** Off, the spell pictures follow LT and RT the way they did up to
+  0.16.3, which worked on the device. On tries a second way that writes
+  nothing of the addon's into the game's own data; it has never run on a
+  device, so it has its own test step. Counts from the next reload.
 
 ### Fixed
 

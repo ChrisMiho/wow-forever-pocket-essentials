@@ -1364,6 +1364,8 @@ test("rows: Spell panel size, the three timer rows and Start over", function()
         -- 0.16.4: the six part rows (0.16.2's testing rows, kept as the switches for the parts)
         "Part: hint box", "Part: chat box", "Part: map ring and buttons", "Part: move the game's bars",
         "Part: targeting pictures", "Part: spell pictures",
+        -- 0.16.4: the hook, a way to follow the triggers that is Off until tried on the device
+        "Part: follow the triggers with a hook",
         -- 0.16.4: for the device test
         "Mark a test section", "Save a snapshot" })
     eq(list[1].key, "panelSize")
@@ -3098,6 +3100,62 @@ test("0.16.4: the six rows are named Part, stay On by default, and say once that
         check(not line:find("Testing rows", 1, true), "the old wording is still said")
     end
     eq(said, 1)
+end)
+
+-- 0.16.4: the seventh row. Not one of the six parts: Off (the default) is the device-proven
+-- callback, On the hook; the choice goes to PE.FaceBars:Start and counts from the next reload.
+local function hookClient(value)
+    local registered = { n = 0 }
+    local c, PE = layoutClient({}, 3, { setup = function(cl)
+        local pageUnit = cl.env.GamepadMainActionBarFrame.PageUnit
+        local real = rawget(pageUnit, "RegisterActiveActionBarUpdatedCallback")
+        rawset(pageUnit, "RegisterActiveActionBarUpdatedCallback", function(...)
+            registered.n = registered.n + 1
+            return real(...)
+        end)
+    end })
+    if value ~= nil then opts(PE).tHook = value end
+    PE:SetDebug(true)
+    switchOn(c, PE)
+    local hooks = 0
+    for _, call in ipairs(c:callsTo("hooksecurefunc")) do
+        if call.args[1] == c.env.GamepadMainActionBarFrame.PageUnit and call.args[2] == "SetActiveActionBar" then hooks = hooks + 1 end
+    end
+    return c, PE, registered.n, hooks
+end
+
+test("0.16.4: the hook row is Off by default, is not one of the six parts, and Off follows the triggers with the game's callback", function()
+    local Plan = plan()
+    eq(Plan.DEFAULTS.tHook, 0)
+    eq(#Plan.TEST_PARTS, 6)
+    for _, key in ipairs(Plan.TEST_PARTS) do check(key ~= "tHook", "tHook is listed as a part that can be left out") end
+    local c, PE, registered, hooks = hookClient()
+    local row = optRow(PE, "tHook")
+    eq(row.label, "Part: follow the triggers with a hook")
+    eq(opts(PE).tHook, 0)
+    eq({ registered, hooks }, { 1, 0 })
+    local log = table.concat(rawget(c.env, "PocketEssentialsDB").debug.lines, "\n")
+    check(log:find("spell pictures: on (triggers followed with the game's callback)", 1, true), "the start line does not name the callback")
+    check(not log:find("parts left out", 1, true), "the default is logged as a part left out")
+    check(not log:find("triggers: the hook", 1, true), "the hook is logged while Off")
+    -- A tap says, once with the other rows, that it counts from the next reload; nothing changes now.
+    opts(PE).tHook = 1
+    row.OnChange()
+    local lines = T.chatLines(c)
+    eq(lines[#lines], "Part switches count from the next reload.")
+    c:pressTriggers(true, false)
+    c:advance(0.1)
+    c:assertClean()
+end)
+
+test("0.16.4: the hook row On follows the triggers with the hook and never writes the game's callback list; a saved 2 is not kept", function()
+    local c, PE, registered, hooks = hookClient(1)
+    eq({ registered, hooks }, { 0, 1 })
+    local log = table.concat(rawget(c.env, "PocketEssentialsDB").debug.lines, "\n")
+    check(log:find("spell pictures: on (triggers followed with a hook on SetActiveActionBar)", 1, true), "the start line does not name the hook")
+    check(log:find("bars placed (triggers: the hook)", 1, true), "the placement line does not say the hook is in use")
+    eq(plan().Pieces({ tHook = 2 }), plan().Pieces({}))
+    c:assertClean()
 end)
 
 test("0.16.0: the chat is bottom left, the tracker top right, the tooltip is a piece", function()

@@ -1030,6 +1030,7 @@ PocketEssentialsChatFontSmall	-
 PocketEssentialsChatFontTitle	-
 PocketEssentialsChatKeyOwner	-
 PocketEssentialsChatPanel	-
+PocketEssentialsFace	-
 PocketEssentialsFont	-
 PocketEssentialsFontSmall	-
 PocketEssentialsFontTitle	-
@@ -2174,6 +2175,7 @@ tChat	-
 tExtras	-
 tFace	-
 tHints	-
+tHook	-
 tMap	-
 tab	-
 tabItem	-

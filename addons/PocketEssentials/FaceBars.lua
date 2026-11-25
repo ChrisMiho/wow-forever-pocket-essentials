@@ -17,7 +17,7 @@ local ADDON_NAME, PE = ...
 -- quiet. The swap is ClearAllPoints, SetPoint, Show, Hide and SetAlpha on those plain
 -- frames only, which a fight allows; no frame of the game's is touched by it.
 --
---   PE.FaceBars:Start(whenOff, size)  out of a fight; builds once, binds to the
+--   PE.FaceBars:Start(whenOff, size, useHook)  out of a fight; builds once, binds to the
 --                         real buttons, shows the pictures, then makes the real bars
 --                         invisible. Returns true, or false and a plain reason.
 --                         whenOff (optional) is called when the safety net below
@@ -25,6 +25,8 @@ local ADDON_NAME, PE = ...
 --                         size (optional): the Spell panel size in percent (80, 90,
 --                         100, 110 or 120; anything else 100), used by the first
 --                         Start, which builds; a change applies after a reload.
+--                         useHook (optional, true or not): how the active bar is
+--                         followed, see "The active bar" below; also the first Start's.
 --   PE.FaceBars:Stop()    any time, also in a fight: the real bars back to full
 --                         strength, the pictures hidden, events dropped.
 --   PE.FaceBars:Status()  nil while fine or stopped; else why the game's own bars
@@ -89,13 +91,19 @@ local ADDON_NAME, PE = ...
 --     (SetDrawBling, SetDrawEdge: DOC/FrameAPICooldownDocumentation.lua:390, 401).
 --   * The real bars' size, 208 by 68 when they do not grow (G/ActionBarStyles.lua:172),
 --     each button inside them at most 32 (G/ActionBarStyles.lua:158-195).
---   * The active bar: hooksecurefunc on PageUnit.SetActiveActionBar (G/PageUnit.lua:527-540),
---     which the game calls on every trigger check, changed or not; then PageUnit:GetActiveBar()
---     (:542-544, it only returns a field). Until 0.16.3 this was
---     PageUnit:RegisterActiveActionBarUpdatedCallback (:705-707). That is a Lua function of
---     the game's which writes our function into the game's own callback table
---     (Blizzard_SharedXMLBase/CallbackRegistry.lua:112), so by the rule of 0.16.4 it went
---     (tests/taint/calls.txt); a hook writes nothing of ours into the game's tables.
+--   * The active bar: PageUnit:RegisterActiveActionBarUpdatedCallback(fn, name)
+--     (G/PageUnit.lua:705-707), called as fn(name) from SetActiveActionBar (:527-540)
+--     on every trigger check, changed or not; PageUnit:GetActiveBar() (:542-544).
+--     That registering function is Lua of the game's and writes our function into the game's
+--     own callback table (Blizzard_SharedXMLBase/CallbackRegistry.lua:112), so it is listed
+--     "writes-known" in tests/taint/calls.txt. It stays the default: it ran on the device on
+--     2026-11-24 (0.16.2, 0.16.3) with the pictures on and no refused action, and the game
+--     keeps and runs such callbacks behind its own barrier (SecureInsertEvent,
+--     secureexecuterange, securecallfunction, same file). 0.16.4 adds the other way, not yet
+--     run on a device, behind the layout's row "Part: follow the triggers with a hook":
+--     hooksecurefunc on PageUnit.SetActiveActionBar, which writes nothing of ours into the
+--     game's tables. Start is told which (useHook); the first Start of a session decides,
+--     and only that one is ever installed.
 --   * Page changes: hooksecurefunc on PageUnit.SetCurrentPage (G/PageUnit.lua:420);
 --     never PageUnit:AddPageChangeCallback, which would taint the page change (:415-417, 450-452).
 --   * The real bars' strata is LOW (G/ActionBarTemplates.xml:147, :375) at frame
@@ -114,6 +122,7 @@ local Face = {}
 PE.FaceBars = Face
 
 local KEY = "ctrlLayout"
+local CALLBACK_NAME = "PocketEssentialsFace"   -- a string: a number is refused (CallbackRegistry.lua:121-122)
 local ERROR_LIMIT = 3                          -- errors in a session before the pictures turn off
 local QUIET_ALPHA = 0.3                        -- a half drawn quiet (the main diamond across from a held trigger)
 local BASE_BUTTON = 28                         -- the picture size the glyph, range dot and count were drawn for
@@ -225,6 +234,7 @@ local buttonPic = {}      -- [real button] = picture, for the buttons bound now
 local hooked = {}         -- [real button or Blizzard frame] = true: its hooks are on
 local callbackSet, alertsHooked, pageHooked, mainHooked = false, false, false, false
 local settingAlpha = false
+local followHook          -- nil until the first Start; then true (the hook) or false (the game's callback)
 local lastActive          -- the bar the game last named active (false: none or unreadable)
 local activeGroup         -- index of the group in use, or nil (the "nothing held" state)
 
@@ -1211,7 +1221,8 @@ local function BarsHidden()
 end
 
 -- The hooks that are not per button, once each.
-local function HookOnce(root)
+local function HookOnce(root, useHook)
+    if followHook == nil then followHook = useHook == true end
     if not mainHooked and type(root.HookScript) == "function" then
         mainHooked = true
         -- The pictures hide while the game hides its bars (binding editor, Gamepad UI off).
@@ -1233,8 +1244,13 @@ local function HookOnce(root)
         if type(manager.ShowAlert) == "function" then Hook(manager, "ShowAlert", glow) end
         if type(manager.HideAlert) == "function" then Hook(manager, "HideAlert", glow) end
     end
-    if not callbackSet and type(pageUnit.SetActiveActionBar) == "function" then
-        callbackSet = Hook(pageUnit, "SetActiveActionBar", onActiveBar)
+    -- One of the two, as the first Start chose (followHook); never both in a session.
+    if not callbackSet and followHook then
+        if type(pageUnit.SetActiveActionBar) == "function" then
+            callbackSet = Hook(pageUnit, "SetActiveActionBar", onActiveBar)
+        end
+    elseif not callbackSet and type(pageUnit.RegisterActiveActionBarUpdatedCallback) == "function" then
+        callbackSet = pcall(pageUnit.RegisterActiveActionBarUpdatedCallback, pageUnit, onActiveBar, CALLBACK_NAME) and true or false
     end
     for _, g in ipairs(groups) do
         local anchor = g.anchor
@@ -1292,7 +1308,7 @@ StopNow = function()
 end
 
 -- Raises only on a bug; Start counts it.
-local function StartNow(size)
+local function StartNow(size, useHook)
     if running then
         bindDirty = true
         Schedule()
@@ -1327,7 +1343,7 @@ local function StartNow(size)
     end
     for i, g in ipairs(groups) do g.anchor = anchors[i] end
     rootFrame = root
-    HookOnce(root)
+    HookOnce(root, useHook)
 
     running = true
     status = nil
@@ -1343,7 +1359,11 @@ local function StartNow(size)
     holder:SetShown(not barsHidden)
     faded = true
     SetAnchorsAlpha(0)
-    Note("on" .. (callbackSet and "" or " (no active-bar hook: the main bar only)"))
+    if not callbackSet then
+        Note(followHook and "on (no active-bar hook: the main bar only)" or "on (no active-bar callback: the main bar only)")
+    else
+        Note("on (triggers followed with " .. (followHook and "a hook on SetActiveActionBar" or "the game's callback") .. ")")
+    end
     return true
 end
 
@@ -1351,11 +1371,11 @@ end
 -- name this addon defines as its own, and "Stop" is also the game's animation call.
 local Public = {}
 
-function Public.Start(whenOff, size)
+function Public.Start(whenOff, size, useHook)
     if type(whenOff) == "function" then onOff = whenOff end
     if broken then return false, status end
     if PE:InCombat() then return false, TEXT_FIGHT end
-    local ok, started, reason = PE:Safe(KEY, StartNow, size)
+    local ok, started, reason = PE:Safe(KEY, StartNow, size, useHook)
     if ok then return started, reason end
     pcall(StopNow)
     starting = true
@@ -1375,6 +1395,6 @@ function Public.Reason()
     return status
 end
 
-Face["Start"] = function(_, whenOff, size) return Public.Start(whenOff, size) end
+Face["Start"] = function(_, whenOff, size, useHook) return Public.Start(whenOff, size, useHook) end
 Face["Stop"] = function() Public.Halt() end
 Face["Status"] = function() return Public.Reason() end
