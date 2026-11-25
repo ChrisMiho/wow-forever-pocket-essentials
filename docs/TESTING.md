@@ -43,6 +43,12 @@ publishes nothing and uses no secrets.
    reads the addon, and fails if it now uses a name that is in neither file.
    This catches a typo in a game function name, or a new call nobody has
    looked up yet.
+   **Calls into Blizzard's Lua** (`tests/taint/`, part of `test.sh`). A
+   function the game's makers wrote in Lua can leave the addon's mark on the
+   game's own data when the addon calls it; the game then refuses its own
+   controller actions (0.16.0 to 0.16.2). Every such call is listed in
+   `tests/taint/calls.txt` with what it writes. The check fails on a call that
+   is not listed, and on one listed as `writes`.
 2. **Full audit** (`scripts/audit-api.sh`). Redoes the lookup against
    Blizzard's source and rewrites the two files. Run it after adding or
    changing a game call, then commit the new files. Its limits: methods on
@@ -135,9 +141,17 @@ On the device:
 4. Send this file:
    `World of Warcraft/_forever_/WTF/Account/<account>/SavedVariables/PocketEssentials.lua`
 
-The line under the switch ("N of 3,000 lines") shows how much is held. When
-it is full the oldest lines are replaced. Switching the log off keeps the
-lines; **Empty the log** removes them. The log never holds player names or chat
+The line under the switch ("N of 6,000 lines") shows how much is held. When
+it is full the middle is dropped: the first 60 lines of each session, every
+section mark, every snapshot and the newest 3,000 lines stay, and a line says
+how many were dropped. Switching the log off keeps the lines; **Empty the
+log** removes them (and starts the section count again).
+
+Two more buttons there, for a long test: **Mark a test section** writes
+`==== section N ====` and says "Section N marked" in chat; **Save a
+snapshot** writes where every piece of the Controller layout is and which
+pieces overlap (out of a fight; in a fight it waits). Both are also at the
+bottom of the Controller tab. The log never holds player names or chat
 text.
 
 Reading the file on a computer:
@@ -1832,3 +1846,93 @@ Things to watch for (known, not fixed):
   the game's hidden button is.
 - With Map buttons Shown, the magnifier's left edge may not take a tap.
 - A full row of eleven buffs may reach the quest arrow's top spot.
+
+### 31. Version 0.16.4: clean-up, and the tools for the long test
+
+Nothing here is tested on the device yet. This section is the first part of
+one long sitting; later sections (0.17.0, 0.18.0) carry on in the same log.
+Wherever a step says **Mark**, tap "Mark a test section" (Settings, Debug log
+tab, or the bottom of the Controller tab) and check that chat says the number
+given. Wherever it says **Snapshot**, tap "Save a snapshot" in the same place
+and wait for "Snapshot N saved to the debug log." Stand still, out of a
+fight, with no window open except the settings.
+
+Before you start:
+
+1. Install 0.16.4 only (no probe folder). Settings, Debug log tab: tap
+   **Empty**, then switch the Debug log **On**. The line should read
+   "1 of 6,000 lines". Switch Catch all errors on. Controller layout on.
+   Tap **Save** (it reloads).
+
+Section 1, at rest:
+
+2. **Mark** (chat: "Section 1 marked"). Close the settings and look at the
+   right pad's top button (Inspect), with no target: is it a grey button with
+   a magnifier, like the other three buttons, and no longer a black square?
+   Screenshot. Target something: does the magnifier change?
+3. **Snapshot** (chat: "Snapshot 1 saved").
+
+Section 2, the triggers:
+
+4. **Mark** (2). Hold LT alone, let go; hold RT alone, let go; hold both, let
+   go. Do the panels swap as before (LT opens two on the left, RT two on the
+   right, both show one each side)? This is the first thing to check: the way
+   the addon follows the triggers changed in this build. If the panels do not
+   swap at all, say so and carry on.
+
+Section 3, friendly targeting (LB):
+
+5. **Mark** (3). Make sure neither trigger is held. Hold **LB only** and
+   screenshot. Expected: the left panel shows the d-pad (four empty squares
+   when you are not in a group), the right panel shows X your pet's face (if
+   you have a pet out), Y a raid mark, B your target's target (empty if there
+   is none), A your own face. Let go.
+6. Now hold **LB and RT together** and screenshot. Expected: the two RT
+   panels on the right, and four dim squares on the left. This is what the
+   earlier screenshot showed.
+
+Section 4, enemy targeting (RB):
+
+7. **Mark** (4). Send your pet at an enemy and target that enemy while it
+   fights the pet (its target must be someone other than you; a training
+   dummy will not do). Hold **RB only** and screenshot: is your pet's face on
+   the B square now?
+8. Target your own pet, hold RB: the B square should be empty (the game shows
+   nothing there either). Screenshot.
+
+Section 5, the parts:
+
+9. **Mark** (5). Settings, Controller tab: the six rows at the bottom should
+   read "Part: ...", all On. Switch **Part: map ring and buttons** Off; chat
+   should say "Part switches count from the next reload." Tap Save (reload).
+   Is the map's gold ring back while everything else is as before?
+   **Snapshot**. Switch it On again and reload.
+
+Section 6, layout off:
+
+10. **Mark** (6). Switch the Controller layout off (do not reload yet).
+    **Snapshot**. Then reload, and **Snapshot** again. Is everything back
+    where the game has it?
+11. Switch the layout on again and reload.
+
+Section 7, a fight:
+
+12. **Mark** (7). Fight two or three enemies, using LT and RT spells and the
+    targeting bars. In the fight, tap **Snapshot** once: chat should say it
+    is saved when the fight is over, and then say "Snapshot N saved" after
+    the fight.
+13. Any "Interface action failed because of an AddOn" or "The game blocked
+    Pocket Essentials"? Screenshot it at once and say what you did just
+    before.
+
+To finish this part:
+
+14. Settings, Debug log tab: note the line count. Tab Errors: screenshot it.
+    Tap **Save** (reload). If you are going on to the next section's steps,
+    keep playing; the file is sent once, at the very end:
+    `SavedVariables/PocketEssentials.lua`, with the screenshots.
+
+Things to watch for (known, not fixed):
+- The grey button face is a first guess at the look; say if it reads badly.
+- If the log line says the count went down by itself, that is the log making
+  room: the start of each session, the marks and the snapshots are kept.

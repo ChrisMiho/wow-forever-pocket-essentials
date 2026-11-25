@@ -188,6 +188,60 @@ dispatcher tests one local boolean and then runs the same code as before.
   functions and `PE:RunOutOfCombat` functions when they are not inside a timed
   run, and the `/pe` command.
 
+## Calls into Blizzard's Lua
+
+Rule (0.16.4, from the refused controller actions of 0.16.0 to 0.16.2):
+**before calling a function Blizzard wrote in Lua, read it. If it writes a
+field on a frame or table of the game's, or a global, do the same thing with
+the frame's own engine methods instead.** A value written by Lua that the
+addon called carries the addon's mark; when the game's own protected code
+reads it later, the game refuses its own actions in the addon's name until a
+reload. `hooksecurefunc` and `HookScript` are fine (a hook is not a call);
+`SetScript` on a game frame and assigning a field on a game frame or table
+are not.
+
+- The check: `tests/taint/audit.lua`, run by `scripts/test.sh`. It lists every
+  name the addon and the probe call (or name in a string) that Blizzard
+  defines as a Lua function, and each needs a line in `tests/taint/calls.txt`:
+  `clean`, `ours`, `engine`, `writes-known` (kept, with the reason) or
+  `writes` (fails). A new call fails until it is read and listed.
+  `luajit tests/taint/audit.lua . --list` shows the call sites.
+- Its limits: it matches by name. It does not see a function reached through
+  a variable or a dotted string (`ChatFrameUtil.GetActiveWindow` in `Chat.lua`,
+  the probe's `Find("...")`), nor the game's own script handlers that run when
+  an engine method shows, hides or focuses a game frame.
+- **Edit Mode's frames are a trap.** On every Edit Mode system frame
+  (`MinimapCluster`, `GamepadMainActionBarFrame`, `GameTooltipDefaultContainer`,
+  the unit frames and others) the game replaces `SetScale`, `SetPoint`,
+  `ClearAllPoints`, `SetShown` and `Hide` with Lua of its own
+  (`Blizzard_EditMode/Shared/EditModeSystemTemplates.lua:11-36`). No current
+  code calls one of those five on such a frame (the frames moved are the bar
+  anchors, the bag, `totFrame` and textures). A future `MinimapCluster:SetScale`
+  would be a Lua call that the check passes as `engine` unless the line is read
+  again.
+- Calls that write and are kept (2026-11-24; the reason for each is in
+  `calls.txt`). None is part of the Controller layout, and a session with all
+  of them and no layout showed no refusal (plan
+  `2026-11-24-blocked-action-0.16.1.md`, session 3):
+  - `Core.lua`: `DEFAULT_CHAT_FRAME:AddMessage` (every chat line; the chat
+    window is Lua on this client and keeps the line in its own list) and
+    `print` as its fallback. No engine-only way to put a line in chat.
+  - `Chat.lua`: `FCF_SetChatWindowFontSize` (font fields on the chat window)
+    and `ChatFrameUtil.OpenChat` (the game's globals for the active chat box;
+    already a rule above: never with the Gamepad UI on).
+  - `MenuBackground.lua`: `EventRegistry:RegisterCallback` /
+    `UnregisterCallback` (our function in the game's callback table, which the
+    game calls behind its own barrier).
+  - `Bags.lua`: `SmartNavigation_AddJumpNavigationOverride` and
+    `SmartNavigation_ClearJumpNavigationOverridesInDirection` (a field on the
+    bag's buttons, written by the game's own secure helper, not in the addon's
+    name: `Blizzard_GamepadSmartNavigation/SecureHelper.lua:46-74`).
+  - The probe (a test tool): its deliberate trials, and its fight watch's
+    `RegisterActiveActionBarUpdatedCallback`.
+- Gone in 0.16.4: `FaceBars.lua` registered a callback with
+  `PageUnit:RegisterActiveActionBarUpdatedCallback` (our function written into
+  the game's callback table). It now hooks `PageUnit.SetActiveActionBar`.
+
 ## Unverified API
 
 Everything the code calls was looked up in Blizzard's interface source for
@@ -200,6 +254,10 @@ so that being wrong cannot raise an error; the worst case is listed.
 
 | What | Used by | If it is wrong |
 |---|---|---|
+| `hooksecurefunc` on `PageUnit.SetActiveActionBar` (`Blizzard_GamepadActionBars/PageUnit.lua:527`) fires on every trigger check, as the hook on `SetCurrentPage` does (that one is device-proven). New in 0.16.4, in place of the game's callback list | Spell pictures | The panels do not swap when a trigger is held; the debug log says "no active-bar hook" or shows no "drawn:" line on a trigger press |
+| `SetPortraitTexture(ourTexture, unit)` from addon code, in and out of a fight (documented, `UnitDocumentation.lua:572`; restrictions unknown), and `GetAttribute("type")` / `GetAttribute("unit")` readable on the game's targeting-bar buttons | Spell pictures, the targeting bars' face buttons | The portrait is not drawn; the picture falls back to a copy of the game's icon (see next row) |
+| What `GetTexture` returns for a texture a portrait was drawn on, and whether another texture given that value shows the portrait (not in the source) | Spell pictures, only as the fallback of the row above | A blank or wrong picture on the pet, self and assist buttons of a targeting bar |
+| `GetLeft`, `GetBottom`, `GetWidth`, `GetHeight`, `GetEffectiveScale` on the game's frames give plain numbers to an addon out of a fight | Save a snapshot | The line for that piece reads `<secret>` or `?` and it is left out of the overlap check |
 | An addon may call `C_EditMode.SaveLayouts` and `OnLayoutAdded` out of combat, and Edit Mode stays usable after the reload that is always asked for. The old Layout helper did the same and was never device-tested | Controller layout | "Interface action blocked" until the reload |
 | `GetLayouts` shows a saved layout and the new active index straight after the save. Not relied on: if it does not, the feature stays on and asks for the reload | Controller layout | After the reload the status line says another layout is active |
 | `SetPoint` and `SetScale` on the four gamepad bar anchors and on the both-triggers bar are allowed out of combat and are not blamed later in combat | Controller layout | A blocked-action message; switching off and reloading removes every trace |

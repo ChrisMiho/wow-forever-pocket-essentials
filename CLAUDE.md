@@ -1,6 +1,6 @@
 # Commands
 - `scripts/check.sh`: LuaJIT syntax check of every file in the TOC, plus a wording check on comments. About 0.1 s.
-- `scripts/test.sh`: offline tests: API fast check, log reader, probe reader, QuestieDB harness, feature rule tests, the restriction probe's own tests, whole-addon smoke test (`tests/`, `docs/TESTING.md`).
+- `scripts/test.sh`: offline tests: API fast check, calls into Blizzard's Lua (`tests/taint/`), log reader, probe reader, QuestieDB harness, feature rule tests, the restriction probe's own tests, whole-addon smoke test (`tests/`, `docs/TESTING.md`).
 - `scripts/audit-api.sh`: full API audit against Blizzard's source (clones it once); about 45 s; rewrites `tests/api/*.txt`. Run it after adding a game call.
 - `scripts/build.sh`: builds the release zips (GitHub bundle and CurseForge) into `dist/`, plus `dist/PocketProbe.zip` (the restriction probe, testing only, never in the player zips).
 - `scripts/read-log.sh <saved PocketEssentials.lua>`: prints the debug log and the Errors page from a device's saved file (`--grep`, `--errors`).

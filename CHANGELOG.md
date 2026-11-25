@@ -4,6 +4,63 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.16.4] - 2026-11-24
+
+Thirty-sixth test build: clean-up after the refused controller actions, and
+the tools for one long device test of everything that follows. Spec
+`docs/superpowers/specs/2026-11-24-0.16.4-cleanup.md`. Not yet tested on a
+device.
+
+### Added
+
+- **Mark a test section** (Debug log tab and Controller tab): writes a
+  numbered line to the debug log and says "Section N marked" in chat, so a
+  long test can be read back section by section. The number goes on after a
+  reload and starts again when the log is emptied.
+- **Save a snapshot** (same two places): writes to the debug log where every
+  piece of the Controller layout is (the game's frames, the spell panels, the
+  PE button), how big, and which ones overlap, with the screen size, the
+  active layout and every switch. In a fight it waits for the fight to end.
+- **Debug log, spell pictures:** one line each time the panels change, saying
+  which bar the game has active and what is drawn where.
+- **A check for the mistake behind 0.16.0's refused actions** (for whoever
+  builds the addon, not seen in game): every game function the addon calls is
+  now listed with whether it leaves the addon's mark on the game's own data,
+  and a new one fails the tests until it has been read.
+
+### Changed
+
+- **Debug log holds 6,000 lines (was 3,000) and keeps each session's start.**
+  When it is full the middle is dropped, not the beginning: the first lines of
+  each session, the section marks, the snapshots and the newest 3,000 lines
+  stay, and a line says how many were dropped.
+- **The six "Test:" rows on the Controller tab are now "Part:" rows.** They
+  are the switches for the parts of the layout. Still On by default, and a
+  change still counts from the next reload.
+- **Spell pictures follow the triggers in a different way** (a hook in place
+  of a list the game keeps), so nothing of the addon's is written into the
+  game's own data. Nothing should look different.
+
+### Fixed
+
+- **The Inspect button (top of the right pad) drew as a black square.** It
+  and the other special buttons now sit on a grey button face with a light
+  rim.
+- **Targeting bars (LB or RB held): portraits.** The buttons that show a
+  face (yourself, your pet, your target's target, a party member) are now
+  drawn the way the game draws them, not copied.
+
+### Looked at, not changed
+
+- **Enemy targeting, the empty B square:** the game itself shows nothing
+  there while your target has no target of its own (or its target is you).
+  The hint list names "Assist Target" all the time.
+- **Friendly targeting showing the RT panels:** that is what holding LB and
+  RT together gives. The new debug line records which buttons the game saw,
+  so the device test can settle it.
+- **Game build 71091:** three of the game's files the addon reads changed;
+  none of the changes reaches the addon.
+
 ## [0.16.3] - 2026-11-24
 
 Thirty-fifth test build: the fix for the refused controller actions. Found
