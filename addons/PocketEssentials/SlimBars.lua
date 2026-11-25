@@ -103,10 +103,12 @@ local ADDON_NAME, PE = ...
 --     with Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR; else a
 --     realm's name (Blizzard_UnitPopup/Mainline/UnitPopupUtils.lua:126-131;
 --     Blizzard_ChatFrameBase/Shared/SlashCommands.lua:1163-1165, which also says the
---     separator is a space). There is no call that returns a surname by itself. So here: the
---     second answer is joined only while RegionalUniqueNamesEnabled() is plainly true, and a
---     realm's name is never shown. None of the game's Lua helpers (GetUnitName, NameUtil) is
---     called. The game's own player frame also asks C_PlayerInfo.ShouldDisplaySurname
+--     separator is a space). There is no call that returns a surname by itself. So here, as
+--     this client's own unit frames do (GetUnitName, U/Mainline/UnitFrame.lua:1094-1096, is
+--     that helper and nothing else; the device showed "Forgot Shards" on the game's player
+--     frame on 2026-11-24): a second answer that is there is joined, whatever
+--     RegionalUniqueNamesEnabled() says, which is not asked. None of the game's Lua helpers
+--     (GetUnitName, NameUtil) is called. The game's own player frame also asks C_PlayerInfo.ShouldDisplaySurname
 --     (U/Mainline/UnitFrame.lua:155); ours has its own row instead, "Names on the bars".
 --   * Layers: the game's unit frames are LOW (PlayerFrame.xml:14, TargetFrame.xml:52,
 --     PetFrame.xml:11); the bars and the tap guards are MEDIUM, as the spell pictures are:
@@ -247,7 +249,6 @@ local function ReadApi()
     api.UnitCanAttack, api.UnitIsTapDenied = UnitCanAttack, UnitIsTapDenied
     api.UnitCastingInfo, api.UnitChannelInfo = UnitCastingInfo, UnitChannelInfo
     api.GetTime = GetTime
-    api.RegionalUniqueNamesEnabled = RegionalUniqueNamesEnabled
 end
 
 local function Answer(name, ok, ...)
@@ -397,12 +398,6 @@ local function SurnameJoin()
     return separator
 end
 
--- True while the game says a second name is a surname here (see "Names" at the top).
-local function SurnamesHere()
-    local ok, yes = Game("RegionalUniqueNamesEnabled")
-    return ok and not IsSecret(yes) and yes == true
-end
-
 -- A plain text into a name's font string, cut with "..." so that it is at most `room` wide.
 -- Whole characters only (a UTF-8 character's later bytes are 128 to 191). The width is the
 -- font string's own (GetUnboundedStringWidth, DOC/SimpleFontStringAPIDocumentation.lua); if
@@ -430,7 +425,7 @@ end
 -- a new pet), so a text kept from before would be the wrong unit's.
 --
 -- First name: the first answer goes into the widget as it came (0.17.0). Whole name: the
--- surname is joined when there is one and the game says second names are surnames. A hidden
+-- surname is joined when there is one, as the game's own frames do. A hidden
 -- answer is never joined, compared or measured: the bar then keeps a whole name it already
 -- shows for the same unit, and else shows the first name as it came.
 local function UpdateName(bar, changed)
@@ -450,12 +445,8 @@ local function UpdateName(bar, changed)
     end
     local text = name
     if type(name) == "string" and type(second) == "string" and second ~= "" then
-        if SurnamesHere() then
-            text = name .. SurnameJoin() .. second
-            Once("a surname was joined for the " .. bar.def.label, "surname")
-        else
-            Once("a second name was not joined: the game says it is a realm's name here (RegionalUniqueNamesEnabled is not true)")
-        end
+        text = name .. SurnameJoin() .. second
+        Once("a surname was joined for the " .. bar.def.label, "surname")
     end
     bar.joined = (text ~= name) or nil
     if type(text) == "string" then

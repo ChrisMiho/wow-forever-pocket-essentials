@@ -2380,8 +2380,10 @@ Snap.Carry = function()
     end
     -- The built-in arrangement (Plan.BASE_2): saved offsets are counted from it from now on,
     -- so each piece's amount is taken off its saved offset, once, and the piece stays where
-    -- it was. With "Arrange it yourself" On the offsets were in use, so a piece with none
-    -- saved (it stood at the old built-in spot) gets minus its amount too. With it Off they
+    -- it was. With "Arrange it yourself" On and at least one piece moved, the offsets were in
+    -- use, so a piece with none saved (it stood at the old built-in spot) gets minus its
+    -- amount too; with On and nothing moved the screen was never arranged and takes the new
+    -- spots. With it Off they
     -- were not in use: the screen takes the new spots, and only an offset that is saved is
     -- changed, for the day the switch goes On again. The Edit Mode pieces' offsets are the
     -- account's (opts.offsets, marked opts.arrangeBase); the live pieces' are each
@@ -2397,17 +2399,23 @@ Snap.Carry = function()
         end
     end
     if not (type(opts.arrangeBase) == "number" and opts.arrangeBase >= Plan.ARRANGEMENT) then
+        -- The Edit Mode pieces stay where the layout holds them while the switch is On,
+        -- moved or not: a new spot for them would wait for an Apply nobody asked for.
         if inUse and type(opts.offsets) ~= "table" then opts.offsets = {} end
-        said(Plan.MigrateBase(opts.offsets, opts.arrangeBase, "apply", inUse))
-        opts.arrangeBase = Plan.ARRANGEMENT
+        local list = Plan.MigrateBase(opts.offsets, opts.arrangeBase, "apply", inUse)
+        opts.arrangeBase = Plan.ARRANGEMENT -- marked before anything else can go wrong
+        said(list)
     end
     local char = CharDB()
     local store = char and char.ctrlArrange
     if type(store) ~= "table" then return end -- nothing saved for this character
     if not (type(store.base) == "number" and store.base >= Plan.ARRANGEMENT) then
-        if inUse and type(store.offsets) ~= "table" then store.offsets = {} end
-        said(Plan.MigrateBase(store.offsets, store.base, "live", inUse))
+        -- The live pieces: a character with the switch On and nothing moved was never
+        -- arranged, and takes the new spots.
+        local arranged = inUse and type(store.offsets) == "table" and next(store.offsets) ~= nil
+        local list = Plan.MigrateBase(store.offsets, store.base, "live", arranged)
         store.base = Plan.ARRANGEMENT
+        said(list)
     end
     if store.wheel ~= 1 then
         store.wheel = 1

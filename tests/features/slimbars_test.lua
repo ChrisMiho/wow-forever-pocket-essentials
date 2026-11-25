@@ -1340,24 +1340,17 @@ test("0.20.0 names: with Slim bars Off the row is only saved: SlimBars.lua is no
     c:assertClean()
 end)
 
-test("0.20.0 names: a realm as the second answer is never shown (the game says second names are realms)", function()
-    local c, PE, Slim = named({ setup = function(c) c.world.regionalNames = false end })
-    c.world.playerSurname = "Camelot"
-    c:fire("UNIT_NAME_UPDATE", "player")
-    eq(bar(Slim, "player").name:GetText(), "Forgot")
-    setTarget(c, kobold({ name = "Anna", surname = "OtherRealm" }))
-    eq(bar(Slim, "target").name:GetText(), "Anna")
-    eq(notedLike(c, "^a surname was joined"), 0)
-    eq(noted(c, "a second name was not joined: the game says it is a realm's name here (RegionalUniqueNamesEnabled is not true)"), 1)
-    -- Neither when the game's answer about it is missing, raises or is hidden.
-    for _, how in ipairs({ "missing", "raises", "hidden" }) do
-        local c2, PE2, Slim2 = named({ setup = function(c)
+test("0.20.0 names: a second answer is joined as the game's own frames do, whatever the game says about realms", function()
+    for _, how in ipairs({ "false", "missing", "raises", "hidden" }) do
+        local c, PE, Slim = named({ setup = function(c)
+            if how == "false" then c.world.regionalNames = false end
             if how == "missing" then rawset(c.env, "RegionalUniqueNamesEnabled", nil) end
             if how == "raises" then c.world.unitCallFails.RegionalUniqueNamesEnabled = true end
             if how == "hidden" then c.world.unitAnswerHidden.RegionalUniqueNamesEnabled = true end
         end })
-        eq(bar(Slim2, "player").name:GetText(), "Forgot", how)
-        eq(#PE2.errors, 0, how)
+        eq(bar(Slim, "player").name:GetText(), "Forgot  Shards", how) -- the stand-in's separator is two spaces
+        eq(#c:callsTo("RegionalUniqueNamesEnabled"), 0, how)
+        eq(#PE.errors, 0, how)
     end
 end)
 

@@ -2058,6 +2058,17 @@ test("0.20.0 carried over: with Arrange it yourself Off saved offsets were not i
     eq(PE2.Arrange:Waiting(), { "Chat" })
 end)
 
+test("0.20.0 carried over: Plan.MigrateBase leaves an empty store alone unless told the offsets were in use", function()
+    local c, PE = from019({ live = false, slim = 1 })
+    local P = PE.LayoutPlan
+    local empty = {}
+    eq(#P.MigrateBase(empty, nil, "live", false), 0)
+    eq(empty, {})
+    local used = {}
+    check(#P.MigrateBase(used, nil, "live", true) > 0, "a store in use was not carried over")
+    eq(used["player bar"], { x = 18, y = 16 })
+end)
+
 test("0.20.0 carried over: a character with nothing saved for Arrange gets the new spots and no numbers; a first install is marked and never carried over", function()
     -- The switch On in the account's file, but this character never arranged anything.
     local c, PE = from019({ live = false, slim = 1 })

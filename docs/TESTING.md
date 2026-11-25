@@ -2417,10 +2417,8 @@ one for you.
   once; the buffs and debuffs 4 higher after one reload, which the card asks
   for (chat: "The controller layout has a new built-in arrangement").
 - **Another character of yours, Arrange it yourself On:** its pieces stay
-  where that character had them. If it was played with 0.18.0 or 0.19.0 and
-  never moved anything, they stay at the old spots (not your arrangement);
-  **Reset all** in the Arrange window then gives it your arrangement. A
-  character not played since before 0.18.0 gets your arrangement at once.
+  where that character had them, if it moved at least one of them. A
+  character that never moved anything gets your arrangement at once.
 - **Either way:** the split spell panels are there even if a "Part" row was
   left Off, and the spell wheels are where they were.
 
@@ -2498,11 +2496,11 @@ What I most want to hear:
 - Do the spell wheels open where their buttons are after you move them?
 
 Things to look at while you are there:
-- **If your bar still reads only "Forgot",** the game told the addon that
-  second names are not surnames here. The debug log then has the line "a
-  second name was not joined"; send the file and say so.
-- **If a name shows a realm** (a server's name after a player's name), that
-  is wrong: screenshot it.
+- **If your bar still reads only "Forgot",** the game gave the addon no
+  second name: send the saved file and say so.
+- **Target a creature, a pet and another player.** Each bar should read
+  what the game's own frame would. If a name has something odd after it (a
+  server's name, a stray word), screenshot it.
 - **A second character:** log in on one. Nothing of the layout should move
   there either, and no reload should be asked for.
 

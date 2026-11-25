@@ -60,9 +60,9 @@ top of 0.19.0 (the square map), so this one build has both.
 
 ### Good to know
 
-- **Names:** a realm's name is never shown. The game tells the addon whether
-  a second name is a surname; if it says no, or hides the name in a fight,
-  the bar shows the first name, or keeps the whole name it already had.
+- **Names:** the bar joins the second name the way the game's own frames
+  do on this client. If the game hides a name in a fight, the bar shows the
+  first name, or keeps the whole name it already had.
 - **Spell panel size 110% and 120%:** your arrangement was made at 100%. At
   the two larger sizes the panels reach a little under the screen's bottom
   edge and up into the LB and RB pictures, and the card says "2 pairs of

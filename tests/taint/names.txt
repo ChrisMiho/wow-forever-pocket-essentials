@@ -1267,7 +1267,6 @@ RefreshTot	-
 RefreshWorldMap	-
 Refusal	-
 Refuse	-
-RegionalUniqueNamesEnabled	-
 RegisterBody	-
 RegisterCoreEvent	-
 RegisterForClicks	-
@@ -1533,7 +1532,6 @@ Strips	-
 StylePin	-
 Supported	-
 SurnameJoin	-
-SurnamesHere	-
 Swatter	-
 Sweep	-
 SweepNow	-
