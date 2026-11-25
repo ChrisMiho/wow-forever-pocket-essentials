@@ -109,6 +109,7 @@ local COLOUR = {
     friend = { 0.10, 0.65, 0.20 },
     enemy = { 0.80, 0.15, 0.15 },
     tapped = { 0.50, 0.50, 0.50 },
+    stopped = { 0.35, 0.35, 0.35 }, -- a fill whose widget refused the game's value (see Mark)
     cast = { 0.90, 0.70, 0.10 },
 }
 local POWER = {
@@ -173,6 +174,7 @@ local status              -- why the bars are off, or nil
 local buildFailed         -- the reason the bars could not be made (kept: not tried again)
 local errorCount = 0
 local logged = {}         -- [text] = true: each of these goes to the debug log once
+local refused = {}        -- [what] = true: that widget call's refusal is in the debug log
 
 local api = {}            -- the game's functions by name, read at the first Start
 local holder              -- the bars' and the tap guards' parent
@@ -246,7 +248,11 @@ local function Widget(what, region, method, ...)
         return false
     end
     local ok, err = pcall(fn, region, ...)
-    if not ok then Once(what .. " failed: " .. tostring(err)) end
+    -- Said once; a call that keeps failing (every health event of a fight) builds no text.
+    if not ok and not refused[what] then
+        refused[what] = true
+        Note(what .. " failed: " .. tostring(err))
+    end
     return ok
 end
 
@@ -269,10 +275,12 @@ local function Failed()
     status = TEXT_ERROR
     Note("turned off after " .. errorCount .. " errors")
     local inFight = PE:InCombat()
-    -- Ours hide at once (no stale numbers); the game's frames come back out of a fight.
+    -- Our bars hide at once (no stale numbers); the game's frames come back out of a fight.
+    -- Until then they are still invisible and still take a tap, so the tap guards stay
+    -- over them, and go only after the game's frames are back.
     pcall(StopNow, "an error", inFight)
     if inFight then
-        PE:RunOutOfCombat("ctrlLayout:slimBack", function() ShowGame() end)
+        PE:RunOutOfCombat("ctrlLayout:slimBack", function() StopNow("an error") end)
     end
     PE:Print(inFight and CHAT_ERROR_FIGHT or CHAT_ERROR)
     RefreshPanel()
@@ -292,14 +300,37 @@ end
 -- What a bar shows
 ---------------------------------------------------------------------------
 
+-- A bar whose widget refused the game's value would stand still and look healthy. So a
+-- health or power fill that could not be fed goes grey and the health number reads "?"
+-- (a plain text of ours), until a later feed works or the bars start again.
+-- part: "health" or "power"; ok: whether every widget call of this feed was taken.
+local function Mark(bar, part, ok)
+    local fill = bar[part]
+    if ok then
+        if bar.stopped[part] then
+            bar.stopped[part] = nil
+            local c = (part == "health") and bar.colour or bar.powerColour
+            fill:SetStatusBarColor(c[1], c[2], c[3])
+        end
+        return
+    end
+    if not bar.stopped[part] then
+        bar.stopped[part] = true
+        local c = COLOUR.stopped
+        fill:SetStatusBarColor(c[1], c[2], c[3])
+    end
+    if part == "health" and bar.value then bar.value:SetText("?") end
+end
+
 local function UpdateHealth(bar)
     local unit = bar.def.unit
     local okMax, most = Game("UnitHealthMax", unit)
     local okNow, now = Game("UnitHealth", unit)
     if not (okMax and okNow) or Nothing(most) or Nothing(now) then return end
-    Widget("StatusBar:SetMinMaxValues (health)", bar.health, "SetMinMaxValues", 0, most)
-    Widget("StatusBar:SetValue (health)", bar.health, "SetValue", now)
-    if bar.value then Widget("FontString:SetText (the health number)", bar.value, "SetText", now) end
+    local ok = Widget("StatusBar:SetMinMaxValues (health)", bar.health, "SetMinMaxValues", 0, most)
+    ok = Widget("StatusBar:SetValue (health)", bar.health, "SetValue", now) and ok
+    if bar.value then ok = Widget("FontString:SetText (the health number)", bar.value, "SetText", now) and ok end
+    Mark(bar, "health", ok)
 end
 
 -- colour: also read the power's kind and colour the bar (at a start, and when the kind changes).
@@ -312,14 +343,15 @@ local function UpdatePower(bar, colour)
         if ok and not IsSecret(token) and type(token) == "string" and POWER[token] then c = POWER[token] end
         if bar.powerColour ~= c then
             bar.powerColour = c
-            bar.power:SetStatusBarColor(c[1], c[2], c[3])
+            if not bar.stopped.power then bar.power:SetStatusBarColor(c[1], c[2], c[3]) end
         end
     end
     local okMax, most = Game("UnitPowerMax", unit)
     local okNow, now = Game("UnitPower", unit)
     if not (okMax and okNow) or Nothing(most) or Nothing(now) then return end
-    Widget("StatusBar:SetMinMaxValues (power)", bar.power, "SetMinMaxValues", 0, most)
-    Widget("StatusBar:SetValue (power)", bar.power, "SetValue", now)
+    local ok = Widget("StatusBar:SetMinMaxValues (power)", bar.power, "SetMinMaxValues", 0, most)
+    ok = Widget("StatusBar:SetValue (power)", bar.power, "SetValue", now) and ok
+    Mark(bar, "power", ok)
 end
 
 local function UpdateName(bar)
@@ -360,7 +392,7 @@ local function UpdateColour(bar)
     end
     if bar.colour ~= c then
         bar.colour = c
-        bar.health:SetStatusBarColor(c[1], c[2], c[3])
+        if not bar.stopped.health then bar.health:SetStatusBarColor(c[1], c[2], c[3]) end
     end
 end
 
@@ -640,7 +672,7 @@ local function Build(S)
     holder:Hide()
     for _, def in ipairs(BARS) do
         local w, h = def.main and S.w or S.small.w, def.main and S.h or S.small.h
-        local bar = { def = def, frame = Panel(w, h) }
+        local bar = { def = def, frame = Panel(w, h), stopped = {} }
         if def.main then
             bar.power = Fill(bar.frame, w, 1, S.power, POWER.MANA)
             bar.powerColour = POWER.MANA
@@ -794,22 +826,35 @@ end
 -- net in a fight; they are shown when the fight ends).
 StopNow = function(why, keepGame)
     stopping = false
-    if not keepGame then ShowGame() end -- the game's frames back before ours go
-    if not running then return end
-    running = false
-    Unregister()
-    if cast then
-        cast.shown = false
-        cast.bar:SetScript("OnUpdate", nil)
-        cast.frame:Hide()
+    if not keepGame then
+        ShowGame() -- the game's frames back before ours go
+        for _, guard in pairs(guards) do guard:Hide() end
     end
-    for key, bar in pairs(bars) do
-        bar.shown = nil
-        bar.frame:Hide()
-        if guards[key] then guards[key]:Hide() end
+    if running then
+        running = false
+        Unregister()
+        if cast then
+            cast.shown = false
+            cast.bar:SetScript("OnUpdate", nil)
+            cast.frame:Hide()
+        end
+        for _, bar in pairs(bars) do
+            bar.shown = nil
+            bar.frame:Hide()
+            Mark(bar, "health", true)
+            if bar.power then Mark(bar, "power", true) end
+        end
+        Note("off: " .. tostring(why))
     end
-    if holder then holder:Hide() end
-    Note("off: " .. tostring(why))
+    if keepGame then
+        -- The game's four frames are still invisible: every guard that has a place shows
+        -- (whatever its bar did), in the holder, which stays up for them.
+        for key, guard in pairs(guards) do
+            if guardPlaced[key] then guard:Show() end
+        end
+    elseif holder then
+        holder:Hide()
+    end
 end
 
 local function StartNow(plan)
@@ -883,6 +928,9 @@ Slim["Start"] = function()
         running = false
         Unregister()
         if holder then pcall(holder.Hide, holder) end
+        -- A start that raises counts like any other error: after the third it is not tried
+        -- again this session (the layout asks at every placement).
+        Failed()
         status = TEXT_ERROR
         return false, status
     end

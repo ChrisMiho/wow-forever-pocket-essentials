@@ -107,7 +107,9 @@ tested on a device.
 - Also not shown while Slim bars is On, because the game draws them on the
   frames that are now invisible: portraits, the target's level badge and
   elite border, raid marks, the resting and fighting marks on your own frame,
-  your pet's mood, and whatever your class adds to your frame.
+  your pet's mood, and whatever your class adds to your frame. **That
+  includes combo points:** a rogue or a cat-form druid does not see them
+  while Slim bars is On. Drawing them is a later piece.
 
 ### Good to know
 
@@ -128,6 +130,9 @@ tested on a device.
   signal for it. A channelled spell fills up like a normal cast.
 - If the bars hit an error three times they turn themselves off for the
   session, bring the game's frames back and say so in chat.
+- A bar that turns **grey with a "?"** for its number has stopped getting
+  values from the game (it would otherwise stand still and look fine). It
+  goes back to normal by itself when values arrive again.
 
 ## [0.16.4] - 2026-11-24
 

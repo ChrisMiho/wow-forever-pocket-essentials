@@ -1968,7 +1968,8 @@ small bars above them, and your target's cast as a thin bar under the target.
 
 **What is not in yet.** The buff and debuff boxes. With Slim bars On you will
 not see your target's buffs and debuffs anywhere. Portraits, raid marks and
-the elite border are gone too. That is expected.
+the elite border are gone too, and so are **combo points** and anything else
+your class shows on the game's player or target frame. That is expected.
 
 Section 9, before:
 
@@ -2080,6 +2081,25 @@ Things to watch for (known, not fixed):
 - In Edit Mode the game's four frames are invisible too while Slim bars is
   On.
 - The bars' black outline is a very thin line; say if it looks uneven.
+
+Things to look at and tell me about (nobody could check these off the
+device):
+- **A grey bar with a "?"** where the health number should be means that bar
+  stopped getting values from the game. Say which bar and when (in a fight?).
+- **Your own cast bar.** Cast something yourself with Slim bars On. If your
+  cast bar does not appear at all, the game has it attached to your player
+  frame (Edit Mode, cast bar, "Lock to player frame"), which is invisible
+  now. Say whether you saw it.
+- **A tap just above the target bar** (with a target that has buffs or
+  debuffs): does a tooltip pop up from nowhere? The game's invisible buff
+  icons sit there, outside the patch that swallows taps.
+- **Do your health and power bars move as smoothly as the game's own did,**
+  or in visible jumps?
+- **Does the cast bar fill smoothly** or in steps?
+- **The tap guards:** in the snapshots from steps 3 and 8, the lines "tap
+  guard, player frame" and the other three give their place. Tap around the
+  edges of where the game's frames used to be: is there a spot that still
+  targets you or opens a menu?
 
 ### 33. Version 0.18.0: arrange it yourself
 

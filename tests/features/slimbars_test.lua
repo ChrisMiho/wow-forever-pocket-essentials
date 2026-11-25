@@ -942,7 +942,9 @@ test("slim: the safety net in a fight hides our bars at once and brings the game
     eq(Slim:Status(), TEXT_ERROR)
     eq(#frameCalls(c, "PlayerFrame", "SetAlpha"), sets, "the game's frame was touched in a fight")
     eq(alphaOf(c, "PlayerFrame"), 0)
-    for _, rec in ipairs(drawnFrames(c)) do check(not rec.frame:IsVisible(), "a frame of the bars still shows") end
+    -- The bars go; the tap guards stay until the game's frames are back (tested further down).
+    for _, key in ipairs({ "player", "pet", "target", "tot" }) do eq(shown(c, bar(Slim, key).frame), false, key .. " bar") end
+    eq(shown(c, Slim.view.cast.frame), false)
     local lines = T.chatLines(c)
     eq(lines[#lines], CHAT_ERROR_FIGHT)
     c:leaveCombat()
@@ -1061,6 +1063,144 @@ test("slim: Save a snapshot lists the five bars and the four tap guards, and the
     for _, l in ipairs(lines) do
         if l:sub(1, 9) == "overlap: " then check(not l:find("tap guard, ", 1, true), "a guard is in an overlap: " .. l) end
     end
+end)
+
+---------------------------------------------------------------------------
+-- After the review of 0.17.0
+---------------------------------------------------------------------------
+
+test("slim: shut off by errors in a fight, the tap guards stay over the game's still invisible frames until the fight ends", function()
+    local c, PE, Slim = started()
+    setTarget(c, kobold())
+    local guards = Slim.view.guards
+    c:enterCombat()
+    breakIt(c, Slim, 3)
+    eq(Slim:Status(), TEXT_ERROR)
+    eq(alphaOf(c, "PlayerFrame"), 0)
+    -- Every guard that has a place shows and can take the tap, also the ones whose bar was hidden.
+    for _, key in ipairs({ "player", "pet", "target", "tot" }) do
+        check(guards[key]:IsVisible(), "the " .. key .. " guard is gone while the game's frame is invisible")
+    end
+    -- Our bars themselves are gone: no stale numbers.
+    for _, key in ipairs({ "player", "pet", "target", "tot" }) do eq(shown(c, bar(Slim, key).frame), false, key .. " bar") end
+    eq(shown(c, Slim.view.cast.frame), false)
+    c:leaveCombat()
+    c:advance(0.1)
+    for _, name in ipairs(GAME_FRAMES) do eq(alphaOf(c, name), 1, name) end
+    for _, key in ipairs({ "player", "pet", "target", "tot" }) do
+        check(not guards[key]:IsVisible(), "the " .. key .. " guard stays after the game's frame is back")
+    end
+    for _, rec in ipairs(drawnFrames(c)) do check(not rec.frame:IsVisible(), "a frame of the bars still shows") end
+    eq(#c.blocked, 0)
+end)
+
+test("slim: Stop asked in a fight leaves no gap either: the guards stay as long as the game's frames are invisible", function()
+    local c, PE, Slim = started()
+    c:enterCombat()
+    Slim:Stop()
+    eq(alphaOf(c, "PlayerFrame"), 0)
+    check(Slim.view.guards.player:IsVisible(), "the player guard went before the game's frame came back")
+    c:leaveCombat()
+    c:advance(0.1)
+    eq(alphaOf(c, "PlayerFrame"), 1)
+    check(not Slim.view.guards.player:IsVisible(), "the guard stays")
+    -- And a Stop out of a fight after an error shut-off in a fight that has not been tidied yet.
+    local c2, PE2, Slim2 = started()
+    c2:enterCombat()
+    breakIt(c2, Slim2, 3)
+    c2.world.inCombat = false
+    Slim2:Stop()
+    eq(alphaOf(c2, "PlayerFrame"), 1)
+    check(not Slim2.view.guards.player:IsVisible(), "the guard stays after Stop")
+end)
+
+local STOPPED_GREY = { 0.35, 0.35, 0.35, 1 }
+
+test("slim: a bar whose widget refuses the game's value shows that it stopped: grey fill and a ? for the number, until a call works again", function()
+    local c, PE, Slim = started()
+    local p = bar(Slim, "player")
+    c.world.unitSecret = true
+    c.world.barRefusesSecrets = true
+    c.world.units.player.health = 31
+    c:fire("UNIT_HEALTH", "player")
+    eq(st(c, p.health).barColor, STOPPED_GREY, "health fill")
+    eq(p.value:GetText(), "?")
+    eq(st(c, p.power).barColor, { 0.20, 0.40, 1.00, 1 }, "the power bar was not asked yet")
+    c:fire("UNIT_POWER_UPDATE", "player", "MANA")
+    eq(st(c, p.power).barColor, STOPPED_GREY, "power fill")
+    -- A colour change meanwhile does not paint over the mark.
+    c.world.units.player.powerToken = "RAGE"
+    c:fire("UNIT_DISPLAYPOWER", "player")
+    eq(st(c, p.power).barColor, STOPPED_GREY)
+    -- Many more refusals: still one line each in the log.
+    local lines = #notes(c)
+    for _ = 1, 10 do
+        c:fire("UNIT_HEALTH", "player")
+        c:fire("UNIT_POWER_UPDATE", "player", "RAGE")
+    end
+    eq(#notes(c), lines, "a line for a repeated refusal")
+    eq(notedLike(c, "^StatusBar:SetValue %(health%) failed: "), 1)
+    -- The widgets take the values again: the marks clear.
+    c.world.barRefusesSecrets = false
+    c:fire("UNIT_HEALTH", "player")
+    eq(st(c, p.health).barColor, GREEN)
+    eq({ given(c, st(c, p.value).text) }, { 31, true })
+    c:fire("UNIT_POWER_UPDATE", "player", "RAGE")
+    eq(st(c, p.power).barColor, { 1, 0, 0, 1 })
+    -- Only the number refused: the number reads ?, and the bar is marked too.
+    c.world.textRefusesSecrets = true
+    c:fire("UNIT_HEALTH", "player")
+    eq(p.value:GetText(), "?")
+    eq(st(c, p.health).barColor, STOPPED_GREY)
+    -- A restart clears the mark as well.
+    Slim:Stop()
+    c.world.unitSecret = false
+    eq(Slim:Start(), true)
+    eq(st(c, p.health).barColor, GREEN)
+    eq(p.value:GetText(), "31")
+    eq(#PE.errors, 0)
+    c:assertClean()
+end)
+
+test("slim: a small bar that stopped is greyed too, and a target bar gets its own colour back", function()
+    local c, PE, Slim = started()
+    setTarget(c, kobold())
+    local t = bar(Slim, "target")
+    eq(st(c, t.health).barColor, RED)
+    c.world.unitSecret = true
+    c.world.barRefusesSecrets = true
+    c:fire("UNIT_HEALTH", "target")
+    eq(st(c, t.health).barColor, STOPPED_GREY)
+    eq(t.value:GetText(), "?")
+    -- A new target while stopped keeps the mark.
+    setTarget(c, kobold({ name = "Guard", attackable = false }))
+    eq(st(c, t.health).barColor, STOPPED_GREY)
+    c.world.barRefusesSecrets = false
+    c:fire("UNIT_HEALTH", "target")
+    eq(st(c, t.health).barColor, GREEN)
+    c:assertClean()
+end)
+
+test("slim: a Start that raises counts toward the three errors and is then not tried again", function()
+    local c, PE, Slim = new()
+    local real = PE.LayoutPlan.SlimRects
+    PE.LayoutPlan.SlimRects = function() error("boom") end
+    eq({ Slim:Start() }, { false, TEXT_ERROR })
+    eq({ Slim:Start() }, { false, TEXT_ERROR })
+    eq(noted(c, "turned off after 3 errors"), 0)
+    eq({ Slim:Start() }, { false, TEXT_ERROR })
+    eq(noted(c, "turned off after 3 errors"), 1)
+    local lines = T.chatLines(c)
+    eq(lines[#lines], CHAT_ERROR)
+    check(#PE.errors >= 1, "the failure was not logged")
+    -- Not tried again, even once it would work.
+    local asked = 0
+    PE.LayoutPlan.SlimRects = function() asked = asked + 1 return real() end
+    for _ = 1, 5 do eq({ Slim:Start() }, { false, TEXT_ERROR }) end
+    eq(asked, 0, "tried again after the limit")
+    for _, name in ipairs(GAME_FRAMES) do eq(alphaOf(c, name), 1, name) end
+    for _, rec in ipairs(drawnFrames(c)) do check(not rec.frame:IsVisible(), "a frame of the bars shows") end
+    eq(eventsHeld(c), 0)
 end)
 
 return { known = KNOWN_FAILURES }
