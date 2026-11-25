@@ -80,7 +80,7 @@ local M_FONTSTRING = list("SetText GetText SetWordWrap SetMaxLines GetStringHeig
 local M_FRAME = list([[GetAlpha SetAlpha GetScale SetScale GetEffectiveScale CreateTexture CreateFontString CreateLine
     CreateAnimationGroup RegisterEvent UnregisterEvent UnregisterAllEvents IsEventRegistered SetFrameStrata
     GetFrameStrata SetFrameLevel GetFrameLevel SetClampedToScreen SetHitRectInsets Raise]])
-local M_BUTTON = list("RegisterForClicks IsEnabled SetText GetText")
+local M_BUTTON = list("RegisterForClicks IsEnabled SetText GetText GetAttribute")
 local M_SCROLLFRAME = list("SetScrollChild SetVerticalScroll")
 local M_EDITBOX = list("SetText GetText IsEnabled SetFont GetFont SetFontObject SetTextColor")
 local M_MESSAGEFRAME = list("AddMessage SetFont GetFont SetFontObject")
@@ -803,6 +803,12 @@ function Client.new(opts)
         st.clicks = { ... }
     end
     function METHODS:IsEnabled() return St(self).enabled ~= false end
+    -- SimpleFrameAPIDocumentation.lua:290. A test sets c._state(button).attributes = { type =, unit = }
+    -- the way the targeting bars do (Blizzard_GamepadActionBars/TargetActionBars/Shared.lua:112-119).
+    function METHODS:GetAttribute(name)
+        local a = St(self).attributes
+        return a and a[name] or nil
+    end
     function METHODS:SetScrollChild(child)
         local st = St(self)
         if not IsWidget(child) or not IS_FRAME[W[child].type] then error("SetScrollChild(): frame expected", 2) end
@@ -2225,6 +2231,15 @@ function Client.new(opts)
     end)
     -- UnitDocumentation.lua:2489-2503 (the stand-in knows only the player's own name;
     -- the realm is not returned for the player, as in the game) and ConnectionDocumentation.lua:69-75.
+    -- UnitDocumentation.lua:572: the unit's portrait drawn on a texture. Kept as the texture's
+    -- `portrait`; world.portraitError: the call raises.
+    Global("SetPortraitTexture", function(texture, unit)
+        if world.portraitError then error("SetPortraitTexture failed", 2) end
+        if not IsWidget(texture) or W[texture].type ~= "Texture" then error("SetPortraitTexture(): texture expected", 2) end
+        local st = W[texture]
+        st.portrait, st.atlas, st.color = unit, nil, nil
+        st.texture = "Portrait:" .. tostring(unit)
+    end, true)
     Global("UnitName", function(unit)
         if unit == "player" then return world.playerName end
         return nil

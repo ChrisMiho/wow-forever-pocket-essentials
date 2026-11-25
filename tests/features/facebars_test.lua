@@ -1200,4 +1200,156 @@ test("face: built at the Spell panel size given; every half scaled and on its sp
     c:assertClean()
 end)
 
+---------------------------------------------------------------------------
+-- 0.16.4 (spec 2026-11-24-0.16.4-cleanup.md, 2 to 4)
+---------------------------------------------------------------------------
+
+local RIM, FACE_GREY, BLACK = { 0.55, 0.55, 0.60, 1 }, { 0.30, 0.30, 0.33, 1 }, { 0, 0, 0, 0.75 }
+
+test("0.16.4 face: a special icon sits on a grey button face with a rim; a spell keeps the black backing, an empty slot the faint one", function()
+    local c, PE, Face = started()
+    -- Inspect (Y): a glyph on a see-through ground, the one that read as a black square.
+    for n = 5, 8 do
+        local p = pic(Face, 1, n)
+        eq(p.special, true, "picture " .. n)
+        eq(shown(c, p.face), true, "picture " .. n .. " has no button face")
+        eq(st(c, p.face).color, FACE_GREY)
+        eq(st(c, p.back).color, RIM)
+    end
+    eq(st(c, pic(Face, 1, 6).icon).atlas, "crosshair_unableinspect_32", "the game's own glyph is kept")
+    -- The face is at the icon's place, under it.
+    local face = st(c, pic(Face, 1, 6).face)
+    eq(face.points[1].rel, pic(Face, 1, 6).icon)
+    -- A spell picture and an empty one are as before.
+    local spell, empty = pic(Face, 1, 1), pic(Face, 1, 3)
+    eq(shown(c, spell.face), false)
+    eq(st(c, spell.back).color, BLACK)
+    eq(empty.empty, true)
+    eq(shown(c, empty.face), false)
+    eq(st(c, empty.back).color, { 1, 1, 1, 0.12 })
+    -- The game hides a special icon (no target of target): the face goes with it.
+    c.barButtons.TopCenteredAnchor[6].SpecialActionIcon:Hide()
+    c:advance(0.1)
+    eq(pic(Face, 1, 6).empty, true)
+    eq(shown(c, pic(Face, 1, 6).face), false)
+    c:assertClean()
+end)
+
+-- A targeting bar's button the way the game sets one up for a unit (Shared.lua:95-119).
+local function targetButton(c, bar, n, unit, has)
+    local b = bar:GetActionButtonByIndex(n)
+    c._state(b).attributes = { type = "target", unit = unit }
+    local icon = b.SpecialActionIcon
+    if has then
+        c.env.SetPortraitTexture(icon, unit)
+        icon:Show()
+    else
+        icon:Hide()
+    end
+    return b
+end
+
+local function portraitCalls(c, texture)
+    local n = 0
+    for _, call in ipairs(c:callsTo("SetPortraitTexture")) do
+        if call.args[1] == texture then n = n + 1 end
+    end
+    return n
+end
+
+test("0.16.4 face: a button that targets a unit gets that unit's portrait drawn on our own texture; with no such unit the square is empty, as the game's is", function()
+    local c, PE, Face = started({ setup = function(cl) cl:addTargetingBars() end })
+    local hostile = c.actionBars.hostileTargetingBar
+    targetButton(c, hostile, 7, "targettarget", false) -- B: no target of target
+    c:showOverrideBar("hostileTargetingBar", "TopCenteredAnchor")
+    c:advance(0.1)
+    local b = pic(Face, 1, 7)
+    eq(b.button, hostile:GetActionButtonByIndex(7))
+    eq(b.empty, true, "the game shows no picture there (Shared.lua:95-105), and neither do we")
+    eq(portraitCalls(c, b.icon), 0)
+    -- A target of target appears: the game draws its portrait and shows the icon.
+    targetButton(c, hostile, 7, "targettarget", true)
+    c:advance(0.1)
+    eq(b.empty, false)
+    eq(st(c, b.icon).portrait, "targettarget")
+    eq(portraitCalls(c, b.icon), 1)
+    eq(shown(c, b.face), true)
+    eq(st(c, b.icon).texCoord, { 0, 1, 0, 1 })
+    -- Nothing was written on the game's button or icon.
+    c:assertClean()
+end)
+
+test("0.16.4 face: when the portrait cannot be drawn the icon is copied as before", function()
+    local c, PE, Face = started({ setup = function(cl) cl:addTargetingBars() end })
+    local friendly = c.actionBars.friendlyTargetingBar
+    c.world.portraitError = false
+    targetButton(c, friendly, 8, "player", true) -- A: yourself
+    c.world.portraitError = true
+    c:showOverrideBar("friendlyTargetingBar", "TopCenteredAnchor")
+    c:advance(0.1)
+    local a = pic(Face, 1, 8)
+    eq(a.empty, false)
+    eq(st(c, a.icon).portrait, nil)
+    eq(st(c, a.icon).texture, "Portrait:player", "the copy of what the game's icon holds")
+    -- A button with no unit (the raid mark on Y) is never given a portrait.
+    c.world.portraitError = false
+    local y = friendly:GetActionButtonByIndex(6)
+    y.SpecialActionIcon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
+    y.SpecialActionIcon:Show()
+    c:advance(0.1)
+    eq(st(c, pic(Face, 1, 6).icon).texture, "Interface\\TargetingFrame\\UI-RaidTargetingIcons")
+    eq(portraitCalls(c, pic(Face, 1, 6).icon), 0)
+    c:assertClean()
+end)
+
+local function drawnLines(c, what)
+    local out = {}
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        local text = line:match("^%S+ ctrlLayout: spell pictures: (" .. what .. ": .*)$")
+        if text then out[#out + 1] = text end
+    end
+    return out
+end
+
+test("0.16.4 face: the debug log says which state, active bar and halves were drawn, once per change", function()
+    local c, PE, Face = new({ setup = function(cl) cl:addTargetingBars() end })
+    PE:SetDebug(true)
+    check(Face:Start() == true, "Start failed")
+    c:advance(0.1)
+    -- At rest: the main bar's two halves; slots 1 and 2 hold spells, the four face buttons their special icons.
+    eq(drawnLines(c, "drawn"), { "drawn: state=rest active=topBar; main dpad@innerLeft 2/4, main face@innerRight 4/4" })
+    eq(drawnLines(c, "follows"), { "follows: main=topBar lt=leftBar rt=rightBar both=bottomBar" })
+    -- LB held: the friendly targeting bar takes the main bar's place and is the active bar.
+    c:showOverrideBar("friendlyTargetingBar", "TopCenteredAnchor")
+    c:advance(0.1)
+    local drawn, follows = drawnLines(c, "drawn"), drawnLines(c, "follows")
+    eq(drawn[#drawn], "drawn: state=rest active=friendlyTargetingBar; main dpad@innerLeft 0/4, main face@innerRight 0/4")
+    eq(follows[#follows], "follows: main=friendlyTargetingBar lt=leftBar rt=rightBar both=bottomBar")
+    -- RT held as well: the right bar is the active one (PageUnit.lua:565-567); the main
+    -- group's d-pad goes quiet and still follows the friendly bar.
+    c:pressTriggers(false, true)
+    c:advance(0.1)
+    drawn = drawnLines(c, "drawn")
+    eq(drawn[#drawn], "drawn: state=rt active=rightBar; main dpad@innerLeft quiet 0/4, rt dpad@innerRight 0/4, rt face@outerRight 0/4")
+    eq(#drawnLines(c, "follows"), #follows, "nothing follows another bar, yet a line was written")
+    -- The same trigger check again (the game calls back on every check): no new line.
+    local n = #drawn
+    c:pressTriggers(false, true)
+    c:pressTriggers(false, true)
+    c:advance(0.1)
+    eq(#drawnLines(c, "drawn"), n)
+    -- A cooldown event draws nothing new: no line.
+    c:fire("SPELL_UPDATE_COOLDOWN")
+    c:advance(0.1)
+    eq(#drawnLines(c, "drawn"), n)
+    c:assertClean()
+end)
+
+test("0.16.4 face: with the debug log off no drawn line is written", function()
+    local c, PE, Face = started()
+    c:pressTriggers(true, false)
+    c:advance(0.1)
+    eq(#rawget(c.env, "PocketEssentialsDB").debug.lines, 0)
+end)
+
 return { known = KNOWN_FAILURES }

@@ -182,6 +182,16 @@ local SPOT_STEPS = { { -1, 0 }, { 0, 1 }, { 1, 0 }, { 0, -1 } }
 local EVENTS = { "ACTIONBAR_UPDATE_COOLDOWN", "SPELL_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_STATE",
     "UPDATE_BONUS_ACTIONBAR", "UPDATE_SHAPESHIFT_FORM", "UPDATE_POSSESS_BAR" }
 
+-- 0.16.4 (spec 2026-11-24-0.16.4-cleanup.md, 2): the look of a picture that shows one of the
+-- game's special icons (the main bar's four face buttons, a targeting bar's buttons). The
+-- game draws those on a round black disc inside the slot's ring (G/MainActionBarFrame.lua:
+-- 415-424), and Inspect's icon is a glyph on a see-through ground (crosshair_inspect_32 /
+-- crosshair_unableinspect_32, :611), so on our square black backing it was a black square.
+-- A grey face with a lighter rim, like the Jump button's own art; art that fills the square
+-- (a spell icon, the red Back button, a portrait) covers the face.
+local FACE_COLOUR = { 0.30, 0.30, 0.33 }
+local RIM_COLOUR = { 0.55, 0.55, 0.60 }
+
 local TEXT_NO_BARS = "the game's spell bars were not found"
 local TEXT_NO_BUTTONS = "the game's spell buttons were not found"
 local TEXT_NO_COOLDOWN = "this game version cannot draw cooldowns on our pictures"
@@ -432,6 +442,12 @@ local function MakePicture(parent, x, y, size, quad, dpad)
     pic.icon:SetPoint("TOPLEFT", p, "TOPLEFT", inset, -inset)
     pic.icon:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -inset, inset)
     pic.icon:Hide()
+    -- 0.16.4: a button face under one of the game's special icons (see ShowIcon), at the
+    -- icon's place, over the backing, which then shows as a rim around it.
+    pic.face = p:CreateTexture(nil, "BORDER", nil, 1)
+    pic.face:SetAllPoints(pic.icon)
+    pic.face:SetColorTexture(FACE_COLOUR[1], FACE_COLOUR[2], FACE_COLOUR[3], 1)
+    pic.face:Hide()
     pic.dim = p:CreateTexture(nil, "OVERLAY")
     pic.dim:SetAllPoints(pic.icon)
     pic.dim:SetColorTexture(0, 0, 0, 0.55)
@@ -646,15 +662,23 @@ end
 
 local function ShowEmpty(pic)
     pic.icon:Hide()
+    pic.face:Hide()
     pic.back:SetColorTexture(1, 1, 1, 0.12) -- a faint outline
     pic.empty = true
 end
 
-local function ShowIcon(pic, r, g, b, grey)
+-- special: one of the game's special icons, drawn on a button face (see FACE_COLOUR).
+local function ShowIcon(pic, r, g, b, grey, special)
     pic.icon:SetVertexColor(r, g, b)
     pic.icon:SetDesaturated(grey)
     pic.icon:Show()
-    pic.back:SetColorTexture(0, 0, 0, 0.75)
+    if special then
+        pic.back:SetColorTexture(RIM_COLOUR[1], RIM_COLOUR[2], RIM_COLOUR[3], 1)
+        pic.face:Show()
+    else
+        pic.back:SetColorTexture(0, 0, 0, 0.75)
+        pic.face:Hide()
+    end
     pic.empty = false
 end
 
@@ -710,7 +734,36 @@ local function CopySpecial(pic, sp)
     end
     if not done then return ShowEmpty(pic) end
     local r, g, b = Colour(sp)
-    ShowIcon(pic, r, g, b, false)
+    ShowIcon(pic, r, g, b, false, true)
+end
+
+-- 0.16.4 (spec 2026-11-24-0.16.4-cleanup.md, 3): the unit whose portrait the game draws on a
+-- button, or nil. The targeting bars' buttons that target a unit (the pet, the player, the
+-- target's target, a party member, the focus) are set up with the attributes type "target"
+-- and unit (G/TargetActionBars/Shared.lua:112-119), and their picture is that unit's portrait,
+-- drawn by SetPortraitTexture(icon, unit) (Shared.lua:98, FriendlyTargetingActionBar.lua:156,
+-- 180, 185). GetAttribute is the frame's own method
+-- (DOC/SimpleFrameAPIDocumentation.lua:290); it only reads.
+local function PortraitUnit(b)
+    if type(b.GetAttribute) ~= "function" then return nil end
+    local ok, kind = pcall(b.GetAttribute, b, "type")
+    if not ok or IsSecret(kind) or kind ~= "target" then return nil end
+    local okUnit, unit = pcall(b.GetAttribute, b, "unit")
+    if okUnit and not IsSecret(unit) and type(unit) == "string" and unit ~= "" then return unit end
+    return nil
+end
+
+-- The unit's portrait on our own texture, the way the game draws it on its own
+-- (SetPortraitTexture, DOC/UnitDocumentation.lua:572). What GetTexture returns for a
+-- portrait, and whether another texture can show it, is not in the source, so the copy
+-- (CopySpecial) is only the fallback. False when the game has no such function or refuses.
+local function DrawPortrait(pic, unit)
+    local draw = SetPortraitTexture
+    if type(draw) ~= "function" or not pcall(draw, pic.icon, unit) then return false end
+    pic.tex, pic.plainCoords = nil, false
+    pic.icon:SetTexCoord(0, 1, 0, 1)
+    ShowIcon(pic, 1, 1, 1, false, true)
+    return true
 end
 
 -- The picture: the real icon, or the game's own picture on the main bar's face
@@ -725,7 +778,14 @@ local function RefreshIcon(pic)
     else
         local sp = Field(b, "SpecialActionIcon")
         pic.special = sp ~= nil and Shown(sp)
-        if pic.special then CopySpecial(pic, sp) else CopyIcon(pic, Field(b, "icon")) end
+        if pic.special then
+            local unit = PortraitUnit(b)
+            pic.unit = unit
+            if not (unit and DrawPortrait(pic, unit)) then CopySpecial(pic, sp) end
+        else
+            pic.unit = nil
+            CopyIcon(pic, Field(b, "icon"))
+        end
     end
     if pic.empty ~= wasEmpty or pic.special ~= wasSpecial then pic.dCooldown = true end
 end
@@ -1016,6 +1076,51 @@ local onActiveBar = Guard(function()
     if running and ReadActive() then Schedule() end
 end)
 
+-- 0.16.4 (spec 2026-11-24-0.16.4-cleanup.md, 4): what is drawn, for the debug log. One line
+-- when the state, the game's active bar or the pictures shown change: the state, the
+-- active bar by its key in PageUnit.actionBars (G/PageUnit.lua:108-121; rightBar means the
+-- right trigger is held, :565-567), and each half shown with its spot, "quiet" and how many
+-- of its four pictures show an icon. A second line when a group follows another bar. Called
+-- only from a Flush that swapped or re-bound, never per frame, and only with the log on.
+local lastDrawn, lastFollows
+
+local function BarName(bar)
+    if type(bar) ~= "table" then return "none" end
+    local bars = Field(pageUnit, "actionBars")
+    if bars then
+        for key, value in pairs(bars) do
+            if value == bar and type(key) == "string" then return key end
+        end
+    end
+    return "unknown"
+end
+
+local function LogDrawn()
+    local stateKey = activeGroup and GROUPS[activeGroup].state or "rest"
+    local parts = {}
+    for _, e in ipairs(states and states[stateKey] or {}) do
+        local g = groups[GROUP_INDEX[e.group]]
+        local first, icons = (HALF_INDEX[e.half] - 1) * 4, 0
+        for q = 1, 4 do
+            local pic = g and g.pics[first + q]
+            if pic and pic.empty == false then icons = icons + 1 end
+        end
+        parts[#parts + 1] = e.group .. " " .. e.half .. "@" .. e.spot .. (e.quiet and " quiet " or " ") .. icons .. "/4"
+    end
+    local drawn = "drawn: state=" .. stateKey .. " active=" .. BarName(lastActive or nil) .. "; " .. table.concat(parts, ", ")
+    if drawn ~= lastDrawn then
+        lastDrawn = drawn
+        Note(drawn)
+    end
+    local names = {}
+    for _, g in ipairs(groups) do names[#names + 1] = g.def.key .. "=" .. BarName(g.bar) end
+    local follows = "follows: " .. table.concat(names, " ")
+    if follows ~= lastFollows then
+        lastFollows = follows
+        Note(follows)
+    end
+end
+
 -- The work the hooks and events marked. Does nothing while the game hides its bars:
 -- the marks wait, and everything is drawn again when the bars come back.
 Flush = function()
@@ -1023,6 +1128,7 @@ Flush = function()
     pending = false
     if not running or barsHidden then return end
     -- The swap first: it needs no binding, so an error further down never holds it back.
+    local changed = swapDirty or bindDirty
     if swapDirty then
         swapDirty = false
         ApplyState()
@@ -1051,6 +1157,7 @@ Flush = function()
             for _, pic in ipairs(g.pics) do RefreshChecked(pic) end
         end
     end
+    if changed and PE.debugOn then LogDrawn() end
 end
 OnUpdate = Guard(function() Flush() end)
 
@@ -1177,6 +1284,7 @@ StopNow = function()
         end
     end
     lastActive, activeGroup = nil, nil
+    lastDrawn, lastFollows = nil, nil
     barsHidden = false
 end
 
