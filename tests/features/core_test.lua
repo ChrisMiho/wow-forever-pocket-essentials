@@ -453,6 +453,41 @@ test("core: Blizzard's blocked message with none of our code on the stack is not
     c:assertClean("blizzard message")
 end)
 
+-- 0.16.1 (plan 2026-11-24-blocked-action-0.16.1, Task 0). The stack the device gave on
+-- 2026-11-24 for a refused SetPreferredGamepadInteractTarget, with six caller lines added.
+local DEVICE_STACK = table.concat({
+    "[PocketEssentials/Core.lua]:1242: in function <PocketEssentials/Core.lua:1240>",
+    "[PocketEssentials/Core.lua]:1262: in function <PocketEssentials/Core.lua:1259>",
+    "[C]: ?",
+    "[PocketEssentials/Core.lua]:1353: in function <PocketEssentials/Core.lua:1310>",
+    "[C]: in function 'SetPreferredGamepadInteractTarget'",
+    "[Blizzard_GamepadActionBars/MainActionBarFrame.lua]:373: in function 'UpdateInteractIcons'",
+    "[Blizzard_Gamepad/X.lua]:1: in function 'A'",
+    "[Blizzard_Gamepad/X.lua]:2: in function 'B'",
+    "[Blizzard_Gamepad/X.lua]:3: in function 'C'",
+    "[Blizzard_Gamepad/X.lua]:4: in function 'D'",
+    "[Blizzard_Gamepad/X.lua]:5: in function 'E'",
+    "[Blizzard_Gamepad/X.lua]:6: in function 'F'",
+}, "\n")
+
+test("core 0.16.1: a blocked stack leaves out the recorder's own lines and keeps the game's callers", function()
+    local c, PE = T.new({ on = { "chat" } })
+    rawset(c.env, "debugstack", function() return DEVICE_STACK end)
+    c:fire("ADDON_ACTION_FORBIDDEN", "PocketEssentials", "SetPreferredGamepadInteractTarget()")
+    local entry = errorsOf(PE, "blocked")[1]
+    check(entry, "the block was not recorded")
+    eq(entry.stack:find("PocketEssentials/Core.lua", 1, true), nil, "the recorder's own lines are kept")
+    eq(entry.stack:find("[C]: ?", 1, true), nil, "the bare C line is kept")
+    check(entry.stack:find("'UpdateInteractIcons'", 1, true), "the game's first line is missing")
+    check(entry.stack:find("in function 'F'", 1, true), "the game's callers are cut off: " .. entry.stack)
+    check(not entry.msg:find("(from", 1, true), "the recorder named itself as the source: " .. entry.msg)
+    -- An entry saved by 0.16.0 holds the recorder's lines: the next refusal replaces them.
+    entry.stack = "[PocketEssentials/Core.lua]:1242: in function <PocketEssentials/Core.lua:1240>"
+    c:fire("ADDON_ACTION_FORBIDDEN", "PocketEssentials", "SetPreferredGamepadInteractTarget()")
+    eq(entry.count, 2)
+    check(entry.stack:find("in function 'F'", 1, true), "a repeat kept the old stack: " .. entry.stack)
+end)
+
 ---------------------------------------------------------------------------
 -- The debug log
 ---------------------------------------------------------------------------
@@ -713,6 +748,21 @@ test("debug: a caught error and a blocked action each produce a line", function(
         "the line does not carry the Errors page text: " .. blocks[1])
     c:fire("ADDON_ACTION_FORBIDDEN", "SomeOtherAddon", "CastSpellByName")
     eq(#debugLines(c, "CastSpellByName"), 0, "another addon's block was written")
+end)
+
+-- 0.16.1: 127 refusals in two minutes filled the 1000-line log with their stacks. The stack is
+-- written for the first three refusals of each function in a session; later ones only get
+-- their one line.
+test("debug 0.16.1: the stack is written three times per blocked function, not every time", function()
+    local c, PE = T.new({})
+    PE:SetDebug(true)
+    rawset(c.env, "debugstack", function() return DEVICE_STACK end)
+    for _ = 1, 10 do c:fire("ADDON_ACTION_FORBIDDEN", "PocketEssentials", "UseAction()") end
+    eq(#debugLines(c, "blocked:   at "), 3 * 8, "eight game lines for each of the first three")
+    eq(#debugLines(c, "PocketEssentials/Core.lua"), 0, "the recorder's own lines were written")
+    eq(#debugLines(c, "blocked: ERROR The game forbade UseAction()"), 10, "each refusal keeps its one line")
+    c:fire("ADDON_ACTION_FORBIDDEN", "PocketEssentials", "ClearTarget()")
+    eq(#debugLines(c, "blocked:   at "), 4 * 8, "another function starts its own count")
 end)
 
 -- Spec rules: "A value the game hides is written as <secret>; it is never read."

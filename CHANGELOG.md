@@ -4,6 +4,25 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.16.1] - 2026-11-24
+
+Thirty-third test build: a diagnostic build, not a fix. On 0.16.0 with the
+Controller layout on, the game refused its own controller actions in Pocket
+Essentials' name (127 times in two minutes, among them the B button, jump and
+one spell press), and the Errors page did not show where from. Plan
+`docs/superpowers/plans/2026-11-24-blocked-action-0.16.1.md`. Not yet tested
+on a device. **The refusals are still there while the Controller layout is
+on:** this build is for finding them.
+
+### Changed
+
+- **Errors page, a refused action:** shows the game's own steps behind it (up
+  to eight), without the addon's own recording lines that filled the list
+  before. A repeat shows its newest steps.
+- **Debug log:** the steps behind a refused action are written for the first
+  three refusals of each action in a session, not for every one, so repeats
+  no longer push everything else out of the log.
+
 ## [0.16.0] - 2026-11-24
 
 Thirty-second test build: the playing screen's arrangement (the first half;

@@ -227,7 +227,7 @@ local function ShortPath(text)
     return text
 end
 
-local function TrimStack(stack)
+local function TrimStack(stack, most)
     if type(stack) ~= "string" then return "" end
     local out, n = {}, 0
     for line in stack:gmatch("[^\r\n]+") do
@@ -235,7 +235,7 @@ local function TrimStack(stack)
         if line ~= "" then
             n = n + 1
             out[n] = line:sub(1, 160)
-            if n >= 4 then break end
+            if n >= (most or 4) then break end
         end
     end
     return table.concat(out, "\n")
@@ -250,7 +250,9 @@ end
 local function LogErrorBody(moduleKey, msg, stack)
     if type(moduleKey) ~= "string" or moduleKey == "" then moduleKey = "core" end
     msg = ShortPath(tostring(msg)):sub(1, 300)
-    stack = TrimStack(stack)
+    -- A refused action keeps eight lines: the game's callers are what says
+    -- where it came from (0.16.1).
+    stack = TrimStack(stack, moduleKey == "blocked" and 8 or 4)
     PE.errorSerial = PE.errorSerial + 1
     if PE.debugOn then PE:Debug(moduleKey, "ERROR " .. msg) end
 
@@ -260,6 +262,9 @@ local function LogErrorBody(moduleKey, msg, stack)
         if type(e) == "table" and e.module == moduleKey and e.msg == msg then
             e.count = (tonumber(e.count) or 1) + 1
             e.last = now
+            -- A refused action shows its newest stack: an entry saved by 0.16.0
+            -- holds only the recorder's own lines.
+            if moduleKey == "blocked" and stack ~= "" then e.stack = stack end
             if i > 1 then
                 tremove(list, i)
                 tinsert(list, 1, e)
@@ -1198,10 +1203,20 @@ local function IsPlainString(v)
     return true
 end
 
--- The call stack, at most six lines: our own lines if there are any (the
--- first of them, "File.lua:123", is also returned), else the top lines.
+-- The call stack: our own lines if there are any (at most six; the first of
+-- them, "File.lua:123", is also returned), else the game's top eight.
 -- Third result: whether any line of ours is on it. Fourth: the whole text.
+-- Fifth: the game's top lines, at most 14, for the debug log.
 -- The game writes a line as "[...File.lua]:123:" or "...File.lua:123:".
+-- This file's own lines (the event handler that is recording) and the bare
+-- "[C]: ?" between them are left out of the top lines: on the device
+-- (0.16.0, 2026-11-24) they were four of the six lines kept, and the game's
+-- callers, which say where a refusal came from, were cut off.
+local BLOCK_TOP_LINES = 14   -- the game's lines kept for the debug log
+local BLOCK_PAGE_LINES = 8   -- and for the Errors page
+local BLOCK_STACKS = 3       -- refusals of one function whose stack goes to the debug log, per session
+local blockedSeen = {}       -- [function name] = refusals this session
+
 local function BlockStack()
     if not debugstack then return "", nil, false end
     -- Deep enough to get past the game's own event and hook layers to the
@@ -1212,7 +1227,8 @@ local function BlockStack()
     for line in text:gmatch("[^\r\n]+") do
         line = ShortPath(line:gsub("^%s+", "")):sub(1, 160)
         if line ~= "" then
-            if #top < 14 then top[#top + 1] = line end
+            local recorder = line:find(ADDON_NAME .. "/Core.lua", 1, true) or line == "[C]: ?"
+            if not recorder and #top < BLOCK_TOP_LINES then top[#top + 1] = line end
             if line:find(ADDON_NAME, 1, true) and not line:find("Core.lua", 1, true) and #ours < 6 then
                 ours[#ours + 1] = line
                 if not first then
@@ -1222,10 +1238,12 @@ local function BlockStack()
             end
         end
     end
+    local page = ours
     if #ours == 0 then
-        for i = #top, 7, -1 do top[i] = nil end -- the Errors page gets six lines
+        page = {}
+        for i = 1, math.min(#top, BLOCK_PAGE_LINES) do page[i] = top[i] end
     end
-    return table.concat(#ours > 0 and ours or top, "\n"), first, #ours > 0, text, top
+    return table.concat(page, "\n"), first, #ours > 0, text, top
 end
 
 local function FeaturesOn()
@@ -1242,9 +1260,11 @@ local function RecordBlock(kind, func)
     local stack, from, _, _, top = BlockStack()
     local inCombat = PE:InCombat() and ", in combat"
         or (PE:CombatRestricted() and ", combat restriction active" or "")
-    if PE.debugOn and top then
-        -- The game's own lines between its message and ours: they say which
-        -- of its steps refused.
+    blockedSeen[func] = (blockedSeen[func] or 0) + 1
+    if PE.debugOn and top and blockedSeen[func] <= BLOCK_STACKS then
+        -- The game's own lines: they say which of its steps refused. Only
+        -- for the first few of each function: 127 refusals in two minutes
+        -- filled the log with the same stacks (0.16.0, 2026-11-24).
         for i = 1, #top do PE:Debug("blocked", "  at " .. top[i]) end
     end
     PE:LogError("blocked", "The game " .. kind .. " " .. func .. (from and (" (from " .. from .. ")") or "")
