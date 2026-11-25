@@ -18,6 +18,8 @@ local ADDON_NAME, PE = ...
 --                         (nothing of the game's is changed in a fight) and the bars stay
 --                         until then.
 --   PE.SlimBars:Status()  nil while fine or stopped; else why the bars are off.
+--   PE.SlimBars:SetNames(mode)  0.20.0: whole names (anything but 0) or first names (0) on
+--                         every bar that shows, at once.
 --
 -- It is part of Controller layout (error key "ctrlLayout") behind that feature's row
 -- "Slim bars", Off by default; ControllerLayout.lua calls this file only in a session
@@ -89,6 +91,23 @@ local ADDON_NAME, PE = ...
 --   * The bar texture, Interface\TargetingFrame\UI-StatusBar, is the one the game's own
 --     mana bar uses (U/Mainline/UnitFrame.lua:425); the power colours are the game's
 --     (U/Mainline/PowerBarColorUtil.lua:18-21), mana lightened to read on a dark ground.
+--   * Names (0.20.0, spec 2026-11-25-0.20.0-after-first-sitting.md, 1). UnitName gives two
+--     answers (DOC/UnitDocumentation.lua:2489-2503, the second documented as "unitServer"). On
+--     this client the second is the character's surname: the client's own name helper joins
+--     whatever second answer there is with the surname separator
+--     (Blizzard_FrameXMLUtil/Camelot/NameUtil.lua:4-12, the file this client loads:
+--     Blizzard_FrameXMLUtil.toc:58-59), and the unit frames show that
+--     (U/Mainline/UnitFrame.lua:145-163, 1094-1096). Where the code shared with the other
+--     clients must tell a surname from a realm's name it asks RegionalUniqueNamesEnabled()
+--     (DOC/UnitDocumentation.lua:536, the engine's, never hidden): true, a surname, joined
+--     with Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR; else a
+--     realm's name (Blizzard_UnitPopup/Mainline/UnitPopupUtils.lua:126-131;
+--     Blizzard_ChatFrameBase/Shared/SlashCommands.lua:1163-1165, which also says the
+--     separator is a space). There is no call that returns a surname by itself. So here: the
+--     second answer is joined only while RegionalUniqueNamesEnabled() is plainly true, and a
+--     realm's name is never shown. None of the game's Lua helpers (GetUnitName, NameUtil) is
+--     called. The game's own player frame also asks C_PlayerInfo.ShouldDisplaySurname
+--     (U/Mainline/UnitFrame.lua:155); ours has its own row instead, "Names on the bars".
 --   * Layers: the game's unit frames are LOW (PlayerFrame.xml:14, TargetFrame.xml:52,
 --     PetFrame.xml:11); the bars and the tap guards are MEDIUM, as the spell pictures are:
 --     above the invisible frames, under an open spell wheel (DIALOG).
@@ -118,6 +137,11 @@ local POWER = {
     FOCUS = { 1.00, 0.50, 0.25 },
     ENERGY = { 1.00, 1.00, 0.00 },
 }
+
+-- 0.20.0: what the game joins a first name and a surname with, when its own constant
+-- cannot be read: a space (Blizzard_ChatFrameBase/Shared/SlashCommands.lua:1163).
+local NAME_SEPARATOR = " "
+local ELLIPSIS = "..."
 
 local TEXT_NO_PLAN = "the layout's numbers for them are missing"
 local TEXT_BUILD = "they could not be made"
@@ -176,6 +200,9 @@ local errorCount = 0
 local logged = {}         -- [text] = true: each of these goes to the debug log once
 local refused = {}        -- [what] = true: that widget call's refusal is in the debug log
 
+local wholeNames = true   -- 0.20.0: "Names on the bars" (true Whole name, false First name)
+local separator           -- the game's surname separator, read once
+
 local api = {}            -- the game's functions by name, read at the first Start
 local holder              -- the bars' and the tap guards' parent
 local plainFrame, ownFrame, targetFrame -- the three frames that listen
@@ -197,10 +224,11 @@ local function Note(text)
     if PE.debugOn then PE:Debug(KEY, "slim bars: " .. text) end
 end
 
--- The same line once a session.
-local function Once(text)
-    if logged[text] then return end
-    logged[text] = true
+-- The same line once a session. key (optional): one line per key instead, whatever its text.
+local function Once(text, key)
+    key = key or text
+    if logged[key] then return end
+    logged[key] = true
     Note(text)
 end
 
@@ -219,6 +247,7 @@ local function ReadApi()
     api.UnitCanAttack, api.UnitIsTapDenied = UnitCanAttack, UnitIsTapDenied
     api.UnitCastingInfo, api.UnitChannelInfo = UnitCastingInfo, UnitChannelInfo
     api.GetTime = GetTime
+    api.RegionalUniqueNamesEnabled = RegionalUniqueNamesEnabled
 end
 
 local function Answer(name, ok, ...)
@@ -254,6 +283,10 @@ local function Widget(what, region, method, ...)
         Note(what .. " failed: " .. tostring(err))
     end
     return ok
+end
+
+local function PlainNumber(v)
+    return not IsSecret(v) and type(v) == "number"
 end
 
 -- True for a plain nil (a hidden value is never compared, not even with nil).
@@ -354,10 +387,82 @@ local function UpdatePower(bar, colour)
     Mark(bar, "power", ok)
 end
 
-local function UpdateName(bar)
-    local ok, name = Game("UnitName", bar.def.unit)
+-- 0.20.0: the game's surname separator, read once (a constant of the engine's; the tables
+-- may be missing on another client, hence the pcall).
+local function SurnameJoin()
+    if separator == nil then
+        local ok, v = pcall(function() return Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR end)
+        separator = (ok and not IsSecret(v) and type(v) == "string" and v ~= "") and v or NAME_SEPARATOR
+    end
+    return separator
+end
+
+-- True while the game says a second name is a surname here (see "Names" at the top).
+local function SurnamesHere()
+    local ok, yes = Game("RegionalUniqueNamesEnabled")
+    return ok and not IsSecret(yes) and yes == true
+end
+
+-- A plain text into a name's font string, cut with "..." so that it is at most `room` wide.
+-- Whole characters only (a UTF-8 character's later bytes are 128 to 191). The width is the
+-- font string's own (GetUnboundedStringWidth, DOC/SimpleFontStringAPIDocumentation.lua); if
+-- it cannot be read the text goes in whole and the font string, which does not wrap, cuts it.
+local function FitName(fs, text, room)
+    if not Widget("FontString:SetText (a name)", fs, "SetText", text) then return end
+    local measure = fs.GetUnboundedStringWidth
+    if type(measure) ~= "function" then return end
+    local ok, width = pcall(measure, fs)
+    if not ok or not PlainNumber(width) or width <= room then return end
+    local n = #text
+    while n > 0 do
+        n = n - 1
+        while n > 0 do
+            local b = text:byte(n + 1)
+            if b and b >= 128 and b <= 191 then n = n - 1 else break end
+        end
+        fs:SetText((text:sub(1, n):gsub("%s+$", "")) .. ELLIPSIS)
+        ok, width = pcall(measure, fs)
+        if not ok or not PlainNumber(width) or width <= room then return end
+    end
+end
+
+-- changed: the unit behind the bar may be another one than at the last call (a new target,
+-- a new pet), so a text kept from before would be the wrong unit's.
+--
+-- First name: the first answer goes into the widget as it came (0.17.0). Whole name: the
+-- surname is joined when there is one and the game says second names are surnames. A hidden
+-- answer is never joined, compared or measured: the bar then keeps a whole name it already
+-- shows for the same unit, and else shows the first name as it came.
+local function UpdateName(bar, changed)
+    local ok, name, second = Game("UnitName", bar.def.unit)
     if not ok or Nothing(name) then return end
-    Widget("FontString:SetText (a name)", bar.name, "SetText", name)
+    if not wholeNames then
+        bar.joined = nil
+        Widget("FontString:SetText (a name)", bar.name, "SetText", name)
+        return
+    end
+    if IsSecret(name) or IsSecret(second) then
+        Once("a second name is hidden: nothing is joined to it")
+        if bar.joined and not changed then return end
+        bar.joined = nil
+        Widget("FontString:SetText (a name)", bar.name, "SetText", name)
+        return
+    end
+    local text = name
+    if type(name) == "string" and type(second) == "string" and second ~= "" then
+        if SurnamesHere() then
+            text = name .. SurnameJoin() .. second
+            Once("a surname was joined for the " .. bar.def.label, "surname")
+        else
+            Once("a second name was not joined: the game says it is a realm's name here (RegionalUniqueNamesEnabled is not true)")
+        end
+    end
+    bar.joined = (text ~= name) or nil
+    if type(text) == "string" then
+        FitName(bar.name, text, bar.nameRoom)
+    else
+        Widget("FontString:SetText (a name)", bar.name, "SetText", text)
+    end
 end
 
 -- level: the new level when the game just said it (PLAYER_LEVEL_UP), else read.
@@ -494,7 +599,7 @@ local function RefreshPet()
     if bar.shown then
         UpdateColour(bar)
         UpdateHealth(bar)
-        UpdateName(bar)
+        UpdateName(bar, true)
     end
 end
 
@@ -509,7 +614,7 @@ local function RefreshTot()
     if bar.shown then
         UpdateColour(bar)
         UpdateHealth(bar)
-        UpdateName(bar)
+        UpdateName(bar, true)
     end
 end
 
@@ -521,7 +626,7 @@ local function RefreshTarget()
         UpdateColour(bar)
         UpdateHealth(bar)
         UpdatePower(bar, true)
-        UpdateName(bar)
+        UpdateName(bar, true)
         UpdateLevel(bar)
     end
     RefreshTot()
@@ -537,10 +642,6 @@ end
 ---------------------------------------------------------------------------
 -- The game's four frames: invisible, and back
 ---------------------------------------------------------------------------
-
-local function PlainNumber(v)
-    return not IsSecret(v) and type(v) == "number"
-end
 
 -- Out of a fight only. again: a later check (the debug log then says "again").
 local function HideGame(again)
@@ -684,12 +785,14 @@ local function Build(S)
             bar.value:SetJustifyH("RIGHT")
             bar.name = Text(bar.health, 12)
             bar.name:SetPoint("LEFT", bar.level, "RIGHT", 4, 0)
-            bar.name:SetWidth(w - 110) -- room for the level before it and the number after
+            bar.nameRoom = w - 110 -- room for the level before it and the number after
+            bar.name:SetWidth(bar.nameRoom)
         else
             bar.health = Fill(bar.frame, w, 1, h - 2, COLOUR.friend)
             bar.name = Text(bar.health, 11)
             bar.name:SetPoint("LEFT", bar.health, "LEFT", 4, 0)
-            bar.name:SetWidth(w - 10)
+            bar.nameRoom = w - 10
+            bar.name:SetWidth(bar.nameRoom)
         end
         bar.name:SetJustifyH("LEFT")
         bar.colour = COLOUR.friend
@@ -840,6 +943,7 @@ StopNow = function(why, keepGame)
         end
         for _, bar in pairs(bars) do
             bar.shown = nil
+            bar.joined = nil
             bar.frame:Hide()
             Mark(bar, "health", true)
             if bar.power then Mark(bar, "power", true) end
@@ -890,6 +994,9 @@ local function StartNow(plan)
     local opts = type(layout) == "table" and layout.opts or nil
     Note("on (slim=" .. PE.Plain(type(opts) == "table" and opts.slim or nil) .. ", Spell panel size "
         .. PE.Plain(type(opts) == "table" and opts.panelSize or nil) .. "%)")
+    -- 0.20.0: "Names on the bars" (opts.slimNames): 0 First name, anything else Whole name.
+    wholeNames = not (type(opts) == "table" and opts.slimNames == 0)
+    Note("names: " .. (wholeNames and "whole" or "first"))
     Place(plan.SlimRects())
     Register()
     running = true
@@ -963,4 +1070,21 @@ end
 
 Slim["Status"] = function()
     return status
+end
+
+-- 0.20.0: the row "Names on the bars" was tapped (mode 0 First name, else Whole name). Every
+-- bar that shows reads its name again at once; no reload. Only our own font strings are
+-- written, so this also runs in a fight. While stopped the value is read at the next Start.
+Slim["SetNames"] = function(_, mode)
+    local whole = mode ~= 0
+    if whole == wholeNames and running then return end
+    wholeNames = whole
+    if not running then return end
+    Note("names: " .. (wholeNames and "whole" or "first"))
+    PE:Safe(KEY, function()
+        for _, def in ipairs(BARS) do
+            local bar = bars[def.key]
+            if bar.shown then UpdateName(bar, true) end
+        end
+    end)
 end

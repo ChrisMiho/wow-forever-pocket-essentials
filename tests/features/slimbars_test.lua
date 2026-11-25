@@ -1203,4 +1203,246 @@ test("slim: a Start that raises counts toward the three errors and is then not t
     eq(eventsHeld(c), 0)
 end)
 
+---------------------------------------------------------------------------
+-- 0.20.0: whole names (spec 2026-11-25-0.20.0-after-first-sitting.md, 1). The stand-in's
+-- surname separator is two spaces, so a test can tell the game's value from our fallback.
+---------------------------------------------------------------------------
+
+local SEP = "  "
+
+-- A client whose player is "Forgot Shards", the bars started through the layout (so the
+-- row's value is read) unless o.direct. o.names: the saved "Names on the bars" value.
+local function named(o)
+    o = o or {}
+    local c, PE, Slim = layoutClient()
+    c.world.playerName, c.world.playerSurname = "Forgot", "Shards"
+    if o.setup then o.setup(c) end
+    local opts = PE:GetModule("ctrlLayout").opts
+    opts.slim = 1
+    if o.names ~= nil then opts.slimNames = o.names end
+    PE:SetModuleEnabled("ctrlLayout", true)
+    c:advance(0.1)
+    return c, PE, Slim
+end
+
+local function namesRow(PE)
+    for _, o in ipairs(PE:GetModule("ctrlLayout").options) do if o.key == "slimNames" then return o end end
+    return nil
+end
+
+-- A tap on the row, the way the settings window does it.
+local function pickNames(c, PE, value)
+    local m = PE:GetModule("ctrlLayout")
+    m.opts.slimNames = value
+    PE:Safe("ctrlLayout", namesRow(PE).OnChange, m, value)
+    c:advance(0.1)
+end
+
+test("0.20.0 names: the row is on the Controller tab under Slim bars, Whole name by default", function()
+    local c, PE = layoutClient()
+    local list = PE:GetModule("ctrlLayout").options
+    local at
+    for i, o in ipairs(list) do if o.key == "slimNames" then at = i end end
+    check(at ~= nil, "no Names on the bars row")
+    eq(list[at].label, "Names on the bars")
+    eq(list[at - 1].key, "slim", "the row before it")
+    local out = {}
+    for i, ch in ipairs(list[at].choices) do out[i] = { ch.value, ch.label } end
+    eq(out, { { 1, "Whole name" }, { 0, "First name" } })
+    eq(PE:GetModule("ctrlLayout").opts.slimNames, 1)
+    eq(PE.LayoutPlan.DEFAULTS.slimNames, 1)
+    -- A saved value that is neither reads as the default in the plan.
+    eq(#PE.LayoutPlan.Pieces({ slimNames = 7 }), #PE.LayoutPlan.Pieces({}))
+end)
+
+test("0.20.0 names: a unit with a surname shows first name, the game's separator, surname; the log says so once", function()
+    local c, PE, Slim = named()
+    eq(bar(Slim, "player").name:GetText(), "Forgot" .. SEP .. "Shards")
+    eq(noted(c, "names: whole"), 1)
+    eq(noted(c, "a surname was joined for the player bar"), 1)
+    setTarget(c, kobold({ name = "Anna", surname = "Lee" }))
+    eq(bar(Slim, "target").name:GetText(), "Anna" .. SEP .. "Lee")
+    c.world.units.targettarget = { name = "Forgot", surname = "Shards", health = 1, healthMax = 1 }
+    c:fire("UNIT_TARGET", "target")
+    eq(bar(Slim, "tot").name:GetText(), "Forgot" .. SEP .. "Shards")
+    -- Once a session, the first time only.
+    c:fire("UNIT_NAME_UPDATE", "player")
+    eq(notedLike(c, "^a surname was joined"), 1)
+    eq(#PE.errors, 0)
+    c:assertClean()
+end)
+
+test("0.20.0 names: no surname, or an empty one, shows the first name alone", function()
+    local c, PE, Slim = named()
+    setTarget(c, kobold())
+    eq(bar(Slim, "target").name:GetText(), "Kobold")
+    setTarget(c, kobold({ name = "Guard", surname = "" }))
+    eq(bar(Slim, "target").name:GetText(), "Guard")
+    c.world.units.pet = { name = "Cat", health = 1, healthMax = 1 }
+    c:fire("UNIT_PET", "player")
+    eq(bar(Slim, "pet").name:GetText(), "Cat")
+    -- And back to a unit with one: the old surname does not stay, the new one shows.
+    setTarget(c, kobold({ name = "Anna", surname = "Lee" }))
+    eq(bar(Slim, "target").name:GetText(), "Anna" .. SEP .. "Lee")
+    setTarget(c, kobold())
+    eq(bar(Slim, "target").name:GetText(), "Kobold")
+    c:assertClean()
+end)
+
+test("0.20.0 names: First name shows the first name only, and nothing is joined or asked", function()
+    local c, PE, Slim = named({ names = 0 })
+    eq(bar(Slim, "player").name:GetText(), "Forgot")
+    eq(noted(c, "names: first"), 1)
+    eq(notedLike(c, "surname"), 0)
+    eq(#c:callsTo("RegionalUniqueNamesEnabled"), 0)
+    setTarget(c, kobold({ name = "Anna", surname = "Lee" }))
+    eq(bar(Slim, "target").name:GetText(), "Anna")
+    c:assertClean()
+end)
+
+test("0.20.0 names: the row counts at once, both ways, for every bar that shows, with no reload", function()
+    local c, PE, Slim = named()
+    setTarget(c, kobold({ name = "Anna", surname = "Lee" }))
+    c.world.units.pet = { name = "Cat", surname = "Paws", health = 1, healthMax = 1 }
+    c:fire("UNIT_PET", "player")
+    local reloads, writes = #PE.reloadReasons, #c:callsTo("C_EditMode.SaveLayouts")
+    pickNames(c, PE, 0)
+    eq(bar(Slim, "player").name:GetText(), "Forgot")
+    eq(bar(Slim, "target").name:GetText(), "Anna")
+    eq(bar(Slim, "pet").name:GetText(), "Cat")
+    eq(noted(c, "names: first"), 1)
+    pickNames(c, PE, 1)
+    eq(bar(Slim, "player").name:GetText(), "Forgot" .. SEP .. "Shards")
+    eq(bar(Slim, "target").name:GetText(), "Anna" .. SEP .. "Lee")
+    eq(bar(Slim, "pet").name:GetText(), "Cat" .. SEP .. "Paws")
+    eq(noted(c, "names: whole"), 2) -- at the start and now
+    eq(#PE.reloadReasons, reloads, "a reload was asked for")
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), writes, "the layout was written again")
+    -- Also in a fight: only our own texts are written.
+    c:enterCombat()
+    pickNames(c, PE, 0)
+    eq(bar(Slim, "target").name:GetText(), "Anna")
+    eq(#c.blocked, 0)
+    c:leaveCombat()
+    c:assertClean()
+end)
+
+test("0.20.0 names: with Slim bars Off the row is only saved: SlimBars.lua is not called", function()
+    local c, PE, Slim = layoutClient()
+    PE:SetModuleEnabled("ctrlLayout", true)
+    c:advance(0.1)
+    pickNames(c, PE, 0)
+    eq(PE:GetModule("ctrlLayout").opts.slimNames, 0)
+    eq(#slimFrames(c), 0)
+    eq(#notes(c), 0)
+    c:assertClean()
+end)
+
+test("0.20.0 names: a realm as the second answer is never shown (the game says second names are realms)", function()
+    local c, PE, Slim = named({ setup = function(c) c.world.regionalNames = false end })
+    c.world.playerSurname = "Camelot"
+    c:fire("UNIT_NAME_UPDATE", "player")
+    eq(bar(Slim, "player").name:GetText(), "Forgot")
+    setTarget(c, kobold({ name = "Anna", surname = "OtherRealm" }))
+    eq(bar(Slim, "target").name:GetText(), "Anna")
+    eq(notedLike(c, "^a surname was joined"), 0)
+    eq(noted(c, "a second name was not joined: the game says it is a realm's name here (RegionalUniqueNamesEnabled is not true)"), 1)
+    -- Neither when the game's answer about it is missing, raises or is hidden.
+    for _, how in ipairs({ "missing", "raises", "hidden" }) do
+        local c2, PE2, Slim2 = named({ setup = function(c)
+            if how == "missing" then rawset(c.env, "RegionalUniqueNamesEnabled", nil) end
+            if how == "raises" then c.world.unitCallFails.RegionalUniqueNamesEnabled = true end
+            if how == "hidden" then c.world.unitAnswerHidden.RegionalUniqueNamesEnabled = true end
+        end })
+        eq(bar(Slim2, "player").name:GetText(), "Forgot", how)
+        eq(#PE2.errors, 0, how)
+    end
+end)
+
+test("0.20.0 names: a hidden second answer is never joined: the bar keeps the name it had", function()
+    local c, PE, Slim = named({ setup = function(c)
+        c.world.units.player.name, c.world.units.player.surname = "Forgot", "Shards"
+    end })
+    local p = bar(Slim, "player")
+    eq(p.name:GetText(), "Forgot" .. SEP .. "Shards")
+    c.world.unitSecret = true
+    c:fire("UNIT_NAME_UPDATE", "player")
+    c:fire("PLAYER_ENTERING_WORLD")
+    c:advance(0.1)
+    eq(p.name:GetText(), "Forgot" .. SEP .. "Shards")
+    eq(noted(c, "a second name is hidden: nothing is joined to it"), 1)
+    -- A target picked now: its hidden first name goes into the widget as it came, alone.
+    setTarget(c, kobold({ name = "Anna", surname = "Lee" }))
+    eq({ given(c, st(c, bar(Slim, "target").name).text) }, { "Anna", true })
+    -- A bar that showed another unit's whole name does not keep it for the new unit.
+    c.world.unitSecret = false
+    setTarget(c, kobold({ name = "Bob", surname = "Ray" }))
+    eq(bar(Slim, "target").name:GetText(), "Bob" .. SEP .. "Ray")
+    c.world.unitSecret = true
+    setTarget(c, kobold({ name = "Anna", surname = "Lee" }))
+    eq({ given(c, st(c, bar(Slim, "target").name).text) }, { "Anna", true })
+    eq(#PE.errors, 0)
+    eq(#c.errors, 0)
+end)
+
+test("0.20.0 names: only the second answer hidden, the first plain: still nothing is joined", function()
+    local c, PE, Slim = named({ setup = function(c)
+        local hidden = c:secret("Lee")
+        rawset(c.env, "UnitName", function(unit)
+            if unit == "target" then return "Anna", hidden end
+            return "Forgot", "Shards"
+        end)
+    end })
+    eq(bar(Slim, "player").name:GetText(), "Forgot" .. SEP .. "Shards")
+    setTarget(c, kobold())
+    eq(bar(Slim, "target").name:GetText(), "Anna")
+    eq(#PE.errors, 0)
+    eq(#c.errors, 0)
+end)
+
+test("0.20.0 names: a name wider than its room is cut with ... at the room the bar has today", function()
+    local c, PE, Slim = named()
+    local p, t = bar(Slim, "player"), bar(Slim, "target")
+    -- The rooms are 0.19.0's: 280 - 110 on a main bar, 136 - 10 on a small one.
+    eq(st(c, p.name).width, 170)
+    eq(st(c, t.name).width, 170)
+    eq(st(c, bar(Slim, "pet").name).width, 126)
+    eq(st(c, bar(Slim, "tot").name).width, 126)
+    local long = { name = "Bartholomewington", surname = "Featherstonehaugh" }
+    setTarget(c, kobold(long))
+    local text = t.name:GetText()
+    eq(text:sub(-3), "...")
+    check(t.name:GetUnboundedStringWidth() <= 170, "the cut name is wider than its room: " .. text)
+    eq(text:sub(1, 17), "Bartholomewington")
+    -- One more character would not fit.
+    local whole = long.name .. SEP .. long.surname
+    local kept = #text - 3
+    t.name:SetText(whole:sub(1, kept + 1) .. "...")
+    check(t.name:GetUnboundedStringWidth() > 170, "the name was cut shorter than it had to be")
+    -- The small bars cut sooner.
+    c.world.units.targettarget = { name = long.name, surname = long.surname, health = 1, healthMax = 1 }
+    c:fire("UNIT_TARGET", "target")
+    local small = bar(Slim, "tot").name:GetText()
+    eq(small:sub(-3), "...")
+    check(#small < #text, "the small bar's name is not shorter")
+    check(bar(Slim, "tot").name:GetUnboundedStringWidth() <= 126, "the small bar's name is wider than its room")
+    -- A name that fits is not touched, and the level and the health number keep their places.
+    eq(p.name:GetText(), "Forgot" .. SEP .. "Shards")
+    eq(p.level:GetText(), "10")
+    eq(p.value:GetText(), "100")
+    -- Whole characters only: a cut never ends inside a letter of several bytes.
+    setTarget(c, kobold({ name = string.rep("\195\169", 20), surname = string.rep("\195\168", 20) }))
+    local cut = t.name:GetText()
+    eq(cut:sub(-3), "...")
+    local body = cut:sub(1, -4)
+    check(body == string.rep("\195\169", #body / 2), "a letter was cut in half: " .. #body .. " bytes")
+    c:assertClean()
+end)
+
+test("0.20.0 names: a client without the game's separator joins with one space", function()
+    local c, PE, Slim = named({ setup = function(c) rawset(c.env, "Constants", {}) end })
+    eq(bar(Slim, "player").name:GetText(), "Forgot Shards")
+    eq(#PE.errors, 0)
+end)
+
 return { known = KNOWN_FAILURES }

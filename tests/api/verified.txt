@@ -13,6 +13,7 @@ cvar	raidGraphicsOutlineMode	Blizzard_SettingsDefinitions_Shared/Graphics.lua us
 cvar	raidGraphicsQuality	Blizzard_SettingsDefinitions_Shared/Graphics.lua used
 cvar	rotateMinimap	Blizzard_Minimap/Camelot/Minimap.lua used
 cvar	scriptErrors	Blizzard_ScriptErrorsFrame/Blizzard_ScriptErrorsFrame.lua used
+enum	Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR	Blizzard_ChatFrameBase/Shared/SlashCommands.lua used
 enum	Enum.AddOnRestrictionType.Combat	Blizzard_APIDocumentationGenerated/RestrictedActionsConstantsDocumentation.lua documented
 enum	Enum.BagSlotFlags.ExcludeJunkSell	Blizzard_APIDocumentationGenerated/BagConstantsDocumentation.lua documented
 enum	Enum.EditModeAuraFrameSystemIndices.BuffFrame	Blizzard_APIDocumentationGenerated/EditModeManagerConstantsDocumentation.lua documented
@@ -122,6 +123,7 @@ frame	CHAT_FONT_HEIGHTS	Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua us
 frame	CHAT_FRAME_TEXTURES	Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua used
 frame	ChatFrame1	Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.xml used
 frame	ChatFrameUtil	Blizzard_ChatFrameBase/Shared/ChatFrameUtil.lua used
+frame	Constants	Blizzard_AchievementUI/Camelot/Blizzard_AchievementUI.lua used
 frame	ContainerFrameCombinedBags	Blizzard_UIPanels_Game/Mainline/ContainerFrame.xml used
 frame	DEFAULT_CHAT_FRAME	Blizzard_ChatFrameBase/Shared/ChatFrameUtil.lua used
 frame	DebuffFrame	Blizzard_BuffFrame/BuffFrame.xml used
@@ -225,6 +227,7 @@ global	IsResting	Blizzard_APIDocumentationGenerated/PlayerScriptDocumentation.lu
 global	Menu	Blizzard_Menu/Menu.lua used
 global	PlaySound	Blizzard_SharedXML/Mainline/Sound.lua used
 global	QuestMapLogTitleButton_CreateContextMenu	Blizzard_UIPanels_Game/Mainline/QuestMapFrame.lua used
+global	RegionalUniqueNamesEnabled	Blizzard_APIDocumentationGenerated/UnitDocumentation.lua documented
 global	ReloadUI	Blizzard_SharedXML/InterfaceUtil.lua used
 global	RepairAllItems	Blizzard_StaticPopup_Game/GameDialogDefs.lua used
 global	SetOverrideBinding	Blizzard_GamepadSharedUtility/InputBindingStack/InputActionBinding.lua used

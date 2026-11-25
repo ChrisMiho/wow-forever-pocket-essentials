@@ -229,6 +229,9 @@ function Client.new(opts)
         minimapZoom = 0,
         realm = "Camelot",           -- GetRealmName()
         playerName = "Tester",       -- UnitName("player"); nil: not readable yet (early in a login)
+        playerSurname = nil,         -- UnitName("player")'s second answer (0.20.0); nil: none
+        regionalNames = true,        -- RegionalUniqueNamesEnabled(): a second answer of UnitName is a
+                                     -- surname (true, this client) or a realm's name (false)
         editModeReady = true,        -- false: EditModeManagerFrame:IsInitialized() is false (the game has
                                      -- not handed Edit Mode its layouts yet)
         cursor = { SW / 2, SH / 2 },
@@ -251,9 +254,10 @@ function Client.new(opts)
         barAlphaBlocked = false,     -- true: SetAlpha on a gamepad bar frame in a fight is refused
                                      -- (ADDON_ACTION_BLOCKED) and does nothing
         -- The units the Unit... functions below answer for (0.17.0, the slim bars):
-        -- [unit] = { name, level, health, healthMax, power, powerMax, powerToken, attackable,
+        -- [unit] = { name, surname, level, health, healthMax, power, powerMax, powerToken, attackable,
         -- tapped, cast = { text, startMs, endMs, channel, trade } }; a unit not listed does
         -- not exist. The player's name is world.playerName unless a name is given here.
+        -- surname (0.20.0): UnitName's second answer, whatever it stands for (see regionalNames).
         units = { player = { level = 10, health = 100, healthMax = 100, power = 50, powerMax = 100, powerToken = "MANA" } },
         unitSecret = false,          -- true: the answers the game may hide in a fight come back as secret
                                      -- values (c:secret; UnitDocumentation.lua: UnitHealth 1526,
@@ -2029,7 +2033,10 @@ function Client.new(opts)
         end
         return setmetatable(out, { __index = function(_, k) Miss("enum", rootName .. "." .. tostring(k)) end })
     end
-    local CONSTANTS = { EditModeConsts = { EditModeMaxLayoutsPerType = 5 } } -- EditModeManagerConstantsDocumentation.lua:1044
+    local CONSTANTS = { EditModeConsts = { EditModeMaxLayoutsPerType = 5 }, -- EditModeManagerConstantsDocumentation.lua:1044
+        -- 0.20.0: "a space" (Blizzard_ChatFrameBase/Shared/SlashCommands.lua:1163-1164); a double
+        -- space here, so a test can tell the game's value from the addon's own fallback.
+        CharacterNameSeparatorConsts = { CHARACTERNAME_SURNAME_SEPARATOR = "  " } }
     rawset(env, "Constants", Gated("Constants", CONSTANTS))
     local Enum = {
         ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5, Artifact = 6, Heirloom = 7 },
@@ -2524,10 +2531,18 @@ function Client.new(opts)
     end
     UnitFn("UnitName", function(unit)
         local u = world.units[unit]
-        if unit == "player" and not (u and u.name) then return world.playerName end
+        if unit == "player" and not (u and u.name) then return world.playerName, world.playerSurname end
         if not u then return nil end
-        return Hid(u.name)
+        return Hid(u.name), Hid(u.surname)
     end)
+    -- 0.20.0 (UnitDocumentation.lua:536; how the game tells a surname from a realm's name,
+    -- Blizzard_UnitPopup/Mainline/UnitPopupUtils.lua:126-131). Only once the audit lists it.
+    if snap.global.RegionalUniqueNamesEnabled then
+        Global("RegionalUniqueNamesEnabled", function()
+            if world.unitCallFails.RegionalUniqueNamesEnabled then error("RegionalUniqueNamesEnabled failed", 2) end
+            return Open("RegionalUniqueNamesEnabled", world.regionalNames)
+        end, true)
+    end
     UnitFn("UnitExists", function(unit) return Open("UnitExists", world.units[unit] ~= nil) end)
     UnitFn("UnitHealth", function(unit) local u = world.units[unit] return Hid(u and u.health or 0) end)
     UnitFn("UnitHealthMax", function(unit) local u = world.units[unit] return Hid(u and u.healthMax or 0) end)

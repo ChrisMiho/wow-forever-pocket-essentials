@@ -634,6 +634,7 @@ FirstQuestID	-
 FirstStop	-
 Fit	-
 FitLabel	-
+FitName	-
 FlushCombatQueue	-
 FlushQuiet	-
 Fmt	-
@@ -1261,6 +1262,7 @@ RefreshTot	-
 RefreshWorldMap	-
 Refusal	-
 Refuse	-
+RegionalUniqueNamesEnabled	-
 RegisterBody	-
 RegisterCoreEvent	-
 RegisterForClicks	-
@@ -1386,6 +1388,7 @@ SetIgnoreParentAlpha	-
 SetMessage	-
 SetModuleEnabled	-
 SetMouseMotionEnabled	-
+SetNames	-
 SetNavFocus	-
 SetOverrideBinding	-
 SetOverrideBindingClick	-
@@ -1524,6 +1527,8 @@ Str	-
 Strips	-
 StylePin	-
 Supported	-
+SurnameJoin	-
+SurnamesHere	-
 Swatter	-
 Sweep	-
 SweepNow	-
@@ -2040,6 +2045,7 @@ mappedButtonKey	-
 mark	-
 match	-
 max	-
+measure	-
 measureClock	-
 medium	-
 memAt	-
@@ -2062,6 +2068,7 @@ ms	-
 msgBig	-
 n	-
 name	-
+nameRoom	-
 names	-
 nav	-
 navColumn	-
@@ -2324,6 +2331,7 @@ slash	-
 slay	-
 slay_mono	-
 slim	-
+slimNames	-
 slot	-
 slots	-
 small	-
@@ -2369,6 +2377,7 @@ strips	-
 strsub	-
 style	-
 sub	-
+surname	-
 switch	-
 t	-
 t0	-
@@ -2462,6 +2471,7 @@ what	-
 wheel	-
 where	-
 whisper	-
+whole	-
 why	-
 width	-
 wipe	-

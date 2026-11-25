@@ -124,6 +124,8 @@ Plan.DEFAULTS = {
     -- 0.17.0: the slim bars (SlimBars.lua): 0 Off, 1 On. Off, the game's unit frames and the
     -- tooltip are as 0.16.4 has them and SlimBars.lua is never called.
     slim = 0,
+    -- 0.20.0: the names on the slim bars: 1 Whole name (first name and surname), 0 First name.
+    slimNames = 1,
     -- 0.18.0: arrange it yourself (Arrange.lua): 0 Off, 1 On. Off, no saved offset is added
     -- anywhere and Arrange.lua is never called. arrangeWheel: the spell wheels as a piece.
     arrange = 0, arrangeWheel = 0,
@@ -413,7 +415,7 @@ local function Fill(opts)
     opts = type(opts) == "table" and opts or {}
     for k, default in pairs(Plan.DEFAULTS) do
         local v = opts[k]
-        local onOff = k == "hints" or k == "mapButtons" or k == "slim" or k:sub(1, 1) == "t" or k:sub(1, 7) == "arrange"
+        local onOff = k == "hints" or k == "mapButtons" or k:sub(1, 4) == "slim" or k:sub(1, 1) == "t" or k:sub(1, 7) == "arrange"
             or k == "mapLook"
         if v == 0 or v == 1 or (v == 2 and not onOff) then out[k] = v else out[k] = default end
     end
@@ -2901,6 +2903,11 @@ do
             PE:Print("Slim bars count from the next reload.")
         end
     end }
+    -- 0.20.0: the names on the slim bars (SlimBars.lua). It changes no Edit Mode piece: the
+    -- bars read their names again at once, in a session that began with Slim bars On.
+    OPTIONS[#OPTIONS + 1] = { key = "slimNames", label = "Names on the bars",
+        choices = { { value = 1, label = "Whole name" }, { value = 0, label = "First name" } },
+        OnChange = function() Snap.SlimCall("SetNames", mod.opts.slimNames) end }
     -- 0.19.0: the map's look, Round by default. Square asks Edit Mode for another size and spot,
     -- so a change goes the way the Spell panel size does: the map and the timers are rewritten
     -- in our layout (out of a fight) and the reload is asked for. What MapLook.lua draws (the

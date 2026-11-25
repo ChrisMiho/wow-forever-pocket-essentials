@@ -1368,6 +1368,8 @@ test("rows: Spell panel size, the three timer rows and Start over", function()
         "Part: follow the triggers with a hook",
         -- 0.17.0: the slim bars, Off until tried on the device
         "Slim bars",
+        -- 0.20.0: whole names or first names on the slim bars
+        "Names on the bars",
         -- 0.19.0: the map's look, Round until the square map is tried on the device
         "Map look",
         -- 0.18.0: arrange it yourself, both Off until tried on the device, and the way in
