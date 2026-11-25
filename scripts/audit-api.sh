@@ -19,8 +19,8 @@ cd "$(dirname "$0")/.."
 # full hash in PIN and its subject in EXPECTED, run this script, and commit the
 # changed files in tests/api/. The CI cache is keyed on this file, so a new PIN
 # starts a fresh download.
-PIN="bebcb6bf309cf41b41bd74f8ca651e6a105b2676"
-EXPECTED="1.60.1 (70938)"
+PIN="c01a87b549bbc19e0f284c1616d18654c91297de"
+EXPECTED="1.60.1 (71091)"
 clone="${1:-$HOME/.cache/wow-ui-source/forever}"
 
 if ! command -v luajit >/dev/null 2>&1; then
