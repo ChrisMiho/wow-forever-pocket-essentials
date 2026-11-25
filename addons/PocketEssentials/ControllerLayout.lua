@@ -1187,7 +1187,7 @@ end
 -- Bars: the game's four gamepad bar anchors and the both-triggers bar, moved
 -- and scaled as whole frames (spec "Bars (placed by the addon)").
 --
--- Blizzard_GamepadActionBars (build 1.60.1.70938): ActionBarTemplates.xml
+-- Blizzard_GamepadActionBars (build 1.60.1.70938, unchanged in 71091): ActionBarTemplates.xml
 -- makes PageUnit's Top, Left, Right and Bottom CenteredAnchor (50 x 50,
 -- CENTER on PageUnit at (0, 58), (-195, 0), (195, 0), (0, -58)), each with a
 -- Bar anchored CENTER on it. The game sets no scale on them and re-anchors

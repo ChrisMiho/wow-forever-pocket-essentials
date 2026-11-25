@@ -191,7 +191,10 @@ dispatcher tests one local boolean and then runs the same code as before.
 ## Unverified API
 
 Everything the code calls was looked up in Blizzard's interface source for
-build 1.60.1.70938 (`github.com/Gethe/wow-ui-source`, branch `forever`).
+build 1.60.1.70938 (`github.com/Gethe/wow-ui-source`, branch `forever`), and
+checked again against build 1.60.1.71091 (commit `c01a87b`, the build the API
+audit is pinned to): of the files the addon relies on, three changed, and none
+of the changes reaches the addon (spec `2026-11-24-0.16.4-cleanup.md`, 9).
 These are the things that could **not** be confirmed there. Each is guarded
 so that being wrong cannot raise an error; the worst case is listed.
 

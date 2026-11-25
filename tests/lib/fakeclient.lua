@@ -2850,7 +2850,7 @@ end
 -- bag button per bag; sorted by bag from the last to the first (key ring ahead of all), a bag's
 -- slots ahead of its own button; laid out ten to a row from the bottom right upward, 42 apart,
 -- each button with the one point BOTTOMRIGHT on the money frame's TOPRIGHT (AnchorUtil.GridLayout,
--- ContainerFrame.lua:3033-3035). Buttons left out have no points (Pool_HideAndClearAnchors).
+-- ContainerFrame.lua:3032-3034). Buttons left out have no points (Pool_HideAndClearAnchors).
 function Client:layoutBagItems()
     assert(self.bagButtons, "fakeclient: buildBag first")
     local world, state = self.world, self._state
@@ -2880,7 +2880,7 @@ function Client:layoutBagItems()
     bst.width, bst.height = 436, 96 + math.ceil(#list / 10) * 42
 end
 
--- Blizzard's X on a bag button (Gamepad_ToggleCollapseBag, ContainerFrame.lua:3346-3355): the
+-- Blizzard's X on a bag button (Gamepad_ToggleCollapseBag, ContainerFrame.lua:3345-3354): the
 -- bag is collapsed or expanded, the items are laid out again and the layout pass runs.
 function Client:collapseBag(bagID, collapsed)
     self.world.collapsed[bagID] = collapsed and true or nil

@@ -575,9 +575,11 @@ end
 --
 -- Blizzard's cursor looks for a "jump override" on the current button before
 -- anything else and goes to that frame if it is visible, whether or not the
--- frame belongs to the focused window (SmartNavigation.lua, Navigate). Its
--- own round bag picture is reached the same way (ContainerFrame.lua,
--- ApplySmartNavOverrideForLeftmostButton). The tab stays a child of UIParent.
+-- frame belongs to the focused window (SmartNavigation.lua:1503-1530, Navigate).
+-- Until build 70938 the bag reached its own round bag picture the same way
+-- (ContainerFrame.lua, ApplySmartNavOverrideForLeftmostButton); build 71091 took
+-- that function out, the jump override itself is unchanged. The tab stays a
+-- child of UIParent.
 --
 -- A needs help: with the bag focused, A belongs to the bag's own "Select"
 -- action, which only fires for buttons carrying the bag's own tag, and one
