@@ -304,6 +304,17 @@ test("map look: at another map size the bottom is still 5 up and the edge still 
     c:assertClean()
 end)
 
+test("map look: when the game sizes the map's frame again without anchoring it, a redraw lowers it again", function()
+    local c, _, Look, parts = placed()
+    -- The game's redraw gives the frame another picture's size (the rotating map) and leaves its points.
+    parts.box:SetHeight(273)
+    Look:Place(SQUARE, true)
+    near(rectOf(c, c.env.Minimap)[2], 5, "the map's bottom after the frame grew")
+    eq(pointOf(c, parts.box), { "BOTTOM", parts.cluster, "BOTTOM", 10, -32.5 })
+    Look:Restore()
+    eq(pointOf(c, parts.box), { "BOTTOM", parts.cluster, "BOTTOM", 10, 30 })
+end)
+
 test("map look: Restore puts the map's frame back where the game had it", function()
     local c, _, Look, parts = placed()
     Look:Restore()

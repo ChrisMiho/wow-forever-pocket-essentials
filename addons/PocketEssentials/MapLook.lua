@@ -55,7 +55,10 @@ local ADDON_NAME, PE = ...
 --     Blizzard_TimeManager/Camelot/Blizzard_TimeManagerOverrides.lua:5-7), loaded at login
 --     (Blizzard_Game/Shared/EventImplementation.lua:176-177). A plain Button with no mixin. A
 --     tap on it opens the game's clock window (Blizzard_TimeManager.lua:377-388).
---     Nothing in the game's Lua shows either again once hidden.
+--     Nothing in the game's Lua shows the strip again once hidden. The clock is shown by
+--     the game while one of its alarms rings and hidden again when the alarm is turned off
+--     (Blizzard_TimeManager.lua:475-476, 482-484): it then sits over the square map's bottom
+--     for that time, and nothing is done about it here.
 --   The time: the game's clock shows GameTime_GetTime(false)
 --     (Blizzard_TimeManager.lua:363-365). That function, not called here, reads the setting
 --     "timeMgrUseLocalTime" and takes date("%H"), date("%M") or GetGameTime()
@@ -524,12 +527,19 @@ local function LowerMapFrame(map, box, cluster)
     if not cluster then return SayMissing("the map's piece (the map's frame's parent)") end
     local points = ReadPoints(box)
     if not points then return SayMissing("the map's frame's place") end
-    if lowered and lowered.frame == box and #points == 1 and SamePoint(points[1], lowered.set) then return end -- still ours
+    local scale, height, mapHeight = Num(box, "GetScale"), Num(box, "GetHeight"), Num(map, "GetHeight")
+    if lowered and lowered.frame == box and #points == 1 and SamePoint(points[1], lowered.set) then
+        -- Still where this file put it. The game sizes the frame again without anchoring it
+        -- (UpdateMinimapConfig, Blizzard_Minimap/Camelot/Minimap.lua:36-39: another picture's
+        -- size when the map's rotation is switched), so the place is worked out again when a
+        -- size it was worked out from has changed, from the game's own points kept here.
+        if lowered.scale == scale and lowered.height == height and lowered.mapHeight == mapHeight then return end
+        points = lowered.points
+    end
     local p = points[1]
     if #points ~= 1 or p[1] ~= "BOTTOM" or p[3] ~= "BOTTOM" or (p[2] ~= cluster and p[2] ~= nil) or not PlainNumber(p[4]) then
         return Once("the map's frame is not anchored under the map's piece: not lowered")
     end
-    local scale, height, mapHeight = Num(box, "GetScale"), Num(box, "GetHeight"), Num(map, "GetHeight")
     local clusterScale, ui = Num(cluster, "GetEffectiveScale"), UIScale()
     if not (scale and height and mapHeight and clusterScale) or scale <= 0 or clusterScale <= 0 then
         return SayMissing("the map's frame's size")
@@ -542,7 +552,7 @@ local function LowerMapFrame(map, box, cluster)
         WritePoints(box, points)
         return Once("the map's frame could not be lowered")
     end
-    lowered = { frame = box, points = points, set = set }
+    lowered = { frame = box, points = points, set = set, scale = scale, height = height, mapHeight = mapHeight }
     Note("lowered", format("the map's frame lowered inside its piece: its bottom from %.1f to %.1f (scale %.2f, frame %.1f, map %.1f)",
         PlainNumber(p[5]) and p[5] or 0, y, scale, height, mapHeight))
 end
