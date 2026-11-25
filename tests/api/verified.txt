@@ -132,8 +132,10 @@ frame	GameFontHighlightLarge	Blizzard_Fonts_Shared/Shared/FontStyles.xml used
 frame	GameFontNormal	Blizzard_Fonts_Shared/Shared/FontStyles.xml used
 frame	GameFontNormalLarge	Blizzard_Fonts_Shared/Shared/FontStyles.xml used
 frame	GameTimeFrame	Blizzard_Minimap/Mainline/GameTime.xml used
+frame	GameTooltipDefaultContainer	Blizzard_GameTooltip/Mainline/GameTooltip.xml used
 frame	GamepadBagBar	Blizzard_MainMenuBarBagButtons/Camelot/MainMenuBarBagButtons.xml used
 frame	GamepadMainActionBarFrame	Blizzard_GamepadActionBars/MainActionBarFrame.xml used
+frame	GamepadPersistentInputLegend	Blizzard_Gamepad/UI/PersistentInputLegend/GamepadPersistentInputLegend.xml used
 frame	GamepadPetActionFlyout	Blizzard_GamepadActionBars/Camelot/PetClassFlyouts.xml used
 frame	MainStatusTrackingBarContainer	Blizzard_StatusTrackingBar/Mainline/StatusTrackingBar.xml used
 frame	MerchantFrame	Blizzard_UIPanels_Game/Mainline/MerchantFrame.xml used
@@ -150,8 +152,11 @@ frame	SMART_NAV_INPUT_DIRECTION	Blizzard_AchievementUI/Mainline/Blizzard_Achieve
 frame	SOUNDKIT	Blizzard_SharedXML/Mainline/SoundKitConstants.lua used
 frame	STANDARD_TEXT_FONT	Blizzard_Fonts_Shared/Shared/GameFonts.xml used
 frame	ScriptErrorsFrame	Blizzard_ScriptErrorsFrame/Blizzard_ScriptErrorsFrame.xml used
+frame	SecondaryStatusTrackingBarContainer	Blizzard_StatusTrackingBar/Mainline/StatusTrackingBar.xml used
 frame	SlashCmdList	Blizzard_ChatFrameBase/Shared/SlashCommandsRegistry.lua used
 frame	SwingTimerMainHandFrame	Blizzard_SwingTimer/Blizzard_SwingTimer.xml used
+frame	SwingTimerOffHandFrame	Blizzard_SwingTimer/Blizzard_SwingTimer.xml used
+frame	SwingTimerRangedFrame	Blizzard_SwingTimer/Blizzard_SwingTimer.xml used
 frame	TargetFrame	Blizzard_UnitFrame/Mainline/TargetFrame.xml used
 frame	TradeFrame	Blizzard_UIPanels_Game/Mainline/TradeFrame.xml used
 frame	UIParent	Blizzard_AchievementUI/Mainline/Blizzard_AchievementUI.xml used

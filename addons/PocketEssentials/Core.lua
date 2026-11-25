@@ -218,7 +218,32 @@ end
 function PE:ClearDebug()
     if not debugStore then return end
     debugStore.lines, debugStore.next = {}, 1
+    debugStore.section = nil
     self:RefreshSettings()
+end
+
+local TEXT_DEBUG_FIRST = "Switch the Debug log on first (Settings, Debug log)."
+PE.TEXT_DEBUG_FIRST = TEXT_DEBUG_FIRST
+
+-- 0.16.4 (spec 2026-11-24-0.16.4-cleanup.md, 6): a mark for the device test. Writes
+-- "==== section N ====" to the debug log and says "Section N marked" in chat; returns N,
+-- or nil (and says why) while the log is off. N is kept with the log, so it goes on over
+-- the reloads of one sitting and starts again at 1 when the log is emptied.
+function PE:MarkSection()
+    if not PE.debugOn or not debugStore then
+        PE:Print(TEXT_DEBUG_FIRST)
+        return nil
+    end
+    local n = (tonumber(debugStore.section) or 0) + 1
+    debugStore.section = n
+    PE:Debug("mark", "==== section " .. n .. " ====")
+    PE:Print("Section " .. n .. " marked")
+    return n
+end
+
+-- The last section marked (0: none since the log was emptied).
+function PE:Section()
+    return debugStore and tonumber(debugStore.section) or 0
 end
 
 -- Screen and interface facts for the top of a session, each read on its own
@@ -861,6 +886,8 @@ local function InitDB()
         dbg.lines = lines
     end
     dbg.next = #lines + 1
+    -- The last section marked (PE:MarkSection): a whole number, or nothing.
+    if type(dbg.section) ~= "number" or dbg.section < 1 or dbg.section % 1 ~= 0 then dbg.section = nil end
     dbg.on = dbg.on == true
     debugStore = dbg
     PE.debugOn = dbg.on

@@ -258,6 +258,9 @@ end
 -- The map's frames the code names, listed one by one (not every global starting with Minimap).
 local MINIMAP_FRAMES = {
     Minimap = true, MinimapCluster = true, MinimapCompassTexture = true, MinimapCompassTextureUnderlay = true,
+    -- 0.16.4, the snapshot (ControllerLayout.lua): frames whose names do not end in "Frame".
+    ChatFrame1 = true, GameTooltipDefaultContainer = true, GamepadPersistentInputLegend = true,
+    MainStatusTrackingBarContainer = true, SecondaryStatusTrackingBarContainer = true,
 }
 for _, f in ipairs(files) do
     local toks = parsed[f]

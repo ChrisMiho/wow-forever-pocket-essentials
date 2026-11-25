@@ -862,6 +862,13 @@ local function DebugCard(y, width)
         -- case reloading needs a real button press.
         yy = list:ActionRow("Save the log (reloads)", "Save", function() PE:ReloadNow() end, ix, yy, iw)
         yy = list:ActionRow("Empty the log", "Empty", PE:Wrap("core", function() PE:ClearDebug() end), ix, yy, iw)
+        -- 0.16.4, for a device test: a numbered mark in the log, and the place and size of
+        -- every piece of the Controller layout (ControllerLayout.lua, Snapshot).
+        yy = list:ActionRow("Mark a test section", "Mark", PE:Wrap("core", function() PE:MarkSection() end), ix, yy, iw)
+        yy = list:ActionRow("Save a snapshot", "Snapshot", PE:Wrap("core", function()
+            local layout = PE.ControllerLayout
+            if type(layout) == "table" and type(layout.Snapshot) == "function" then layout:Snapshot() end
+        end), ix, yy, iw)
         return yy
     end)
 end

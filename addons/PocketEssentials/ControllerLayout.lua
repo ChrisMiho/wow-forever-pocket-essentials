@@ -761,7 +761,6 @@ end
 -- is active is only forgotten.
 
 local tostring, pcall = tostring, pcall
-local tinsert = table.insert
 
 local TEXT_OFF = "Needs a reload to switch on or off. Off brings back your own layout."
 local TEXT_USING = "Using the Pocket Essentials layout. Move the map, chat or frames in Edit Mode if you like."
@@ -1467,6 +1466,11 @@ end
 ---------------------------------------------------------------------------
 
 local PlaceScreen, RestoreScreen -- the block below; in a do block, as the file is near Lua's 200 locals
+-- 0.16.4: everything of the snapshot (the block at the end of the file) hangs on this one
+-- table, for the same reason (the file is AT the limit: a new top-level local does not
+-- compile; put new ones in a do block or on a table). sources: functions other parts added
+-- (mod:AddSnapshotSource).
+local Snap = { sources = {} }
 
 do
     local screenPlaced = false -- these pieces are placed (the hooks below do nothing otherwise)
@@ -1630,6 +1634,9 @@ do
         PlaceDisc()
         HookRing()
     end
+
+    -- The disc's frame for the snapshot, or nil before the first placement.
+    Snap.disc = function() return disc and disc.frame or nil end
 
     local function RestoreRing()
         for _, t in ipairs(ringOrder) do
@@ -1969,7 +1976,7 @@ local function AddOurs(state, e)
     local newIndex = lastAccount and (lastAccount + 1) or (state.numPresets + 1)
     local list = {}
     for i, l in ipairs(state.saved) do list[i] = l end
-    tinsert(list, newIndex - state.numPresets, layout)
+    table.insert(list, newIndex - state.numPresets, layout) -- no local for it: the file is at Lua's 200 locals
     local ok, err = SaveAll(state, list)
     if not ok then
         Fail(err)
@@ -2322,6 +2329,13 @@ do
         end }
     end
 end
+-- 0.16.4, for the device test (spec 2026-11-24-0.16.4-cleanup.md, 6 and 7): a numbered mark
+-- in the debug log, and the snapshot (the block at the end of the file). `always`: the two
+-- rows also show while the layout is off, to record what "everything put back" looks like.
+OPTIONS[#OPTIONS + 1] = { label = "Mark a test section", button = "Mark", always = true,
+    action = function() PE:MarkSection() end }
+OPTIONS[#OPTIONS + 1] = { label = "Save a snapshot", button = "Snapshot", always = true,
+    action = function() Snap.Take() end }
 
 -- This character's check (see the notes above Say). Runs out of combat; waits
 -- (and is called again by the next PLAYER_ENTERING_WORLD or
@@ -2500,6 +2514,268 @@ function mod:HubSpot()
     return Plan.HubSpot(SessionSize())
 end
 PE.ControllerLayout = mod
+
+---------------------------------------------------------------------------
+-- 0.16.4: the snapshot (spec 2026-11-24-0.16.4-cleanup.md, 7). One tap writes to the debug
+-- log, once, where every piece of the layout is: the game's frames it places or moves, our
+-- own panels, and the PE button; then each pair of visible pieces that overlap. For a
+-- device test: one file then says what a screenshot shows.
+--
+--   mod:Snapshot()             true when written. With the Debug log off, or in a fight, it
+--                              says so in chat and returns false; in a fight it is written
+--                              when the fight is over (PE:RunOutOfCombat), since the game
+--                              may hide a frame's place in a fight.
+--   mod:AddSnapshotSource(fn)  another part's pieces: fn(add) calls add(name, region) for
+--                              each (region nil: written as "not found"), or
+--                              add(name, region, { skip = true }) for one that is listed but
+--                              not checked for overlaps.
+--
+-- It only reads: each region's own IsVisible, GetLeft, GetBottom, GetWidth, GetHeight,
+-- GetEffectiveScale, GetAlpha and GetParent (engine methods:
+-- Blizzard_APIDocumentationGenerated/SimpleScriptRegionAPIDocumentation.lua:178, 582,
+-- SimpleRegionAPIDocumentation.lua:38). No frame is made, nothing is hooked, nothing ticks.
+-- Numbers are UI units from the screen's bottom left (a region's own numbers times its
+-- scale over UIParent's), the unit of Edit Mode and of Plan.Rects. A value the game hides
+-- is written "<secret>" and that piece is left out of the overlap check.
+--
+-- The game's frames, by the names their XML gives them (paths under Interface/AddOns/):
+-- MinimapCluster and its ZoneTextButton, Minimap (Blizzard_Minimap/Mainline/Minimap.xml:24, 56),
+-- ChatFrame1, BuffFrame and DebuffFrame (Blizzard_BuffFrame/BuffFrame.xml:6, 87),
+-- ObjectiveTrackerFrame (Blizzard_ObjectiveTracker/Blizzard_ObjectiveTracker.xml:3),
+-- MainStatusTrackingBarContainer and SecondaryStatusTrackingBarContainer
+-- (Blizzard_StatusTrackingBar/Mainline/StatusTrackingBar.xml:41, 49), PlayerFrame, PetFrame
+-- (Blizzard_UnitFrame/Mainline/PetFrame.xml:11), TargetFrame and its totFrame,
+-- GameTooltipDefaultContainer (Blizzard_GameTooltip/Mainline/GameTooltip.xml:242),
+-- SwingTimerMainHandFrame, SwingTimerOffHandFrame, SwingTimerRangedFrame
+-- (Blizzard_SwingTimer/Blizzard_SwingTimer.xml:56, 69, 82), GamepadPersistentInputLegend
+-- (Blizzard_Gamepad/UI/PersistentInputLegend/GamepadPersistentInputLegend.xml:38), and on
+-- GamepadMainActionBarFrame.PageUnit the four anchors with their bars, LeftClassAction,
+-- RightClassAction, LeftInputPrompt, RightInputPrompt and the two shoulder pictures
+-- (Blizzard_GamepadActionBars/MainActionBarFrame.xml:18-26, 94-135).
+---------------------------------------------------------------------------
+
+-- In a function of its own, not a do block: this far down the file every one of its (nearly
+-- 200) top-level locals is in scope, and a block's locals count on top of them.
+Snap.Build = function()
+    local floor, format = math.floor, string.format
+    local SECRET = "<secret>"
+    local LINE_ROOM = 150 -- a snapshot line's own text; the log cuts a whole line at 200
+    local taken = 0
+
+    -- One of a region's own methods, called: its first answer, SECRET for a hidden one,
+    -- nil when the method is missing or raises.
+    local function Read(region, method)
+        local fn = region[method]
+        if type(fn) ~= "function" then return nil end
+        local ok, v = pcall(fn, region)
+        if not ok then return nil end
+        if issecretvalue ~= nil and issecretvalue(v) == true then return SECRET end
+        return v
+    end
+
+    local function Num(v)
+        if v == SECRET then return SECRET end
+        if type(v) ~= "number" then return "?" end
+        return format("%.1f", v)
+    end
+
+    -- The pieces this file knows, in the order written.
+    local function BuiltIn(add)
+        local SKIP = { skip = true }
+        local cluster = type(MinimapCluster) == "table" and MinimapCluster or nil
+        add("map", cluster, SKIP) -- the map's whole box: the round map and the strip are listed themselves
+        add("round map", Minimap, { with = "map's black disc" })
+        add("map title strip", Child(cluster, "ZoneTextButton"))
+        add("map's black disc", Snap.disc(), { with = "round map" })
+        add("chat", ChatFrame1)
+        add("buffs", BuffFrame)
+        add("debuffs", DebuffFrame)
+        add("quest tracker", ObjectiveTrackerFrame)
+        add("XP bar 1", MainStatusTrackingBarContainer)
+        add("XP bar 2", SecondaryStatusTrackingBarContainer)
+        add("player", PlayerFrame)
+        add("pet", PetFrame)
+        local target = type(TargetFrame) == "table" and TargetFrame or nil
+        add("target", target)
+        add("target of target", Child(target, "totFrame"))
+        add("tooltip spot", GameTooltipDefaultContainer, SKIP) -- the box the tooltip is pinned in, not the tooltip
+        add("main hand timer", SwingTimerMainHandFrame)
+        add("off hand timer", SwingTimerOffHandFrame)
+        add("ranged timer", SwingTimerRangedFrame)
+        add("hint box", GamepadPersistentInputLegend)
+        local pageUnit = Child(GamepadBar(), "PageUnit")
+        for _, b in ipairs({ { "main", "TopCenteredAnchor" }, { "LT", "LeftCenteredAnchor" }, { "RT", "RightCenteredAnchor" },
+            { "LT+RT", "BottomCenteredAnchor" } }) do
+            local anchor = Child(pageUnit, b[2])
+            add("bar anchor " .. (b[1] == "LT+RT" and "bottom" or b[1]), anchor, SKIP)
+            add("game bar " .. b[1], Child(anchor, "Bar"))
+        end
+        -- The prompt sits 1 unit into its button by the game's own design (MainActionBarFrame.xml:94-135).
+        add("LB+LT button", Child(pageUnit, "LeftClassAction"), { with = "LB+LT prompt" })
+        add("LB+LT prompt", Child(pageUnit, "LeftInputPrompt"), { with = "LB+LT button" })
+        add("RB+RT button", Child(pageUnit, "RightClassAction"), { with = "RB+RT prompt" })
+        add("RB+RT prompt", Child(pageUnit, "RightInputPrompt"), { with = "RB+RT button" })
+        add("LB targeting picture", Child(pageUnit, "LeftShoulderBackground"))
+        add("RB targeting picture", Child(pageUnit, "RightShoulderBackground"))
+        -- Ours: FaceBars.lua's eight panel halves and the two frames under them that take a tap.
+        local face = Child(PE, "FaceBars")
+        local view, backing = Child(face, "view"), Child(face, "backing")
+        for gi, key in ipairs({ "main", "lt", "rt", "both" }) do
+            local halves = Child(Child(view, gi), "halves")
+            add(key .. " d-pad panel", Child(halves, 1))
+            add(key .. " face panel", Child(halves, 2))
+        end
+        add("tap guard left", Child(backing, 1), SKIP)
+        add("tap guard right", Child(backing, 2), SKIP)
+        add("PE button", Child(Child(PE, "Hub"), "button"))
+    end
+
+    -- Where a region is: { line = text after the name, rect = { l, b, r, t } or nil when it
+    -- is hidden, fully see-through, hidden by the game or has no place yet }.
+    local function Measure(region, ui)
+        local visible = Read(region, "IsVisible")
+        local eff = Read(region, "GetEffectiveScale")
+        local l, b = Read(region, "GetLeft"), Read(region, "GetBottom")
+        local w, h = Read(region, "GetWidth"), Read(region, "GetHeight")
+        local alpha, f = 1, region
+        for _ = 1, 12 do
+            if type(f) ~= "table" then break end
+            local a = Read(f, "GetAlpha")
+            if a == SECRET then alpha = SECRET break end
+            if type(a) == "number" then alpha = alpha * a end
+            f = Read(f, "GetParent")
+        end
+        local k = (type(eff) == "number" and ui > 0) and eff / ui or nil
+        local function U(v) return (type(v) == "number" and k) and v * k or v end
+        l, b, w, h = U(l), U(b), U(w), U(h)
+        local state = (visible == SECRET and SECRET) or (visible == true and "shown") or "hidden"
+        local text = state .. " | l=" .. Num(l) .. " b=" .. Num(b) .. " w=" .. Num(w) .. " h=" .. Num(h)
+            .. " s=" .. (k and format("%.2f", k) or Num(eff))
+        if alpha == SECRET then
+            text = text .. " a=" .. SECRET
+        elseif alpha < 0.995 then
+            text = text .. format(" a=%.2f", alpha)
+        end
+        local rect
+        if visible == true and k and type(l) == "number" and type(b) == "number" and type(w) == "number" and type(h) == "number"
+            and w > 0 and h > 0 and type(alpha) == "number" and alpha > 0.005 then
+            rect = { l, b, l + w, b + h }
+        end
+        return text, rect
+    end
+
+    -- "label: a b c" in as many lines as LINE_ROOM needs; the later ones say "(more)".
+    local function WriteList(label, items)
+        local line, first = "", true
+        local function Out()
+            PE:Debug("snapshot", label .. (first and ": " or " (more): ") .. line)
+            line, first = "", false
+        end
+        for _, item in ipairs(items) do
+            if line ~= "" and #line + #item + 1 > LINE_ROOM then Out() end
+            line = line == "" and item or (line .. " " .. item)
+        end
+        if line ~= "" or first then Out() end
+    end
+
+    local function Write()
+        taken = taken + 1
+        local n = taken
+        PE:Debug("snapshot", "==== snapshot " .. n .. " ==== section " .. PE:Section())
+        local ui = UIParent:GetEffectiveScale()
+        PE:Debug("snapshot", format("screen %dx%d, UI scale %.2f", floor(UIParent:GetWidth() + 0.5),
+            floor(UIParent:GetHeight() + 0.5), ui))
+        local state, why = ReadState()
+        if state and state.current then
+            local index = OursIndex(state)
+            PE:Debug("snapshot", 'Edit Mode layout "' .. PE.Plain(state.current.name) .. '" (ours: '
+                .. ((index ~= nil and state.active == index) and "yes" or "no") .. ")")
+        else
+            PE:Debug("snapshot", "Edit Mode layout: not readable (" .. tostring(why or "no active layout") .. ")")
+        end
+        local items = {}
+        for _, m in ipairs(PE.moduleList) do items[#items + 1] = m.key .. "=" .. tostring(PE:GetModuleState(m.key)) end
+        WriteList("features", items)
+        items = {}
+        local opts = type(mod.opts) == "table" and mod.opts or {}
+        local keys = {}
+        for k, v in pairs(opts) do
+            if type(k) == "string" and (type(v) == "number" or type(v) == "string" or type(v) == "boolean") then keys[#keys + 1] = k end
+        end
+        sort(keys)
+        for _, k in ipairs(keys) do items[#items + 1] = k .. "=" .. PE.Plain(opts[k]) end
+        WriteList("options", items)
+
+        local pieces, missing = {}, 0
+        local function add(name, region, flags)
+            name = tostring(name)
+            if type(region) ~= "table" then
+                missing = missing + 1
+                PE:Debug("snapshot", "piece: " .. name .. " | not found")
+                return
+            end
+            local ok, text, rect = pcall(Measure, region, ui)
+            if not ok then
+                PE:Debug("snapshot", "piece: " .. name .. " | not readable")
+                return
+            end
+            PE:Debug("snapshot", "piece: " .. name .. " | " .. text)
+            flags = type(flags) == "table" and flags or nil
+            pieces[#pieces + 1] = { name = name, rect = (not (flags and flags.skip)) and rect or nil, with = flags and flags.with }
+        end
+        BuiltIn(add)
+        for i, source in ipairs(Snap.sources) do
+            local ok, err = pcall(source, add)
+            if not ok then PE:Debug("snapshot", "source " .. i .. " failed: " .. tostring(err)) end
+        end
+
+        local overlaps = 0
+        for i = 1, #pieces do
+            local a = pieces[i]
+            for j = i + 1, #pieces do
+                local b = pieces[j]
+                if a.rect and b.rect and a.with ~= b.name and b.with ~= a.name then
+                    local w = math.min(a.rect[3], b.rect[3]) - math.max(a.rect[1], b.rect[1])
+                    local h = math.min(a.rect[4], b.rect[4]) - math.max(a.rect[2], b.rect[2])
+                    if w > 0.05 and h > 0.05 then
+                        overlaps = overlaps + 1
+                        local first, second = a.name, b.name
+                        if second < first then first, second = second, first end
+                        PE:Debug("snapshot", format("overlap: %s + %s | %.1f x %.1f units (%d x %d px)", first, second, w, h,
+                            floor(w * ui + 0.5), floor(h * ui + 0.5)))
+                    end
+                end
+            end
+        end
+        PE:Debug("snapshot", "==== snapshot " .. n .. " end ==== " .. (#pieces + missing) .. " pieces, " .. missing
+            .. " not found, " .. overlaps .. (overlaps == 1 and " overlap" or " overlaps"))
+        PE:Print("Snapshot " .. n .. " saved to the debug log.")
+    end
+
+    Snap.Take = function()
+        if not PE.debugOn then
+            PE:Print(PE.TEXT_DEBUG_FIRST)
+            return false
+        end
+        if PE:InCombat() then
+            PE:Print("In a fight: the snapshot is saved when the fight is over.")
+            PE:RunOutOfCombat("ctrlLayout:snapshot", function()
+                if PE.debugOn then PE:Safe("ctrlLayout", Write) end
+            end)
+            return false
+        end
+        return (PE:Safe("ctrlLayout", Write)) == true
+    end
+
+    function mod:Snapshot()
+        return Snap.Take()
+    end
+
+    function mod:AddSnapshotSource(fn)
+        if type(fn) == "function" then Snap.sources[#Snap.sources + 1] = fn end
+    end
+end
+Snap.Build()
 
 -- From here on a switch-on is a tap, except the late one below.
 PE:OnLogin(function() atLogin = false end)

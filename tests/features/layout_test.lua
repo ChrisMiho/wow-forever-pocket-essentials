@@ -1363,7 +1363,9 @@ test("rows: Spell panel size, the three timer rows and Start over", function()
         "Rebuild the layout",
         -- 0.16.4: the six part rows (0.16.2's testing rows, kept as the switches for the parts)
         "Part: hint box", "Part: chat box", "Part: map ring and buttons", "Part: move the game's bars",
-        "Part: targeting pictures", "Part: spell pictures" })
+        "Part: targeting pictures", "Part: spell pictures",
+        -- 0.16.4: for the device test
+        "Mark a test section", "Save a snapshot" })
     eq(list[1].key, "panelSize")
     local n = list[1].number
     eq({ n.min, n.max, n.step, n.default, n.suffix }, { 80, 120, 10, 100, "%" })
@@ -3472,6 +3474,263 @@ test("0.16.0: none of it runs in a fight", function()
     c:advance(0.1)
     eq(c.env.ChatFrame1Background:IsShown(), true)
     eq(c.env.MinimapCompassTexture:IsShown(), true)
+    c:assertClean()
+end)
+
+---------------------------------------------------------------------------
+-- 0.16.4 (spec 2026-11-24-0.16.4-cleanup.md, 6 and 7): the section mark and the snapshot
+---------------------------------------------------------------------------
+
+local function logOf(c) return rawget(c.env, "PocketEssentialsDB").debug end
+
+-- The text of every debug line of `key` (after "HH:MM:SS.mmm key: "), in order.
+local function logTexts(c, key)
+    local out = {}
+    for _, line in ipairs(logOf(c).lines) do
+        local text = line:match("^%S+ " .. key .. ": (.*)$")
+        if text then out[#out + 1] = text end
+    end
+    return out
+end
+
+local function lastChat(c)
+    local lines = T.chatLines(c)
+    return lines[#lines]
+end
+
+-- The snapshot's line for a piece, or nil.
+local function pieceLine(lines, name)
+    for _, l in ipairs(lines) do
+        if l:sub(1, #name + 9) == "piece: " .. name .. " |" then return l end
+    end
+    return nil
+end
+
+-- A number read back from a snapshot line, which carries one decimal.
+local function about(a, b, msg)
+    check(type(a) == "number" and math.abs(a - b) <= 0.051, (msg or "number") .. ": expected about " .. tostring(b) .. ", got " .. tostring(a))
+end
+
+-- left, bottom, width, height, scale from a piece line.
+local function numbers(line)
+    local l, b, w, h, sc = line:match("l=(%-?[%d%.]+) b=(%-?[%d%.]+) w=([%d%.]+) h=([%d%.]+) s=([%d%.]+)")
+    return tonumber(l), tonumber(b), tonumber(w), tonumber(h), tonumber(sc)
+end
+
+test("0.16.4 mark: with the Debug log off nothing is counted and chat says to switch it on", function()
+    local c, PE = T.new({})
+    eq(PE:MarkSection(), nil)
+    eq(lastChat(c), "Switch the Debug log on first (Settings, Debug log).")
+    eq(#logOf(c).lines, 0)
+    PE:SetDebug(true)
+    eq(PE:MarkSection(), 1, "the tap with the log off was counted")
+end)
+
+test("0.16.4 mark: writes ==== section N ==== and says Section N marked, N counting up", function()
+    local c, PE = T.new({})
+    PE:SetDebug(true)
+    eq(PE:MarkSection(), 1)
+    eq(lastChat(c), "Section 1 marked")
+    eq(PE:MarkSection(), 2)
+    eq(lastChat(c), "Section 2 marked")
+    eq(logTexts(c, "mark"), { "==== section 1 ====", "==== section 2 ====" })
+    -- The count goes on after a reload (one sitting has many), and starts again with an empty log.
+    local db = rawget(c.env, "PocketEssentialsDB")
+    local c2, PE2 = T.new({ saved = db })
+    eq(PE2:MarkSection(), 3, "the count did not go on after a reload")
+    PE2:ClearDebug()
+    eq(PE2:MarkSection(), 1, "an emptied log did not start the count again")
+end)
+
+test("0.16.4 rows: Mark and Snapshot are on the Controller tab, also while the layout is off, and on the Debug log tab", function()
+    local c, PE = layoutClient({}, 3)
+    for _, label in ipairs({ "Mark a test section", "Save a snapshot" }) do
+        local row = optRow(PE, label)
+        check(row, "no row " .. label)
+        eq(row.always, true, label .. " shows only while the layout is on")
+        eq(type(row.action), "function")
+    end
+    eq(optRow(PE, "Mark a test section").button, "Mark")
+    eq(optRow(PE, "Save a snapshot").button, "Snapshot")
+    PE:SetDebug(true)
+    optRow(PE, "Mark a test section").action()
+    eq(lastChat(c), "Section 1 marked")
+    optRow(PE, "Save a snapshot").action()
+    eq(lastChat(c), "Snapshot 1 saved to the debug log.")
+    -- The Debug log tab's two buttons do the same.
+    PE:OpenSettings("debug")
+    c:advance(0.1)
+    local buttons = {}
+    local function walk(w)
+        local st = c._state(w)
+        if st.type == "Button" and w:IsVisible() then buttons[T.labelOf(w)] = w end
+        for _, child in ipairs(st.children) do walk(child) end
+        if st.scrollChild then walk(st.scrollChild) end
+    end
+    walk(rawget(c.env, "PocketEssentialsSettingsPanel"))
+    check(buttons["Mark"], "no Mark button on the Debug log tab")
+    check(buttons["Snapshot"], "no Snapshot button on the Debug log tab")
+    c:click(buttons["Mark"])
+    eq(lastChat(c), "Section 2 marked")
+    c:click(buttons["Snapshot"])
+    eq(lastChat(c), "Snapshot 2 saved to the debug log.")
+    c:assertClean()
+end)
+
+test("0.16.4 snapshot: with the Debug log off nothing is written and chat says to switch it on", function()
+    local c, PE = onClient()
+    eq(PE.ControllerLayout:Snapshot(), false)
+    eq(lastChat(c), "Switch the Debug log on first (Settings, Debug log).")
+    eq(#logOf(c).lines, 0)
+end)
+
+test("0.16.4 snapshot: one block with the screen, the layout, every switch and every piece", function()
+    local c, PE = onClient()
+    PE:SetDebug(true)
+    PE:MarkSection()
+    eq(PE.ControllerLayout:Snapshot(), true)
+    local lines = logTexts(c, "snapshot")
+    eq(lines[1], "==== snapshot 1 ==== section 1")
+    check(lines[#lines]:find("^==== snapshot 1 end ==== %d+ pieces, %d+ not found, %d+ overlaps?$"), "the end line: " .. lines[#lines])
+    local W, H = c.UIParent:GetWidth(), c.UIParent:GetHeight()
+    eq(lines[2], string.format("screen %dx%d, UI scale %.2f", math.floor(W + 0.5), math.floor(H + 0.5), c.UIParent:GetEffectiveScale()))
+    eq(lines[3], 'Edit Mode layout "Pocket Essentials" (ours: yes)')
+    local all = table.concat(lines, "\n")
+    check(all:find("\nfeatures: [^\n]*ctrlLayout=on"), "the features line does not give the layout's switch")
+    check(all:find("sellJunk=off", 1, true), "a feature that is off is not listed")
+    for _, want in ipairs({ "panelSize=100", "ranged=1", "mainHand=1", "offHand=2", "hints=0", "mapButtons=0", "tHints=1", "tChat=1",
+        "tMap=1", "tBars=1", "tExtras=1", "tFace=1" }) do
+        check(all:find("\noptions: [^\n]*" .. want) or all:find("\noptions %(more%): [^\n]*" .. want), "no option " .. want)
+    end
+    -- Every line fits the log's 200 characters with its stamp and key.
+    for _, l in ipairs(lines) do check(#l <= 170, "a snapshot line is too long: " .. l) end
+    -- Our own panels: the main bar's two halves show at the inner spots, 134 by 98; the others are hidden.
+    local dpad = pieceLine(lines, "main d-pad panel")
+    check(dpad and dpad:find("| shown |", 1, true), "main d-pad panel: " .. tostring(dpad))
+    local l, b, w, h, sc = numbers(dpad)
+    about(l, W / 2 - 170 - 67, "main d-pad panel left")
+    about(b, 66 - 49, "main d-pad panel bottom")
+    eq({ w, h, sc }, { 134, 98, 1 })
+    check(pieceLine(lines, "main face panel"):find("| shown |", 1, true), "main face panel is not shown")
+    check(pieceLine(lines, "lt face panel"):find("| hidden |", 1, true), "lt face panel is not hidden")
+    -- The game's frames: the map, the chat, a bar made see-through, a targeting picture, the PE button.
+    for _, name in ipairs({ "map", "round map", "chat", "buffs", "debuffs", "quest tracker", "target", "target of target",
+        "game bar main", "game bar LT", "game bar RT", "game bar LT+RT", "bar anchor bottom", "LB targeting picture",
+        "RB targeting picture", "LB+LT button", "tap guard left", "tap guard right", "map's black disc", "PE button" }) do
+        check(pieceLine(lines, name), "no line for " .. name)
+    end
+    check(pieceLine(lines, "game bar main"):find(" a=0.00", 1, true), "the faded bar's see-through is not given: " .. pieceLine(lines, "game bar main"))
+    local lb = pieceLine(lines, "LB targeting picture")
+    local ll, lbot = numbers(lb)
+    about(ll, W / 2 - 178 - 60, "LB targeting picture left") -- the stand-in's picture is 60 wide, BOTTOMRIGHT at -178, 155
+    about(lbot, 155, "LB targeting picture bottom")
+    -- A frame this client does not have is said, not skipped.
+    eq(pieceLine(lines, "hint box"), "piece: hint box | not found")
+    -- A second one counts up.
+    PE.ControllerLayout:Snapshot()
+    check(logTexts(c, "snapshot")[#lines + 1] == "==== snapshot 2 ==== section 1", "the second snapshot's first line")
+    c:assertClean()
+end)
+
+test("0.16.4 snapshot: overlapping visible pieces are named with the overlap in units and pixels; hidden and by-design ones are not", function()
+    local c, PE = onClient()
+    PE:SetDebug(true)
+    -- The game's buffs put onto the chat: 100 by 40 units of the buffs' box inside the chat's.
+    local chat, buffs = c.env.ChatFrame1, c.env.BuffFrame
+    chat:ClearAllPoints()
+    chat:SetSize(450, 170)
+    chat:SetPoint("BOTTOMLEFT", c.UIParent, "BOTTOMLEFT", 17, 400)
+    buffs:ClearAllPoints()
+    buffs:SetSize(260, 80)
+    buffs:SetPoint("BOTTOMLEFT", c.UIParent, "BOTTOMLEFT", 17 + 450 - 100, 400 + 170 - 40)
+    -- The debuffs on the chat too, but hidden: listed, not an overlap.
+    local debuffs = c.env.DebuffFrame
+    debuffs:ClearAllPoints()
+    debuffs:SetPoint("BOTTOMLEFT", c.UIParent, "BOTTOMLEFT", 20, 410)
+    debuffs:Hide()
+    PE.ControllerLayout:Snapshot()
+    local lines = logTexts(c, "snapshot")
+    local px = c.UIParent:GetEffectiveScale()
+    local want = string.format("overlap: buffs + chat | 100.0 x 40.0 units (%d x %d px)", math.floor(100 * px + 0.5), math.floor(40 * px + 0.5))
+    local found = false
+    for _, l in ipairs(lines) do
+        if l == want then found = true end
+        if l:sub(1, 9) == "overlap: " then
+            check(not l:find("debuffs", 1, true), "a hidden piece is in an overlap: " .. l)
+            check(not l:find("tap guard", 1, true), "a tap guard is in an overlap: " .. l)
+            check(not l:find("bar anchor", 1, true), "a bar anchor is in an overlap: " .. l)
+            check(not l:find("game bar", 1, true), "a see-through bar is in an overlap: " .. l)
+            check(not (l:find("round map", 1, true) and l:find("map's black disc", 1, true)), "the map and its own disc: " .. l)
+        end
+    end
+    check(found, "no line " .. want .. " in:\n" .. table.concat(lines, "\n"))
+    check(pieceLine(lines, "debuffs"):find("| hidden |", 1, true), "the hidden piece is not listed as hidden")
+end)
+
+test("0.16.4 snapshot: in a fight it waits for the end, and says so", function()
+    local c, PE = onClient()
+    PE:SetDebug(true)
+    c:enterCombat()
+    eq(PE.ControllerLayout:Snapshot(), false)
+    eq(lastChat(c), "In a fight: the snapshot is saved when the fight is over.")
+    eq(#logTexts(c, "snapshot"), 0)
+    PE.ControllerLayout:Snapshot() -- a second tap in the same fight still makes one
+    c:leaveCombat()
+    c:advance(0.1)
+    local lines = logTexts(c, "snapshot")
+    eq(lines[1], "==== snapshot 1 ==== section 0")
+    local starts = 0
+    for _, l in ipairs(lines) do if l:find("^==== snapshot %d+ ==== section") then starts = starts + 1 end end
+    eq(starts, 1)
+    eq(lastChat(c), "Snapshot 1 saved to the debug log.")
+    c:assertClean()
+end)
+
+test("0.16.4 snapshot: another part adds its pieces; a value the game hides is written <secret> and left out of the overlaps", function()
+    local c, PE = onClient()
+    PE:SetDebug(true)
+    local hidden = 4321.5
+    c.world.secrets[hidden] = true
+    local function region(left)
+        return { IsShown = function() return true end, IsVisible = function() return true end,
+            GetLeft = function() return left end, GetBottom = function() return 10 end,
+            GetWidth = function() return 2000 end, GetHeight = function() return 2000 end,
+            GetEffectiveScale = function() return c.UIParent:GetEffectiveScale() end, GetAlpha = function() return 1 end }
+    end
+    PE.ControllerLayout:AddSnapshotSource(function(add)
+        add("trial secret", region(hidden))
+        add("trial big", region(0))
+        add("trial missing", nil)
+    end)
+    -- A source that raises does not stop the snapshot.
+    PE.ControllerLayout:AddSnapshotSource(function() error("a broken source") end)
+    PE.ControllerLayout:Snapshot()
+    local lines = logTexts(c, "snapshot")
+    local secret = pieceLine(lines, "trial secret")
+    check(secret and secret:find("l=<secret>", 1, true), "the hidden value is not written <secret>: " .. tostring(secret))
+    eq(pieceLine(lines, "trial missing"), "piece: trial missing | not found")
+    local big = 0
+    for _, l in ipairs(lines) do
+        if l:sub(1, 9) == "overlap: " then
+            check(not l:find("trial secret", 1, true), "a piece with a hidden value is in an overlap: " .. l)
+            if l:find("trial big", 1, true) then big = big + 1 end
+        end
+    end
+    check(big > 0, "the added piece is not checked against the others")
+    check(lines[#lines]:find("^==== snapshot 1 end ===="), "the snapshot did not finish: " .. lines[#lines])
+end)
+
+test("0.16.4 snapshot: with the layout off it still lists every piece, and makes no frame and no hook", function()
+    local c, PE = layoutClient({}, 3)
+    PE:SetDebug(true)
+    local frames, hooks = #c:frames(), #c:callsTo("hooksecurefunc")
+    eq(PE.ControllerLayout:Snapshot(), true)
+    local lines = logTexts(c, "snapshot")
+    eq(lines[3], 'Edit Mode layout "Gamepad" (ours: no)')
+    check(pieceLine(lines, "chat"), "no line for the chat")
+    eq(pieceLine(lines, "main d-pad panel"), "piece: main d-pad panel | not found")
+    eq(#c:frames(), frames, "a frame was made")
+    eq(#c:callsTo("hooksecurefunc"), hooks, "a hook was made")
     c:assertClean()
 end)
 
