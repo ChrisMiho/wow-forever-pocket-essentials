@@ -49,11 +49,22 @@ end
 -- Never a player's name or chat text; a value from the game goes through
 -- PE.Plain, which writes a hidden one as "<secret>".
 --
--- Storage is a ring: lines[1..DEBUG_CAP], `next` is the slot written next.
--- Once full, the oldest line is at `next`.
+-- Storage is a plain list, oldest first: lines[1..n], `next` is n + 1 (kept
+-- in the saved table because scripts/read-log.lua and older versions read
+-- it). Until 0.16.3 it was a ring of 3,000 that overwrote its oldest line, so
+-- a long test sitting lost its start. 0.16.4 (spec 2026-11-24-0.16.4-cleanup.md,
+-- 8): 6,000 lines, and when full the middle goes (DebugCompact): the newest
+-- DEBUG_TAIL lines stay as they are; of the older ones the first DEBUG_HEAD
+-- lines of each session, every section mark and every snapshot line stay, at
+-- most DEBUG_OLD_MAX in all; each run of dropped lines becomes one line that
+-- says how many. That is one pass over the list each time it fills (every
+-- 1,000 lines at the least), never per line.
 ---------------------------------------------------------------------------
 
-local DEBUG_CAP = 3000
+local DEBUG_CAP = 6000
+local DEBUG_TAIL = 3000     -- the newest lines, always kept
+local DEBUG_HEAD = 60       -- the first lines of each session, kept
+local DEBUG_OLD_MAX = 2000  -- the most that is kept of the lines older than the tail
 local DEBUG_LINE_MAX = 200
 PE.DEBUG_CAP = DEBUG_CAP
 PE.debugOn = false
@@ -68,12 +79,83 @@ function PE.Plain(v)
     return tostring(v)
 end
 
+-- Where a session starts in the log (DebugSessionStart and SetDebug write these).
+local SESSION_MARK = "---- session ---- "
+local SWITCHED_ON_MARK = "---- debug log switched on ---- "
+local DROP_TEXT = " lines dropped here: the log was full ----"
+
+-- The number of lines an earlier drop note stands for, or nil.
+local function DropCount(line)
+    local n = line:match("%-%-%-%- (%d+) lines dropped here: the log was full %-%-%-%-$")
+    return n and tonumber(n) or nil
+end
+
+local function DropNote(stamp, count)
+    return (stamp or "00:00:00.000") .. " core: ---- " .. count .. DROP_TEXT
+end
+
+-- The list made smaller (see the notes above): a new list, oldest first.
+local function DebugCompact(lines)
+    local n = #lines
+    local tailStart = n - DEBUG_TAIL + 1
+    if tailStart <= 1 then return lines end
+    local kept = {}
+    local dropped, droppedStamp, headLeft = 0, nil, 0
+    local function Flush()
+        if dropped > 0 then kept[#kept + 1] = DropNote(droppedStamp, dropped) end
+        dropped, droppedStamp = 0, nil
+    end
+    for i = 1, tailStart - 1 do
+        local line = lines[i]
+        if type(line) == "string" then
+            if line:find(SESSION_MARK, 1, true) or line:find(SWITCHED_ON_MARK, 1, true) then headLeft = DEBUG_HEAD end
+            local before = DropCount(line)
+            if before then
+                droppedStamp = droppedStamp or line:match("^(%S+) ")
+                dropped = dropped + before
+            elseif headLeft > 0 or line:find("^%S+ mark: ") or line:find("^%S+ snapshot: ") then
+                if headLeft > 0 then headLeft = headLeft - 1 end
+                Flush()
+                kept[#kept + 1] = line
+            else
+                droppedStamp = droppedStamp or line:match("^(%S+) ")
+                dropped = dropped + 1
+            end
+        end
+    end
+    Flush()
+    -- Too many sessions, marks and snapshots: the oldest of what was kept goes too.
+    local from = 1
+    if #kept > DEBUG_OLD_MAX then
+        from = #kept - DEBUG_OLD_MAX + 2 -- one slot is the note
+        local count = 0
+        for i = 1, from - 1 do count = count + (DropCount(kept[i]) or 1) end
+        -- A note right after the cut joins it.
+        while kept[from] and DropCount(kept[from]) do
+            count = count + DropCount(kept[from])
+            from = from + 1
+        end
+        from = from - 1
+        kept[from] = DropNote(kept[1]:match("^(%S+) "), count)
+    end
+    local out = {}
+    for i = from, #kept do out[#out + 1] = kept[i] end
+    for i = tailStart, n do
+        if type(lines[i]) == "string" then out[#out + 1] = lines[i] end
+    end
+    return out
+end
+
 local function DebugWrite(text)
     local store = debugStore
     if not store then return end
     local i = store.next
     store.lines[i] = text
-    store.next = i % DEBUG_CAP + 1
+    store.next = i + 1
+    if i >= DEBUG_CAP then
+        store.lines = DebugCompact(store.lines)
+        store.next = #store.lines + 1
+    end
 end
 
 -- One clock for a whole session: the wall clock (time()) is read once and paired
@@ -172,7 +254,6 @@ end
 
 local DebugWatchFights -- set below, once the event frame exists
 
-local SESSION_MARK = "---- session ---- "
 local headerSlot, headerLine -- this session's header, until the features have started
 
 -- Called at login, before any feature starts.
@@ -208,7 +289,7 @@ function PE:SetDebug(on)
     DebugWatchFights()
     if on then
         ResetDebugSession()
-        PE:Debug("core", "---- debug log switched on ---- " .. DebugHeader())
+        PE:Debug("core", SWITCHED_ON_MARK .. DebugHeader())
     end
     self:RefreshSettings()
 end
@@ -764,20 +845,22 @@ local function InitDB()
     end
     if type(dbg.lines) ~= "table" then dbg.lines = {} end
     local lines, nextSlot = dbg.lines, dbg.next
-    local valid = type(nextSlot) == "number" and nextSlot >= 1 and nextSlot % 1 == 0 and nextSlot <= #lines + 1
-    if #lines > DEBUG_CAP then
-        -- Saved with a larger cap (10,000 before 0.15.0): the newest lines are
-        -- kept, oldest first. The oldest is at `next` when the ring wrapped.
-        local n = #lines
-        local oldest = (valid and nextSlot <= n) and nextSlot or 1
-        local kept = {}
-        for age = n - DEBUG_CAP, n - 1 do kept[#kept + 1] = lines[(oldest - 1 + age) % n + 1] end
-        dbg.lines = kept
-        nextSlot = #kept % DEBUG_CAP + 1
-    elseif not valid or nextSlot > DEBUG_CAP then
-        nextSlot = #lines % DEBUG_CAP + 1
+    local n = #lines
+    if type(nextSlot) == "number" and nextSlot >= 1 and nextSlot % 1 == 0 and nextSlot <= n then
+        -- A ring that wrapped (saved by 0.16.3 or older): the oldest line is at
+        -- `next`. Put in order once, oldest first.
+        local ordered = {}
+        for age = 0, n - 1 do ordered[#ordered + 1] = lines[(nextSlot - 1 + age) % n + 1] end
+        lines = ordered
+        dbg.lines = lines
     end
-    dbg.next = nextSlot
+    -- Full, or saved with a larger cap (10,000 before 0.15.0): made smaller the
+    -- way a full log is, never emptied.
+    if #lines >= DEBUG_CAP then
+        lines = DebugCompact(lines)
+        dbg.lines = lines
+    end
+    dbg.next = #lines + 1
     dbg.on = dbg.on == true
     debugStore = dbg
     PE.debugOn = dbg.on

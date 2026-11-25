@@ -846,7 +846,8 @@ local function DebugCard(y, width)
         local ty = iy
         ty = ty + list:Text("font", "Debug log", ix, ty, tw, COLOR.font) + M.gap * 0.2
         ty = ty + list:Text("small", "Turn it on, play until the problem happens, then tap Save. "
-            .. "Send the file SavedVariables/PocketEssentials.lua.", ix, ty, tw, COLOR.small)
+            .. "Send the file SavedVariables/PocketEssentials.lua. "
+            .. "When it is full, each session's start and the newest lines stay; the middle goes.", ix, ty, tw, COLOR.small)
         ty = ty + M.gap * 0.3
         ty = ty + list:Text("small", WithCommas(PE:DebugCount()) .. " of " .. WithCommas(PE.DEBUG_CAP) .. " lines",
             ix, ty, tw, COLOR.status) + M.gap * 0.3

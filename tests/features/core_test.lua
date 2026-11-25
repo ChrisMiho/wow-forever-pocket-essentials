@@ -561,71 +561,163 @@ test("debug: a line is cut at 200 characters", function()
     check(#lines[3] < 200, "a short line was padded")
 end)
 
--- Spec "Size": "3,000 lines ... When full, the oldest lines are replaced (a ring ...)".
--- Core.lua: "Once full, the oldest line is at `next`". The saved table is filled to two
--- short of the cap before load so the test makes only a few real calls across the wrap.
-test("debug: the ring keeps at most DEBUG_CAP lines, and after wrapping the oldest is at next", function()
-    local cap = 3000
-    local lines = {}
-    for i = 1, cap - 2 do lines[i] = "old " .. i end
-    local db = saved()
-    db.debug = { on = false, lines = lines, next = cap - 1 }
-    local c, PE = T.new({ saved = db })
-    eq(PE.DEBUG_CAP, cap)
-    eq(PE:DebugCount(), cap - 2)
-    PE:SetDebug(true)                      -- the header takes slot cap - 1
-    PE:Debug("probe", "fills the last slot")
+-- 0.16.4 (spec 2026-11-24-0.16.4-cleanup.md, 8): 6,000 lines, a plain list oldest first. When
+-- full the middle goes: the newest 3,000 stay; of the older ones the first 60 lines of each
+-- session, every section mark and every snapshot line stay; each run of dropped lines becomes
+-- one line that says how many.
+local CAP, TAIL, HEAD, OLD_MAX = 6000, 3000, 60, 2000
+local SESSION = "---- session ---- 2026-11-24"
+
+local function stamped(i, key, text)
+    return string.format("10:%02d:%02d.000 %s: %s", math.floor(i / 60) % 60, i % 60, key, text)
+end
+
+-- The number of lines a drop note stands for, or nil.
+local function dropCount(line)
+    local n = line:match("%-%-%-%- (%d+) lines dropped here: the log was full %-%-%-%-$")
+    return n and tonumber(n) or nil
+end
+
+test("debug 0.16.4: the cap is 6,000 and the log is a plain list, next one past the end", function()
+    local c, PE = T.new({})
+    eq(PE.DEBUG_CAP, CAP)
+    PE:SetDebug(true)
+    for i = 1, 5 do PE:Debug("probe", "line " .. i) end
     local store = debugOf(c)
-    check(store.lines == lines, "the saved list was not the one used")
-    eq(#store.lines, cap)
-    eq(store.next, 1, "next did not wrap to the first slot")
-    check(store.lines[cap]:find("probe: fills the last slot", 1, true), "the last slot holds: " .. store.lines[cap])
-    PE:Debug("probe", "replaces the oldest")
-    PE:Debug("probe", "and the one after")
-    eq(#store.lines, cap, "the list grew past the cap")
-    eq(PE:DebugCount(), cap)
-    eq(store.next, 3)
-    check(store.lines[1]:find("probe: replaces the oldest", 1, true), "slot 1 holds: " .. store.lines[1])
-    check(store.lines[2]:find("probe: and the one after", 1, true), "slot 2 holds: " .. store.lines[2])
-    eq(store.lines[store.next], "old 3", "the oldest line is not at next")
-    eq(store.lines[cap - 2], "old " .. (cap - 2))
+    eq(#store.lines, 6)
+    eq(store.next, 7)
 end)
 
--- Spec 0.15.0 A1: a saved log longer than the cap (10,000 lines before 0.15.0) keeps
--- its newest lines in order, oldest first, and is never emptied.
-test("debug: a saved log longer than the cap keeps its newest lines in order", function()
-    local cap = 3000
-    -- 5000 lines in a ring that wrapped: the oldest is at next (slot 1201).
-    local n, nextSlot = 5000, 1201
+test("debug 0.16.4: when full, each session's start, the marks, the snapshots and the newest lines stay; the middle goes and the log says so", function()
+    local lines = {}
+    for i = 1, CAP - 2 do lines[i] = stamped(i, "probe", "old " .. i) end
+    lines[1] = stamped(1, "core", SESSION .. " one")
+    lines[500] = stamped(500, "mark", "==== section 1 ====")
+    lines[700] = stamped(700, "snapshot", "==== snapshot 1 ====")
+    lines[701] = stamped(701, "snapshot", "piece: map shown")
+    lines[1000] = stamped(1000, "core", SESSION .. " two")
+    local db = saved()
+    db.debug = { on = false, lines = lines, next = CAP - 1 }
+    local c, PE = T.new({ saved = db })
+    eq(PE:DebugCount(), CAP - 2)
+    PE:SetDebug(true)                      -- line CAP - 1: a session start of its own
+    PE:Debug("probe", "the line that fills it")
+    local store = debugOf(c)
+    local got = store.lines
+    check(#got < CAP, "the log was not made smaller: " .. #got)
+    eq(store.next, #got + 1)
+    eq(PE:DebugCount(), #got)
+    -- The first session's first 60 lines, then one note for the 439 lines up to the mark.
+    for i = 1, HEAD do eq(got[i], lines[i], "head line " .. i) end
+    eq(dropCount(got[HEAD + 1]), 500 - 1 - HEAD)
+    check(got[HEAD + 1]:find("^10:01:01%.000 core: "), "the note does not carry the first dropped line's time: " .. got[HEAD + 1])
+    eq(got[HEAD + 2], lines[500])
+    eq(dropCount(got[HEAD + 3]), 199)
+    eq(got[HEAD + 4], lines[700])
+    eq(got[HEAD + 5], lines[701])
+    eq(dropCount(got[HEAD + 6]), 298)
+    -- The second session's first 60 lines.
+    for i = 0, HEAD - 1 do eq(got[HEAD + 7 + i], lines[1000 + i], "second head line " .. i) end
+    -- The newest 3,000 lines are untouched and in order; the last is the newest.
+    local n = #got
+    check(got[n]:find("probe: the line that fills it", 1, true), "the newest line is not last: " .. got[n])
+    check(got[n - 1]:find("debug log switched on", 1, true), "the line before it is gone")
+    for back = 2, TAIL - 1 do
+        local want = lines[CAP - back]
+        if got[n - back] ~= want then error("the newest part is out of order " .. back .. " from the end: " .. tostring(got[n - back])) end
+    end
+    eq(dropCount(got[n - TAIL]), (CAP - TAIL) - (1000 + HEAD - 1), "the note before the newest part")
+    -- Every line is either kept or counted in a note.
+    local total = 0
+    for _, line in ipairs(got) do total = total + (dropCount(line) or 1) end
+    eq(total, CAP)
+end)
+
+test("debug 0.16.4: a second fill adds the earlier note's count to the new one", function()
+    local lines = {}
+    for i = 1, CAP - 2 do lines[i] = stamped(i, "probe", "old " .. i) end
+    lines[1] = stamped(1, "core", SESSION)
+    local db = saved()
+    db.debug = { on = false, lines = lines, next = CAP - 1 }
+    local c, PE = T.new({ saved = db })
+    PE:SetDebug(true)
+    PE:Debug("probe", "fills it")
+    local first = #debugOf(c).lines
+    check(first < CAP, "not made smaller")
+    local written = 0
+    while #debugOf(c).lines >= first + written do
+        PE:Debug("probe", "more " .. written)
+        written = written + 1
+        if written > CAP then error("the log never filled again") end
+    end
+    local got = debugOf(c).lines
+    local total, notes = 0, 0
+    for _, line in ipairs(got) do
+        local d = dropCount(line)
+        if d then notes = notes + 1 end
+        total = total + (d or 1)
+    end
+    eq(total, CAP + written, "a line was lost without being counted")
+    -- The first session's head, then one note for everything between it and the newest part
+    -- (the first fill's note is inside that run).
+    eq(notes, 1)
+    check(dropCount(got[HEAD + 1]), "the note is not right after the first session's start")
+    eq(got[1], lines[1])
+    check(got[#got]:find("probe: more " .. (written - 1), 1, true), "the newest line is not last")
+end)
+
+test("debug 0.16.4: with many sessions the oldest starts go too, and a note says so first", function()
+    local lines = {}
+    local per = 70 -- 43 sessions in the older half: more starts than its share holds
+    for i = 1, CAP - 2 do
+        lines[i] = (i % per == 1) and stamped(i, "core", SESSION .. " s" .. math.ceil(i / per)) or stamped(i, "probe", "old " .. i)
+    end
+    local db = saved()
+    db.debug = { on = false, lines = lines, next = CAP - 1 }
+    local c, PE = T.new({ saved = db })
+    PE:SetDebug(true)
+    PE:Debug("probe", "fills it")
+    local got = debugOf(c).lines
+    check(#got <= OLD_MAX + TAIL + 1, "more than the older part's share was kept: " .. #got)
+    check(dropCount(got[1]), "the first line is not a note: " .. got[1])
+    local total = 0
+    for _, line in ipairs(got) do total = total + (dropCount(line) or 1) end
+    eq(total, CAP)
+    check(got[#got]:find("probe: fills it", 1, true), "the newest line is not last")
+end)
+
+test("debug 0.16.4: a ring saved by an older version is put in order at login", function()
+    -- 3,000 lines in a ring that wrapped: the oldest is at next (slot 1201).
+    local n, nextSlot = 3000, 1201
     local lines = {}
     for i = 1, n do lines[i] = "line " .. ((i - nextSlot) % n + 1) end   -- "line 1" is the oldest
     local db = saved()
     db.debug = { on = false, lines = lines, next = nextSlot }
     local c, PE = T.new({ saved = db })
     local store = debugOf(c)
-    eq(#store.lines, cap)
-    eq(PE:DebugCount(), cap)
-    eq(store.lines[1], "line " .. (n - cap + 1), "the oldest kept line is not first")
-    eq(store.lines[cap], "line " .. n, "the newest line is not last")
-    for i = 2, cap do
-        if store.lines[i] ~= "line " .. (n - cap + i) then error("out of order at " .. i .. ": " .. store.lines[i]) end
+    eq(#store.lines, n)
+    eq(store.next, n + 1)
+    for i = 1, n do
+        if store.lines[i] ~= "line " .. i then error("out of order at " .. i .. ": " .. tostring(store.lines[i])) end
     end
-    eq(store.next, 1, "the next line does not replace the oldest")
-    -- The same size never wrapped (next past the end), with the log on: the session
-    -- header replaces the oldest kept line.
-    local flat = {}
-    for i = 1, n do flat[i] = "line " .. i end
-    local db2 = saved()
-    db2.debug = { on = true, lines = flat, next = n + 1 }
-    local c2, PE2 = T.new({ saved = db2 })
-    local store2 = debugOf(c2)
-    eq(#store2.lines, cap)
-    eq(PE2:DebugCount(), cap)
-    check(store2.lines[1]:find("---- session ----", 1, true), "the session header is not in the oldest slot: " .. store2.lines[1])
-    local written = store2.next - 1                 -- this session's lines so far, from slot 1
-    check(written >= 1 and written < 50, "unexpected next: " .. store2.next)
-    eq(store2.lines[written + 1], "line " .. (n - cap + written + 1), "the oldest line left is not at next")
-    eq(store2.lines[cap], "line " .. n)
+end)
+
+-- A saved log longer than the cap (10,000 lines before 0.15.0) is never emptied: it is made
+-- smaller the same way, at login.
+test("debug 0.16.4: a saved log longer than the cap keeps its newest lines in order", function()
+    local n, nextSlot = 10000, 1201
+    local lines = {}
+    for i = 1, n do lines[i] = "10:00:00.000 probe: line " .. ((i - nextSlot) % n + 1) end
+    local db = saved()
+    db.debug = { on = false, lines = lines, next = nextSlot }
+    local c, PE = T.new({ saved = db })
+    local got = debugOf(c).lines
+    eq(#got, TAIL + 1)
+    eq(dropCount(got[1]), n - TAIL)
+    eq(debugOf(c).next, #got + 1)
+    for i = 1, TAIL do
+        if got[1 + i] ~= "10:00:00.000 probe: line " .. (n - TAIL + i) then error("out of order at " .. i .. ": " .. got[1 + i]) end
+    end
 end)
 
 -- Core.lua InitDB: a damaged saved log is put right instead of being trusted.
@@ -953,7 +1045,9 @@ test("debug: the Debug log tab has the switch (off), the line count, Save and Em
     check(buttons["Save"], "no Save button")
     check(buttons["Empty"], "no Empty button")
     check(hasText(texts, "Debug log"), "no Debug log title")
-    check(hasText(texts, "0 of 3,000 lines"), "no line count")
+    check(hasText(texts, "0 of 6,000 lines"), "no line count")
+    check(hasText(texts, "When it is full, each session's start and the newest lines stay; the middle goes."),
+        "the page does not say what happens when the log is full")
     check(hasText(texts, "SavedVariables/PocketEssentials.lua"), "the page does not name the file to send")
     check(not hasText(texts, "No errors recorded."), "the error list is on the Debug log page")
     check(hasText(texts, "Save the log (reloads)") and hasText(texts, "Empty the log"), "the debug rows are missing")
@@ -963,7 +1057,7 @@ test("debug: the Debug log tab has the switch (off), the line count, Save and Em
     eq(debugOf(c).on, true)
     buttons, texts = pageOf(c, panel)
     check(buttons["On"] and not buttons["Off"], "the switch does not read On after the tap")
-    check(hasText(texts, "1 of 3,000 lines"), "the count was not redrawn after the switch")
+    check(hasText(texts, "1 of 6,000 lines"), "the count was not redrawn after the switch")
     c:click(buttons["On"])
     c:advance(0.1)
     eq(PE.debugOn, false)
@@ -979,7 +1073,7 @@ test("debug: Save reloads once; Empty empties the log and the count, and leaves 
     PE:LogError("bags", "a recorded problem")
     local panel = debugPage(c, PE)
     local buttons, texts = pageOf(c, panel)
-    check(hasText(texts, "3 of 3,000 lines"), "the count is not the number of lines held")
+    check(hasText(texts, "3 of 6,000 lines"), "the count is not the number of lines held")
     local before = #c:callsTo("C_UI.Reload")
     c:click(buttons["Save"])
     eq(#c:callsTo("C_UI.Reload") - before, 1, "reloads from one tap")
@@ -989,7 +1083,7 @@ test("debug: Save reloads once; Empty empties the log and the count, and leaves 
     eq(PE.debugOn, true, "Clear log switched the log off")
     eq(#PE.errors, 1, "Clear log removed the errors")
     buttons, texts = pageOf(c, panel)
-    check(hasText(texts, "0 of 3,000 lines"), "the count was not redrawn after Clear log")
+    check(hasText(texts, "0 of 6,000 lines"), "the count was not redrawn after Clear log")
     panel = debugPage(c, PE, "errors")
     check(hasText(select(2, pageOf(c, panel)), "a recorded problem"), "the error is no longer shown")
 end)
@@ -999,17 +1093,17 @@ test("debug: a logged line does not redraw the settings window; the count is fre
     local c, PE = T.new({})
     PE:SetDebug(true)
     local panel = debugPage(c, PE)
-    check(hasText(select(2, pageOf(c, panel)), "1 of 3,000 lines"), "unexpected count at first")
+    check(hasText(select(2, pageOf(c, panel)), "1 of 6,000 lines"), "unexpected count at first")
     local asked = 0
     local refresh = PE.RefreshSettings
     PE.RefreshSettings = function(...) asked = asked + 1 return refresh(...) end
     for i = 1, 20 do PE:Debug("probe", "line " .. i) end
     c:advance(1)
     eq(asked, 0, "PE:Debug asked for a redraw")
-    check(hasText(select(2, pageOf(c, panel)), "1 of 3,000 lines"), "the page was redrawn for a logged line")
+    check(hasText(select(2, pageOf(c, panel)), "1 of 6,000 lines"), "the page was redrawn for a logged line")
     PE:CloseSettings()
     panel = debugPage(c, PE)
-    check(hasText(select(2, pageOf(c, panel)), "21 of 3,000 lines"), "the count is stale after reopening the page")
+    check(hasText(select(2, pageOf(c, panel)), "21 of 6,000 lines"), "the count is stale after reopening the page")
 end)
 
 return { known = KNOWN_FAILURES }
