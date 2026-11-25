@@ -83,6 +83,14 @@ Then Task 2 (the audit), then a device session with this build (Task 1 Step 3): 
 
 **Next: split the layout on the device (0.16.2, needs the owner's yes).** `PlaceNow` in `ControllerLayout.lua` does its work in separable parts: `PlaceScreen` (hint box, chat's box, map), the four `Put` calls (the game's bars), `PlaceExtras` (targeting pictures), `StartFace` (spell pictures). A testing row per part on the Controller tab, each On by default, saved per character, read at login. The owner switches one off, reloads, changes target and presses B; the chat line appears or does not. Four reloads at most name the part; the fix is then written against that part alone. Task 2 (the audit) runs alongside and is checked against the answer.
 
+## Result (2026-11-24, evening): found and fixed
+
+- 0.16.2's testing rows on the device: all six Off, clean. Spell pictures, the game's bars and the targeting pictures On, clean. Hint box On, clean. **Chat box On: refusals at once.** Map ring and buttons On with the chat box Off, clean.
+- Cause: `FCF_SetWindowAlpha` called from addon code (it writes `oldAlpha` on each chat window). The first suspect, and result B of Task 1's gate.
+- Fix, 0.16.3: the box's textures are only hidden and shown again; no `FCF_` call. Device test of 0.16.3: no refusal with the whole layout on, layout off puts everything back, some minor overlap.
+- Seen during the test and still open: the top button of the right pad draws as a black box; each bumper lights the opposite side's icons; the six testing rows are still in the build.
+- Still worth doing: Task 2 (the offline audit of calls into Blizzard's Lua), so the next call of this kind is caught before a build.
+
 ## Global Constraints
 
 - Interface 16001. No libraries. Handlers and callbacks through `PE:Safe` / `PE:Wrap`.

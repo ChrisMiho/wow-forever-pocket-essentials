@@ -8,7 +8,9 @@ All notable changes to this project are recorded here. The format follows
 
 Thirty-fifth test build: the fix for the refused controller actions. Found
 on the device with 0.16.2's testing rows: every part of the Controller layout
-was clean except the chat's dark box. Not yet tested on a device.
+was clean except the chat's dark box. Device test, 2026-11-24: no refused
+action with the whole layout on; layout off puts everything back; some minor
+overlap remains.
 
 ### Fixed
 
