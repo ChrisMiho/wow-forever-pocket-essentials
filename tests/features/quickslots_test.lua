@@ -402,6 +402,8 @@ test("quick slots: a tap in a fight calls neither SummonByID nor Dismiss", funct
         eq(QS:Tap(), "combat")
         eq(j.calls.SummonByID, 0)
         eq(j.calls.Dismiss, 0)
+        eq(j.calls.GetMountIDs, 0, "the journal was read by a tap in a fight")
+        eq(j.calls.GetMountInfoByID, 0)
         c:assertClean("tap in a fight")
     end
 end)
@@ -608,6 +610,7 @@ test("quick slots window: On with Chat picker off, nothing is built and the jour
         check(rec.addonFile ~= "QuickSlots.lua", "QuickSlots.lua made a frame")
     end
     eq(j.calls.SummonByID + j.calls.Dismiss, 0)
+    eq(j.calls.GetMountIDs, 0)
     c:assertClean("chat picker off")
 end)
 
@@ -695,7 +698,7 @@ test("quick slots rows: switching the row On redraws an open window with the squ
 end)
 
 test("quick slots rows: Mount shows the choice between - and +, and each end steps it", function()
-    local _, PE = new({ HORSE(), RAM({ favourite = true }) }, { on = { "chat" } })
+    local _, PE = new({ HORSE(), RAM({ favourite = true }) }, { on = { "chat" }, quick = true })
     local mod, opt = PE:GetModule("chat"), row(PE, "Mount")
     eq(opt.value(mod), nil)
     local box = opt.stepper(mod)
@@ -713,9 +716,21 @@ test("quick slots rows: Mount shows the choice between - and +, and each end ste
     eq(opt.stepper(mod).unit, "2 of 2")
 end)
 
+-- After the review: with Quick slots Off the settings do not read the journal.
+test("quick slots rows: with Quick slots Off the Mount row says to turn it on and the journal is not read", function()
+    local c, PE, _, j = new({ HORSE() }, { on = { "chat" } })
+    local mod, opt = PE:GetModule("chat"), row(PE, "Mount")
+    eq(opt.stepper(mod), { text = "Turn Quick slots on", downDim = true, upDim = true })
+    PE:OpenSettings("chat")
+    c:advance(0.2)
+    eq(j.calls.GetMountIDs, 0)
+    eq(j.calls.GetMountInfoByID, 0)
+    c:assertClean("mount row with quick slots off")
+end)
+
 test("quick slots rows: with no mount the Mount row reads No mount yet between two dim ends", function()
     for _, mounts in ipairs({ false, {} }) do
-        local c, PE = new(mounts or nil, { on = { "chat" } })
+        local c, PE = new(mounts or nil, { on = { "chat" }, quick = true })
         local mod, opt = PE:GetModule("chat"), row(PE, "Mount")
         eq(opt.value(mod), nil)
         eq(opt.stepper(mod), { text = "No mount yet", downDim = true, upDim = true })

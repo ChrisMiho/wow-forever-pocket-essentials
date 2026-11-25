@@ -25,7 +25,7 @@ on top of 0.20.0 and 0.19.0.
   favourite**: a mount you starred in the Collections menu if there is one,
   else the first mount you can use; the small line under it names the mount
   that means right now. The choice is saved for each character.
-- **In a fight** the square is greyed, and a tap asks nothing of the game:
+- **In a fight** the square is greyed, and a tap summons nothing:
   the line reads "Not in a fight" and the window stays open.
 - **Where you cannot mount** (indoors, swimming) the picture is greyed, and
   a tap still asks the game, which says why in its own red text.
@@ -41,7 +41,8 @@ on top of 0.20.0 and 0.19.0.
 - The two new rows are in the settings only, not in the setup guide.
 - Nothing listens or ticks for this, On or Off. The game is asked about your
   mounts only when the window is drawn, when the square is tapped, and when
-  the settings show the Mount row. So a square drawn before a fight started
+  the settings show the Mount row with Quick slots On (Off, your mounts are
+  never read). So a square drawn before a fight started
   is not greyed until you tap it or open the window again; the tap is still
   stopped.
 - The game's "random favourite" call is not used: the game's own button for

@@ -14,7 +14,7 @@
 --
 -- SummonByID(0), the game's "random favourite", is never used: the game's own
 -- button for it is commented out on this client
--- (Classic/Blizzard_MountCollection.lua:620-636), so a mount is always
+-- (Classic/Blizzard_MountCollection.lua:622-643), so a mount is always
 -- summoned by its own id.
 --
 -- The rule functions (Mounts, Pick, Next, State) take what they need as
@@ -199,6 +199,11 @@ end
 -- on this client is not known until it is tried on a device
 -- (docs/ARCHITECTURE.md, "Unverified API").
 function QS:Tap()
+    -- In a fight the journal is not even read.
+    if PE:InCombat() then
+        if PE.debugOn then PE:Debug("chat", "quick slots: mount tapped: combat") end
+        return "combat"
+    end
     local state, entry = self:Line()
     local action = state.action
     if action ~= "summon" and action ~= "dismiss" then

@@ -1290,6 +1290,8 @@ end
 local function MountStepper()
     local QS = PE.QuickSlots
     if not QS then return nil end
+    -- With Quick slots Off the journal is not read: the row only says how to start.
+    if QuickGet(mod) ~= 1 then return { text = "Turn Quick slots on", downDim = true, upDim = true } end
     local label, note = QS:MountLabel()
     if note == nil then return { text = label, downDim = true, upDim = true } end
     return {

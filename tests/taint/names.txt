@@ -1218,6 +1218,7 @@ QueueDraw	-
 QueueNav	-
 QueuePopup	-
 QuickBuild	-
+QuickGet	-
 QuickHeight	-
 QuickHide	-
 QuickOn	-

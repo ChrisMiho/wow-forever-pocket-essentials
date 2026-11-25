@@ -2532,9 +2532,10 @@ Nothing else is affected by that.
 Section 34, switching it on.
 
 1. Settings, Chat tab. Screenshot the rows. New: **Quick slots** (Off) and
-   **Mount** (it should read "First favourite", with the name of one of your
-   mounts in small letters under it; with no mount it reads "No mount yet").
-2. **Mark** (34). Tap **On** on Quick slots. Close the settings and tap the
+   **Mount** (while Quick slots is Off it reads "Turn Quick slots on").
+2. **Mark** (34). Tap **On** on Quick slots. The Mount row should now read
+   "First favourite", with the name of one of your mounts in small letters
+   under it (with no mount it reads "No mount yet"). Screenshot. Close the settings and tap the
    round PE button. Under the chat buttons and the whisper names there
    should be a line "Quick slots" with one square showing your mount's
    picture and its name beside it. Screenshot. Is the square easy to hit
@@ -2601,7 +2602,7 @@ Things to look at while you are there:
   menu and open the window again: does the square show that one?
 - **A mount you cannot use** (too low a riding skill, the wrong zone): is
   its picture greyed?
-- **Switching the row Off** with the window open, then tapping PE: the line
+- **Switching the row Off**, then tapping PE: the line
   and the square should be gone and the window as it was in 0.20.0.
 - **Chat picker Off:** the row should read "Quick slots: Needs Chat picker",
   and a tap on PE opens the settings as before.
