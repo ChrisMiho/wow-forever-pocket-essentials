@@ -2096,6 +2096,12 @@ function Client.new(opts)
               anchorInfo = { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", offsetX = 0, offsetY = -215 } },
             { system = 29, systemIndex = 3, isInDefaultPosition = true, settings = { { setting = 2, value = 0 } },
               anchorInfo = { point = "CENTER", relativeTo = "UIParent", relativePoint = "CENTER", offsetX = 0, offsetY = -230 } },
+            -- the buffs and the debuffs (0.20.0; the Gamepad preset takes them from the Modern one,
+            -- Mainline/EditModePresetLayouts.lua:1402, 433-467: TOPRIGHT -255, -10 and -270, -155)
+            { system = 6, systemIndex = 1, isInDefaultPosition = true, settings = {},
+              anchorInfo = { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", offsetX = -255, offsetY = -10 } },
+            { system = 6, systemIndex = 2, isInDefaultPosition = true, settings = {},
+              anchorInfo = { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", offsetX = -270, offsetY = -155 } },
             -- the tooltip's default spot (Mainline/EditModePresetLayouts.lua:543-553)
             { system = 11, isInDefaultPosition = true, settings = {},
               anchorInfo = { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOMRIGHT", offsetX = -9, offsetY = 85 } },

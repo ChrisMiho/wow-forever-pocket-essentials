@@ -283,6 +283,7 @@ tooltip	Blizzard_CharacterCreate/Camelot/Blizzard_CharacterCreate.lua:101
 up	Blizzard_PlayerSpells/Blizzard_PlayerSpellsFrame.lua:972
 update	Blizzard_Channels/Classic/ChannelRoster.lua:143
 ARRANGE	-
+ARRANGEMENT	-
 Account	-
 AcquirePanel	-
 ActionRow	-
@@ -372,6 +373,7 @@ BarOffScreen	-
 BarRect	-
 BarSpots	-
 BarsSnapshot	-
+Base	-
 BeginClean	-
 BigWaiting	-
 Blizzard	-
@@ -932,6 +934,7 @@ Metric	-
 Metrics	-
 Middle	-
 Migrate	-
+MigrateBase	-
 MigrateSize	-
 Minimap	-
 MinimapCluster	-
@@ -1009,6 +1012,7 @@ ObjectiveTrackerFrame	-
 Off	-
 OffHand	-
 OffStatus	-
+Offset	-
 OffsetLines	-
 OffsetText	-
 OldNamedPrev	-
@@ -1633,6 +1637,7 @@ UpdateMinimap	-
 UpdateQuest	-
 UpdateReloadPrompt	-
 UpdateTemplate	-
+Usable	-
 Use	-
 UseContainerItem	-
 UseFont	-
@@ -1735,6 +1740,7 @@ areaIdToUiMapId	-
 areaIdToUiMapIdOverride	-
 arena	-
 arrange	-
+arrangeBase	-
 arrow	-
 aside	-
 asideQuest	-
@@ -1930,6 +1936,8 @@ frameRight	-
 friend	-
 friendly	-
 friendlyTargetingBar	-
+fromX	-
+fromY	-
 full	-
 g	-
 game	-
@@ -2279,6 +2287,7 @@ runall	-
 runs	-
 s	-
 safety	-
+said	-
 same	-
 sample	-
 samples	-
@@ -2398,6 +2407,7 @@ taken	-
 target	-
 targettarget	-
 tconcat	-
+template	-
 tex	-
 texture	-
 that	-

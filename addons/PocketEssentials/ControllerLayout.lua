@@ -83,7 +83,12 @@ local ADDON_NAME, PE = ...
 -- (Plan.Moved), and has the switch (opts.arrange, Off by default; until 0.19.0 a second one,
 -- opts.arrangeWheel, for the spell wheels) and the "Arrange the screen" row. Arrange.lua (PE.Arrange) is the window and its
 -- rules; it is never called in a session that began with the switch Off, and Plan.session
--- is never set then, so every number of the plan is 0.17.0's.
+-- is never set then, so every number of the plan is the built-in one.
+--
+-- 0.20.0 (spec 2026-11-25-0.20.0-after-first-sitting.md, 2): the arrangement of the first
+-- device sitting is the built-in one (Plan.BASE_2, added by Plan.Moved wherever a saved
+-- offset is), and offsets saved by 0.18.0 and 0.19.0 are carried over once (Plan.MigrateBase,
+-- Snap.Carry) so that nobody's screen moves twice.
 --
 -- 0.19.0 (spec 2026-11-25-0.19.0-square-map.md): the square map. This file holds its numbers
 -- (MAP.square, Plan.MAP_SQUARE, Plan.MapBox) and its switch (opts.mapLook, the row "Map look",
@@ -484,30 +489,105 @@ for i = 1, #Plan.ARRANGE do Plan.ARRANGE_BY[Plan.ARRANGE[i].key] = Plan.ARRANGE[
 Plan.ARRANGE_LIMIT = 1500
 -- The offsets of the session: set by the module, once, when the session began with
 -- "Arrange it yourself" On ({ arrange = 1, offsets, charOffsets }); nil
--- otherwise, and then nothing below adds anything.
+-- otherwise, and then only the built-in amounts (Plan.BASE_2) are added.
 Plan.session = nil
 
--- A piece's offset from its built-in spot: dx, dy in UI units (x right, y up); 0, 0 when
--- there is none. v: an options table that has an `arrange` value decides for itself (1: its
--- offsets, v.offsets for the Edit Mode pieces and v.charOffsets for the live ones; anything
--- else: none); any other v (a Spell panel size, nil) means the session's (Plan.session).
--- A value that is not a table of two finite numbers within ARRANGE_LIMIT, or whose key
--- names no piece, counts as none: never an error.
-Plan.Moved = function(v, key)
+-- 0.20.0: the built-in arrangement, number 2 (spec 2026-11-25-0.20.0-after-first-sitting.md,
+-- 2): what was arranged at the first device sitting of 0.18.0 (the saved file of
+-- 2026-11-25, its "arrange: apply:" and "arrange: offset:" lines), as amounts { x, y } added
+-- to the spots worked out in this file (arrangement 1, up to 0.19.0). They are added in one
+-- place, Plan.Moved, where a saved offset is added too, so every reader of the plan sees
+-- them and the twins stay exact mirrors (equal up, opposite across). The map is not here:
+-- its saved "0, -2" would put it under the screen's edge, where the game does not let an
+-- Edit Mode piece go (see MAP.square above).
+Plan.BASE_2 = {
+    ["inner left diamond"] = { 0, -16 }, ["inner right diamond"] = { 0, -16 },
+    ["outer left diamond"] = { 0, -16 }, ["outer right diamond"] = { 0, -16 },
+    ["LB targeting picture"] = { 94, -56 }, ["RB targeting picture"] = { -94, -56 },
+    ["player bar"] = { -18, -16 }, ["target bar"] = { 18, -16 },
+    ["buffs and debuffs"] = { 0, 4 },
+}
+-- The number saved offsets are counted from: saved as opts.arrangeBase (the Edit Mode
+-- pieces') and ctrlArrange.base (each character's live pieces'); none saved means 1.
+Plan.ARRANGEMENT = 2
+
+-- A piece's built-in amount: x, y (0, 0 for a piece that has none).
+function Plan.Base(key)
+    local b = Plan.BASE_2[key]
+    if b and Plan.ARRANGE_BY[key] then return b[1], b[2] end
+    return 0, 0
+end
+
+-- A saved offset's two numbers, or nil when it is not a table of two finite numbers within
+-- ARRANGE_LIMIT (such a value counts as no offset: never an error).
+function Plan.Usable(e)
+    if type(e) ~= "table" then return nil end
+    local x, y = e.x, e.y
+    if type(x) ~= "number" or type(y) ~= "number" or x ~= x or y ~= y
+        or math.abs(x) > Plan.ARRANGE_LIMIT or math.abs(y) > Plan.ARRANGE_LIMIT then
+        return nil
+    end
+    return x, y
+end
+
+-- A piece's saved offset from its built-in spot: dx, dy in UI units (x right, y up); 0, 0
+-- when there is none. v: an options table that has an `arrange` value decides for itself
+-- (1: its offsets, v.offsets for the Edit Mode pieces and v.charOffsets for the live ones;
+-- anything else: none); any other v (a Spell panel size, nil) means the session's
+-- (Plan.session). A value that is not usable, or whose key names no piece, counts as none.
+function Plan.Offset(v, key)
     local src = v
     if type(src) ~= "table" or src.arrange == nil then src = Plan.session end
     if type(src) ~= "table" or src.arrange ~= 1 then return 0, 0 end
     local def = Plan.ARRANGE_BY[key]
     if not def then return 0, 0 end
     local store = def.kind == "live" and src.charOffsets or src.offsets
-    local e = type(store) == "table" and store[key] or nil
-    if type(e) ~= "table" then return 0, 0 end
-    local x, y = e.x, e.y
-    if type(x) ~= "number" or type(y) ~= "number" or x ~= x or y ~= y
-        or math.abs(x) > Plan.ARRANGE_LIMIT or math.abs(y) > Plan.ARRANGE_LIMIT then
-        return 0, 0
-    end
+    local x, y = Plan.Usable(type(store) == "table" and store[key] or nil)
+    if not x then return 0, 0 end
     return x, y
+end
+
+-- How far a piece is from the spot worked out in this file: its built-in amount (always)
+-- plus its saved offset (v as Plan.Offset takes it). What the plan adds to a piece's spot.
+Plan.Moved = function(v, key)
+    local bx, by = Plan.Base(key)
+    local x, y = Plan.Offset(v, key)
+    return bx + x, by + y
+end
+
+-- 0.20.0: saved offsets carried over to the built-in arrangement they are counted from now.
+-- store: a table of saved offsets, changed in place; mark: the arrangement they were saved
+-- for (nil: 1). Below Plan.ARRANGEMENT, each piece's amount is subtracted from its offset, so
+-- built-in plus offset is exactly what it was (an offset that ends at 0, 0 is removed).
+-- kind: only the pieces of that kind ("apply", "live"; nil: all). everyPiece: also a piece
+-- with no usable offset saved, which stood at the old built-in spot and so gets minus its
+-- amount (for a store whose offsets were in use: the screen must not move). Returns what
+-- changed: { { key =, fromX =, fromY =, x =, y = }, ... } in Plan.ARRANGE's order. Pure.
+function Plan.MigrateBase(store, mark, kind, everyPiece)
+    local changed = {}
+    if type(store) ~= "table" or (type(mark) == "number" and mark >= Plan.ARRANGEMENT) then return changed end
+    for _, def in ipairs(Plan.ARRANGE) do
+        local bx, by = Plan.Base(def.key)
+        if (bx ~= 0 or by ~= 0) and (kind == nil or def.kind == kind) then
+            local e = store[def.key]
+            local ox, oy = Plan.Usable(e)
+            if ox or everyPiece then
+                ox, oy = ox or 0, oy or 0
+                local nx, ny = ox - bx, oy - by
+                if nx == 0 and ny == 0 then
+                    store[def.key] = nil
+                else
+                    if type(e) ~= "table" then
+                        e = {}
+                        store[def.key] = e
+                    end
+                    e.x, e.y = nx, ny
+                end
+                changed[#changed + 1] = { key = def.key, fromX = ox, fromY = oy, x = nx, y = ny }
+            end
+        end
+    end
+    return changed
 end
 
 -- 0.15.0 (spec 2026-11-24-controller-layout-0.15.0-panel-size.md): the Spell panel
@@ -750,9 +830,13 @@ end
 -- 0.18.0: the screen the plan is drawn for, in UI units.
 Plan.SCREEN = { w = SCREEN_W, h = SCREEN_H }
 
--- 0.18.0: the Edit Mode pieces whose offset (as opts asks for it now: none while
--- opts.arrange is not 1) differs from the one our Edit Mode layout holds
--- (opts.offsetsWritten, kept by Plan.MarkWritten): their keys, in Plan.ARRANGE's order.
+-- 0.18.0: the Edit Mode pieces whose distance from this file's spot (Plan.Moved, as opts
+-- asks for it now: the built-in amount alone while opts.arrange is not 1) differs from the
+-- one our Edit Mode layout holds (opts.offsetsWritten, kept by Plan.MarkWritten): their
+-- keys, in Plan.ARRANGE's order. 0.20.0: the record holds the whole distance, built-in
+-- amount and saved offset together, which is what was written into the layout. So carrying
+-- the offsets over (Plan.MigrateBase) leaves the record as it is, and a layout written
+-- before the built-in amounts existed shows up here as waiting for them.
 function Plan.Pending(opts)
     local out = {}
     local written = type(opts) == "table" and type(opts.offsetsWritten) == "table" and opts.offsetsWritten or {}
@@ -769,7 +853,8 @@ function Plan.Pending(opts)
 end
 
 -- 0.18.0: after a successful write of `pieces` (from Plan.Pieces) into our layout: notes in
--- opts.offsetsWritten the offset each arranged piece was written with. all (optional): the
+-- opts.offsetsWritten how far from this file's spot each arranged piece was written (p.dx,
+-- p.dy: Plan.Moved). all (optional): the
 -- whole list the pieces were picked from; a piece of Plan.ARRANGE that is several Edit Mode
 -- pieces (the three swing timers) is then only noted when every one of them was written.
 function Plan.MarkWritten(opts, pieces, all)
@@ -2277,7 +2362,8 @@ end
 
 -- 0.20.0: saved data of an older version carried over, once. Called at login (OnLoad) and
 -- again before the session's offsets are first used; what was done is marked in the saved
--- files, so a second call, and every later login, changes nothing.
+-- files, so a second call, and every later login, changes nothing. Two things: the old
+-- switch for the spell wheels (here) and the built-in arrangement (in the function).
 --
 -- The row "Arrange: spell wheels" (opts.arrangeWheel) is gone: the piece is always listed.
 -- An offset saved for it counted only while that switch was On, so one saved with the switch
@@ -2292,9 +2378,37 @@ Snap.Carry = function()
         opts.wheelWas = opts.arrangeWheel == 1 and 1 or 0
         opts.arrangeWheel = nil
     end
+    -- The built-in arrangement (Plan.BASE_2): saved offsets are counted from it from now on,
+    -- so each piece's amount is taken off its saved offset, once, and the piece stays where
+    -- it was. With "Arrange it yourself" On the offsets were in use, so a piece with none
+    -- saved (it stood at the old built-in spot) gets minus its amount too. With it Off they
+    -- were not in use: the screen takes the new spots, and only an offset that is saved is
+    -- changed, for the day the switch goes On again. The Edit Mode pieces' offsets are the
+    -- account's (opts.offsets, marked opts.arrangeBase); the live pieces' are each
+    -- character's (ctrlArrange.offsets, marked ctrlArrange.base) and are carried over at
+    -- that character's own first login. What our Edit Mode layout holds is not touched and
+    -- neither is its record (see Plan.Pending).
+    local inUse = opts.arrange == 1
+    local function said(list)
+        if not PE.debugOn then return end
+        for _, m in ipairs(list) do
+            PE:Debug("ctrlLayout", "arrange: moved into the built-in spots: " .. m.key .. " " .. PE.Plain(m.fromX) .. ","
+                .. PE.Plain(m.fromY) .. " -> " .. PE.Plain(m.x) .. "," .. PE.Plain(m.y))
+        end
+    end
+    if not (type(opts.arrangeBase) == "number" and opts.arrangeBase >= Plan.ARRANGEMENT) then
+        if inUse and type(opts.offsets) ~= "table" then opts.offsets = {} end
+        said(Plan.MigrateBase(opts.offsets, opts.arrangeBase, "apply", inUse))
+        opts.arrangeBase = Plan.ARRANGEMENT
+    end
     local char = CharDB()
     local store = char and char.ctrlArrange
     if type(store) ~= "table" then return end -- nothing saved for this character
+    if not (type(store.base) == "number" and store.base >= Plan.ARRANGEMENT) then
+        if inUse and type(store.offsets) ~= "table" then store.offsets = {} end
+        said(Plan.MigrateBase(store.offsets, store.base, "live", inUse))
+        store.base = Plan.ARRANGEMENT
+    end
     if store.wheel ~= 1 then
         store.wheel = 1
         local e = type(store.offsets) == "table" and store.offsets["spell wheels"] or nil
@@ -2320,13 +2434,14 @@ Snap.View = function()
     if not opts then return nil end
     if Snap.arrangeOn == nil then
         Snap.Carry() -- 0.20.0: saved data of an older version, before it is used
+        if PE.debugOn then PE:Debug("ctrlLayout", "arrange: built-in arrangement " .. Plan.ARRANGEMENT) end
         if Snap.arrangeLogin == nil then Snap.arrangeLogin = opts.arrange == 1 end
         Snap.arrangeOn = Snap.arrangeLogin
         if Snap.arrangeOn then
             if type(opts.offsets) ~= "table" then opts.offsets = {} end
             local char = CharDB() or {} -- not loaded (never seen): the moves last for the session
             -- A table made now holds nothing an older version saved: marked as carried over.
-            if type(char.ctrlArrange) ~= "table" then char.ctrlArrange = { wheel = 1 } end
+            if type(char.ctrlArrange) ~= "table" then char.ctrlArrange = { wheel = 1, base = Plan.ARRANGEMENT } end
             if type(char.ctrlArrange.offsets) ~= "table" then char.ctrlArrange.offsets = {} end
             if type(char.ctrlArrange.alone) ~= "table" then char.ctrlArrange.alone = {} end
             Snap.view = { arrange = 1, offsets = opts.offsets, charOffsets = char.ctrlArrange.offsets,
@@ -2355,20 +2470,32 @@ end
 -- 0.18.0: "Arrange it yourself" is Off, yet our Edit Mode layout still holds moved pieces: the
 -- row was tapped in a fight and the game reloaded before it ended, or the write failed. Once
 -- a session, when the layout is placed (out of a fight): the pieces are written back to their
--- built-in spots and the reload is asked for. Only while Off: a move not yet applied in an
+-- built-in spots and the reload is asked for. 0.20.0: the same when the layout was written
+-- before a built-in spot changed (buffs and debuffs, Plan.BASE_2): the piece is written at
+-- its new built-in spot, once, and the chat line says that instead. Only while Off: a move not yet applied in an
 -- On session is never written by itself. After the write nothing waits, so it cannot loop;
 -- a write that fails is not tried again until the next login.
 Snap.ArrangeBack = function()
     local o = mod and mod.opts
     if type(o) ~= "table" or o.arrange == 1 or Snap.arrangeBack or not Snap.RewritePieces or Snap.RewritesWaiting() > 0 then return end
     if #Plan.Pending(o) == 0 or EditModeOpen() then return end
+    -- A layout built from an older template is rebuilt whole at the next login (UpdateTemplate),
+    -- built-in spots and all: nothing is written into it before that.
+    if (type(o.template) == "number" and o.template or 1) < Plan.TEMPLATE then return end
     Snap.arrangeBack = true
+    -- Nothing noted as written for any of them: the layout holds the spots of an older version.
+    local older = true
+    for _, key in ipairs(Plan.Pending(o)) do
+        if type(o.offsetsWritten) == "table" and o.offsetsWritten[key] ~= nil then older = false end
+    end
     if PE.debugOn then
-        PE:Debug("ctrlLayout", "arrange: the switch is Off but the layout still holds moved pieces ("
-            .. table.concat(Plan.Pending(o), ", ") .. "): written back to their built-in spots")
+        PE:Debug("ctrlLayout", (older and "arrange: the layout holds the built-in spots of an older version ("
+            or "arrange: the switch is Off but the layout still holds moved pieces (")
+            .. table.concat(Plan.Pending(o), ", ") .. "): written " .. (older and "at" or "back to") .. " their built-in spots")
     end
     if Snap.RewritePieces(Snap.ArrangeFilter, nil) and Snap.lastWrite and Snap.lastWrite.ok then
-        PE:Print("Arrange it yourself is Off: the pieces you had moved go back. Open the settings and tap Reload now to finish.")
+        PE:Print(older and "The controller layout has a new built-in arrangement. Open the settings and tap Reload now to finish."
+            or "Arrange it yourself is Off: the pieces you had moved go back. Open the settings and tap Reload now to finish.")
     end
 end
 
@@ -3092,11 +3219,19 @@ mod = PE:RegisterModule({
                 local ok, text = pcall(look.Status, look)
                 if ok and type(text) == "string" and text ~= "" then lines[#lines + 1] = text end
             end
-            -- 0.19.0: with the square map, pieces of this session's screen that overlap.
-            if type(Snap.view) == "table" and Snap.view.mapLook == 1 then
-                local n = #Plan.Overlaps(Plan.Rects(Snap.view))
+            -- 0.19.0: pieces of this session's screen that overlap, with the square map. 0.20.0: with
+            -- the round one too (the built-in arrangement does not fit the two largest Spell
+            -- panel sizes); only said when the check really finds a pair.
+            if type(Snap.view) == "table" then
+                local n = 0
+                for _, o in ipairs(Plan.Overlaps(Plan.Rects(Snap.view))) do
+                    -- As the Arrange window counts them: the rooms kept for the buff boxes are not
+                    -- pieces yet (nothing is drawn there).
+                    if o.a:sub(-5) ~= " room" and o.b:sub(-5) ~= " room" then n = n + 1 end
+                end
                 if n > 0 then
-                    lines[#lines + 1] = "With the square map " .. n .. (n == 1 and " pair of pieces overlaps" or " pairs of pieces overlap")
+                    local count = n .. (n == 1 and " pair of pieces overlaps" or " pairs of pieces overlap")
+                    lines[#lines + 1] = (Snap.view.mapLook == 1 and "With the square map " or "") .. count
                         .. ". Arrange the screen shows which, and moves them."
                 end
             end
@@ -3112,7 +3247,7 @@ mod = PE:RegisterModule({
         if type(self.opts) ~= "table" then return end
         -- 0.20.0: values saved for rows that are gone (the "Part: ..." rows) are removed.
         for _, key in ipairs(Plan.GONE) do self.opts[key] = nil end
-        Snap.Carry() -- the old "Arrange: spell wheels" switch and what was saved with it
+        Snap.Carry() -- offsets saved for the older built-in arrangement, and the old wheels switch
         -- A Spell panel size that is not one of the five shows and reads as 100%.
         self.opts.panelSize = Plan.PanelSize(self.opts)
         Snap.arrangeLogin = self.opts.arrange == 1 -- 0.18.0: the session's value (Snap.View)

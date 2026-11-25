@@ -79,19 +79,44 @@ end
 -- game's, so that one pair is not checked against each other.
 local ONE_PIECE = { ["LB+LT button|LB+LT prompt"] = true, ["RB+RT button|RB+RT prompt"] = true }
 
--- Every rectangle of r is on screen and no two overlap.
-local function checkClear(r, what)
+-- 0.20.0: the built-in arrangement (Plan.BASE_2) is the one made on the device at 100%. It
+-- fits at 80%, 90% and 100%. At 110% and 120% the larger spell panels, 16 lower than until
+-- 0.19.0, reach under the screen's bottom edge (3.9 and 8.8) and up into the targeting
+-- pictures (17 by 4.9 and 17 by 9.8; with the square map 36 wide). The spec's "As built" names
+-- it and the Controller card says how many pairs overlap. The exceptions for a size: nil up
+-- to 100%, else { pairs = { ["a|b"] = true }, low = { [name] = true } }.
+local function bigSize(size)
+    if size <= 100 then return nil end
+    return {
+        pairs = { ["LB targeting picture|inner left diamond"] = true, ["RB targeting picture|inner right diamond"] = true },
+        low = { ["inner left diamond"] = true, ["inner right diamond"] = true, ["outer left diamond"] = true,
+            ["outer right diamond"] = true },
+    }
+end
+
+-- Every rectangle of r is on screen and no two overlap. except: as bigSize gives it; each
+-- exception named must then be there (a pair that overlaps, a piece under the bottom edge).
+local function checkClear(r, what, except)
     local W, H = 1365.33, 768
     local names = {}
     for name in pairs(r) do names[#names + 1] = name end
     table.sort(names)
+    local seen = {}
     for i = 1, #names do
         local a = r[names[i]]
-        check(a[1] >= -W / 2 and a[3] <= W / 2 and a[2] >= 0 and a[4] <= H, what .. ": " .. names[i] .. " is off screen")
+        local low = except and except.low[names[i]]
+        check(a[1] >= -W / 2 and a[3] <= W / 2 and (a[2] >= 0 or low) and a[4] <= H, what .. ": " .. names[i] .. " is off screen")
+        if low then check(a[2] < 0 and a[2] > -9, what .. ": " .. names[i] .. " is not a little under the bottom edge: " .. a[2]) end
         for j = i + 1, #names do
             if not ONE_PIECE[names[i] .. "|" .. names[j]] then
                 local hit, w, h = overlapArea(a, r[names[j]])
-                check(not hit, what .. ": " .. names[i] .. " overlaps " .. names[j] .. " (" .. w .. " by " .. h .. ")")
+                local key = names[i] .. "|" .. names[j]
+                if except and except.pairs[key] then
+                    check(hit, what .. ": " .. key .. " no longer overlap: remove the exception")
+                    seen[key] = true
+                else
+                    check(not hit, what .. ": " .. names[i] .. " overlaps " .. names[j] .. " (" .. tostring(w) .. " by " .. tostring(h) .. ")")
+                end
             end
         end
     end
@@ -116,8 +141,9 @@ test("layout: Pieces for the defaults carry the template's anchors and settings"
     local chat = piece(list, "ChatFrame")
     eq(chat.anchor, { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOMLEFT", x = 17, y = 245 })
     eq(chat.settings, { WidthHundreds = 4, WidthTensAndOnes = 50, HeightHundreds = 1, HeightTensAndOnes = 70 })
-    eq(piece(list, "AuraFrame", "BuffFrame").anchor.y, -40)
-    eq(piece(list, "AuraFrame", "DebuffFrame").anchor.y, -78)
+    -- (0.20.0: 4 higher than until 0.19.0, where they were 40 and 78 down.)
+    eq(piece(list, "AuraFrame", "BuffFrame").anchor.y, -36)
+    eq(piece(list, "AuraFrame", "DebuffFrame").anchor.y, -74)
     local quest = piece(list, "ObjectiveTracker")
     eq(quest.anchor, { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -5, y = -5 })
     eq(quest.settings, { Height = 0 })
@@ -234,24 +260,26 @@ test("plan: the face, four diamond spots beside the map, picture 42", function()
     local Plan = plan()
     eq(Plan.FACE, { button = 42, dx = 46, dy = 28 })
     local s = Plan.FaceSpots()
+    -- (0.20.0: 50 up, 16 lower than until 0.19.0.)
     eq(s, {
-        inner = { left = { x = -170, y = 66 }, right = { x = 170, y = 66 } },
-        outer = { left = { x = -316, y = 66 }, right = { x = 316, y = 66 } },
+        inner = { left = { x = -170, y = 50 }, right = { x = 170, y = 50 } },
+        outer = { left = { x = -316, y = 50 }, right = { x = 316, y = 50 } },
     })
     -- A fresh copy each time.
     s.inner.left.x = 0
     eq(Plan.FaceSpots().inner.left.x, -170)
-    -- A diamond is 134 by 98; the inner ones span 103 to 237 from the centre, the outer 249 to 383, 17 to 115 up.
+    -- A diamond is 134 by 98; the inner ones span 103 to 237 from the centre, the outer 249 to 383, 1 to 99 up
+    -- (0.20.0; until 0.19.0 17 to 115).
     local r = Plan.Rects()
     for _, name in ipairs({ "inner left diamond", "outer left diamond", "inner right diamond", "outer right diamond" }) do
         check(r[name], "no rectangle for " .. name)
         near(r[name][3] - r[name][1], 134, name .. " width")
         near(r[name][4] - r[name][2], 98, name .. " height")
     end
-    eq(r["inner left diamond"], { -237, 17, -103, 115 })
-    eq(r["inner right diamond"], { 103, 17, 237, 115 })
-    eq(r["outer left diamond"], { -383, 17, -249, 115 })
-    eq(r["outer right diamond"], { 249, 17, 383, 115 })
+    eq(r["inner left diamond"], { -237, 1, -103, 99 })
+    eq(r["inner right diamond"], { 103, 1, 237, 99 })
+    eq(r["outer left diamond"], { -383, 1, -249, 99 })
+    eq(r["outer right diamond"], { 249, 1, 383, 99 })
     -- Only the four spots are listed, once each (no per-bar halves).
     for name in pairs(r) do
         check(not name:find(" dpad$") and not name:find(" face$"), "a bar half is listed: " .. name)
@@ -320,10 +348,11 @@ end)
 test("plan: the four real bars at 60%, two under each inner diamond", function()
     local Plan = plan()
     local s = Plan.BarSpots()
-    eq(s.top, { x = -170, y = 87, s = 0.6 })
-    eq(s.left, { x = -170, y = 45, s = 0.6 })
-    eq(s.right, { x = 170, y = 87, s = 0.6 })
-    eq(s.both, { x = 170, y = 45, s = 0.6 })
+    -- (0.20.0: with their panels, 16 lower than until 0.19.0: 71 and 29 up, were 87 and 45.)
+    eq(s.top, { x = -170, y = 71, s = 0.6 })
+    eq(s.left, { x = -170, y = 29, s = 0.6 })
+    eq(s.right, { x = 170, y = 71, s = 0.6 })
+    eq(s.both, { x = 170, y = 29, s = 0.6 })
     -- Old saved values change nothing.
     eq(Plan.BarSpots({ size = 70, fineBoth = 0.85, main = "under", map = 60 }), s)
     -- 124.8 by 40.8 each.
@@ -589,18 +618,18 @@ end)
 test("plan: buffs, debuffs, tracker spots", function()
     local Plan = plan()
     local list = Plan.Pieces(with(Plan.DEFAULTS))
-    -- 0.16.0: the buffs 10 left of the tracker, their top 4 under the XP bars' bottom (36 down),
-    -- the debuff row 38 under them.
+    -- 0.16.0: the buffs 10 left of the tracker, the debuff row 38 under them. 0.20.0: their top
+    -- at the XP bars' bottom (36 down; until 0.19.0 4 under it).
     eq(piece(list, "AuraFrame", "BuffFrame").anchor,
-        { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -275, y = -40 })
+        { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -275, y = -36 })
     eq(piece(list, "AuraFrame", "DebuffFrame").anchor,
-        { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -275, y = -78 })
+        { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -275, y = -74 })
     local quest = piece(list, "ObjectiveTracker")
     eq(quest.anchor, { point = "TOPRIGHT", relativeTo = "UIParent", relativePoint = "TOPRIGHT", x = -5, y = -5 })
     eq(quest.settings, { Height = 0 })
     local r = Plan.Rects()
     near(r["buffs and debuffs"][3], r["quest tracker"][1] - 10, "10 left of the tracker")
-    near(r["XP bars"][2] - r["buffs and debuffs"][4], 4, "4 under the XP bars")
+    near(r["XP bars"][2] - r["buffs and debuffs"][4], 0, "at the XP bars' bottom edge (0.20.0; until 0.19.0 4 under it)")
     -- The chat bottom left, 450 by 170, 6 over the round button (higher than the pet frame).
     local chat = piece(list, "ChatFrame")
     eq(chat.anchor, { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOMLEFT", x = 17, y = 245 })
@@ -834,6 +863,8 @@ test("layout: on when Pocket Essentials already exists activates it and leaves i
     ours.systems[1].anchorInfo.offsetX = 123 -- the player's own change
     local c, PE = layoutClient({ saved("A1"), ours }, 4)
     opts(PE).template = PE.LayoutPlan.TEMPLATE -- built from this template (an older one is rebuilt first)
+    -- ... by 0.20.0, with the built-in arrangement 2 (one written by 0.19.0 gets it once: arrange_test.lua).
+    opts(PE).offsetsWritten = { ["buffs and debuffs"] = { x = 0, y = 4 } }
     switchOn(c, PE)
     eq(#c:callsTo("C_EditMode.SaveLayouts"), 0)
     eq(#c:callsTo("C_EditMode.OnLayoutAdded"), 0)
@@ -1958,7 +1989,8 @@ test("migrate: old prev moved or dropped once", function()
     -- A 0.11.0 saved file: one layout to go back to for the whole account.
     local function oldFile(on)
         -- (template 4: only the migration is tested here; the rebuild of an older layout has its own tests)
-        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { template = 5, prev = { name = "Mine", layoutType = 2 } } } }
+        return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { template = 5, prev = { name = "Mine", layoutType = 2 },
+            offsetsWritten = { ["buffs and debuffs"] = { x = 0, y = 4 } } } } } -- (a layout that has the built-in arrangement 2)
     end
     local ours = saved(NAME)
     -- Ours active on the character logging in: it becomes this character's entry.
@@ -1991,7 +2023,8 @@ end)
 test("migrate: a 0.11.1 entry by name moves into this character's own file once", function()
     local function namedFile(on)
         return { enabled = { ctrlLayout = on }, options = { ctrlLayout = { template = 5, prevs = {
-            [KEY] = { name = "Mine", layoutType = 2 }, ["Bee-Camelot"] = { preset = 0 } } } } }
+            [KEY] = { name = "Mine", layoutType = 2 }, ["Bee-Camelot"] = { preset = 0 } },
+            offsetsWritten = { ["buffs and debuffs"] = { x = 0, y = 4 } } } } } -- (a layout that has the built-in arrangement 2)
     end
     local ours = saved(NAME)
     -- On, ours active: moved over, nothing changes in the game.
@@ -2177,11 +2210,12 @@ local function totCalls(c)
     return n
 end
 
-test("bars: the targeting pictures go beside the LB + LT / RB + RT prompts", function()
+-- (0.20.0: in beside the map, under the prompts: 94 in and 56 down from 0.16.0's -178, 155.)
+test("bars: the targeting pictures go beside the map, under the LB + LT / RB + RT prompts", function()
     local c = onClient()
     local l, r = extras(c)
-    eq(pointsOf(c, l), { { "BOTTOMRIGHT", c.env.UIParent, "BOTTOM", -178, 155 } })
-    eq(pointsOf(c, r), { { "BOTTOMLEFT", c.env.UIParent, "BOTTOM", 178, 155 } })
+    eq(pointsOf(c, l), { { "BOTTOMRIGHT", c.env.UIParent, "BOTTOM", -84, 99 } })
+    eq(pointsOf(c, r), { { "BOTTOMLEFT", c.env.UIParent, "BOTTOM", 84, 99 } })
     c:assertClean()
 end)
 
@@ -2234,8 +2268,8 @@ test("bars: a missing, nil or failing targeting picture or target of target plac
         local c, PE = layoutClient({}, 3, { setup = case.setup })
         local l, r, t = extras(c)
         local want = {
-            { "BOTTOMRIGHT", c.env.UIParent, "BOTTOM", -178, 155 },
-            { "BOTTOMLEFT", c.env.UIParent, "BOTTOM", 178, 155 },
+            { "BOTTOMRIGHT", c.env.UIParent, "BOTTOM", -84, 99 },
+            { "BOTTOMLEFT", c.env.UIParent, "BOTTOM", 84, 99 },
             { "BOTTOMLEFT", rawget(c.env, "TargetFrame"), "TOPLEFT", 0, 25 },
         }
         switchOn(c, PE)
@@ -2797,7 +2831,18 @@ test("face: the real bars at full size, two a side, clear of everything but the 
                 -- The game's own LB + LT / RB + RT prompts (158 up, 24 high) reach 9 into the top
                 -- full bars (87 to 155): where the game puts them, as in 0.15.0, and only while our
                 -- pictures are off.
-                if not name:find("diamond") and not name:find(" prompt$") then
+                -- 0.20.0: the targeting pictures, moved in beside the map (84 to 120 either side, 99
+                -- to 131 up), reach 4 into the upper full bar of their side (116 to 324, 87 to 155):
+                -- only while our pictures are off (the spec's "As built" names it).
+                if name:find("targeting picture") then
+                    local upper = (spot == "top" and name:find("^LB")) or (spot == "right" and name:find("^RB"))
+                    local hit, w, h = overlapArea(r, o)
+                    if upper then
+                        check(hit and math.abs(w - 4) < 1e-6 and math.abs(h - 32) < 1e-6, spot .. " bar and " .. name .. ": expected 4 by 32")
+                    else
+                        check(not hit, spot .. " bar overlaps " .. name)
+                    end
+                elseif not name:find("diamond") and not name:find(" prompt$") then
                     check(r[3] <= o[1] or o[3] <= r[1] or r[4] <= o[2] or o[4] <= r[2], spot .. " bar overlaps " .. name)
                 end
             end
@@ -2871,8 +2916,8 @@ test("size: the plan's numbers at every Spell panel size", function()
         for _, side in ipairs({ { "left", -1 }, { "right", 1 } }) do
             near(spots.inner[side[1]].x, side[2] * n[1], what .. " inner " .. side[1])
             near(spots.outer[side[1]].x, side[2] * n[2], what .. " outer " .. side[1])
-            eq(spots.inner[side[1]].y, 66)
-            eq(spots.outer[side[1]].y, 66)
+            eq(spots.inner[side[1]].y, 50) -- (0.20.0: 16 lower than 0.19.0's 66, at every size)
+            eq(spots.outer[side[1]].y, 50)
         end
         local r = Plan.Rects(size)
         near(r["outer right diamond"][3], n[3], what .. " outer edge")
@@ -2882,7 +2927,7 @@ test("size: the plan's numbers at every Spell panel size", function()
         local bars = Plan.BarSpots(size)
         for _, b in ipairs({ { "top", -1, 1 }, { "left", -1, -1 }, { "right", 1, 1 }, { "both", 1, -1 } }) do
             near(bars[b[1]].x, b[2] * n[1], what .. " " .. b[1] .. " x")
-            near(bars[b[1]].y, 66 + b[3] * 21 * s, what .. " " .. b[1] .. " y")
+            near(bars[b[1]].y, 50 + b[3] * 21 * s, what .. " " .. b[1] .. " y")
             near(bars[b[1]].s, 0.6 * s, what .. " " .. b[1] .. " scale")
         end
         eq(bars.bottom, { x = 0, y = 238, s = 1 }, what .. " sub-menu buttons")
@@ -2907,15 +2952,23 @@ test("size: the plan's numbers at every Spell panel size", function()
     eq(Plan.TEMPLATE, 5)
 end)
 
-test("size: no piece overlaps another at every Spell panel size, and all stay on screen", function()
+test("size: no piece overlaps another up to 100%, and all stay on screen; at 110% and 120% only the named pieces do not", function()
     local Plan = plan()
-    for _, size in ipairs(SIZES) do checkClear(Plan.Rects(size), size .. "%") end
-    -- The tightest spots: at 120% the inner diamonds reach 124.8 and 7.2, the LB / RB pictures start
-    -- at 155; the magnifier left of the place name ends at the inner left diamond's edge (103).
-    local r = Plan.Rects({ panelSize = 120, mapButtons = 1 })
-    near(r["inner left diamond"][4], 124.8, "inner diamond top at 120%")
-    eq(r["LB targeting picture"][2], 155)
-    check(r["inner right diamond"][4] < r["RB targeting picture"][2], "the inner diamond reaches the RB picture")
+    for _, size in ipairs(SIZES) do checkClear(Plan.Rects(size), size .. "%", bigSize(size)) end
+    -- At 100% the spell panels end where the targeting pictures begin (99 up) and 1 over the
+    -- screen's bottom edge.
+    local r = Plan.Rects(100)
+    eq({ r["inner left diamond"][2], r["inner left diamond"][4] }, { 1, 99 })
+    eq(r["LB targeting picture"][2], 99)
+    -- The tightest spots: at 120% the inner diamonds reach 108.8 and -8.8 (0.20.0: 16 lower), the
+    -- LB / RB pictures start at 99; the magnifier left of the place name ends at the inner left
+    -- diamond's edge (103).
+    r = Plan.Rects({ panelSize = 120, mapButtons = 1 })
+    near(r["inner left diamond"][4], 108.8, "inner diamond top at 120%")
+    near(r["inner left diamond"][2], -8.8, "inner diamond bottom at 120%")
+    eq(r["LB targeting picture"][2], 99)
+    local hit, w, h = overlapArea(r["inner right diamond"], r["RB targeting picture"])
+    check(hit and math.abs(w - 17) < 1e-6 and math.abs(h - 9.8) < 1e-6, "the inner diamond and the RB picture at 120%: 17 by 9.8")
     near(r["title strip"][1], -103, "the strip's left edge with the map buttons")
     -- And the frames clear the wheels at every size.
     for _, size in ipairs(SIZES) do
@@ -2942,7 +2995,10 @@ test("size: the real bars stay under the inner diamonds at every Spell panel siz
             near(b[3] - b[1], 124.8 * size / 100, size .. "%: " .. bar .. " width")
             near(b[4] - b[2], 40.8 * size / 100, size .. "%: " .. bar .. " height")
             for name, a in pairs(r) do
-                if name ~= "inner left diamond" and name ~= "inner right diamond" then
+                -- (0.20.0: at 110% and 120% the panels reach the targeting pictures, see bigSize, and
+                -- the invisible bars under them with them.)
+                local picture = size > 100 and name:find("targeting picture")
+                if name ~= "inner left diamond" and name ~= "inner right diamond" and not picture then
                     check(not overlapArea(a, b), size .. "%: " .. bar .. " real bar overlaps " .. name)
                 end
             end
@@ -2999,9 +3055,10 @@ test("size: a change rewrites the frames and asks for a reload; after it the bar
     near(h:GetScale(), 1.2, "the pictures' scale")
     local _, _, _, x, y = h:GetPoint(1)
     near(x * 1.2, -183.4, "inner left diamond x")
-    near(y * 1.2, 66, "inner left diamond y")
+    near(y * 1.2, 50, "inner left diamond y")
     near(Face.view[1].pics[1].frame:GetWidth() * h:GetScale(), 50.4, "a picture on screen")
-    eq(statusText(PE2), USING)
+    -- (0.20.0: at 120% the built-in arrangement's targeting pictures meet the larger inner panels; the card says so.)
+    eq(statusText(PE2), USING .. "\n2 pairs of pieces overlap. Arrange the screen shows which, and moves them.")
     c2:assertClean()
 end)
 
@@ -3115,7 +3172,7 @@ test("0.20.0 parts: with saved Off values every part is placed, and the triggers
     local f = barFrames(c)
     eq(c._state(f.top).scale, 0.6, "the bars are not under the spell panels")
     local left = c.env.GamepadMainActionBarFrame.PageUnit.LeftShoulderBackground
-    eq({ select(4, left:GetPoint(1)) }, { -178, 155 }, "the LB targeting picture was not placed")
+    eq({ select(4, left:GetPoint(1)) }, { -84, 99 }, "the LB targeting picture was not placed")
     eq(PE.FaceBars:Status(), nil)
     check(type(PE.FaceBars.view) == "table" and PE.FaceBars.view[1] ~= nil, "the spell pictures were not made")
     -- The triggers: the device-proven callback, once; no hook on SetActiveActionBar.
@@ -3193,9 +3250,12 @@ test("0.16.0: no piece overlaps another in any state", function()
                 -- The prompts: 72 by 24, 138 either side, 158 up (MainActionBarFrame.xml:119-135).
                 eq(r["LB+LT prompt"], { -174, 146, -102, 170 }, what .. ": LB+LT prompt")
                 eq(r["RB+RT prompt"], { 102, 146, 174, 170 }, what .. ": RB+RT prompt")
-                -- The targeting pictures on the prompts' outer sides, clear of them.
-                check(r["LB targeting picture"][3] < r["LB+LT prompt"][1], what .. ": the LB picture is not left of its prompt")
-                check(r["RB targeting picture"][1] > r["RB+RT prompt"][3], what .. ": the RB picture is not right of its prompt")
+                -- The targeting pictures: 0.20.0 has them in beside the map, under the prompts (until
+                -- 0.19.0 on the prompts' outer sides).
+                check(r["LB targeting picture"][4] < r["LB+LT prompt"][2], what .. ": the LB picture is not under its prompt")
+                check(r["RB targeting picture"][4] < r["RB+RT prompt"][2], what .. ": the RB picture is not under its prompt")
+                eq(r["LB targeting picture"], { -120, 99, -84, 131 }, what .. ": LB targeting picture")
+                eq(r["RB targeting picture"], { 84, 99, 120, 131 }, what .. ": RB targeting picture")
                 -- The tooltip taken 200 by 100.
                 near(r.tooltip[3] - r.tooltip[1], 200, what .. ": tooltip width")
                 near(r.tooltip[4] - r.tooltip[2], 100, what .. ": tooltip height")
@@ -3210,7 +3270,7 @@ test("0.16.0: no piece overlaps another in any state", function()
                 else
                     eq(r["hint box"], nil, what .. ": hint box while off")
                 end
-                checkClear(r, what)
+                checkClear(r, what, bigSize(size))
             end
         end
     end
@@ -3652,7 +3712,7 @@ test("0.16.4 snapshot: one block with the screen, the layout, every switch and e
     check(dpad and dpad:find("| shown |", 1, true), "main d-pad panel: " .. tostring(dpad))
     local l, b, w, h, sc = numbers(dpad)
     about(l, W / 2 - 170 - 67, "main d-pad panel left")
-    about(b, 66 - 49, "main d-pad panel bottom")
+    about(b, 50 - 49, "main d-pad panel bottom")
     eq({ w, h, sc }, { 134, 98, 1 })
     check(pieceLine(lines, "main face panel"):find("| shown |", 1, true), "main face panel is not shown")
     check(pieceLine(lines, "lt face panel"):find("| hidden |", 1, true), "lt face panel is not hidden")
@@ -3665,8 +3725,8 @@ test("0.16.4 snapshot: one block with the screen, the layout, every switch and e
     check(pieceLine(lines, "game bar main"):find(" a=0.00", 1, true), "the faded bar's see-through is not given: " .. pieceLine(lines, "game bar main"))
     local lb = pieceLine(lines, "LB targeting picture")
     local ll, lbot = numbers(lb)
-    about(ll, W / 2 - 178 - 60, "LB targeting picture left") -- the stand-in's picture is 60 wide, BOTTOMRIGHT at -178, 155
-    about(lbot, 155, "LB targeting picture bottom")
+    about(ll, W / 2 - 84 - 60, "LB targeting picture left") -- the stand-in's picture is 60 wide, BOTTOMRIGHT at -84, 99
+    about(lbot, 99, "LB targeting picture bottom")
     -- A frame this client does not have is said, not skipped.
     eq(pieceLine(lines, "hint box"), "piece: hint box | not found")
     -- A second one counts up.
@@ -3782,7 +3842,8 @@ end)
 -- stops them (spec 2026-11-24-0.17.0-slim-bars.md; the bars themselves: slimbars_test.lua)
 ---------------------------------------------------------------------------
 
-local SLIM_RECTS = {
+-- 0.17.0's rectangles (arrangement 1, up to 0.19.0), kept as they were captured ...
+local SLIM_RECTS_0_17 = {
     ["player bar"] = { -498, 141, -218, 169 },
     ["target bar"] = { 218, 141, 498, 169 },
     ["cast bar"] = { 218, 127, 498, 139 },
@@ -3791,6 +3852,13 @@ local SLIM_RECTS = {
     ["pet boxes room"] = { -498, 192, -218, 213 },
     ["target boxes room"] = { 218, 172, 358, 193 },
 }
+-- ... and 0.20.0's: each side 18 further out and 16 lower (Plan.BASE_2: the player bar -18, -16,
+-- the target bar 18, -16; every rectangle of a side moves with its bar).
+local SLIM_RECTS = {}
+for name, r in pairs(SLIM_RECTS_0_17) do
+    local dx = (name == "player bar" or name:find("^pet")) and -18 or 18
+    SLIM_RECTS[name] = { r[1] + dx, r[2] - 16, r[3] + dx, r[4] - 16 }
+end
 -- The game's own pieces that are invisible while the slim bars show.
 local GAME_FRAME_RECTS = { "player", "pet", "target", "target of target", "target auras", "target cast bar" }
 
@@ -3841,7 +3909,7 @@ test("0.17.0 plan: with Slim bars on no piece overlaps another, at every size an
                 for _, name in ipairs(GAME_FRAME_RECTS) do eq(r[name], nil, what .. ": " .. name) end
                 -- The tooltip in the bottom right corner, taken 200 by 100.
                 for i, want in ipairs({ W / 2 - 10 - 200, 10, W / 2 - 10, 110 }) do near(r.tooltip[i], want, what .. ": tooltip " .. i) end
-                checkClear(r, what)
+                checkClear(r, what, bigSize(size))
                 -- Each trigger state by name: what is drawn then is clear of every slim piece.
                 for state, halves in pairs(Plan.FaceStates()) do
                     for _, h in ipairs(halves) do
@@ -3855,12 +3923,14 @@ test("0.17.0 plan: with Slim bars on no piece overlaps another, at every size an
             end
         end
     end
-    -- The tightest spots: the largest diamonds end 2.2 under the cast bar, the LB / RB
-    -- pictures 4 inside the bars, the room for the pet's boxes under the chat.
+    -- The tightest spots (0.20.0): the largest diamonds end 2.2 under the cast bar (both 16
+    -- lower than until 0.19.0), the bars 116 out past the LB / RB pictures, the cast bar 1 over
+    -- the tooltip's corner box, the room for the pet's boxes under the chat.
     local r = Plan.Rects({ panelSize = 120, slim = 1 })
     near(r["cast bar"][2] - r["outer right diamond"][4], 2.2, "cast bar over the diamonds at 120%")
-    eq(r["target bar"][1] - r["RB targeting picture"][3], 4)
-    eq(r["LB targeting picture"][1] - r["player bar"][3], 4)
+    eq(r["target bar"][1] - r["RB targeting picture"][3], 116)
+    eq(r["LB targeting picture"][1] - r["player bar"][3], 116)
+    eq(r["cast bar"][2] - r.tooltip[4], 1)
     check(Plan.Rects({ slim = 1 })["pet boxes room"][4] < Plan.Rects({ slim = 1 }).chat[2], "the pet's boxes would reach the chat")
 end)
 
@@ -4095,10 +4165,10 @@ local RECTS_0_18 = {
     ["tooltip"] = { 472.66499999999996, 236, 672.66499999999996, 336 },
 }
 
--- The arrangement saved on the device on 2026-11-25 (its debug log's "arrange: offset:" lines),
--- as the plan takes a session's offsets.
-local function arranged(extra)
-    local v = { arrange = 1, arrangeWheel = 0,
+-- The offsets saved on the device on 2026-11-25 (its debug log's "arrange: offset:" lines), as
+-- 0.18.0 and 0.19.0 saved them: counted from arrangement 1.
+local function arranged_0_19()
+    return {
         offsets = { map = { x = 0, y = -2 }, ["buffs and debuffs"] = { x = 0, y = 4 } },
         charOffsets = {
             ["inner left diamond"] = { x = 0, y = -16 }, ["inner right diamond"] = { x = 0, y = -16 },
@@ -4106,6 +4176,12 @@ local function arranged(extra)
             ["LB targeting picture"] = { x = 94, y = -56 }, ["RB targeting picture"] = { x = -94, y = -56 },
             ["player bar"] = { x = -18, y = -16 }, ["target bar"] = { x = 18, y = -16 },
         } }
+end
+
+-- That arrangement as the plan takes a session's offsets in 0.20.0, where all of it but the
+-- map's 2 down is the built-in arrangement (Plan.BASE_2): the offsets carried over.
+local function arranged(extra)
+    local v = { arrange = 1, offsets = { map = { x = 0, y = -2 } }, charOffsets = {} }
     for k, x in pairs(extra or {}) do v[k] = x end
     return v
 end
@@ -4133,11 +4209,37 @@ test("0.19.0: the option is Round by default and reads only 0 and 1", function()
     eq(Plan.MAP_SQUARE.bottom, 4)
 end)
 
-test("0.19.0: Round gives 0.18.0's rectangles and pieces, with the key 0 or absent", function()
+-- 0.20.0: each rectangle 0.18.0 and 0.19.0 gave (RECTS_0_18, captured from 0.18.0), moved by
+-- the built-in amount of the piece it belongs to; a rectangle of no such piece is unchanged.
+local function rects_0_20(Plan)
+    local out = {}
+    for name, r in pairs(RECTS_0_18) do out[name] = { r[1], r[2], r[3], r[4] } end
+    for _, def in ipairs(Plan.ARRANGE) do
+        local b = Plan.BASE_2[def.key]
+        if b then
+            for _, name in ipairs(def.rects) do
+                local q = out[name]
+                if q then q[1], q[2], q[3], q[4] = q[1] + b[1], q[2] + b[2], q[3] + b[1], q[4] + b[2] end
+            end
+        end
+    end
+    return out
+end
+
+test("0.19.0: Round gives 0.18.0's rectangles, each moved by its piece's built-in amount (0.20.0), with the key 0 or absent", function()
     local Plan = plan()
+    local WANT = rects_0_20(Plan)
+    -- Seven of the 27 moved: the four panels, the two targeting pictures, the buffs and debuffs.
+    local movedNames = {}
+    for name, r in pairs(RECTS_0_18) do
+        if r[1] ~= WANT[name][1] or r[2] ~= WANT[name][2] then movedNames[#movedNames + 1] = name end
+    end
+    table.sort(movedNames)
+    eq(movedNames, { "LB targeting picture", "RB targeting picture", "buffs and debuffs", "inner left diamond", "inner right diamond",
+        "outer left diamond", "outer right diamond" })
     for what, r in pairs({ ["no options"] = Plan.Rects(), ["mapLook 0"] = Plan.Rects({ mapLook = 0 }), ["a size"] = Plan.Rects(100) }) do
         local n = 0
-        for name, want in pairs(RECTS_0_18) do
+        for name, want in pairs(WANT) do
             n = n + 1
             check(r[name], what .. ": no rectangle " .. name)
             for i = 1, 4 do near(r[name][i], want[i], what .. ": " .. name .. " " .. i) end
@@ -4149,7 +4251,7 @@ test("0.19.0: Round gives 0.18.0's rectangles and pieces, with the key 0 or abse
     eq(Plan.Rects({ mapLook = 0, slim = 1, panelSize = 120, hints = 1, mapButtons = 1 }),
         Plan.Rects({ slim = 1, panelSize = 120, hints = 1, mapButtons = 1 }))
     eq(Plan.Pieces({ mapLook = 0 }), Plan.Pieces({}))
-    eq(Plan.Shoulders({ mapLook = 0 }), { left = { "BOTTOMRIGHT", -178, 155 }, right = { "BOTTOMLEFT", 178, 155 } })
+    eq(Plan.Shoulders({ mapLook = 0 }), { left = { "BOTTOMRIGHT", -84, 99 }, right = { "BOTTOMLEFT", 84, 99 } })
     eq(Plan.MapBox({ mapLook = 0 }), Plan.Rects().map)
     eq(Plan.MapBox(), Plan.Rects().map)
 end)
@@ -4196,16 +4298,21 @@ test("0.19.0: Square lifts the timers 14 and moves the targeting pictures 20 out
     -- The lowest timer sits 4 over the edge box.
     local r = Plan.Rects({ mapLook = 1 })
     eq(r["MainHand timer"][2] - r.map[4], 4)
-    eq(Plan.Shoulders({ mapLook = 1 }), { left = { "BOTTOMRIGHT", -198, 155 }, right = { "BOTTOMLEFT", 198, 155 } })
+    -- (0.20.0: from the built-in -84 / 84, 99: 4 short of the square's edge box at 100.)
+    eq(Plan.Shoulders({ mapLook = 1 }), { left = { "BOTTOMRIGHT", -104, 99 }, right = { "BOTTOMLEFT", 104, 99 } })
 end)
 
-test("0.19.0: Square has no overlap with nothing moved, at every Spell panel size", function()
+-- 0.20.0: the built-in arrangement fits up to 100%; at 110% and 120% the targeting pictures meet
+-- the larger inner panels, with the round map as with the square one (see bigSize).
+local BIG_PAIRS = { "LB targeting picture|inner left diamond", "RB targeting picture|inner right diamond" }
+
+test("0.19.0: Square has no overlap with nothing moved, up to 100%; no size brings a panel to the map", function()
     local Plan = plan()
     eq(Plan.SQUARE_TIGHT_SIZES, {}, "no size brings a spell panel to the square map")
     for _, size in ipairs(Plan.PANEL_SIZES) do
         for _, hints in ipairs({ 0, 1 }) do
             local o = { mapLook = 1, panelSize = size, hints = hints }
-            eq(pairsOf(Plan, o), {}, size .. "%, hints " .. hints)
+            eq(pairsOf(Plan, o), size <= 100 and {} or BIG_PAIRS, size .. "%, hints " .. hints)
             -- The inner panels stay 3 clear of the edge box.
             local r = Plan.Rects(o)
             near(r.map[1] - r["inner left diamond"][3], 3, size .. "%: left panel to the map")
@@ -4214,21 +4321,37 @@ test("0.19.0: Square has no overlap with nothing moved, at every Spell panel siz
     end
 end)
 
--- The named exception (the spec's "As built"): the pictures' 20 outwards is made for a
--- picture that was moved in beside the map. Left at their built-in spot with the slim bars on,
--- they reach 16 into the bars' inner ends (218 from the centre). Arrange it yourself moves them.
-test("0.19.0: Square with Slim bars and nothing moved overlaps only at the targeting pictures", function()
+-- 0.19.0 had a named exception here: Square with Slim bars On and nothing moved overlapped at
+-- the targeting pictures (three pairs), because their 20 outwards was made for pictures moved
+-- in beside the map. 0.20.0 builds that move in, so the exception is gone.
+test("0.20.0: Square and Round with Slim bars and nothing moved have no overlap at 80%, 90% and 100%", function()
     local Plan = plan()
     for _, size in ipairs(Plan.PANEL_SIZES) do
-        eq(pairsOf(Plan, { mapLook = 1, slim = 1, panelSize = size }),
-            { "LB targeting picture|player bar", "RB targeting picture|target bar", "RB targeting picture|target boxes room" }, size .. "%")
-        eq(pairsOf(Plan, { mapLook = 0, slim = 1, panelSize = size }), {}, size .. "% round")
+        for look = 0, 1 do
+            for slim = 0, 1 do
+                eq(pairsOf(Plan, { mapLook = look, slim = slim, panelSize = size }), size <= 100 and {} or BIG_PAIRS,
+                    size .. "% look " .. look .. " slim " .. slim)
+            end
+        end
     end
-    local hit = Plan.Overlaps(Plan.Rects({ mapLook = 1, slim = 1 }))[1]
-    eq({ hit.w, hit.h }, { 16, 14 })
+    -- The nearest points at 100% with the square map and the slim bars.
+    local r = Plan.Rects({ mapLook = 1, slim = 1 })
+    for i, want in ipairs({ -100, 4, 100, 204 }) do check(math.abs(r.map[i] - want) < 0.01, "map " .. i) end
+    near(r.map[1] - r["LB targeting picture"][3], 4, "LB picture to the map")
+    near(r["RB targeting picture"][1] - r.map[3], 4, "RB picture to the map")
+    near(r["RB+RT prompt"][1] - r.map[3], 2, "prompt to the map")
+    near(r["inner right diamond"][1] - r.map[3], 3, "inner panel to the map")
+    near(r["LB targeting picture"][1] - r["player bar"][3], 96, "player bar to the LB picture")
+    -- How much at the two largest sizes: 36 wide with the square map (the picture is 20 further
+    -- out, wholly over the panel), 17 with the round one; 4.9 and 9.8 high.
+    for _, case in ipairs({ { 1, 110, 36, 4.9 }, { 1, 120, 36, 9.8 }, { 0, 110, 17, 4.9 }, { 0, 120, 17, 9.8 } }) do
+        local hit = Plan.Overlaps(Plan.Rects({ mapLook = case[1], slim = 1, panelSize = case[2] }))[1]
+        near(hit.w, case[3], "look " .. case[1] .. " " .. case[2] .. "% width")
+        near(hit.h, case[4], "look " .. case[1] .. " " .. case[2] .. "% height")
+    end
 end)
 
-test("0.19.0: Square has no overlap with the arrangement of 2026-11-25", function()
+test("0.19.0: Square has no overlap with the arrangement of 2026-11-25, as 0.20.0 carries it over", function()
     local Plan = plan()
     for _, size in ipairs({ 80, 90, 100 }) do
         eq(pairsOf(Plan, arranged({ mapLook = 1, slim = 1, panelSize = size })), {}, size .. "%")
@@ -4242,10 +4365,9 @@ test("0.19.0: Square has no overlap with the arrangement of 2026-11-25", functio
     near(r["inner right diamond"][1] - r.map[3], 3, "inner panel to the map")
     -- That arrangement was made at 100%. At 110% and 120% its targeting pictures meet the
     -- larger inner panels, with the round map as with the square one: not the square's doing.
-    local WANT = { "LB targeting picture|inner left diamond", "RB targeting picture|inner right diamond" }
     for _, size in ipairs({ 110, 120 }) do
-        eq(pairsOf(Plan, arranged({ mapLook = 1, slim = 1, panelSize = size })), WANT, size .. "% square")
-        eq(pairsOf(Plan, arranged({ mapLook = 0, slim = 1, panelSize = size })), WANT, size .. "% round")
+        eq(pairsOf(Plan, arranged({ mapLook = 1, slim = 1, panelSize = size })), BIG_PAIRS, size .. "% square")
+        eq(pairsOf(Plan, arranged({ mapLook = 0, slim = 1, panelSize = size })), BIG_PAIRS, size .. "% round")
     end
 end)
 
@@ -4377,33 +4499,245 @@ test("0.19.0: the targeting pictures follow the Map look at once, and the sessio
     local Plan = PE.LayoutPlan
     local m = PE:GetModule("ctrlLayout")
     local function leftX() return (select(4, (extras(c)):GetPoint(1))) end
-    eq(leftX(), -178)
+    -- (0.20.0: from the built-in -84, in beside the map; until 0.19.0 from -178.)
+    eq(leftX(), -84)
     eq(m:View().mapLook, 0)
     choose(c, PE, "mapLook", 1)
     eq(m:View().mapLook, 1)
-    eq(leftX(), -198)
-    eq(Plan.Shoulders().left[2], -198, "the session's look for a caller with no options")
+    eq(leftX(), -104)
+    eq(Plan.Shoulders().left[2], -104, "the session's look for a caller with no options")
     choose(c, PE, "mapLook", 0)
-    eq(leftX(), -178)
-    eq(Plan.Shoulders().left[2], -178)
+    eq(leftX(), -84)
+    eq(Plan.Shoulders().left[2], -84)
 end)
 
-test("0.19.0: the status line says when pieces overlap with the square map", function()
+-- 0.19.0 said "With the square map 3 pairs of pieces overlap" for Square with Slim bars On and
+-- nothing moved. 0.20.0's built-in arrangement has no overlap there, so the line is gone; it
+-- is only shown when the check really finds a pair (the two largest Spell panel sizes).
+test("0.20.0: the status line names overlapping pieces only when the check finds a pair", function()
+    local LINE_SQUARE = "With the square map 2 pairs of pieces overlap. Arrange the screen shows which, and moves them."
+    local LINE_ROUND = "2 pairs of pieces overlap. Arrange the screen shows which, and moves them."
     local c, PE = onClient()
     eq(statusText(PE), USING)
     choose(c, PE, "mapLook", 1)
     PE:GetModule("ctrlLayout"):CancelReload()
     eq(statusText(PE), USING, "Square with the game's frames: nothing overlaps")
-    -- With the slim bars on at login and nothing moved, the three pairs are said.
-    local file, char = deepCopy(db(c)), deepCopy(charDB(c))
-    local list, active = deepCopy(c.world.layouts.layouts), c.world.layouts.activeLayout
-    file.options.ctrlLayout.slim = 1
-    local c2, PE2 = T.new({ gamepadUI = true, saved = file, savedChar = char, setup = function(c)
-        c:addUnitFrames()
-        c.world.layouts = { layouts = list, activeLayout = active }
-    end })
-    check(statusText(PE2):find("With the square map 3 pairs of pieces overlap. Arrange the screen shows which, and moves them.", 1, true),
-        "the card: " .. tostring(statusText(PE2)))
+    -- A login with these saved files changed: slim, the Spell panel size, the look.
+    local function again(change)
+        local file, char = deepCopy(db(c)), deepCopy(charDB(c))
+        local list, active = deepCopy(c.world.layouts.layouts), c.world.layouts.activeLayout
+        for k, v in pairs(change) do file.options.ctrlLayout[k] = v end
+        local c2, PE2 = T.new({ gamepadUI = true, saved = file, savedChar = char, setup = function(c)
+            c:addUnitFrames()
+            c.world.layouts = { layouts = list, activeLayout = active }
+        end })
+        return statusText(PE2)
+    end
+    -- Square with the slim bars on and nothing moved: 0.19.0's three pairs are gone.
+    eq(again({ slim = 1 }), USING)
+    eq(again({ slim = 1, mapLook = 0 }), USING)
+    for _, size in ipairs({ 80, 90, 100 }) do
+        eq(again({ slim = 1, panelSize = size }), USING, size .. "% square")
+        eq(again({ slim = 1, panelSize = size, mapLook = 0 }), USING, size .. "% round")
+    end
+    -- The two largest sizes: said, with either map.
+    for _, size in ipairs({ 110, 120 }) do
+        check(again({ slim = 1, panelSize = size }):find(LINE_SQUARE, 1, true), size .. "% square: " .. again({ slim = 1, panelSize = size }))
+        local round = again({ panelSize = size, mapLook = 0 })
+        check(round:find(LINE_ROUND, 1, true) and not round:find("With the square map", 1, true), size .. "% round: " .. round)
+    end
+end)
+
+---------------------------------------------------------------------------
+-- 0.20.0: the arrangement of the first device sitting is the built-in one (spec
+-- 2026-11-25-0.20.0-after-first-sitting.md, 2). The plan's half; what is carried over from a
+-- saved file is in arrange_test.lua.
+---------------------------------------------------------------------------
+
+test("0.20.0 arrangement: the table of amounts is the spec's, the map is not in it, and every key is a piece", function()
+    local Plan = plan()
+    eq(Plan.BASE_2, {
+        ["inner left diamond"] = { 0, -16 }, ["inner right diamond"] = { 0, -16 },
+        ["outer left diamond"] = { 0, -16 }, ["outer right diamond"] = { 0, -16 },
+        ["LB targeting picture"] = { 94, -56 }, ["RB targeting picture"] = { -94, -56 },
+        ["player bar"] = { -18, -16 }, ["target bar"] = { 18, -16 },
+        ["buffs and debuffs"] = { 0, 4 },
+    })
+    eq(Plan.ARRANGEMENT, 2)
+    eq(Plan.BASE_2.map, nil, "the map's 0, -2 is under the screen's edge: not built in")
+    for key, b in pairs(Plan.BASE_2) do
+        check(Plan.ARRANGE_BY[key], key .. " is no piece")
+        eq({ Plan.Base(key) }, b, key)
+    end
+    for _, def in ipairs(Plan.ARRANGE) do
+        if not Plan.BASE_2[def.key] then eq({ Plan.Base(def.key) }, { 0, 0 }, def.key) end
+    end
+    eq({ Plan.Base("no such piece") }, { 0, 0 })
+    eq({ Plan.Base(nil) }, { 0, 0 })
+    -- Moved is the amount plus the saved offset; Offset the saved offset alone.
+    local v = { arrange = 1, offsets = { ["buffs and debuffs"] = { x = 3, y = 1 } }, charOffsets = { ["player bar"] = { x = -10, y = 0 } } }
+    eq({ Plan.Offset(v, "player bar") }, { -10, 0 })
+    eq({ Plan.Moved(v, "player bar") }, { -28, -16 })
+    eq({ Plan.Offset(v, "buffs and debuffs") }, { 3, 1 })
+    eq({ Plan.Moved(v, "buffs and debuffs") }, { 3, 5 })
+    eq({ Plan.Moved(v, "target bar") }, { 18, -16 })
+    eq({ Plan.Moved(nil, "target bar") }, { 18, -16 }, "no session: the built-in amount alone")
+    eq({ Plan.Moved(100, "LB targeting picture") }, { 94, -56 })
+    eq({ Plan.Moved({ arrange = 0, charOffsets = { ["target bar"] = { x = 5, y = 5 } } }, "target bar") }, { 18, -16 })
+    eq(Plan.TEMPLATE, 5, "the template number must not change: nobody's layout is rebuilt for this")
+end)
+
+test("0.20.0 arrangement: with no offsets every rectangle is 0.19.0's with that piece's saved offset, at 100%", function()
+    local Plan = plan()
+    -- The game's frames: 0.18.0's captured rectangles (0.19.0 Round is the same) plus the amounts.
+    local want = rects_0_20(Plan)
+    local r = Plan.Rects({})
+    for name, q in pairs(want) do for i = 1, 4 do near(r[name][i], q[i], name .. " " .. i) end end
+    -- The slim bars: 0.17.0's captured rectangles plus the amounts; each side moves whole.
+    local slim = Plan.Rects({ slim = 1 })
+    for name, q in pairs(SLIM_RECTS_0_17) do
+        local owner
+        for _, def in ipairs(Plan.ARRANGE) do
+            for _, n in ipairs(def.rects) do if n == name then owner = def.key end end
+        end
+        check(owner == "player bar" or owner == "target bar", name .. " belongs to " .. tostring(owner))
+        local b = Plan.BASE_2[owner]
+        eq(slim[name], { q[1] + b[1], q[2] + b[2], q[3] + b[1], q[4] + b[2] }, name)
+        eq(Plan.SlimRects()[name], slim[name], name .. " from SlimRects")
+    end
+    -- The same said the other way round, at every size, look and slim: the offsets 0.19.0 had
+    -- saved for this arrangement, taken off again, give back arrangement 1's rectangles.
+    for _, size in ipairs(SIZES) do
+        for look = 0, 1 do
+            for slimOn = 0, 1 do
+                local o = { panelSize = size, mapLook = look, slim = slimOn }
+                local back = { panelSize = size, mapLook = look, slim = slimOn, arrange = 1, offsets = {}, charOffsets = {} }
+                for key, b in pairs(Plan.BASE_2) do
+                    local store = Plan.ARRANGE_BY[key].kind == "live" and back.charOffsets or back.offsets
+                    store[key] = { x = -b[1], y = -b[2] }
+                end
+                local now, old = Plan.Rects(o), Plan.Rects(back)
+                local what = size .. "% look " .. look .. " slim " .. slimOn .. ": "
+                for name, q in pairs(now) do
+                    local dx, dy = 0, 0
+                    for _, def in ipairs(Plan.ARRANGE) do
+                        for _, n in ipairs(def.rects) do if n == name then dx, dy = Plan.Base(def.key) end end
+                    end
+                    for i = 1, 4 do near(q[i], old[name][i] + (i % 2 == 1 and dx or dy), what .. name .. " " .. i) end
+                end
+                -- The invisible real bars go with their inner panel; the wheels and the bottom anchor stay.
+                local bars, barsOld = Plan.BarSpots(o), Plan.BarSpots(back)
+                for _, spot in ipairs({ "top", "left", "right", "both" }) do
+                    near(bars[spot].y, barsOld[spot].y - 16, what .. spot .. " bar y")
+                    near(bars[spot].x, barsOld[spot].x, what .. spot .. " bar x")
+                end
+                eq(bars.bottom, { x = 0, y = 238, s = 1 }, what .. "the bottom anchor")
+                eq(Plan.Wheels(o), { { x = -138, y = 188, r = 87.5 }, { x = 138, y = 188, r = 87.5 } }, what .. "the wheels")
+            end
+        end
+    end
+end)
+
+test("0.20.0 arrangement: the twins are exact mirrors with nothing moved, at every size, look and slim", function()
+    local Plan = plan()
+    for _, size in ipairs(SIZES) do
+        for look = 0, 1 do
+            for slim = 0, 1 do
+                local r = Plan.Rects({ panelSize = size, mapLook = look, slim = slim })
+                local pairsSeen = 0
+                for _, def in ipairs(Plan.ARRANGE) do
+                    if def.twin then
+                        local twin = Plan.ARRANGE_BY[def.twin]
+                        local ax, ay = Plan.Base(def.key)
+                        local bx, by = Plan.Base(def.twin)
+                        eq({ ax, ay }, { -bx, by }, def.key .. ": the amounts are not mirrors")
+                        for i, name in ipairs(def.rects) do
+                            local a, b = r[name], r[twin.rects[i]]
+                            if a and b and def.key ~= "player" and def.key ~= "target" and def.key ~= "player bar" and def.key ~= "target bar" then
+                                eq({ a[1], a[2], a[3], a[4] }, { -b[3], b[2], -b[1], b[4] }, size .. "%: " .. name)
+                                pairsSeen = pairsSeen + 1
+                            end
+                        end
+                    end
+                end
+                check(pairsSeen >= 6, "too few pairs checked")
+                if slim == 1 then
+                    for _, pair in ipairs({ { "player bar", "target bar" }, { "pet bar", "target of target bar" } }) do
+                        local a, b = r[pair[1]], r[pair[2]]
+                        eq({ a[1], a[2], a[3], a[4] }, { -b[3], b[2], -b[1], b[4] }, size .. "%: " .. pair[1])
+                    end
+                end
+            end
+        end
+    end
+end)
+
+test("0.20.0 arrangement: MigrateBase takes each piece's amount off its saved offset, once", function()
+    local Plan = plan()
+    -- The saved offsets of 2026-11-25: all zeros afterwards (the entries are removed); the map's stays.
+    local saved = arranged_0_19()
+    local changed = Plan.MigrateBase(saved.charOffsets, nil, "live", true)
+    eq(saved.charOffsets, {})
+    eq(#changed, 8)
+    eq(changed[1], { key = "inner left diamond", fromX = 0, fromY = -16, x = 0, y = 0 })
+    eq(changed[7], { key = "player bar", fromX = -18, fromY = -16, x = 0, y = 0 })
+    changed = Plan.MigrateBase(saved.offsets, nil, "apply", true)
+    eq(saved.offsets, { map = { x = 0, y = -2 } })
+    eq(changed, { { key = "buffs and debuffs", fromX = 0, fromY = 4, x = 0, y = 0 } })
+    -- Other offsets: offset minus amount. With every piece: one with nothing saved stood at the
+    -- old built-in spot and gets minus its amount.
+    local store = { ["player bar"] = { x = -10, y = 0 } }
+    Plan.MigrateBase(store, 1, "live", false)
+    eq(store, { ["player bar"] = { x = 8, y = 16 } })
+    store = { ["player bar"] = { x = -10, y = 0 }, ["spell wheels"] = { x = 0, y = 30 }, ["a later piece"] = { x = 1, y = 1 } }
+    Plan.MigrateBase(store, nil, "live", true)
+    eq(store, {
+        ["player bar"] = { x = 8, y = 16 }, ["target bar"] = { x = -18, y = 16 },
+        ["inner left diamond"] = { x = 0, y = 16 }, ["inner right diamond"] = { x = 0, y = 16 },
+        ["outer left diamond"] = { x = 0, y = 16 }, ["outer right diamond"] = { x = 0, y = 16 },
+        ["LB targeting picture"] = { x = -94, y = 56 }, ["RB targeting picture"] = { x = 94, y = 56 },
+        ["spell wheels"] = { x = 0, y = 30 }, ["a later piece"] = { x = 1, y = 1 },
+    })
+    -- Only the kind asked for: a live piece's key in the Edit Mode store is not that piece's place.
+    store = { ["player bar"] = { x = 1, y = 1 }, ["buffs and debuffs"] = { x = 0, y = 10 } }
+    Plan.MigrateBase(store, nil, "apply", true)
+    eq(store, { ["player bar"] = { x = 1, y = 1 }, ["buffs and debuffs"] = { x = 0, y = 6 } })
+    -- Once: at mark 2 (or later) nothing changes; neither for a store that is no table.
+    local before = { ["player bar"] = { x = 8, y = 16 } }
+    eq(Plan.MigrateBase(before, 2, "live", true), {})
+    eq(Plan.MigrateBase(before, 3, nil, true), {})
+    eq(before, { ["player bar"] = { x = 8, y = 16 } })
+    eq(Plan.MigrateBase(nil, nil, "live", true), {})
+    eq(Plan.MigrateBase("offsets", 1, "live", true), {})
+    -- A mark that is no number counts as 1.
+    store = { ["target bar"] = { x = 18, y = -16 } }
+    Plan.MigrateBase(store, "two", "live", false)
+    eq(store, {})
+    -- A saved value that never counted (not two numbers, too far) counted as none: with every
+    -- piece it becomes minus the amount, else it is left as it is.
+    store = { ["player bar"] = "left", ["target bar"] = { x = 5000, y = 0 } }
+    Plan.MigrateBase(store, nil, "live", false)
+    eq(store, { ["player bar"] = "left", ["target bar"] = { x = 5000, y = 0 } })
+    Plan.MigrateBase(store, nil, "live", true)
+    eq(store["player bar"], { x = 18, y = 16 })
+    eq(store["target bar"], { x = -18, y = 16 })
+    -- Every rectangle is where it was, for any offsets: the plan before (arrangement 1 is
+    -- arrangement 2 with minus the amounts) against the plan after.
+    local old = { ["player bar"] = { x = -10, y = 0 }, ["LB targeting picture"] = { x = 7, y = 3 }, ["outer right diamond"] = { x = 2, y = 2 } }
+    local function asOne(t)
+        local out = {}
+        for key, b in pairs(Plan.BASE_2) do if Plan.ARRANGE_BY[key].kind == "live" then out[key] = { x = -b[1], y = -b[2] } end end
+        for key, e in pairs(t) do out[key] = { x = e.x - Plan.BASE_2[key][1], y = e.y - Plan.BASE_2[key][2] } end
+        return out
+    end
+    local was = Plan.Rects({ slim = 1, arrange = 1, offsets = {}, charOffsets = asOne(old) })
+    -- (by hand, from the captured numbers: the player bar 10 left of 0.19.0's -498.)
+    eq(was["player bar"], { -508, 141, -228, 169 })
+    eq(was["LB targeting picture"], { -207, 158, -171, 190 })
+    local carried = {}
+    for k, e in pairs(old) do carried[k] = { x = e.x, y = e.y } end
+    Plan.MigrateBase(carried, nil, "live", true)
+    eq(Plan.Rects({ slim = 1, arrange = 1, offsets = {}, charOffsets = carried }), was)
 end)
 
 return { known = KNOWN_FAILURES }

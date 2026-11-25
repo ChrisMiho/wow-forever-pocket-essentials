@@ -20,9 +20,9 @@ local W, H = 768 * 1280 / 720, 768 -- the stand-in's screen in UI units
 local SIZES = { 80, 90, 100, 110, 120 }
 local SYS = { Minimap = 2, UnitFrame = 3, ChatFrame = 8, HudTooltip = 11, SwingTimer = 29 }
 -- The frame under the left inner spell panel that takes a tap, at its built-in spot and 100%:
--- the panel (-237 to -103, 17 to 115) and the two real bars under it (-232.4 to -107.6, 24.6
--- to 107.4), 4 wider all round (FaceBars.lua, BackingRects).
-local LEFT_GUARD = { -241, 13, -99, 119 }
+-- the panel (-237 to -103, 1 to 99; 0.20.0: 16 lower than until 0.19.0) and the two real bars
+-- under it (-232.4 to -107.6, 8.6 to 91.4), 4 wider all round (FaceBars.lua, BackingRects).
+local LEFT_GUARD = { -241, -3, -99, 103 }
 
 local function near(a, b, msg)
     check(type(a) == "number" and math.abs(a - b) < 1e-6, (msg or "number") .. ": expected " .. tostring(b) .. ", got " .. tostring(a))
@@ -58,7 +58,11 @@ local function sameRect(got, want, what)
 end
 
 -- A client with the Controller layout on from the Gamepad preset (ours built and active)
--- (o.debug: already at login, as a saved file with the Debug log on has it)
+-- (o.debug: already at login, as a saved file with the Debug log on has it).
+-- The saved files are 0.20.0's: marked as counted from the built-in arrangement 2
+-- (opts.arrangeBase, ctrlArrange.base) and with the old wheels switch dealt with
+-- (ctrlArrange.wheel), so the offsets given are used as they are. o.old: files as 0.18.0 and
+-- 0.19.0 saved them, with no mark (the tests of what is carried over).
 -- and the saved values given: o.arrange (default 1), o.wheel (a value 0.18.0 or 0.19.0 saved
 -- for the row "Arrange: spell wheels", which 0.20.0 removed), o.slim, o.offsets (the Edit
 -- Mode pieces'), o.char (this character's saved table), o.setup(c). The Debug log is on and
@@ -69,6 +73,11 @@ local function client(o)
         slim = o.slim, panelSize = o.panelSize, offsets = o.offsets, offsetsWritten = o.written } } }
     for k, v in pairs(o.more or {}) do saved.options.ctrlLayout[k] = v end
     if o.debug then saved.debug = { on = true } end
+    if not o.old then
+        saved.options.ctrlLayout.arrangeBase = 2
+        local store = type(o.char) == "table" and o.char.ctrlArrange or nil
+        if type(store) == "table" then store.base, store.wheel = 2, 1 end
+    end
     local c, PE = T.new({ gamepadUI = true, saved = saved, savedChar = o.char, screen = o.screen, setup = function(c)
         c.world.layouts = { layouts = {}, activeLayout = 3 }
         if o.slim == 1 then c:addUnitFrames() end
@@ -86,6 +95,13 @@ local function opts(PE) return PE:GetModule("ctrlLayout").opts end
 local function charStore(PE) return PE.charDB.ctrlArrange end
 -- The offsets our Edit Mode layout holds, as the options note them (none noted yet: empty).
 local function written(PE) return opts(PE).offsetsWritten or {} end
+-- What that record holds for a layout built by 0.20.0, given the offsets written with it: the
+-- one Edit Mode piece with a built-in amount (buffs and debuffs, 4 up) is always in it, since
+-- the record is each piece's whole distance from arrangement 1's spot.
+local function WR(t)
+    t["buffs and debuffs"] = t["buffs and debuffs"] or { x = 0, y = 4 }
+    return t
+end
 
 local function ours(c)
     for _, l in ipairs(c.world.layouts.layouts) do if l.layoutName == NAME then return l end end
@@ -144,6 +160,14 @@ end
 local function noted(c, text)
     for _, l in ipairs(notes(c)) do if l == text then return true end end
     return false
+end
+
+-- How many "arrange:" lines match. The debug log is kept in the account's saved file, so a
+-- later login on the same file still holds the earlier login's lines.
+local function countLike(c, pattern)
+    local n = 0
+    for _, l in ipairs(notes(c)) do if l:find(pattern) then n = n + 1 end end
+    return n
 end
 
 local function notedLike(c, pattern)
@@ -255,13 +279,14 @@ test("arrange plan: the switch is Off by default, and Off ignores saved offsets 
                     eq(Plan.RealBarRects(v), Plan.RealBarRects(base), what .. ": RealBarRects")
                     eq(Plan.SlimRects(v), Plan.SlimRects(), what .. ": SlimRects")
                     eq(Plan.Wheels(v), Plan.Wheels(), what .. ": Wheels")
-                    eq({ Plan.Moved(v, def.key) }, { 0, 0 }, what .. ": Moved")
+                    eq({ Plan.Offset(v, def.key) }, { 0, 0 }, what .. ": Offset")
+                    eq({ Plan.Moved(v, def.key) }, { Plan.Base(def.key) }, what .. ": Moved is the built-in amount alone")
                 end
             end
         end
     end
     local s = Plan.Shoulders({ arrange = 0, charOffsets = { ["LB targeting picture"] = { x = 9, y = 9 } } })
-    eq(s, { left = { "BOTTOMRIGHT", -178, 155 }, right = { "BOTTOMLEFT", 178, 155 } })
+    eq(s, { left = { "BOTTOMRIGHT", -84, 99 }, right = { "BOTTOMLEFT", 84, 99 } })
     eq(Plan.TEMPLATE, 5, "the template number must not change: nobody's layout is rebuilt for this")
 end)
 
@@ -401,13 +426,15 @@ test("arrange plan: the spell panels move in every trigger state, the real bars 
     local v = moved("spell wheels", 40, 30)
     eq(Plan.BarSpots(v).bottom, { x = 0, y = 268, s = 1 })
     eq(Plan.Wheels(v), { { x = -138, y = 218, r = 87.5 }, { x = 138, y = 218, r = 87.5 } })
-    eq({ Plan.Moved(v, "spell wheels") }, { 40, 30 })
+    eq({ Plan.Offset(v, "spell wheels") }, { 40, 30 })
+    eq({ Plan.Moved(v, "spell wheels") }, { 40, 30 }, "the wheels have no built-in amount")
     v.arrangeWheel = 0
     eq(Plan.BarSpots(v).bottom, { x = 0, y = 268, s = 1 })
     eq(Plan.Wheels(v), { { x = -138, y = 218, r = 87.5 }, { x = 138, y = 218, r = 87.5 } })
     -- The targeting pictures.
-    eq(Plan.Shoulders(moved("LB targeting picture", -5, 7)), { left = { "BOTTOMRIGHT", -183, 162 }, right = { "BOTTOMLEFT", 178, 155 } })
-    eq(Plan.SHOULDERS, { left = { "BOTTOMRIGHT", -178, 155 }, right = { "BOTTOMLEFT", 178, 155 } }, "the built-in numbers changed")
+    -- (0.20.0: the built-in arrangement 2 has them 94 in and 56 down: -84, 99 and 84, 99.)
+    eq(Plan.Shoulders(moved("LB targeting picture", -5, 7)), { left = { "BOTTOMRIGHT", -89, 106 }, right = { "BOTTOMLEFT", 84, 99 } })
+    eq(Plan.SHOULDERS, { left = { "BOTTOMRIGHT", -178, 155 }, right = { "BOTTOMLEFT", 178, 155 } }, "arrangement 1's numbers changed")
     -- The slim bars: a side moves whole.
     local slim, was = Plan.SlimRects(moved("target bar", 6, 8)), Plan.SlimRects()
     for _, name in ipairs({ "target bar", "cast bar", "target of target bar", "target boxes room" }) do
@@ -434,7 +461,8 @@ test("arrange plan: the Edit Mode pieces carry their offset in their anchor, and
                     if p.arrange == def.key then
                         n = n + 1
                         eq(def.kind, "apply", what .. ": a live piece is in the Edit Mode layout")
-                        eq({ p.dx, p.dy }, { 14, -6 }, what)
+                        local bx, by = Plan.Base(def.key)
+                        eq({ p.dx, p.dy }, { 14 + bx, -6 + by }, what .. ": the whole distance, built-in amount and offset")
                         eq({ p.anchor.x, p.anchor.y }, { b.anchor.x + 14, b.anchor.y - 6 }, what)
                         eq({ p.anchor.point, p.anchor.relativeTo, p.anchor.relativePoint },
                             { b.anchor.point, b.anchor.relativeTo, b.anchor.relativePoint }, what)
@@ -450,7 +478,7 @@ test("arrange plan: the Edit Mode pieces carry their offset in their anchor, and
             for _, p in ipairs(base) do
                 if p.arrange then
                     counts[p.arrange] = (counts[p.arrange] or 0) + 1
-                    eq({ p.dx, p.dy }, { 0, 0 })
+                    eq({ p.dx, p.dy }, { Plan.Base(p.arrange) })
                 end
             end
             eq(counts, { map = 1, chat = 1, ["quest tracker"] = 1, ["buffs and debuffs"] = 2, ["XP bars"] = 2, tooltip = 1,
@@ -477,24 +505,31 @@ test("arrange plan: bad and old saved offsets are ignored without an error", fun
     eq(Plan.Pieces(v), Plan.Pieces({}))
     eq(Plan.FaceSpots(v), Plan.FaceSpots(100))
     eq(Plan.BarSpots(v), Plan.BarSpots(100))
-    for key in pairs(bad) do eq({ Plan.Moved(v, key) }, { 0, 0 }, tostring(key)) end
+    for key in pairs(bad) do eq({ Plan.Offset(v, key) }, { 0, 0 }, tostring(key)) end
+    eq({ Plan.Offset(v, nil) }, { 0, 0 })
     eq({ Plan.Moved(v, nil) }, { 0, 0 })
     -- Stores that are not tables at all.
     eq(Plan.Rects({ arrange = 1, offsets = "none", charOffsets = 4 }), base)
     eq(Plan.Rects({ arrange = 1 }), base)
     -- The limit itself is taken.
-    eq({ Plan.Moved({ arrange = 1, offsets = { map = { x = 1500, y = -1500 } } }, "map") }, { 1500, -1500 })
+    eq({ Plan.Offset({ arrange = 1, offsets = { map = { x = 1500, y = -1500 } } }, "map") }, { 1500, -1500 })
     -- A good one beside the bad ones still counts.
     bad.chat = { x = 4, y = 6 }
     sameRect(Plan.Rects(v).chat, shifted(base.chat, 4, 6), "chat")
 end)
 
-test("arrange plan: the overlap check finds nothing in the built-in arrangement and names a pair that overlaps", function()
+test("arrange plan: the overlap check finds nothing in the built-in arrangement up to 100% and names a pair that overlaps", function()
     local Plan = plan()
     for _, size in ipairs(SIZES) do
         for slim = 0, 1 do
             for hints = 0, 1 do
-                eq(Plan.Overlaps(Plan.Rects({ panelSize = size, slim = slim, hints = hints, mapButtons = hints })), {},
+                local names = {}
+                for _, o in ipairs(Plan.Overlaps(Plan.Rects({ panelSize = size, slim = slim, hints = hints, mapButtons = hints }))) do
+                    names[#names + 1] = o.a .. "|" .. o.b
+                end
+                -- 0.20.0: the built-in arrangement was made at 100%. At 110% and 120% its targeting
+                -- pictures meet the larger inner panels (the spec's "As built" names it).
+                eq(names, size <= 100 and {} or { "LB targeting picture|inner left diamond", "RB targeting picture|inner right diamond" },
                     size .. "% slim " .. slim .. " hints " .. hints)
             end
         end
@@ -511,18 +546,25 @@ end)
 
 test("arrange plan: what waits for a write is what the options ask for against what the layout holds", function()
     local Plan = plan()
-    eq(Plan.Pending({ arrange = 1 }), {})
-    eq(Plan.Pending(nil), {})
+    -- 0.20.0: a layout with nothing noted was written before the built-in amounts existed: the
+    -- one Edit Mode piece that has one waits for it, switch On or Off.
+    eq(Plan.Pending({ arrange = 1 }), { "buffs and debuffs" })
+    eq(Plan.Pending({ arrange = 0 }), { "buffs and debuffs" })
+    eq(Plan.Pending(nil), { "buffs and debuffs" })
+    eq(Plan.Pending({ arrange = 1, offsetsWritten = { ["buffs and debuffs"] = { x = 0, y = 4 } } }), {})
+    eq(Plan.Pending({ arrange = 0, offsetsWritten = { ["buffs and debuffs"] = { x = 0, y = 4 } } }), {})
+    -- The offset that stands for the old spot (0, -4) on a layout written at the old spot: nothing waits.
+    eq(Plan.Pending({ arrange = 1, offsets = { ["buffs and debuffs"] = { x = 0, y = -4 } } }), {})
     local o = { arrange = 1, offsets = { chat = { x = 4, y = 6 }, map = { x = -4, y = 0 }, ["inner left diamond"] = { x = 9, y = 9 } } }
-    eq(Plan.Pending(o), { "map", "chat" }, "in the list's order; a live piece never waits")
+    eq(Plan.Pending(o), { "map", "chat", "buffs and debuffs" }, "in the list's order; a live piece never waits")
     Plan.MarkWritten(o, Plan.Pieces(o))
-    eq(o.offsetsWritten, { chat = { x = 4, y = 6 }, map = { x = -4, y = 0 } })
+    eq(o.offsetsWritten, WR({ chat = { x = 4, y = 6 }, map = { x = -4, y = 0 } }))
     eq(Plan.Pending(o), {})
     -- Switched Off: the layout still holds the offsets, so the two wait to be written back.
     o.arrange = 0
     eq(Plan.Pending(o), { "map", "chat" })
     Plan.MarkWritten(o, Plan.Pieces(o))
-    eq(o.offsetsWritten, {})
+    eq(o.offsetsWritten, WR({}))
     eq(Plan.Pending(o), {})
     eq(o.offsets.chat, { x = 4, y = 6 }, "the saved offset was touched")
     -- Only the pieces that were written are noted.
@@ -572,15 +614,15 @@ test("arrange off: saved offsets move nothing, the plan has no session, and Arra
     eq(spots.bottom.y, 238)
     local _, pu = barFrames(c)
     local p = c._state(pu.LeftShoulderBackground).points[1]
-    eq({ p.point, p.x, p.y }, { "BOTTOMRIGHT", -178, 155 })
+    eq({ p.point, p.x, p.y }, { "BOTTOMRIGHT", -84, 99 })
     eq({ entry(c, SYS.ChatFrame).anchorInfo.offsetX, entry(c, SYS.ChatFrame).anchorInfo.offsetY }, { 17, 245 })
     eq(entry(c, SYS.Minimap).anchorInfo.offsetX, -6)
-    eq(written(PE), {}, "an offset was noted as written")
+    eq(written(PE), WR({}), "an offset was noted as written")
     -- The spell pictures are at their built-in spots too.
     local half = PE.FaceBars.view[1].halves[1]
     local hp = c._state(half).points[1]
     near(hp.x, -170, "main d-pad panel x")
-    near(hp.y, 66, "main d-pad panel y")
+    near(hp.y, 50, "main d-pad panel y")
     -- The saved offsets are kept.
     eq(opts(PE).offsets, { chat = { x = 30, y = 30 }, map = { x = -4, y = 0 } })
     eq(PE.charDB.ctrlArrange.offsets["inner left diamond"], { x = 20, y = 10 })
@@ -590,7 +632,8 @@ test("arrange off: saved offsets move nothing, the plan has no session, and Arra
     PE:SetModuleEnabled("ctrlLayout", false)
     c:advance(0.1)
     eq(stub.calls, {})
-    eq(#notes(c), 0, "an arrange line in the log while off")
+    -- (0.20.0: which built-in arrangement is in force is said in every session.)
+    eq(notes(c), { "built-in arrangement 2" }, "an arrange line in the log while off")
     c:assertClean()
 end)
 
@@ -633,7 +676,7 @@ test("arrange switch: Off by default; On rewrites the pieces that have a saved o
     eq(rewritten, { [SYS.ChatFrame] = true, [SYS.Minimap] = true })
     eq({ entry(c, SYS.ChatFrame).anchorInfo.offsetX, entry(c, SYS.ChatFrame).anchorInfo.offsetY }, { 47, 265 })
     eq(entry(c, SYS.Minimap).anchorInfo.offsetX, -10)
-    eq(written(PE), { chat = { x = 30, y = 20 }, map = { x = -4, y = 0 } })
+    eq(written(PE), WR({ chat = { x = 30, y = 20 }, map = { x = -4, y = 0 } }))
     eq(reloadReason(PE), RELOAD)
     check(chatHas(c, "Arrange it yourself counts from the next reload."), "not said")
     check(noted(c, "the switch is now 1; it counts from the next reload"), "not in the log")
@@ -647,7 +690,7 @@ test("arrange switch: Off by default; On rewrites the pieces that have a saved o
     eq(saves(c), 3)
     eq({ entry(c, SYS.ChatFrame).anchorInfo.offsetX, entry(c, SYS.ChatFrame).anchorInfo.offsetY }, { 17, 245 })
     eq(entry(c, SYS.Minimap).anchorInfo.offsetX, -6)
-    eq(written(PE), {})
+    eq(written(PE), WR({}))
     eq(opts(PE).offsets, { chat = { x = 30, y = 20 }, map = { x = -4, y = 0 } })
     local said = 0
     for _, l in ipairs(T.chatLines(c)) do if l == "Arrange it yourself counts from the next reload." then said = said + 1 end end
@@ -681,26 +724,26 @@ test("arrange on: a session that begins On places every piece at its saved offse
     local f, pu = barFrames(c)
     local x, y = barAt(c, f.top)
     near(x, -190, "main bar x")
-    near(y, 66 + 21 * 1 + 10, "main bar y")
+    near(y, 50 + 21 * 1 + 10, "main bar y") -- (0.20.0: the panels' built-in centre is 50 up, was 66)
     x, y = barAt(c, f.both)
     near(x, 190, "LT+RT bar x")
-    near(y, 66 - 21 + 10, "LT+RT bar y")
+    near(y, 50 - 21 + 10, "LT+RT bar y")
     -- The wheels (their offset was saved with the old switch On): 30 up.
     x, y = barAt(c, f.bottom)
     eq({ x, y }, { 0, 268 })
     local p = c._state(pu.RightShoulderBackground).points[1]
-    eq({ p.point, p.x, p.y }, { "BOTTOMLEFT", 184, 151 })
+    eq({ p.point, p.x, p.y }, { "BOTTOMLEFT", 90, 95 })
     p = c._state(pu.LeftShoulderBackground).points[1]
-    eq({ p.point, p.x, p.y }, { "BOTTOMRIGHT", -178, 155 })
+    eq({ p.point, p.x, p.y }, { "BOTTOMRIGHT", -84, 99 })
     -- Our own spell pictures and the frames under them that take a tap.
     local hp = c._state(PE.FaceBars.view[1].halves[1]).points[1]
     near(hp.x, -190, "main d-pad panel x")
-    near(hp.y, 76, "main d-pad panel y")
+    near(hp.y, 60, "main d-pad panel y")
     local l, r, t, b = c._rect(PE.FaceBars.backing[1])
     sameRect({ l - W / 2, b, r - W / 2, t }, shifted(LEFT_GUARD, -20, 10), "the left tap guard")
     -- The layout was built with the chat's offset, so nothing waits and no reload is asked for.
     eq({ entry(c, SYS.ChatFrame).anchorInfo.offsetX, entry(c, SYS.ChatFrame).anchorInfo.offsetY }, { 47, 265 })
-    eq(written(PE), { chat = { x = 30, y = 20 } })
+    eq(written(PE), WR({ chat = { x = 30, y = 20 } }))
     eq(PE.Arrange:Waiting(), {})
     eq(saves(c), 1)
     eq(reloadReason(PE), nil)
@@ -763,7 +806,7 @@ local BOTTOM_CALLS_0_19 = {
 }
 
 test("0.20.0 wheels: with nothing moved the calls on the game's bottom anchor are those of 0.19.0 with the switch Off", function()
-    for _, o in ipairs({ {}, { wheel = 0 }, { wheel = 1 }, { arrange = 0 }, { char = { ctrlArrange = { offsets = {} } } } }) do
+    for _, o in ipairs({ {}, { wheel = 0, old = true }, { wheel = 1, old = true }, { arrange = 0 }, { char = { ctrlArrange = { offsets = {} } } } }) do
         local c, PE = client(o)
         c:fire("PLAYER_ENTERING_WORLD")
         c:advance(0.1)
@@ -815,11 +858,12 @@ end)
 
 test("0.20.0 wheels: a saved arrangeWheel is cleared at load; an offset saved while it was On still applies", function()
     local function char() return { ctrlArrange = { offsets = { ["spell wheels"] = { x = 0, y = 30 }, ["LB targeting picture"] = { x = 4, y = 0 } } } } end
-    local c, PE = client({ wheel = 1, char = char() })
+    local c, PE = client({ wheel = 1, char = char(), old = true })
     eq(opts(PE).arrangeWheel, nil)
     eq({ barAt(c, barFrames(c).bottom) }, { 0, 268 })
     eq(charStore(PE).offsets["spell wheels"], { x = 0, y = 30 })
-    eq(charStore(PE).offsets["LB targeting picture"], { x = 4, y = 0 })
+    -- (The targeting picture's offset is counted from the built-in arrangement 2 now: 94, -56 less.)
+    eq(charStore(PE).offsets["LB targeting picture"], { x = -90, y = 56 })
     -- The next login of the same character (the saved files as this one left them): still there.
     local c2, PE2 = T.new({ gamepadUI = true, saved = rawget(c.env, "PocketEssentialsDB"), savedChar = rawget(c.env, "PocketEssentialsCharDB"),
         setup = function(cl) cl.world.layouts = c.world.layouts end })
@@ -833,11 +877,11 @@ end)
 test("0.20.0 wheels: an offset saved while the old switch was Off or never set was not applied before, and is cleared, not applied", function()
     for _, wheel in ipairs({ 0, "absent" }) do
         local char = { ctrlArrange = { offsets = { ["spell wheels"] = { x = 0, y = 30 }, ["LB targeting picture"] = { x = 4, y = 0 } } } }
-        local c, PE = client({ wheel = wheel ~= "absent" and wheel or nil, char = char, debug = true })
+        local c, PE = client({ wheel = wheel ~= "absent" and wheel or nil, char = char, debug = true, old = true })
         eq(opts(PE).arrangeWheel, nil, tostring(wheel))
         eq({ barAt(c, barFrames(c).bottom) }, { 0, 238 }, tostring(wheel))
         eq(charStore(PE).offsets["spell wheels"], nil, tostring(wheel))
-        eq(charStore(PE).offsets["LB targeting picture"], { x = 4, y = 0 }, "another piece's offset was touched")
+        eq(charStore(PE).offsets["LB targeting picture"], { x = -90, y = 56 }, "another piece's offset (less its built-in amount)")
         check(noted(c, "spell wheels: an offset saved while their old switch was Off (0,30) is removed: it was never applied"),
             "not in the log: " .. T.show(notes(c)))
         -- Moved now, it stays over a login.
@@ -853,7 +897,7 @@ end)
 test("0.20.0 wheels: two characters: each one's saved offset is judged by the old switch, whoever logs in first", function()
     -- The account's file with the old switch On; "Tester" logs in first, "Bee" later.
     local function char() return { ctrlArrange = { offsets = { ["spell wheels"] = { x = 0, y = 30 } } } } end
-    local a, PEa = client({ wheel = 1, char = char() })
+    local a, PEa = client({ wheel = 1, char = char(), old = true })
     eq(opts(PEa).arrangeWheel, nil)
     local b, PEb = T.new({ gamepadUI = true, saved = rawget(a.env, "PocketEssentialsDB"), savedChar = char(),
         setup = function(cl) cl.world.playerName = "Bee"; cl.world.layouts = a.world.layouts end })
@@ -861,7 +905,7 @@ test("0.20.0 wheels: two characters: each one's saved offset is judged by the ol
     eq(PEb.charDB.ctrlArrange.offsets["spell wheels"], { x = 0, y = 30 }, "the second character's offset was lost")
     eq({ barAt(b, barFrames(b).bottom) }, { 0, 268 })
     -- And with the old switch Off, the second character's is cleared too.
-    local a2, PEa2 = client({ wheel = 0, char = char() })
+    local a2, PEa2 = client({ wheel = 0, char = char(), old = true })
     local b2, PEb2 = T.new({ gamepadUI = true, saved = rawget(a2.env, "PocketEssentialsDB"), savedChar = char(),
         setup = function(cl) cl.world.playerName = "Bee"; cl.world.layouts = a2.world.layouts end })
     b2:advance(0.1)
@@ -908,21 +952,21 @@ test("arrange live: a step moves the piece at once, with no layout write and no 
     eq(A:Step("inner left diamond", 0, 1), true)
     local x, y = barAt(c, f.top)
     near(x, -172, "main bar x")
-    near(y, 89, "main bar y")
+    near(y, 73, "main bar y")
     x, y = barAt(c, f.left)
     near(x, -172, "LT bar x")
-    near(y, 47, "LT bar y")
+    near(y, 31, "LT bar y")
     near((barAt(c, f.right)), 170, "the right side moved")
     local hp = c._state(PE.FaceBars.view[1].halves[1]).points[1]
     near(hp.x, -172, "main d-pad panel x")
-    near(hp.y, 68, "main d-pad panel y")
+    near(hp.y, 52, "main d-pad panel y")
     local l, r, t, b = c._rect(PE.FaceBars.backing[1])
     sameRect({ l - W / 2, b, r - W / 2, t }, shifted(LEFT_GUARD, -2, 2), "the left tap guard")
     eq(A:Step("RB targeting picture", 1, 0), true)
     local p = c._state(pu.RightShoulderBackground).points[1]
-    eq({ p.point, p.x, p.y }, { "BOTTOMLEFT", 180, 155 })
+    eq({ p.point, p.x, p.y }, { "BOTTOMLEFT", 86, 99 })
     p = c._state(pu.LeftShoulderBackground).points[1]
-    eq({ p.point, p.x, p.y }, { "BOTTOMRIGHT", -180, 155 }, "the mirrored twin")
+    eq({ p.point, p.x, p.y }, { "BOTTOMRIGHT", -86, 99 }, "the mirrored twin")
     eq(saves(c), writes, "the Edit Mode layout was written for a live piece")
     eq(reloadReason(PE), nil)
     eq(A:Waiting(), {})
@@ -937,15 +981,16 @@ test("arrange live: the slim bars move at once, a side as a whole, the twin mirr
         local l, r, t, b = c._rect(frame)
         return { l - W / 2, b, r - W / 2, t }
     end
-    sameRect(at(bars.player.frame), { -498, 141, -218, 169 }, "player bar before")
+    -- (0.20.0: the built-in spot is 18 out and 16 down from 0.19.0's -498, 141.)
+    sameRect(at(bars.player.frame), { -516, 125, -236, 153 }, "player bar before")
     eq(A:ToggleStep(), 10)
     eq(A:Step("player bar", -1, 0), true)
     eq(A:Step("player bar", 0, 1), true)
-    sameRect(at(bars.player.frame), { -508, 151, -228, 179 }, "player bar")
-    sameRect(at(bars.pet.frame), { -508, 182, -372, 199 }, "pet bar")
-    sameRect(at(bars.target.frame), { 228, 151, 508, 179 }, "target bar (the mirror)")
-    sameRect(at(bars.tot.frame), { 372, 182, 508, 199 }, "target of target bar")
-    sameRect(at(cast.frame), { 228, 137, 508, 149 }, "cast bar")
+    sameRect(at(bars.player.frame), { -526, 135, -246, 163 }, "player bar")
+    sameRect(at(bars.pet.frame), { -526, 166, -390, 183 }, "pet bar")
+    sameRect(at(bars.target.frame), { 246, 135, 526, 163 }, "target bar (the mirror)")
+    sameRect(at(bars.tot.frame), { 390, 166, 526, 183 }, "target of target bar")
+    sameRect(at(cast.frame), { 246, 121, 526, 133 }, "cast bar")
     eq(charStore(PE).offsets["player bar"], { x = -10, y = 10 })
     eq(charStore(PE).offsets["target bar"], { x = 10, y = 10 })
     eq(saves(c), 1)
@@ -956,7 +1001,7 @@ end)
 
 test("arrange twins: a step moves the twin to the exact mirror; a pair set free moves alone; back to mirrored puts the twin on the mirror", function()
     local c, PE, A = client()
-    local function off(key) return { PE.LayoutPlan.Moved(nil, key) } end
+    local function off(key) return { PE.LayoutPlan.Offset(nil, key) } end
     eq(A:Step("outer left diamond", -1, 0), true)
     eq(A:Step("outer left diamond", 0, 1), true)
     eq(off("outer left diamond"), { -2, 2 })
@@ -1039,7 +1084,7 @@ test("arrange centre: a step toward the centre line that ends within 6 of it, or
     -- A piece with a twin is never caught: the pair is mirrored instead.
     eq(A:ToggleStep(), 2)
     for _ = 1, 3 do eq(A:Step("LB targeting picture", 1, 0), true) end
-    eq({ Plan.Moved(nil, "LB targeting picture") }, { 6, 0 })
+    eq({ Plan.Offset(nil, "LB targeting picture") }, { 6, 0 })
     c:assertClean()
 end)
 
@@ -1092,10 +1137,10 @@ test("arrange refused: a step that would leave the screen is not taken, and the 
     for _ = 1, 400 do
         if not A:Step("outer left diamond", -1, 0) then break end
     end
-    local x = PE.LayoutPlan.Moved(nil, "outer left diamond")
+    local x = PE.LayoutPlan.Offset(nil, "outer left diamond")
     local r = PE.LayoutPlan.Rects(PE.ControllerLayout:View())
     check(r["outer left diamond"][1] >= -W / 2 and r["outer left diamond"][1] < -W / 2 + 2, "the panel did not stop at the edge")
-    eq({ PE.LayoutPlan.Moved(nil, "outer right diamond") }, { -x, 0 })
+    eq({ PE.LayoutPlan.Offset(nil, "outer right diamond") }, { -x, 0 })
     check(before ~= nil)
     -- The layout switched off: nothing moves.
     PE:SetModuleEnabled("ctrlLayout", false)
@@ -1139,8 +1184,8 @@ test("arrange apply: the waiting Edit Mode pieces are written in one write and o
     eq(reloadReason(PE), RELOAD)
     eq(#PE.reloadReasons, 1, "one reload request")
     eq(A:Waiting(), {})
-    eq(written(PE), { chat = { x = 10, y = 10 }, ["quest tracker"] = { x = 0, y = -10 }, ["swing timers"] = { x = 0, y = 10 },
-        player = { x = -10, y = 0 }, target = { x = 10, y = 0 } })
+    eq(written(PE), WR({ chat = { x = 10, y = 10 }, ["quest tracker"] = { x = 0, y = -10 }, ["swing timers"] = { x = 0, y = 10 },
+        player = { x = -10, y = 0 }, target = { x = 10, y = 0 } }))
     check(chatHas(c, "Arrangement written. Tap Reload now in the settings to see the moved pieces."), "not said")
     -- Again with nothing waiting: nothing is written.
     eq({ A:Apply() }, { true, 0 })
@@ -1162,8 +1207,8 @@ test("arrange apply: the log gets every piece's offset and rectangle, every over
     check(noted(c, string.format("apply: chat | chat | offset 0,-40 | l=%.1f b=205 w=450 h=170 | Edit Mode", r.chat[1])), "the chat's line: " .. T.show(notes(c)))
     check(notedLike(c, "^apply: map | map | offset 0,0 | l=%-65.3 b=49.%d w=138.6 h=138.6 | Edit Mode$"), "a piece that was not moved is not listed")
     check(noted(c, "apply: map | title strip | offset 0,0 | l=-83 b=8 w=152 h=23 | Edit Mode"), "the second rectangle of a piece is not listed")
-    check(noted(c, "apply: LB targeting picture | LB targeting picture | offset 0,10 | l=-214 b=165 w=36 h=32"), "a live piece is not listed")
-    check(noted(c, "apply: inner left diamond | inner left diamond | offset 0,0 | l=-237 b=17 w=134 h=98"), "the spell panel is not listed")
+    check(noted(c, "apply: LB targeting picture | LB targeting picture | offset 0,10 | l=-120 b=109 w=36 h=32"), "a live piece is not listed")
+    check(noted(c, "apply: inner left diamond | inner left diamond | offset 0,0 | l=-237 b=1 w=134 h=98"), "the spell panel is not listed")
     check(notedLike(c, "^apply: overlap: chat %+ pet | [%d%.]+ x 25 units$"), "the overlap with the pet frame: " .. T.show(notes(c)))
     check(notedLike(c, "^apply: overlap: chat %+ round button | "), "the overlap with the round button")
     check(noted(c, "apply: 2 overlaps"), "the count")
@@ -1195,7 +1240,7 @@ test("arrange apply: refused while Edit Mode is open; a write the game refuses l
     check(type(why) == "string" and why:find("SaveLayouts", 1, true), "the reason: " .. tostring(why))
     check(#PE.errors >= 1, "the failure is not on the Errors page")
     eq(A:Waiting(), { "Chat" })
-    eq(written(PE), {})
+    eq(written(PE), WR({}))
     eq(reloadReason(PE), nil)
     check(panel(c):IsShown(), "the window closed though nothing was written")
     check(not chatHas(c, "Arrangement written. Tap Reload now in the settings to see the moved pieces."), "it said written")
@@ -1220,7 +1265,7 @@ test("arrange apply: another row that rewrites a moved piece writes it with its 
     local chat = PE.LayoutPlan.Pieces({ panelSize = 120, arrange = 0 })[2].anchor -- the built-in spot at that size
     eq({ entry(c, SYS.ChatFrame).anchorInfo.offsetX, entry(c, SYS.ChatFrame).anchorInfo.offsetY }, { chat.x + 2, chat.y })
     eq(A:Waiting(), {})
-    eq(written(PE), { chat = { x = 2, y = 0 }, tooltip = { x = -2, y = 0 } })
+    eq(written(PE), WR({ chat = { x = 2, y = 0 }, tooltip = { x = -2, y = 0 } }))
     -- Start over (two taps) rebuilds the whole layout: with the offsets.
     eq(A:Step("map", 0, 1), true)
     local row = optRow(PE, "Rebuild the layout")
@@ -1260,10 +1305,10 @@ test("arrange fight: the window does not open in a fight, closes when one starts
     eq(saves(c), writes, "the layout was written in a fight")
     check(noted(c, "the placement is held for after the fight: inner left diamond"), "the held placement is not in the log")
     local f = barFrames(c)
-    near(select(2, barAt(c, f.top)), 89, "the bar moved in a fight")
+    near(select(2, barAt(c, f.top)), 73, "the bar moved in a fight")
     c:leaveCombat()
     c:advance(0.1)
-    near(select(2, barAt(c, f.top)), 91, "the bar was not placed after the fight")
+    near(select(2, barAt(c, f.top)), 75, "the bar was not placed after the fight")
     eq(saves(c), writes + 1)
     eq(reloadReason(PE), RELOAD)
     -- The settings window does not come back in the middle of a fight.
@@ -1351,8 +1396,9 @@ test("arrange window: the arrows, Reset, the step and the twins button work by t
     eq(charStore(PE).offsets["inner left diamond"], { x = 8, y = 2 })
     eq(T.labelOf(button(c, "Step: big (10)")), "Step: big (10)")
     c:click(button(c, "Twins: mirrored"))
-    c:click(button(c, "Down"))
-    eq(charStore(PE).offsets["inner left diamond"], { x = 8, y = -8 })
+    -- (Up: 0.20.0's built-in spot has the panel 1 over the screen's bottom edge, so a big step down is refused.)
+    c:click(button(c, "Up"))
+    eq(charStore(PE).offsets["inner left diamond"], { x = 8, y = 12 })
     eq(charStore(PE).offsets["inner right diamond"], { x = -8, y = 2 })
     check(windowText(c):find("NOT a mirror of its twin.", 1, true), "the mirror warning: " .. windowText(c))
     eq(T.labelOf(button(c, "Twins: free")), "Twins: free")
@@ -1500,7 +1546,7 @@ test("arrange snapshot: Save a snapshot lists the offsets, what waits and a pair
     local c2, PE2 = client({ arrange = 0, offsets = { chat = { x = 30, y = 20 } } })
     eq(PE2.ControllerLayout:Snapshot(), true)
     for _, line in ipairs(rawget(c2.env, "PocketEssentialsDB").debug.lines) do
-        check(not line:find("arrange: ", 1, true), "an arrange line while Off: " .. line)
+        check(not line:find("arrange: ", 1, true) or line:find("arrange: built-in arrangement 2", 1, true), "an arrange line while Off: " .. line)
     end
     c:assertClean()
 end)
@@ -1518,17 +1564,18 @@ test("arrange review M1: a row that rewrites one swing timer writes all three wi
     for i = 1, 3 do before[i] = entry(c, SYS.SwingTimer, i).anchorInfo.offsetY end
     choose(c, PE, "ranged", 0)
     for i = 1, 3 do eq(entry(c, SYS.SwingTimer, i).anchorInfo.offsetY, before[i] + 10, "timer " .. i) end
-    eq(written(PE), { ["swing timers"] = { x = 0, y = 10 } })
+    eq(written(PE), WR({ ["swing timers"] = { x = 0, y = 10 } }))
     eq(A:Waiting(), {})
     -- The plan's half: only a whole piece is noted.
     local Plan = PE.LayoutPlan
-    local o = { arrange = 1, offsets = { ["swing timers"] = { x = 0, y = 4 }, chat = { x = 2, y = 0 } } }
+    local o = { arrange = 1, offsets = { ["swing timers"] = { x = 0, y = 4 }, chat = { x = 2, y = 0 } },
+        offsetsWritten = WR({}) }
     local all, part = Plan.Pieces(o), {}
     for _, p in ipairs(all) do
         if (p.system == "SwingTimer" and p.index == "Ranged") or p.system == "ChatFrame" then part[#part + 1] = p end
     end
     Plan.MarkWritten(o, part, all)
-    eq(o.offsetsWritten, { chat = { x = 2, y = 0 } })
+    eq(o.offsetsWritten, WR({ chat = { x = 2, y = 0 } }))
     eq(Plan.Pending(o), { "swing timers" })
     c:assertClean()
 end)
@@ -1588,7 +1635,7 @@ test("arrange review W3: a login that finds the switch Off and moved pieces stil
     c:advance(0.1)
     eq(saves(c), 2)
     eq({ entry(c, SYS.ChatFrame).anchorInfo.offsetX, entry(c, SYS.ChatFrame).anchorInfo.offsetY }, { 17, 245 })
-    eq(written(PE), {})
+    eq(written(PE), WR({}))
     eq(reloadReason(PE), RELOAD)
     eq(opts(PE).offsets, { chat = { x = 30, y = 20 } }, "the saved offset was lost")
     check(chatHas(c, "Arrange it yourself is Off: the pieces you had moved go back. Open the settings and tap Reload now to finish."), "not said")
@@ -1652,6 +1699,424 @@ test("arrange review: switched Off but not reloaded yet, the window does not ope
     eq({ A:Step("chat", 1, 0) }, { false, "Arrange it yourself is Off from the next reload" })
     eq(opts(PE).offsets, {})
     eq(A:Open(), false)
+end)
+
+---------------------------------------------------------------------------
+-- 0.20.0: the built-in arrangement, and what is carried over from the saved files of 0.18.0
+-- and 0.19.0 (spec 2026-11-25-0.20.0-after-first-sitting.md, 2; the plan's half is in
+-- layout_test.lua). The saved tables below are shaped as those versions wrote them: no
+-- mark, the offsets counted from arrangement 1, the options with every key they saved.
+---------------------------------------------------------------------------
+
+local AURA = 6 -- the stand-in's Enum.EditModeSystem.AuraFrame; index 1 the buffs, 2 the debuffs
+
+-- What the device's saved file of 2026-11-25 holds (the spec's table).
+local function owner()
+    return {
+        offsets = { map = { x = 0, y = -2 }, ["buffs and debuffs"] = { x = 0, y = 4 } },
+        live = {
+            ["inner left diamond"] = { x = 0, y = -16 }, ["inner right diamond"] = { x = 0, y = -16 },
+            ["outer left diamond"] = { x = 0, y = -16 }, ["outer right diamond"] = { x = 0, y = -16 },
+            ["LB targeting picture"] = { x = 94, y = -56 }, ["RB targeting picture"] = { x = -94, y = -56 },
+            ["player bar"] = { x = -18, y = -16 }, ["target bar"] = { x = 18, y = -16 },
+        },
+    }
+end
+
+-- Rectangles of arrangement 1 (0.17.0 to 0.19.0, captured there: layout_test.lua's RECTS_0_18
+-- and SLIM_RECTS_0_17), for the pieces that have a built-in amount now.
+local OLD = {
+    ["inner left diamond"] = { -237, 17, -103, 115 }, ["inner right diamond"] = { 103, 17, 237, 115 },
+    ["outer left diamond"] = { -383, 17, -249, 115 }, ["outer right diamond"] = { 249, 17, 383, 115 },
+    ["LB targeting picture"] = { -214, 155, -178, 187 }, ["RB targeting picture"] = { 178, 155, 214, 187 },
+    ["player bar"] = { -498, 141, -218, 169 }, ["pet bar"] = { -498, 172, -362, 189 },
+    ["target bar"] = { 218, 141, 498, 169 }, ["cast bar"] = { 218, 127, 498, 139 },
+    ["target of target bar"] = { 362, 172, 498, 189 },
+    ["buffs and debuffs"] = { 1365.33 / 2 - 275 - 455, 640, 1365.33 / 2 - 275, 728 }, -- (the plan's screen is 1365.33 wide)
+}
+-- Which piece each of those rectangles moves with.
+local OWNER_OF = { ["pet bar"] = "player bar", ["cast bar"] = "target bar", ["target of target bar"] = "target bar" }
+
+-- OLD with the offsets a 0.19.0 file held added: where each piece stood in 0.19.0.
+local function stoodAt(offsets)
+    local out = {}
+    for name, r in pairs(OLD) do
+        local e = offsets[OWNER_OF[name] or name] or { x = 0, y = 0 }
+        out[name] = { r[1] + e.x, r[2] + e.y, r[3] + e.x, r[4] + e.y }
+    end
+    return out
+end
+
+local function buffsAt(layouts)
+    for _, l in ipairs(layouts.layouts) do
+        if l.layoutName == NAME then
+            local out = {}
+            for _, e in ipairs(l.systems) do if e.system == AURA then out[e.systemIndex] = e.anchorInfo.offsetY end end
+            return out
+        end
+    end
+    return nil
+end
+
+-- A login of 0.20.0 on the files 0.19.0 left. o:
+--   arrange   the switch as saved (default 1)
+--   offsets   the Edit Mode pieces' saved offsets (opts.offsets); nil: none saved
+--   live      this character's saved live offsets; false: the character has no ctrlArrange table
+--   slim, more (other saved options, as o.more of client)
+-- Returns c, PE, and a copy of the layouts the game held before the login.
+local function from019(o)
+    o = o or {}
+    local arrange = o.arrange == nil and 1 or o.arrange
+    -- The game's layouts as 0.19.0 left them: ours built at arrangement 1 with the Edit Mode
+    -- offsets in use (On) or none (Off). Made by a login of today's code that is told the
+    -- same spots in today's terms: the buffs' 4 up taken off.
+    local seedOffsets = {}
+    for k, e in pairs(arrange == 1 and o.offsets or {}) do seedOffsets[k] = { x = e.x, y = e.y } end
+    local b = seedOffsets["buffs and debuffs"] or { x = 0, y = 0 }
+    seedOffsets["buffs and debuffs"] = { x = b.x, y = b.y - 4 }
+    local seed = client({ offsets = seedOffsets, slim = o.slim })
+    local layouts = copy(seed.world.layouts)
+    -- (checked against 0.19.0's own numbers: the buffs 40 down, the debuffs 78 down, plus the offset)
+    eq(buffsAt(layouts), { -40 + b.y, -78 + b.y }, "the 0.19.0 layout this test starts from")
+    local wrote
+    if arrange == 1 then
+        for k, e in pairs(o.offsets or {}) do
+            if e.x ~= 0 or e.y ~= 0 then
+                wrote = wrote or {}
+                wrote[k] = { x = e.x, y = e.y }
+            end
+        end
+    end
+    local file = { enabled = { ctrlLayout = true }, debug = { on = true }, options = { ctrlLayout = {
+        ranged = 1, mainHand = 1, offHand = 2, hints = 0, mapButtons = 0,
+        tHints = 1, tChat = 1, tMap = 1, tBars = 1, tExtras = 1, tFace = 1, tHook = 0,
+        slim = o.slim or 0, arrange = arrange, arrangeWheel = 0, mapLook = 0, panelSize = 100, prev = false, template = 5,
+        offsets = copy(o.offsets), offsetsWritten = wrote,
+    } } }
+    for k, v in pairs(o.more or {}) do file.options.ctrlLayout[k] = v end
+    local char = { ctrlLayoutPrev = copy(rawget(seed.env, "PocketEssentialsCharDB").ctrlLayoutPrev) }
+    if o.live ~= false then char.ctrlArrange = { offsets = copy(o.live or {}), alone = {} } end
+    local c, PE = T.new({ gamepadUI = true, saved = file, savedChar = char, setup = function(cl)
+        cl.world.layouts = copy(layouts)
+        if o.slim == 1 then cl:addUnitFrames() end
+        if o.setup then o.setup(cl) end
+    end })
+    c:advance(0.1)
+    return c, PE, layouts
+end
+
+-- The same character logging in again on the files a client left.
+local function again(c, o)
+    o = o or {}
+    local c2, PE2 = T.new({ gamepadUI = true, saved = rawget(c.env, "PocketEssentialsDB"), savedChar = rawget(c.env, "PocketEssentialsCharDB"),
+        setup = function(cl)
+            cl.world.layouts = copy(c.world.layouts)
+            if o.slim == 1 then cl:addUnitFrames() end
+        end })
+    c2:advance(0.1)
+    return c2, PE2
+end
+
+local function sameRects(got, want, what)
+    for name, r in pairs(want) do sameRect(got[name], r, what .. ": " .. name) end
+end
+
+local function slimAt(c, PE, key)
+    local l, r, t, b = c._rect(PE.SlimBars.view.bars[key].frame)
+    return { l - W / 2, b, r - W / 2, t }
+end
+
+local NEW_ARRANGEMENT = "The controller layout has a new built-in arrangement. Open the settings and tap Reload now to finish."
+
+test("0.20.0 carried over: the device's saved offsets all read 0, every piece stays where it was, nothing is written and no reload is asked for", function()
+    local o = owner()
+    local c, PE, before = from019({ offsets = o.offsets, live = o.live, slim = 1 })
+    local A, Plan = PE.Arrange, PE.LayoutPlan
+    -- The saved files: zeros (the entries are gone), the map's 2 down kept, both marks set.
+    eq(opts(PE).offsets, { map = { x = 0, y = -2 } })
+    eq(charStore(PE).offsets, {})
+    eq(opts(PE).arrangeBase, 2)
+    eq(charStore(PE).base, 2)
+    -- Every rectangle is the one 0.19.0 had with those offsets.
+    local r = Plan.Rects(PE.ControllerLayout:View())
+    sameRects(r, stoodAt({ ["inner left diamond"] = o.live["inner left diamond"], ["inner right diamond"] = o.live["inner right diamond"],
+        ["outer left diamond"] = o.live["outer left diamond"], ["outer right diamond"] = o.live["outer right diamond"],
+        ["LB targeting picture"] = o.live["LB targeting picture"], ["RB targeting picture"] = o.live["RB targeting picture"],
+        ["player bar"] = o.live["player bar"], ["target bar"] = o.live["target bar"],
+        ["buffs and debuffs"] = o.offsets["buffs and debuffs"] }), "after the login")
+    sameRect(r.map, shifted(Plan.Rects({ slim = 1, arrange = 0 }).map, 0, -2), "the map, 2 down as saved")
+    -- And so is what was placed: the game's pieces and ours.
+    local f, pu = barFrames(c)
+    near((barAt(c, f.top)), -170, "main bar x")
+    near(select(2, barAt(c, f.top)), 71, "main bar y")
+    near(select(2, barAt(c, f.both)), 29, "LT+RT bar y")
+    local p = c._state(pu.LeftShoulderBackground).points[1]
+    eq({ p.point, p.x, p.y }, { "BOTTOMRIGHT", -84, 99 })
+    p = c._state(pu.RightShoulderBackground).points[1]
+    eq({ p.point, p.x, p.y }, { "BOTTOMLEFT", 84, 99 })
+    sameRect(slimAt(c, PE, "player"), { -516, 125, -236, 153 }, "the player bar's frame")
+    sameRect(slimAt(c, PE, "target"), { 236, 125, 516, 153 }, "the target bar's frame")
+    local hp = c._state(PE.FaceBars.view[1].halves[1]).points[1]
+    eq({ hp.x, hp.y }, { -170, 50 })
+    -- The game's layout is as it was: nothing written, nothing waits, no reload asked for.
+    eq(saves(c), 0, "the layout was written")
+    eq(c.world.layouts, before)
+    eq(written(PE), { map = { x = 0, y = -2 }, ["buffs and debuffs"] = { x = 0, y = 4 } })
+    eq(A:Waiting(), {})
+    eq(#PE.reloadReasons, 0, "a reload was asked for")
+    check(not chatHas(c, NEW_ARRANGEMENT), "the chat line for a rewritten layout was said")
+    -- The log: the arrangement's number, and one line per piece changed.
+    check(noted(c, "built-in arrangement 2"), "no arrangement line: " .. T.show(notes(c)))
+    check(noted(c, "moved into the built-in spots: player bar -18,-16 -> 0,0"), "the player bar's line: " .. T.show(notes(c)))
+    check(noted(c, "moved into the built-in spots: LB targeting picture 94,-56 -> 0,0"), "the LB picture's line")
+    check(noted(c, "moved into the built-in spots: buffs and debuffs 0,4 -> 0,0"), "the buffs' line")
+    eq(countLike(c, "^moved into the built%-in spots: "), 9)
+    eq(countLike(c, "^moved into the built%-in spots: map"), 0, "the map is not built in")
+    -- The Arrange window counts from the new built-in spots.
+    check(A:Open() == true, "the window did not open")
+    c:advance(0.1)
+    check(A:Pick("player bar"), "the player bar cannot be picked")
+    check(windowText(c):find("At its built-in spot.", 1, true), "the window: " .. windowText(c))
+    for _, m in ipairs(A:MirrorCheck()) do check(m.ok, m.a .. " / " .. m.b .. " is not a mirror") end
+    A:Close("test")
+    c:advance(0.1)
+    c:assertClean()
+    -- The next login changes nothing.
+    local c2, PE2 = again(c, { slim = 1 })
+    eq(opts(PE2).offsets, { map = { x = 0, y = -2 } })
+    eq(charStore(PE2).offsets, {})
+    eq(saves(c2), 0)
+    eq(#PE2.reloadReasons, 0)
+    eq(countLike(c2, "^moved into the built%-in spots: "), 9, "carried over twice (the first login's nine lines only)")
+    sameRects(PE2.LayoutPlan.Rects(PE2.ControllerLayout:View()), stoodAt({ ["inner left diamond"] = o.live["inner left diamond"],
+        ["inner right diamond"] = o.live["inner right diamond"], ["outer left diamond"] = o.live["outer left diamond"],
+        ["outer right diamond"] = o.live["outer right diamond"], ["LB targeting picture"] = o.live["LB targeting picture"],
+        ["RB targeting picture"] = o.live["RB targeting picture"], ["player bar"] = o.live["player bar"], ["target bar"] = o.live["target bar"],
+        ["buffs and debuffs"] = o.offsets["buffs and debuffs"] }), "after the second login")
+    c2:assertClean()
+end)
+
+test("0.20.0 carried over: other saved offsets become offset minus amount, and every piece is where it was, to the unit", function()
+    local live = { ["player bar"] = { x = -10, y = 0 }, ["LB targeting picture"] = { x = 7, y = 3 } }
+    local c, PE, before = from019({ offsets = { chat = { x = 30, y = 20 } }, live = live, slim = 1 })
+    local Plan = PE.LayoutPlan
+    -- A piece with nothing saved stood at the old built-in spot: it gets minus its amount.
+    eq(charStore(PE).offsets, {
+        ["player bar"] = { x = 8, y = 16 }, ["target bar"] = { x = -18, y = 16 },
+        ["LB targeting picture"] = { x = -87, y = 59 }, ["RB targeting picture"] = { x = 94, y = 56 },
+        ["inner left diamond"] = { x = 0, y = 16 }, ["inner right diamond"] = { x = 0, y = 16 },
+        ["outer left diamond"] = { x = 0, y = 16 }, ["outer right diamond"] = { x = 0, y = 16 },
+    })
+    eq(opts(PE).offsets, { chat = { x = 30, y = 20 }, ["buffs and debuffs"] = { x = 0, y = -4 } })
+    -- Where 0.19.0 had them: arrangement 1 plus the two saved offsets.
+    local r = Plan.Rects(PE.ControllerLayout:View())
+    sameRects(r, stoodAt(live), "after the login")
+    sameRect(r["player bar"], { -508, 141, -228, 169 }, "the player bar, 10 left of 0.19.0's spot")
+    sameRect(r["pet bar"], { -508, 172, -372, 189 }, "the pet bar with it")
+    sameRect(r["inner left diamond"], { -237, 17, -103, 115 }, "a panel that was never moved")
+    sameRect(slimAt(c, PE, "player"), { -508, 141, -228, 169 }, "the player bar's frame")
+    sameRect(slimAt(c, PE, "target"), { 218, 141, 498, 169 }, "the target bar's frame")
+    local f, pu = barFrames(c)
+    near(select(2, barAt(c, f.top)), 87, "main bar y, as in 0.19.0")
+    local p = c._state(pu.LeftShoulderBackground).points[1]
+    eq({ p.point, p.x, p.y }, { "BOTTOMRIGHT", -171, 158 })
+    p = c._state(pu.RightShoulderBackground).points[1]
+    eq({ p.point, p.x, p.y }, { "BOTTOMLEFT", 178, 155 })
+    -- Nothing written, nothing waits, no reload; the record of what the layout holds is as it was.
+    eq(saves(c), 0)
+    eq(c.world.layouts, before)
+    eq(written(PE), { chat = { x = 30, y = 20 } })
+    eq(PE.Arrange:Waiting(), {})
+    eq(#PE.reloadReasons, 0)
+    check(noted(c, "moved into the built-in spots: player bar -10,0 -> 8,16"), "the player bar's line: " .. T.show(notes(c)))
+    check(noted(c, "moved into the built-in spots: target bar 0,0 -> -18,16"), "the target bar's line")
+    check(noted(c, "moved into the built-in spots: buffs and debuffs 0,0 -> 0,-4"), "the buffs' line")
+    c:assertClean()
+    -- Once: the next login leaves the numbers alone.
+    local c2, PE2 = again(c, { slim = 1 })
+    eq(charStore(PE2).offsets["player bar"], { x = 8, y = 16 })
+    eq(opts(PE2).offsets["buffs and debuffs"], { x = 0, y = -4 })
+    eq(saves(c2), 0)
+    eq(#PE2.reloadReasons, 0)
+    sameRects(PE2.LayoutPlan.Rects(PE2.ControllerLayout:View()), stoodAt(live), "after the second login")
+    -- "Reset all" in the Arrange window then goes to the built-in arrangement of 0.20.0.
+    PE2.Arrange:ResetAll()
+    c2:advance(0.1)
+    local builtIn = owner().live
+    builtIn["buffs and debuffs"] = owner().offsets["buffs and debuffs"]
+    sameRects(PE2.LayoutPlan.Rects(PE2.ControllerLayout:View()), stoodAt(builtIn), "after Reset all")
+    eq(PE2.Arrange:Waiting(), { "Chat", "Buffs and debuffs" }, "the Edit Mode pieces wait for Apply")
+end)
+
+test("0.20.0 carried over: two characters: the layout's Edit Mode offsets once, each character's live offsets at its own first login", function()
+    -- "Tester" logs in first.
+    local a, PEa = from019({ offsets = { ["buffs and debuffs"] = { x = 0, y = 10 } }, live = { ["player bar"] = { x = -10, y = 0 } }, slim = 1 })
+    eq(opts(PEa).offsets, { ["buffs and debuffs"] = { x = 0, y = 6 } })
+    eq(charStore(PEa).offsets["player bar"], { x = 8, y = 16 })
+    eq(saves(a), 0)
+    -- "Bee" logs in later, on the account's file as Tester left it and its own 0.19.0 file.
+    local beeChar = { ctrlLayoutPrev = copy(PEa.charDB.ctrlLayoutPrev), ctrlArrange = { offsets = { ["target bar"] = { x = 5, y = 5 } }, alone = {} } }
+    local b, PEb = T.new({ gamepadUI = true, saved = rawget(a.env, "PocketEssentialsDB"), savedChar = beeChar, setup = function(cl)
+        cl.world.playerName = "Bee"
+        cl.world.layouts = copy(a.world.layouts)
+        cl:addUnitFrames()
+    end })
+    b:advance(0.1)
+    -- The account's offsets are not carried over a second time.
+    eq(opts(PEb).offsets, { ["buffs and debuffs"] = { x = 0, y = 6 } }, "the Edit Mode offsets were carried over twice")
+    eq(countLike(b, "^moved into the built%-in spots: buffs"), 1, "Tester's one line only")
+    -- Bee's own live offsets are: where Bee had its pieces in 0.19.0.
+    eq(PEb.charDB.ctrlArrange.offsets["target bar"], { x = -13, y = 21 })
+    eq(PEb.charDB.ctrlArrange.offsets["player bar"], { x = 18, y = 16 })
+    eq(PEb.charDB.ctrlArrange.base, 2)
+    local r = PEb.LayoutPlan.Rects(PEb.ControllerLayout:View())
+    sameRects(r, stoodAt({ ["target bar"] = { x = 5, y = 5 }, ["buffs and debuffs"] = { x = 0, y = 10 } }), "Bee")
+    sameRect(slimAt(b, PEb, "target"), { 223, 146, 503, 174 }, "Bee's target bar frame")
+    eq(saves(b), 0)
+    eq(#PEb.reloadReasons, 0)
+    b:assertClean()
+    -- Tester again, after Bee: its own numbers are untouched.
+    local a2, PEa2 = T.new({ gamepadUI = true, saved = rawget(b.env, "PocketEssentialsDB"), savedChar = rawget(a.env, "PocketEssentialsCharDB"),
+        setup = function(cl) cl.world.layouts = copy(b.world.layouts); cl:addUnitFrames() end })
+    a2:advance(0.1)
+    eq(charStore(PEa2).offsets["player bar"], { x = 8, y = 16 })
+    eq(opts(PEa2).offsets, { ["buffs and debuffs"] = { x = 0, y = 6 } })
+    eq(saves(a2), 0)
+end)
+
+test("0.20.0 carried over: a 0.18.0 file with Arrange it yourself Off and the Part rows Off: every part placed at the new spots, the layout written once, one reload", function()
+    local c, PE, before = from019({ arrange = 0, live = false,
+        more = { tHints = 0, tChat = 0, tMap = 0, tBars = 0, tExtras = 0, tFace = 0, tHook = 1 } })
+    -- Every part is placed (the saved Off values are gone) ...
+    for _, key in ipairs({ "tHints", "tChat", "tMap", "tBars", "tExtras", "tFace", "tHook", "arrangeWheel" }) do eq(opts(PE)[key], nil, key) end
+    eq(c.env.ChatFrame1Background:IsShown(), false, "the chat's box was not hidden")
+    eq(PE.FaceBars:Status(), nil)
+    -- ... at the new built-in spots: the live pieces at once,
+    local f, pu = barFrames(c)
+    near(select(2, barAt(c, f.top)), 71, "main bar y")
+    eq(c._state(f.top).scale, 0.6)
+    local p = c._state(pu.LeftShoulderBackground).points[1]
+    eq({ p.point, p.x, p.y }, { "BOTTOMRIGHT", -84, 99 })
+    local hp = c._state(PE.FaceBars.view[1].halves[1]).points[1]
+    eq({ hp.x, hp.y }, { -170, 50 })
+    eq(PE.LayoutPlan.session, nil, "Arrange it yourself is Off: no session")
+    -- the one Edit Mode piece by one write of the layout, with the reload asked for and a chat line.
+    eq(saves(c), 1, "one write")
+    eq(buffsAt(c.world.layouts), { -36, -74 }, "the buffs and debuffs, 4 higher")
+    eq(buffsAt(before), { -40, -78 })
+    -- Nothing else of the layout changed.
+    local function others(layouts)
+        local out = copy(layouts)
+        for _, l in ipairs(out.layouts) do
+            for _, e in ipairs(l.systems or {}) do if l.layoutName == NAME and e.system == AURA then e.anchorInfo = nil end end
+        end
+        return out
+    end
+    eq(others(c.world.layouts), others(before))
+    eq(#PE.reloadReasons, 1, "one reload request")
+    eq(reloadReason(PE), RELOAD)
+    local said = 0
+    for _, l in ipairs(T.chatLines(c)) do if l == NEW_ARRANGEMENT then said = said + 1 end end
+    eq(said, 1)
+    check(noted(c, "the layout holds the built-in spots of an older version (buffs and debuffs): written at their built-in spots"),
+        "not in the log: " .. T.show(notes(c)))
+    eq(written(PE), { ["buffs and debuffs"] = { x = 0, y = 4 } })
+    eq(opts(PE).arrangeBase, 2)
+    -- Not again: at another world load, or at the next login.
+    c:fire("PLAYER_ENTERING_WORLD")
+    c:advance(0.1)
+    eq(saves(c), 1)
+    eq(#PE.reloadReasons, 1)
+    c:assertClean()
+    local c2, PE2 = again(c)
+    eq(saves(c2), 0)
+    eq(#PE2.reloadReasons, 0)
+    check(not chatHas(c2, NEW_ARRANGEMENT), "said again at the next login")
+    near(select(2, barAt(c2, barFrames(c2).top)), 71, "main bar y at the next login")
+    c2:assertClean()
+end)
+
+test("0.20.0 carried over: with Arrange it yourself Off saved offsets were not in use: the screen takes the new spots and only what is saved is changed", function()
+    local c, PE = from019({ arrange = 0, slim = 1, offsets = { chat = { x = 30, y = 20 }, ["buffs and debuffs"] = { x = 0, y = 4 } },
+        live = { ["player bar"] = { x = -10, y = 0 } } })
+    -- Only the saved entries: the day the switch goes On again, those pieces are where they were.
+    eq(charStore(PE).offsets, { ["player bar"] = { x = 8, y = 16 } })
+    eq(opts(PE).offsets, { chat = { x = 30, y = 20 } })
+    -- Now: the built-in arrangement, nothing of the saved offsets.
+    sameRect(slimAt(c, PE, "player"), { -516, 125, -236, 153 }, "the player bar's frame")
+    near(select(2, barAt(c, barFrames(c).top)), 71, "main bar y")
+    eq(saves(c), 1)
+    eq(buffsAt(c.world.layouts), { -36, -74 })
+    eq(entry(c, SYS.ChatFrame).anchorInfo.offsetX, 17, "the chat's unused offset was written")
+    eq(#PE.reloadReasons, 1)
+    -- Switched On and reloaded: the moved pieces where 0.19.0 had them, the others built in.
+    opts(PE).arrange = 1
+    local c2, PE2 = again(c, { slim = 1 })
+    sameRect(slimAt(c2, PE2, "player"), { -508, 141, -228, 169 }, "the player bar's frame, as arranged in 0.19.0")
+    sameRect(slimAt(c2, PE2, "target"), { 236, 125, 516, 153 }, "the target bar's frame, built in")
+    eq(charStore(PE2).offsets, { ["player bar"] = { x = 8, y = 16 } }, "carried over a second time")
+    eq(PE2.Arrange:Waiting(), { "Chat" })
+end)
+
+test("0.20.0 carried over: a character with nothing saved for Arrange gets the new spots and no numbers; a first install is marked and never carried over", function()
+    -- The switch On in the account's file, but this character never arranged anything.
+    local c, PE = from019({ live = false, slim = 1 })
+    sameRect(slimAt(c, PE, "player"), { -516, 125, -236, 153 }, "the player bar's frame")
+    eq(charStore(PE).offsets, {})
+    eq(charStore(PE).base, 2)
+    eq(charStore(PE).wheel, 1)
+    eq(countLike(c, "^moved into the built%-in spots: player bar"), 0)
+    -- (the account's Edit Mode piece was in use: it stays)
+    eq(opts(PE).offsets, { ["buffs and debuffs"] = { x = 0, y = -4 } })
+    eq(saves(c), 0)
+    c:assertClean()
+    -- A first install: marked at load; switched on, the layout is built at the new spots once.
+    local n, PEn = T.new({ gamepadUI = true, setup = function(cl) cl.world.layouts = { layouts = {}, activeLayout = 3 } end })
+    eq(opts(PEn).arrangeBase, 2)
+    eq(opts(PEn).offsets, nil)
+    eq(opts(PEn).wheelWas, nil)
+    PEn:SetModuleEnabled("ctrlLayout", true)
+    n:advance(0.1)
+    eq(saves(n), 1, "the switch-on's one write")
+    eq(buffsAt(n.world.layouts), { -36, -74 })
+    eq(written(PEn), { ["buffs and debuffs"] = { x = 0, y = 4 } })
+    eq(#PEn.reloadReasons, 1, "the switch-on's one reload")
+    check(not chatHas(n, NEW_ARRANGEMENT), "a first install was told of a new arrangement")
+    opts(PEn).arrange = 1
+    local n2, PEn2 = again(n)
+    eq(saves(n2), 0)
+    eq(#PEn2.reloadReasons, 0)
+    eq(charStore(PEn2).offsets, {})
+    eq(opts(PEn2).offsets, {})
+    eq(charStore(PEn2).base, 2)
+    near(select(2, barAt(n2, barFrames(n2).top)), 71, "main bar y")
+    local n3, PEn3 = again(n2)
+    eq(charStore(PEn3).offsets, {}, "a table made by 0.20.0 was carried over at the next login")
+    eq(opts(PEn3).offsets, {})
+    near(select(2, barAt(n3, barFrames(n3).top)), 71, "main bar y")
+    eq(saves(n3), 0)
+end)
+
+test("0.20.0 arrangement: the Arrange window counts from the built-in spots, and Reset goes back to them", function()
+    local c, PE, A = client({ slim = 1 })
+    check(noted(c, "built-in arrangement 2"), "no arrangement line")
+    check(noted(c, "no offsets saved: everything at its built-in spot"), "not in the log: " .. T.show(notes(c)))
+    open(c, PE, "LB targeting picture")
+    check(windowText(c):find("At its built-in spot.", 1, true), "the window: " .. windowText(c))
+    c:click(button(c, "Up"))
+    check(windowText(c):find("Moved 2 up.", 1, true), "the window: " .. windowText(c))
+    eq(charStore(PE).offsets["LB targeting picture"], { x = 0, y = 2 })
+    eq(charStore(PE).offsets["RB targeting picture"], { x = 0, y = 2 })
+    local r = PE.LayoutPlan.Rects(PE.ControllerLayout:View())
+    sameRect(r["LB targeting picture"], { -120, 101, -84, 133 }, "2 up from the built-in spot")
+    local _, pu = barFrames(c)
+    local p = c._state(pu.LeftShoulderBackground).points[1]
+    eq({ p.point, p.x, p.y }, { "BOTTOMRIGHT", -84, 101 })
+    c:click(button(c, "Reset"))
+    eq(charStore(PE).offsets, {})
+    p = c._state(pu.LeftShoulderBackground).points[1]
+    eq({ p.point, p.x, p.y }, { "BOTTOMRIGHT", -84, 99 })
+    c:assertClean()
 end)
 
 return { known = KNOWN_FAILURES }

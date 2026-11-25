@@ -5,7 +5,9 @@ local ADDON_NAME, PE = ...
 --
 -- A small window, in the manner of Move on screen (Move.lua), that moves the pieces of the
 -- Controller layout. Each move is saved as an offset from the piece's built-in spot, in
--- whole UI units. ControllerLayout.lua adds the offsets inside its plan (Plan.Moved), so
+-- whole UI units (Plan.Offset reads one; since 0.20.0 the built-in spots are the arrangement
+-- of the first device sitting, Plan.BASE_2, and "Reset" and "Reset all" go back to it).
+-- ControllerLayout.lua adds the offsets inside its plan (Plan.Moved), so
 -- the overlap check, the snapshot, the spell pictures and the slim bars all see them; this
 -- file only changes the saved offsets, asks the layout to place again, and draws the window.
 --
@@ -100,7 +102,10 @@ end
 
 local function Plan()
     local plan = PE.LayoutPlan
-    if type(plan) == "table" and type(plan.Moved) == "function" and type(plan.ARRANGE) == "table" then return plan end
+    if type(plan) == "table" and type(plan.Moved) == "function" and type(plan.Offset) == "function"
+        and type(plan.ARRANGE) == "table" then
+        return plan
+    end
     return nil
 end
 
@@ -200,8 +205,8 @@ local function MirrorList(view)
     for _, def in ipairs(Plan().ARRANGE) do
         if def.twin and def.pair == def.key then
             local twin = Def(def.twin)
-            local ax, ay = Plan().Moved(view, def.key)
-            local bx, by = Plan().Moved(view, def.twin)
+            local ax, ay = Plan().Offset(view, def.key)
+            local bx, by = Plan().Offset(view, def.twin)
             out[#out + 1] = { a = def.key, b = def.twin, labelA = def.label, labelB = twin and twin.label or def.twin,
                 ok = abs(ax + bx) < TINY and abs(ay - by) < TINY, ax = ax, ay = ay, bx = bx, by = by }
         end
@@ -362,7 +367,7 @@ Arrange["Step"] = function(_, key, dirX, dirY)
     if def.axis == "y" and dirX ~= 0 then return Refuse(key, "it moves up and down only") end
     local plan = Plan()
     local step = stepBig and STEP_BIG or STEP_SMALL
-    local ox, oy = plan.Moved(view, key)
+    local ox, oy = plan.Offset(view, key)
     local nx, ny = ox + dirX * step, oy + dirY * step
     local before = plan.Rects(view)
     local snapped = false
@@ -380,7 +385,7 @@ Arrange["Step"] = function(_, key, dirX, dirY)
     if abs(nx) > plan.ARRANGE_LIMIT or abs(ny) > plan.ARRANGE_LIMIT then return Refuse(key, "it is as far as it goes") end
     local twin = MirrorTwin(view, def)
     local tx, ty = 0, 0
-    if twin then tx, ty = plan.Moved(view, twin.key) end
+    if twin then tx, ty = plan.Offset(view, twin.key) end
     local outBefore = Overflow(before, def) + (twin and Overflow(before, twin) or 0)
     Write(view, def, nx, ny)
     if twin then Write(view, twin, -nx, ny) end
@@ -406,12 +411,12 @@ Arrange["Reset"] = function(_, key)
     local def, view, why = Ready(key)
     if not def then return Refuse(key, why) end
     local plan = Plan()
-    local ox, oy = plan.Moved(view, key)
+    local ox, oy = plan.Offset(view, key)
     local twin = MirrorTwin(view, def)
     local text = format("reset: %s (was %s,%s)", key, Fmt(ox), Fmt(oy))
     Write(view, def, 0, 0)
     if twin then
-        local tx, ty = plan.Moved(view, twin.key)
+        local tx, ty = plan.Offset(view, twin.key)
         Write(view, twin, 0, 0)
         text = text .. format("; twin %s (was %s,%s)", twin.key, Fmt(tx), Fmt(ty))
     end
@@ -466,9 +471,9 @@ Arrange["ToggleTwins"] = function(_, key)
     if view.alone[def.pair] then
         view.alone[def.pair] = nil
         local plan = Plan()
-        local x, y = plan.Moved(view, key)
+        local x, y = plan.Offset(view, key)
         local twin = Def(def.twin)
-        local tx, ty = plan.Moved(view, twin.key)
+        local tx, ty = plan.Offset(view, twin.key)
         Write(view, twin, -x, y)
         Note(format("twins: %s and %s mirrored again; %s set from %s,%s to %s,%s", key, twin.key, twin.key, Fmt(tx), Fmt(ty), Fmt(-x), Fmt(y)))
         PlaceLive(def)
@@ -516,7 +521,7 @@ local function LogAll(view, prefix)
     local plan = Plan()
     local rects = plan.Rects(view)
     for _, def in ipairs(plan.ARRANGE) do
-        local x, y = plan.Moved(view, def.key)
+        local x, y = plan.Offset(view, def.key)
         for _, name in ipairs(def.rects) do
             local r = rects[name]
             if r then
@@ -827,7 +832,7 @@ Refresh = function()
     buttons.apply:SetStyle(#waiting > 0 and "on" or "normal")
 
     local rects = plan.Rects(view)
-    local x, y = plan.Moved(view, def.key)
+    local x, y = plan.Offset(view, def.key)
     local main = rects[def.rects[1]]
     local centred = main and not def.twin and abs((main[1] + main[3]) / 2) < TINY
     lines[1]:SetText(OffsetText(x, y) .. (centred and " On the centre line." or ""))

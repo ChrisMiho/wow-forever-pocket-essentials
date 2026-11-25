@@ -72,8 +72,9 @@ local function hookCount(c)
     return #c:callsTo("hooksecurefunc")
 end
 
--- The spec's four spots and states (0.14.0, "The new arrangement").
-local SPOT_XY = { innerLeft = { -170, 66 }, outerLeft = { -316, 66 }, innerRight = { 170, 66 }, outerRight = { 316, 66 } }
+-- The spec's four spots and states (0.14.0, "The new arrangement"). 0.20.0: the spots are 50
+-- up, 16 lower than until 0.19.0 (the built-in arrangement, ControllerLayout.lua Plan.BASE_2).
+local SPOT_XY = { innerLeft = { -170, 50 }, outerLeft = { -316, 50 }, innerRight = { 170, 50 }, outerRight = { 316, 50 } }
 local GROUP_N = { main = 1, lt = 2, rt = 3, both = 4 }
 local HALF_N = { dpad = 1, face = 2 }
 local REST = { { "main", "dpad", "innerLeft" }, { "main", "face", "innerRight" } }
@@ -839,8 +840,9 @@ end
 -- Every rectangle of the game's that takes a tap under the face, worked out from
 -- Blizzard's numbers rather than ours: each real bar (208 by 68, enableMouse,
 -- Blizzard_GamepadActionBars/ActionBarTemplates.xml:606-699; ActionBarStyles.lua:172)
--- at 60%, centred at x -170 (main, LT) and +170 (RT, LT+RT), 87 (main, RT) and 45 (LT,
--- LT+RT) up, and its eight buttons where the collapsed style puts them
+-- at 60%, centred at x -170 (main, LT) and +170 (RT, LT+RT), 71 (main, RT) and 29 (LT,
+-- LT+RT) up (0.20.0: with their panels, 16 lower than until 0.19.0), and its eight buttons
+-- where the collapsed style puts them
 -- (ActionBarStyles.lua:158-195: the d-pad group square, 32; the face group round, 30).
 local function realTapRects()
     local out = {}
@@ -849,7 +851,7 @@ local function realTapRects()
         { -92, 0, 32 }, { -58, 17, 32 }, { -24, 0, 32 }, { -58, -17, 32 },
         { 25, 0, 30 }, { 55, 18, 30 }, { 85, 0, 30 }, { 55, -18, 30 },
     }
-    for _, bar in ipairs({ { "main", -170, 87 }, { "LT", -170, 45 }, { "RT", 170, 87 }, { "LT+RT", 170, 45 } }) do
+    for _, bar in ipairs({ { "main", -170, 71 }, { "LT", -170, 29 }, { "RT", 170, 71 }, { "LT+RT", 170, 29 } }) do
         local cx, cy = bar[2], bar[3]
         out[#out + 1] = { name = bar[1] .. " bar", r = { cx - 104 * s, cy - 34 * s, cx + 104 * s, cy + 34 * s } }
         for i, b in ipairs(buttons) do
@@ -861,17 +863,21 @@ local function realTapRects()
 end
 
 -- The pieces the frames under the pictures must leave alone: the map, the two
--- sub-menu buttons (138 either side, 188 up, about 19 round), the LB / RB targeting
--- pictures (178 to 214 either side, 155 to 187 up since 0.16.0), the outer diamonds (249 to 383
--- either side, 17 to 115 up: their pictures take a tap themselves) and the player
+-- sub-menu buttons (138 either side, 188 up, about 19 round), the outer diamonds (249 to 383
+-- either side, 1 to 99 up since 0.20.0: their pictures take a tap themselves) and the player
 -- and target frames (from 395 either side outwards).
+-- The LB / RB targeting pictures are no longer among them: 0.20.0's built-in arrangement has
+-- them in beside the map (84 to 120 either side, 99 to 131 up), level with the panels' top,
+-- and the 4 unit margin over a panel lies under the lower edge of its side's picture: 21 by 4
+-- (TOUCHED). The frame draws nothing and the picture takes no tap.
+local TOUCHED = { ["LB targeting picture"] = 1, ["RB targeting picture"] = 2 } -- [name] = the side whose frame reaches it
 local KEEP_CLEAR = {
     { name = "LB+LT button", r = { -138 - 19, 188 - 19, -138 + 19, 188 + 19 } },
     { name = "RB+RT button", r = { 138 - 19, 188 - 19, 138 + 19, 188 + 19 } },
-    { name = "LB targeting picture", r = { -214, 155, -178, 187 } },
-    { name = "RB targeting picture", r = { 178, 155, 214, 187 } },
-    { name = "outer left diamond", r = { -383, 17, -249, 115 } },
-    { name = "outer right diamond", r = { 249, 17, 383, 115 } },
+    { name = "LB targeting picture", r = { -120, 99, -84, 131 } },
+    { name = "RB targeting picture", r = { 84, 99, 120, 131 } },
+    { name = "outer left diamond", r = { -383, 1, -249, 99 } },
+    { name = "outer right diamond", r = { 249, 1, 383, 99 } },
     { name = "player frame", r = { -395 - 232, 56, -395, 156 } },
     { name = "target frame", r = { 395, 56, 395 + 232, 156 } },
 }
@@ -908,18 +914,26 @@ local function checkBacking(c, PE, Face, what)
     end
     for side, r in ipairs(rects) do
         for _, k in ipairs(clear) do
-            check(not overlaps(r, k.r), what .. ": the frame on side " .. side .. " covers the " .. k.name)
+            if TOUCHED[k.name] == side then
+                local w = math.min(r[3], k.r[3]) - math.max(r[1], k.r[1])
+                local h = math.min(r[4], k.r[4]) - math.max(r[2], k.r[2])
+                near(w, 21, what .. ": the frame on side " .. side .. " under the " .. k.name .. ", width")
+                near(h, 4, what .. ": the frame on side " .. side .. " under the " .. k.name .. ", height")
+            else
+                check(not overlaps(r, k.r), what .. ": the frame on side " .. side .. " covers the " .. k.name)
+            end
         end
     end
     return rects
 end
 
-test("face: a tap between the pictures never reaches a hidden button; the frames under them clear the map, sub-menus, targeting pictures, outer diamonds and unit frames", function()
+test("face: a tap between the pictures never reaches a hidden button; the frames under them clear the map, sub-menus, outer diamonds and unit frames", function()
     local c, PE, Face = started()
     local rects = checkBacking(c, PE, Face, "with the layout's numbers")
     -- The inner diamond (with the main and LT bars under it), 4 more each way; the right side its mirror.
-    for i, want in ipairs({ -241, 13, -99, 119 }) do near(rects[1][i], want, "left " .. i) end
-    for i, want in ipairs({ 99, 13, 241, 119 }) do near(rects[2][i], want, "right " .. i) end
+    -- (0.20.0: 16 lower than until 0.19.0, with the panels: -3 to 103, was 13 to 119.)
+    for i, want in ipairs({ -241, -3, -99, 103 }) do near(rects[1][i], want, "left " .. i) end
+    for i, want in ipairs({ 99, -3, 241, 103 }) do near(rects[2][i], want, "right " .. i) end
     -- The frames under the pictures stay put whatever trigger is held.
     for _, held in ipairs({ { true, false }, { false, true }, { true, true } }) do
         c:pressTriggers(held[1], held[2])
@@ -1226,20 +1240,22 @@ test("face: built at the Spell panel size given; every half scaled and on its sp
         c:pressTriggers(false, false)
         c:advance(0.1)
         -- The frames under the pictures: each side's inner diamond and both real bars, plus
-        -- 4 (cut under the targeting pictures at 128), clear of everything else.
+        -- 4 (cut at 112: 0.15.0's guard of 128, 16 lower with the panels), clear of everything
+        -- else but the targeting pictures, which the built-in arrangement has at the panels' top
+        -- (checkBacking has the numbers at 100%).
         local real = PE.LayoutPlan.RealBarRects(size)
         local rects = PE.LayoutPlan.Rects(size)
         for side, f in ipairs(Face.backing) do
             local r = rectOf(f)
             local d = rects[side == 1 and "inner left diamond" or "inner right diamond"]
             near(r[2], d[2] - 4, what .. " backing bottom")
-            near(r[4], math.min(d[4] + 4, 128), what .. " backing top")
+            near(r[4], math.min(d[4] + 4, 112), what .. " backing top")
             near(side == 1 and r[1] or r[3], side == 1 and d[1] - 4 or d[3] + 4, what .. " backing outer edge")
             for _, bar in ipairs(side == 1 and { "main", "lt" } or { "rt", "both" }) do
                 check(inside(real[bar], r), what .. ": the " .. bar .. " bar is not under a frame that takes a tap")
             end
             for name, o in pairs(rects) do
-                if name ~= "inner left diamond" and name ~= "inner right diamond" then
+                if name ~= "inner left diamond" and name ~= "inner right diamond" and not name:find("targeting picture") then
                     check(not overlaps(r, o), what .. ": the frame on side " .. side .. " covers the " .. name)
                 end
             end

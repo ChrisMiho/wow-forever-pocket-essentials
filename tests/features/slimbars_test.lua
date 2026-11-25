@@ -23,13 +23,15 @@ local CHAT_ERROR = "Slim bars turned off after an error; the game's own frames a
 local CHAT_ERROR_FIGHT = "Slim bars turned off after an error; the game's own frames come back when this fight ends. Reload to try again."
 
 -- The plan's rectangles (layout_test.lua checks Plan.SlimRects against the same numbers):
--- { left, bottom, right, top } from the screen's bottom centre.
+-- { left, bottom, right, top } from the screen's bottom centre. 0.20.0: each side 18 further
+-- out and 16 lower than 0.17.0 to 0.19.0 had it (the built-in arrangement, Plan.BASE_2;
+-- before: player -498, 141, -218, 169 and so on).
 local RECTS = {
-    player = { -498, 141, -218, 169 },
-    target = { 218, 141, 498, 169 },
-    cast = { 218, 127, 498, 139 },
-    pet = { -498, 172, -362, 189 },
-    tot = { 362, 172, 498, 189 },
+    player = { -516, 125, -236, 153 },
+    target = { 236, 125, 516, 153 },
+    cast = { 236, 111, 516, 123 },
+    pet = { -516, 156, -380, 173 },
+    tot = { 380, 156, 516, 173 },
 }
 local GAME_FRAMES = { "PlayerFrame", "PetFrame", "TargetFrame" }
 local GREEN, RED, GREY = { 0.10, 0.65, 0.20, 1 }, { 0.80, 0.15, 0.15, 1 }, { 0.50, 0.50, 0.50, 1 }
@@ -223,13 +225,13 @@ test("slim: Start places the five bars on the plan's numbers, in the middle laye
     eq(shown(c, Slim.view.cast.frame), false)
     -- Inside a main bar: 1 border, power 6, 1 line, health 19, 1 border; 1 in from each side.
     local p = bar(Slim, "player")
-    sameRect(rectOf(c, p.power), { -497, 142, -219, 148 }, "power bar")
-    sameRect(rectOf(c, p.health), { -497, 149, -219, 168 }, "health bar")
+    sameRect(rectOf(c, p.power), { -515, 126, -237, 132 }, "power bar")
+    sameRect(rectOf(c, p.health), { -515, 133, -237, 152 }, "health bar")
     local pet = bar(Slim, "pet")
     eq(pet.power, nil)
     eq(pet.level, nil)
     eq(pet.value, nil)
-    sameRect(rectOf(c, pet.health), { -497, 173, -363, 188 }, "pet health bar")
+    sameRect(rectOf(c, pet.health), { -515, 157, -381, 172 }, "pet health bar")
     eq(st(c, p.health).barTexture, "Interface\\TargetingFrame\\UI-StatusBar")
     c:assertClean()
 end)
@@ -265,11 +267,11 @@ test("slim: the debug log says what started, where each bar is and what happened
     local c, PE, Slim = started()
     local lines = notes(c)
     eq(lines[1], "on (slim=0, Spell panel size 100%)")
-    eq(noted(c, "placed the player bar: BOTTOMLEFT on the screen's bottom middle, x -498.0 y 141.0, 280.0 by 28.0, scale 1"), 1)
-    eq(noted(c, "placed the target bar: BOTTOMLEFT on the screen's bottom middle, x 218.0 y 141.0, 280.0 by 28.0, scale 1"), 1)
-    eq(noted(c, "placed the pet bar: BOTTOMLEFT on the screen's bottom middle, x -498.0 y 172.0, 136.0 by 17.0, scale 1"), 1)
-    eq(noted(c, "placed the target of target bar: BOTTOMLEFT on the screen's bottom middle, x 362.0 y 172.0, 136.0 by 17.0, scale 1"), 1)
-    eq(noted(c, "placed the cast bar: BOTTOMLEFT on the screen's bottom middle, x 218.0 y 127.0, 280.0 by 12.0, scale 1"), 1)
+    eq(noted(c, "placed the player bar: BOTTOMLEFT on the screen's bottom middle, x -516.0 y 125.0, 280.0 by 28.0, scale 1"), 1)
+    eq(noted(c, "placed the target bar: BOTTOMLEFT on the screen's bottom middle, x 236.0 y 125.0, 280.0 by 28.0, scale 1"), 1)
+    eq(noted(c, "placed the pet bar: BOTTOMLEFT on the screen's bottom middle, x -516.0 y 156.0, 136.0 by 17.0, scale 1"), 1)
+    eq(noted(c, "placed the target of target bar: BOTTOMLEFT on the screen's bottom middle, x 380.0 y 156.0, 136.0 by 17.0, scale 1"), 1)
+    eq(noted(c, "placed the cast bar: BOTTOMLEFT on the screen's bottom middle, x 236.0 y 111.0, 280.0 by 12.0, scale 1"), 1)
     for _, what in ipairs({ "player", "pet", "target", "target of target" }) do
         eq(noted(c, "the game's " .. what .. " frame made invisible (its see-through was 1.00)"), 1, what)
         eq(notedLike(c, "^tap guard over the game's " .. what .. " frame: BOTTOMLEFT x "), 1, what .. " guard")
@@ -1045,8 +1047,8 @@ test("slim: Save a snapshot lists the five bars and the four tap guards, and the
         end
         return nil
     end
-    eq(piece("player bar"), "piece: player bar | shown | l=184.7 b=141.0 w=280.0 h=28.0 s=1.00")
-    eq(piece("target bar"), "piece: target bar | shown | l=900.7 b=141.0 w=280.0 h=28.0 s=1.00")
+    eq(piece("player bar"), "piece: player bar | shown | l=166.7 b=125.0 w=280.0 h=28.0 s=1.00")
+    eq(piece("target bar"), "piece: target bar | shown | l=918.7 b=125.0 w=280.0 h=28.0 s=1.00")
     check(piece("pet bar"):find("| hidden |", 1, true), "pet bar: " .. piece("pet bar"))
     check(piece("target of target bar") ~= nil, "no target of target bar")
     check(piece("cast bar"):find("| hidden |", 1, true), "cast bar: " .. piece("cast bar"))

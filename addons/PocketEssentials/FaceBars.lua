@@ -128,9 +128,10 @@ local BASE_BUTTON = 28                         -- the picture size the glyph, ra
 -- left and right and 28 up and down of its centre (134 by 98); the four spots; the
 -- states.
 local FACE_DEFAULT = { button = 42, dx = 46, dy = 28 }
+-- (0.20.0: the spots 50 up, as the built-in arrangement has them; until 0.19.0 66.)
 local SPOTS_DEFAULT = {
-    inner = { left = { x = -170, y = 66 }, right = { x = 170, y = 66 } },
-    outer = { left = { x = -316, y = 66 }, right = { x = 316, y = 66 } },
+    inner = { left = { x = -170, y = 50 }, right = { x = 170, y = 50 } },
+    outer = { left = { x = -316, y = 50 }, right = { x = 316, y = 50 } },
 }
 local STATES_DEFAULT = {
     rest = {
@@ -153,19 +154,25 @@ local STATES_DEFAULT = {
     },
 }
 -- The game's four real bars, used when PE.LayoutPlan.RealBarRects is missing: 208 by
--- 68 at 60%, the main and LT bars centred at x -170, RT and LT+RT at +170, 87 and 45
--- up ({ left, bottom, right, top } from the screen's bottom centre).
+-- 68 at 60%, the main and LT bars centred at x -170, RT and LT+RT at +170, 71 and 29
+-- up ({ left, bottom, right, top } from the screen's bottom centre). 0.20.0: 16 lower than
+-- until 0.19.0 (87 and 45), with the panels of the built-in arrangement.
 local function BarRect(x, y) return { x - 62.4, y - 20.4, x + 62.4, y + 20.4 } end
-local REAL_DEFAULT = { main = BarRect(-170, 87), lt = BarRect(-170, 45), rt = BarRect(170, 87), both = BarRect(170, 45) }
+local REAL_DEFAULT = { main = BarRect(-170, 71), lt = BarRect(-170, 29), rt = BarRect(170, 71), both = BarRect(170, 29) }
 -- The frames under the pictures that take a tap: each side's inner diamond and real
 -- bars plus this margin, but never past the player and target frames, whose boxes
 -- start 395 either side of the centre (ControllerLayout.lua, FRAME_X). With the
 -- 0.14.0 numbers they end at 241, so the cut is only a guard.
 local BACKING_MARGIN = 4
 local FRAME_EDGE = 395
--- 0.15.0: and never over the LB / RB targeting pictures, whose bottom is 128 up
--- (ControllerLayout.lua, Plan.SHOULDERS). At 120% the inner diamonds reach 124.8, so the
--- margin above them is cut to 3.2 there; below that size the cut is only a guard.
+-- 0.15.0: and never over the LB / RB targeting pictures, whose bottom was 128 up then
+-- (ControllerLayout.lua, Plan.SHOULDERS). At 120% the inner diamonds reached 124.8, so the
+-- margin above them was cut to 3.2 there; below that size the cut is only a guard. It moves
+-- with its side's inner panel (BackingRects). 0.20.0: the built-in arrangement has the
+-- pictures in beside the map, their bottom 99 up, level with the panels' top at 100%: there
+-- the margin over a panel (99 to 103) lies under the lower 4 units of its side's picture, as
+-- it has on the device since the pieces were arranged so. The frame draws nothing and the
+-- picture takes no tap, so nothing is seen or lost.
 local SHOULDER_BOTTOM = 128
 
 -- The four groups, each tied to one of the game's bar anchors; state is the
