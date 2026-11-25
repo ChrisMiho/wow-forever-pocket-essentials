@@ -26,6 +26,7 @@ Chat.lua
 MenuBackground.lua
 LootSparkles.lua
 ControllerLayout.lua
+MapLook.lua
 FaceBars.lua
 SlimBars.lua
 Arrange.lua

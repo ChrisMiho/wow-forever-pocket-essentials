@@ -264,6 +264,11 @@ local MINIMAP_FRAMES = {
     -- 0.16.4, the snapshot (ControllerLayout.lua): frames whose names do not end in "Frame".
     ChatFrame1 = true, GameTooltipDefaultContainer = true, GamepadPersistentInputLegend = true,
     MainStatusTrackingBarContainer = true, SecondaryStatusTrackingBarContainer = true,
+    -- 0.19.0, the square map (MapLook.lua): the frame the map's ring is on
+    -- (Blizzard_Minimap/Mainline/Minimap.xml:101), the group finder's button
+    -- (Blizzard_QueueStatusFrame/Mainline/QueueStatusFrame.xml:136) and the clock on the map's
+    -- strip (Blizzard_TimeManager/Mainline/Blizzard_TimeManager.xml:178).
+    MinimapBackdrop = true, QueueStatusButton = true, TimeManagerClockButton = true,
 }
 for _, f in ipairs(files) do
     local toks = parsed[f]

@@ -2054,7 +2054,20 @@ do
                 if shown then pcall(t.Hide, t) end
             end
         end
-        PlaceDisc()
+        -- 0.19.0: the map look (MapLook.lua). With Round it does nothing at all, unless a square
+        -- map was placed earlier this session, which it then puts back. The black disc is the
+        -- round map's border: it is drawn unless the square mask is on the map.
+        local look, isSquare = PE.MapLook, false
+        if type(look) == "table" and type(look.Place) == "function" and type(look.IsSquare) == "function" then
+            PE:Safe("ctrlLayout", look.Place, look, mod and mod.opts, redraw)
+            local ok, answer = pcall(look.IsSquare, look)
+            isSquare = ok and answer == true
+        end
+        if isSquare then
+            if disc then disc.frame:Hide() end
+        else
+            PlaceDisc()
+        end
         HookRing()
     end
 
@@ -2067,6 +2080,9 @@ do
         end
         ringFound, ringOrder = {}, {}
         if disc then disc.frame:Hide() end
+        -- 0.19.0: and the square map, if one was placed (MapLook.lua): the game's mask, the strip.
+        local look = PE.MapLook
+        if type(look) == "table" and type(look.Restore) == "function" then PE:Safe("ctrlLayout", look.Restore, look) end
     end
 
     -- The two map buttons beside the place name: the tracking (magnifier) frame,
@@ -3060,6 +3076,12 @@ mod = PE:RegisterModule({
             if type(why) == "string" and why ~= "" then
                 lines[#lines + 1] = "Pocket Essentials' slim bars are off: " .. why .. (why:find("[.!]$") and "" or ".")
             end
+            -- 0.19.0: the game refused the square mask (MapLook.lua says so in plain words).
+            local look = PE.MapLook
+            if type(look) == "table" and type(look.Status) == "function" then
+                local ok, text = pcall(look.Status, look)
+                if ok and type(text) == "string" and text ~= "" then lines[#lines + 1] = text end
+            end
             -- 0.19.0: with the square map, pieces of this session's screen that overlap.
             if type(Snap.view) == "table" and Snap.view.mapLook == 1 then
                 local n = #Plan.Overlaps(Plan.Rects(Snap.view))
@@ -3206,6 +3228,13 @@ Snap.Build = function()
         add("round map", Minimap, { with = "map's black disc" })
         add("map title strip", Child(cluster, "ZoneTextButton"))
         add("map's black disc", Snap.disc(), { with = "round map" })
+        -- 0.19.0: with the square map, its edge, its words and what the game hangs on the map
+        -- (MapLook.lua; nothing while Round).
+        local look = Child(PE, "MapLook")
+        if look and type(look.SnapshotPieces) == "function" then
+            local ok, list = pcall(look.SnapshotPieces, look)
+            for _, p in ipairs((ok and type(list) == "table") and list or {}) do add(p[1], p[2], p[3]) end
+        end
         add("chat", ChatFrame1)
         add("buffs", BuffFrame)
         add("debuffs", DebuffFrame)

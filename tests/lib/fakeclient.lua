@@ -84,7 +84,7 @@ local M_BUTTON = list("RegisterForClicks IsEnabled SetText GetText GetAttribute"
 local M_SCROLLFRAME = list("SetScrollChild SetVerticalScroll")
 local M_EDITBOX = list("SetText GetText IsEnabled SetFont GetFont SetFontObject SetTextColor")
 local M_MESSAGEFRAME = list("AddMessage SetFont GetFont SetFontObject")
-local M_MINIMAP = list([[GetZoom SetQuestBlobInsideAlpha SetQuestBlobOutsideAlpha SetQuestBlobRingAlpha
+local M_MINIMAP = list([[GetZoom SetMaskTexture SetQuestBlobInsideAlpha SetQuestBlobOutsideAlpha SetQuestBlobRingAlpha
     SetQuestBlobRingScalar SetTaskBlobInsideAlpha SetTaskBlobOutsideAlpha SetTaskBlobRingAlpha SetTaskBlobRingScalar]])
 -- FrameAPICooldownDocumentation.lua (SetCooldown is added to each Cooldown frame by
 -- CreateFrame below, so that a call is recorded rather than raising).
@@ -888,7 +888,15 @@ function Client.new(opts)
             Log("Minimap:" .. name, v)
         end
     end
-    for _, n in ipairs(M_MINIMAP) do if n ~= "GetZoom" then BlobSetter(n) end end
+    for _, n in ipairs(M_MINIMAP) do if n ~= "GetZoom" and n ~= "SetMaskTexture" then BlobSetter(n) end end
+    -- MinimapFrameAPIDocumentation.lua:141 (0.19.0, the square map): the asset is kept as
+    -- rec.mask and every call goes into c.calls. world.maskRefused: it raises.
+    function METHODS:SetMaskTexture(asset)
+        Log("Minimap:SetMaskTexture", asset)
+        if world.maskRefused then error("SetMaskTexture(): refused by the stand-in", 2) end
+        if type(asset) ~= "string" and type(asset) ~= "number" then error("SetMaskTexture(): texture asset expected", 2) end
+        St(self).mask = asset
+    end
 
     -- Cooldown frames (FrameAPICooldownDocumentation.lua). A duration object here is
     -- { duration = seconds } (what C_ActionBar.GetActionCooldownDuration returns below);
@@ -1158,6 +1166,7 @@ function Client.new(opts)
     end
     FontObject("GameFontNormal", 12)
     FontObject("GameFontHighlight", 12)
+    FontObject("GameFontHighlightSmall", 10)
     FontObject("GameFontNormalLarge", 16)
     FontObject("GameFontHighlightLarge", 16)
 
@@ -1679,6 +1688,110 @@ function Client.new(opts)
         local target = rawget(env, "TargetFrame")
         if target then GuardUnitFrame(target, "TargetFrame") end
         return player, pet, target
+    end
+    -- The map's pieces as this client builds them, for the square map (MapLook.lua). Without
+    -- this call the stand-in's map is the Minimap widget alone, straight on MinimapCluster.
+    --   * MinimapCluster placed the way our Edit Mode layout places it: BOTTOM on the screen's
+    --     BOTTOM at o.x, o.y (default -10, 0, the square's spot). It is an Edit Mode system:
+    --     SetScale, SetPoint, ClearAllPoints, SetShown and Hide are Lua of the game's on it
+    --     (EditModeSystemTemplates.lua:11-18, 33-36), so such a call from the addon is recorded
+    --     as an error, and so is a key written on it.
+    --   * MinimapCluster.MinimapContainer, the map's frame (Blizzard_Minimap/Mainline/Minimap.xml:47-56),
+    --     253 by 253 (the probe's measure) at scale o.scale (default 1, Edit Mode Size 100%),
+    --     the Minimap widget at its centre. MinimapCluster:SetHeaderUnderneath anchors it the
+    --     way the game does with the strip underneath (Camelot/Minimap.lua:68-77): BOTTOM on
+    --     the cluster's BOTTOM at 10 / scale, 30 / scale. A plain function on the frame, so
+    --     hooksecurefunc works on it; a test calls it to stand for Edit Mode applying a setting.
+    --   * MinimapCluster.ZoneTextButton, the strip (152 by 23, BOTTOM -1, 8), and the clock on
+    --     it, TimeManagerClockButton (Blizzard_TimeManager.xml:178-203, Camelot overrides 5-7).
+    --   * MinimapContainer.PlayerCoords, the game's coordinates text, 90 by 10, 18 under the
+    --     map (Mainline/Minimap.xml:287-301).
+    --   * the day and night mark (MinimapCluster.DielFrame, Camelot/Diel.lua:18-28), the mail
+    --     mark (MinimapCluster.IndicatorFrame) and the two zoom buttons (Minimap.ZoomIn, ZoomOut).
+    -- Mutating calls on the strip, the clock, the map's frame and the coordinates go into
+    -- c.calls. Returns { cluster, box, strip, clock, coords }.
+    function c:addMapParts(o)
+        o = o or {}
+        local scale = o.scale or 1
+        cluster:ClearAllPoints()
+        cluster:SetPoint("BOTTOM", UIParent, "BOTTOM", o.x or -10, o.y or 0)
+        local box = Blizz("Frame", nil, cluster)
+        box:SetSize(253, 253)
+        box:SetScale(scale)
+        rawset(cluster, "MinimapContainer", box)
+        local cst, bst = W[cluster], W[box]
+        for i = #cst.children, 1, -1 do
+            if cst.children[i] == minimap then table.remove(cst.children, i) end
+        end
+        W[minimap].parent = box
+        bst.children[#bst.children + 1] = minimap
+        minimap:ClearAllPoints()
+        minimap:SetPoint("CENTER", box, "CENTER", 0, 0)
+        local function Underneath()
+            local s = box:GetScale()
+            box:ClearAllPoints()
+            box:SetPoint("BOTTOM", cluster, "BOTTOM", 10 / s, 30 / s)
+        end
+        Underneath()
+        rawset(cluster, "SetHeaderUnderneath", function(_, under)
+            Log("MinimapCluster:SetHeaderUnderneath", under)
+            Underneath()
+        end)
+        local strip = Blizz("Button", nil, cluster)
+        strip:SetSize(152, 23)
+        strip:SetPoint("BOTTOM", cluster, "BOTTOM", -1, 8)
+        rawset(cluster, "ZoneTextButton", strip)
+        local clock = Blizz("Button", "TimeManagerClockButton", cluster)
+        clock:SetSize(40, 16)
+        clock:SetPoint("RIGHT", strip, "RIGHT", -3, -1)
+        local coords = Blizz("Frame", nil, box)
+        coords:SetSize(90, 10)
+        coords:SetPoint("BOTTOM", minimap, "BOTTOM", 0, -18)
+        rawset(box, "PlayerCoords", coords)
+        local diel = Blizz("Frame", nil, box)
+        diel:SetSize(42, 42)
+        diel:SetScale(1 / scale)
+        diel:SetPoint("CENTER", box, "CENTER", 55 * scale, 86 * scale)
+        rawset(cluster, "DielFrame", diel)
+        local mail = Blizz("Frame", nil, cluster)
+        mail:SetSize(32, 24)
+        mail:SetPoint("BOTTOMLEFT", strip, "TOPLEFT", 0, 0)
+        rawset(cluster, "IndicatorFrame", mail)
+        local zoomIn = Blizz("Button", nil, minimap)
+        zoomIn:SetSize(17, 17)
+        zoomIn:SetPoint("CENTER", minimap, "CENTER", 88, -68)
+        W[zoomIn].shown = false
+        rawset(minimap, "ZoomIn", zoomIn)
+        local zoomOut = Blizz("Button", nil, minimap)
+        zoomOut:SetSize(17, 9)
+        zoomOut:SetPoint("CENTER", minimap, "CENTER", 72, -84)
+        W[zoomOut].shown = false
+        rawset(minimap, "ZoomOut", zoomOut)
+        LogBlizzardMutations(strip, "MinimapCluster.ZoneTextButton")
+        LogBlizzardMutations(clock, "TimeManagerClockButton")
+        LogBlizzardMutations(box, "MinimapContainer")
+        LogBlizzardMutations(coords, "PlayerCoords")
+        local EDIT_MODE_LUA = { SetScale = true, SetPoint = true, ClearAllPoints = true, SetShown = true, Hide = true }
+        local mt = getmetatable(cluster)
+        local base = mt.__index
+        setmetatable(cluster, {
+            __index = function(t, k)
+                local f = base(t, k)
+                if type(f) == "function" and EDIT_MODE_LUA[k] then
+                    return function(self, ...)
+                        Record("MinimapCluster", "the addon called " .. k .. " on an Edit Mode system frame, where it is the game's Lua")
+                        return f(self, ...)
+                    end
+                end
+                return f
+            end,
+            __newindex = function(_, k)
+                Record("MinimapCluster", "the addon wrote the key " .. tostring(k) .. " on a Blizzard frame")
+                error("the stand-in's MinimapCluster takes no new key (" .. tostring(k) .. ")", 2)
+            end,
+            __tostring = mt.__tostring,
+        })
+        return { cluster = cluster, box = box, strip = strip, clock = clock, coords = coords }
     end
     function c:setPage(n)
         Protect("SetCurrentPage", function() c.barParts[gamepadBar].PageUnit:SetCurrentPage(n) end)
@@ -2503,6 +2616,21 @@ function Client.new(opts)
     -- second boundaries against GetTime(), as in the game where the two are not aligned.
     Global("time", function() return 1763200000 + floor(c.now + (c.wallOffset or 0)) end)
     Global("date", function(fmt, t) return os.date(fmt, t) end)
+    -- 0.19.0, the words inside the square map (MapLook.lua): the place name
+    -- (ZoneScriptDocumentation.lua:19; world.zoneText), the zone's kind
+    -- (PvpInfoDocumentation.lua:847; world.pvpType, nil for none), the realm's time
+    -- (SystemTimeDocumentation.lua:10; world.gameTime = { hour, minute }), and the two formats
+    -- and the colour the game's own strip uses (Blizzard_FrameXMLUtil/GameTimeUtil.lua:11, 30,
+    -- Blizzard_Minimap/Mainline/Minimap.lua:184).
+    Global("GetMinimapZoneText", function() return world.zoneText or "Elwynn Forest" end)
+    Global("GetGameTime", function()
+        local t = world.gameTime or { 14, 5 }
+        return t[1], t[2]
+    end)
+    Namespace("C_PvP", { GetZonePVPInfo = function() return world.pvpType end })
+    rawset(env, "TIMEMANAGER_TICKER_24HOUR", "%02d:%02d")
+    rawset(env, "TIMEMANAGER_TICKER_12HOUR", "%d:%02d")
+    rawset(env, "NORMAL_FONT_COLOR", { r = 1.0, g = 0.82, b = 0.0 })
     -- debugstack([start[, count1[, count2]]]): the top count1 lines (default 12) and the
     -- bottom count2 (default 10), "..." between when lines are left out, as in the game.
     Global("debugstack", function(level, top, bottom)

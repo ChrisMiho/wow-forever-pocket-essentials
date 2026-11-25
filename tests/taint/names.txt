@@ -188,10 +188,12 @@ SetFont	Blizzard_SharedXML/FontableFrameMixin.lua:20
 SetFontObject	Blizzard_MoneyFrame/Shared/MoneyFrame.lua:398
 SetFrameLevel	Blizzard_RestrictedAddOnEnvironment/RestrictedFrames.lua:606
 SetFrameStrata	Blizzard_RestrictedAddOnEnvironment/RestrictedFrames.lua:610
+SetHeaderUnderneath	Blizzard_Minimap/Camelot/Minimap.lua:68
 SetHeight	Blizzard_RestrictedAddOnEnvironment/RestrictedFrames.lua:418
 SetJustifyH	Blizzard_PlayerChoice/Blizzard_PlayerChoiceOptionBase.lua:346
 SetJustifyV	Blizzard_SharedXML/FontableFrameMixin.lua:92
 SetLabel	Blizzard_AuctionHouseUI/Shared/Blizzard_AuctionHouseSellFrame.lua:8
+SetMaskTexture	Blizzard_MapCanvas/Blizzard_MapCanvas.lua:1175
 SetMaxLines	Blizzard_SharedXML/ScrollingMessageFrame.lua:240
 SetMinMaxValues	Blizzard_SharedXML/Shared/InputBox/InputBoxTemplates.lua:282
 SetParent	Blizzard_RestrictedAddOnEnvironment/RestrictedFrames.lua:614
@@ -257,6 +259,8 @@ UpdatePower	Blizzard_NamePlates/Mainline/Blizzard_ClassNameplateBar.lua:110
 UpdateState	Blizzard_ActionBar/Shared/ActionButton.lua:1974
 Wrap	Blizzard_SharedXMLBase/MathUtil.lua:32
 Write	Blizzard_CooldownViewer/CooldownViewerSettingsDataStoreSerialization.lua:276
+ZoomIn	Blizzard_MapCanvas/Blizzard_MapCanvas.lua:850
+ZoomOut	Blizzard_MapCanvas/Blizzard_MapCanvas.lua:854
 action	Blizzard_Gamepad/UI/Radials/GamepadRadial.lua:159
 atan2	Blizzard_SharedXMLBase/Compat.lua:25
 cos	Blizzard_SharedXMLBase/Compat.lua:27
@@ -404,6 +408,8 @@ ButtonOf	-
 ButtonUp	-
 ButtonsWanted	-
 CANT_TELL	-
+CVarOn	-
+Call	-
 CanAddress	-
 CanMerchantRepair	-
 CancelAllGuided	-
@@ -452,6 +458,7 @@ ClearOverrideBindings	-
 ClearPending	-
 ClearSaved	-
 Clock	-
+ClockText	-
 CloseBox	-
 CloseChat	-
 CloseLast	-
@@ -483,6 +490,8 @@ ControllerLayout	-
 ControllerSpot	-
 Cooldown	-
 CooldownFrameTemplate	-
+CoordsPoint	-
+CoordsText	-
 CopyIcon	-
 CopyOfPresets	-
 CopySpecial	-
@@ -541,6 +550,7 @@ DeepCopy	-
 Def	-
 Describe	-
 DetailsFor	-
+DielFrame	-
 DisableModule	-
 Disarm	-
 Disc	-
@@ -584,6 +594,7 @@ Evaluate	-
 EventNeeded	-
 Exists	-
 Explore	-
+ExternalEventURLButton	-
 FACE	-
 FaceBars	-
 FaceCall	-
@@ -621,6 +632,7 @@ FirstColumn	-
 FirstLines	-
 FirstQuestID	-
 FirstStop	-
+Fit	-
 FitLabel	-
 FlushCombatQueue	-
 FlushQuiet	-
@@ -644,6 +656,7 @@ FullBarSpots	-
 Game	-
 GameFontHighlight	-
 GameFontHighlightLarge	-
+GameFontHighlightSmall	-
 GameFontNormal	-
 GameFontNormalLarge	-
 GamePoints	-
@@ -652,6 +665,7 @@ GameVersion	-
 Gamepad	-
 GamepadBagBar	-
 GamepadBar	-
+GamepadButtons	-
 GamepadMainActionBar	-
 GamepadMainActionBarFrame	-
 GamepadOn	-
@@ -681,8 +695,10 @@ GetCooldownDuration	-
 GetCurrentStyle	-
 GetEffectiveAlpha	-
 GetFramerate	-
+GetGameTime	-
 GetMapInfo	-
 GetMapWorldSize	-
+GetMinimapZoneText	-
 GetModule	-
 GetModuleState	-
 GetMoney	-
@@ -706,7 +722,9 @@ GetTitleForQuestID	-
 GetTrackedQuest	-
 GetUnboundedStringWidth	-
 GetWatchedQuests	-
+GetZonePVPInfo	-
 GetZoom	-
+GiveMask	-
 Go	-
 Gold	-
 GoodNumber	-
@@ -740,16 +758,19 @@ HideCast	-
 HideCustom	-
 HideDisplay	-
 HideGame	-
+HideGameCoords	-
 HideLabel	-
 HideMapPins	-
 HideMiniPins	-
 HidePanel	-
 HidePin	-
+HideStrip	-
 Hold	-
 Hook	-
 HookAvailable	-
 HookButton	-
 HookFrame	-
+HookHeader	-
 HookMap	-
 HookOnce	-
 HookOverrides	-
@@ -781,6 +802,7 @@ InLockdown	-
 InRepairMode	-
 InUse	-
 IndexOf	-
+IndicatorFrame	-
 InitCharDB	-
 InitDB	-
 InitData	-
@@ -818,6 +840,7 @@ IsRestingNow	-
 IsRoom	-
 IsSecret	-
 IsShownNow	-
+IsSquare	-
 IsTab	-
 IsTakenNote	-
 Items	-
@@ -831,6 +854,7 @@ Kill	-
 LabelText	-
 Large	-
 LastRowStart	-
+LayStrips	-
 LayoutBottomRow	-
 LayoutButton	-
 LayoutChrome	-
@@ -862,8 +886,10 @@ LogErrorBody	-
 LogMirrors	-
 LogNameOnce	-
 LogQuestError	-
+LogRim	-
 Login	-
 Loot	-
+LowerMapFrame	-
 MANA	-
 MESSAGE_MAX	-
 MainButton	-
@@ -882,6 +908,7 @@ MapBox	-
 MapLevel	-
 MapLook	-
 MapOf	-
+MapParts	-
 MapPortrait	-
 MapScale	-
 Mark	-
@@ -1021,6 +1048,7 @@ Orphan	-
 Other	-
 OtherWindowShown	-
 OurSource	-
+OursBecause	-
 OursIndex	-
 Out	-
 OutlineEngineMode	-
@@ -1057,9 +1085,11 @@ Pieces	-
 Place	-
 PlaceButtons	-
 PlaceChip	-
+PlaceCoords	-
 PlaceCorner	-
 PlaceDisc	-
 PlaceDistText	-
+PlaceEdge	-
 PlaceExtras	-
 PlaceFight	-
 PlaceGuards	-
@@ -1083,6 +1113,7 @@ Plan	-
 PlanCells	-
 PlaySound	-
 Player	-
+PlayerCoords	-
 PlayerFrame	-
 PocketEssentials	-
 PocketEssentialsArrangePanel	-
@@ -1212,6 +1243,8 @@ Rects	-
 RefreshAside	-
 RefreshCast	-
 RefreshChecked	-
+RefreshClock	-
+RefreshCoords	-
 RefreshCount	-
 RefreshGlow	-
 RefreshHub	-
@@ -1219,6 +1252,7 @@ RefreshMarked	-
 RefreshMinimapData	-
 RefreshPanel	-
 RefreshPet	-
+RefreshPlaceName	-
 RefreshPlayer	-
 RefreshSettings	-
 RefreshSortJump	-
@@ -1237,6 +1271,7 @@ ReloadNow	-
 Remember	-
 RememberApplied	-
 RepairAllItems	-
+Replace	-
 RequestRebuild	-
 RequestReload	-
 RequireContract	-
@@ -1244,9 +1279,11 @@ RescaleMapPins	-
 ResetCovered	-
 ResetDebugSession	-
 ResolvePendingCVar	-
+Restore	-
 RestoreBars	-
 RestoreButtons	-
 RestoreCVar	-
+RestoreCoords	-
 RestoreExtras	-
 RestoreFrame	-
 RestoreNow	-
@@ -1260,6 +1297,7 @@ RightCenteredAnchor	-
 RightClassAction	-
 RightInputPrompt	-
 RightShoulderBackground	-
+RimPieces	-
 Rising	-
 Risky	-
 RiskyOn	-
@@ -1282,6 +1320,7 @@ SLIM	-
 Safe	-
 SafeList	-
 SafeUpdate	-
+SamePoint	-
 SameRow	-
 SameSpot	-
 Sample	-
@@ -1357,6 +1396,7 @@ SetQuestBlobOutsideAlpha	-
 SetQuestBlobRingAlpha	-
 SetQuestBlobRingScalar	-
 SetScrollChild	-
+SetSquare	-
 SetStatusBarTexture	-
 SetSuperTrackedQuestID	-
 SetSweep	-
@@ -1403,6 +1443,7 @@ ShowPin	-
 ShowRecording	-
 ShowRows	-
 ShowShape	-
+ShowStrip	-
 ShowSweep	-
 ShowTabs	-
 Showable	-
@@ -1424,6 +1465,7 @@ SlotOf	-
 Small	-
 SmallText	-
 Snapshot	-
+SnapshotPieces	-
 SoftTargetIconEnemy	-
 SoftTargetIconGameObject	-
 SoftTargetIconInteract	-
@@ -1440,6 +1482,7 @@ Spot	-
 SpotsNumber	-
 SpotsValue	-
 Spread	-
+SquareNumbers	-
 Stamp	-
 StandardList	-
 StartDriver	-
@@ -1455,6 +1498,7 @@ StartRefusal	-
 StartTicker	-
 StartWaiting	-
 StartWatch	-
+StartWords	-
 Started	-
 StatusBar	-
 StatusTrackingBar	-
@@ -1474,8 +1518,10 @@ StopRecording	-
 StopTabFlash	-
 StopTicker	-
 StopWaiting	-
+StopWords	-
 Store	-
 Str	-
+Strips	-
 StylePin	-
 Supported	-
 Swatter	-
@@ -1553,6 +1599,7 @@ TypeKeyDisarm	-
 U	-
 UI	-
 UIParent	-
+UIScale	-
 UISpecialFrames	-
 UI_BAG_SORTING_01	-
 Unchain	-
@@ -1569,6 +1616,7 @@ UnitLevel	-
 UnitPowerMax	-
 UnitPowerType	-
 Unknown	-
+Unlower	-
 UnregisterCoreEvent	-
 Up	-
 UpdateBadge	-
@@ -1607,6 +1655,7 @@ WaitingLabels	-
 Walk	-
 WantCombined	-
 WantedAtLogin	-
+WantsSquare	-
 Watch	-
 WatchArm	-
 WatchArmed	-
@@ -1641,12 +1690,14 @@ WriteCVar	-
 WriteHints	-
 WriteList	-
 WritePixels	-
+WritePoints	-
 WriteSetting	-
 Written	-
 Yards	-
 Yell	-
 YesNo	-
 ZeroMinimapBlobs	-
+ZoneColour	-
 ZoneDB	-
 ZoneName	-
 ZoneTextButton	-
@@ -1770,6 +1821,7 @@ contentHeight	-
 contentWidth	-
 controller	-
 cooldown	-
+coords	-
 core	-
 corner	-
 cost	-
@@ -1826,6 +1878,7 @@ dx	-
 dy	-
 e	-
 each	-
+edge	-
 empty	-
 enabled	-
 encounter	-
@@ -1972,6 +2025,7 @@ loot	-
 loot_mono	-
 low	-
 lower	-
+lowered	-
 lowest	-
 lt	-
 luaWarnings	-
@@ -1995,7 +2049,9 @@ mid	-
 min	-
 mini	-
 minimap	-
+minimapShowPlayerCoords	-
 missing	-
+mode	-
 module	-
 moduleList	-
 monster	-
@@ -2048,6 +2104,7 @@ oldScriptErrors	-
 on	-
 onClick	-
 onDone	-
+onEvent	-
 onFight	-
 onOff	-
 onShot	-
@@ -2059,6 +2116,7 @@ opts	-
 order	-
 other	-
 otherErrors	-
+ours	-
 outer	-
 outerLeft	-
 outerRight	-
@@ -2307,6 +2365,7 @@ stop	-
 stopped	-
 strbyte	-
 string	-
+strips	-
 strsub	-
 style	-
 sub	-
@@ -2338,6 +2397,8 @@ thumb	-
 tick	-
 tile	-
 time	-
+timeMgrUseLocalTime	-
+timeMgrUseMilitaryTime	-
 tinsert	-
 tiny	-
 tipX	-
@@ -2405,6 +2466,7 @@ why	-
 width	-
 wipe	-
 word	-
+words	-
 world	-
 x	-
 xlarge	-

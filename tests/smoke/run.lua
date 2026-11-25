@@ -104,6 +104,9 @@ local function newClient(opts)
     opts.addonDir = addonDir
     local c = Client.new(opts)
     clients[#clients + 1] = c
+    -- 0.19.0: the map's pieces as the game builds them (its frame, the strip, the clock, the
+    -- coordinates text), which the square map looks up when the "Map look" row is tapped.
+    c:addMapParts()
     return c
 end
 
