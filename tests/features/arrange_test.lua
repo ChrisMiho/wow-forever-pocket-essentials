@@ -43,7 +43,7 @@ end
 -- An options table for the plan with the switch On and one piece moved (in both stores:
 -- the plan reads the one that fits the piece).
 local function moved(key, x, y, more)
-    local v = { arrange = 1, arrangeWheel = 1, offsets = { [key] = { x = x, y = y } }, charOffsets = { [key] = { x = x, y = y } } }
+    local v = { arrange = 1, offsets = { [key] = { x = x, y = y } }, charOffsets = { [key] = { x = x, y = y } } }
     for k, val in pairs(more or {}) do v[k] = val end
     return v
 end
@@ -58,7 +58,9 @@ local function sameRect(got, want, what)
 end
 
 -- A client with the Controller layout on from the Gamepad preset (ours built and active)
--- and the saved values given: o.arrange (default 1), o.wheel, o.slim, o.offsets (the Edit
+-- (o.debug: already at login, as a saved file with the Debug log on has it)
+-- and the saved values given: o.arrange (default 1), o.wheel (a value 0.18.0 or 0.19.0 saved
+-- for the row "Arrange: spell wheels", which 0.20.0 removed), o.slim, o.offsets (the Edit
 -- Mode pieces'), o.char (this character's saved table), o.setup(c). The Debug log is on and
 -- the first reload request is cleared. Returns c, PE, PE.Arrange.
 local function client(o)
@@ -66,6 +68,7 @@ local function client(o)
     local saved = { options = { ctrlLayout = { arrange = o.arrange == nil and 1 or o.arrange, arrangeWheel = o.wheel,
         slim = o.slim, panelSize = o.panelSize, offsets = o.offsets, offsetsWritten = o.written } } }
     for k, v in pairs(o.more or {}) do saved.options.ctrlLayout[k] = v end
+    if o.debug then saved.debug = { on = true } end
     local c, PE = T.new({ gamepadUI = true, saved = saved, savedChar = o.char, screen = o.screen, setup = function(c)
         c.world.layouts = { layouts = {}, activeLayout = 3 }
         if o.slim == 1 then c:addUnitFrames() end
@@ -233,10 +236,10 @@ end
 -- The plan
 ---------------------------------------------------------------------------
 
-test("arrange plan: both switches are Off by default, and Off ignores saved offsets everywhere", function()
+test("arrange plan: the switch is Off by default, and Off ignores saved offsets everywhere", function()
     local Plan = plan()
     eq(Plan.DEFAULTS.arrange, 0)
-    eq(Plan.DEFAULTS.arrangeWheel, 0)
+    eq(Plan.DEFAULTS.arrangeWheel, nil, "0.20.0: the wheels have no switch of their own")
     eq(Plan.session, nil, "a session's offsets are set with the switch Off")
     for _, def in ipairs(Plan.ARRANGE) do
         for _, size in ipairs(SIZES) do
@@ -294,7 +297,14 @@ test("arrange plan: the list of pieces, their kinds and their twins", function()
         ["player bar"] = "target bar", ["target bar"] = "player bar",
     })
     eq(Plan.ARRANGE_BY["spell wheels"].axis, "y")
-    eq(Plan.ARRANGE_BY["spell wheels"].gate, "arrangeWheel")
+    -- 0.20.0: no switch of its own, and the window's note for it.
+    eq(Plan.ARRANGE_BY["spell wheels"].gate, nil)
+    eq(Plan.ARRANGE_BY["spell wheels"].when, nil)
+    eq(Plan.ARRANGE_BY["spell wheels"].note, "Up and down only. Both sides move together.")
+    for _, def in ipairs(Plan.ARRANGE) do
+        if def.key ~= "spell wheels" then eq(def.note, nil, def.key) end
+        eq(def.gate, nil, def.key)
+    end
 end)
 
 test("arrange plan: the built-in spots of every pair of twins are exact mirrors, at every size", function()
@@ -386,15 +396,15 @@ test("arrange plan: the spell panels move in every trigger state, the real bars 
         sameRect(Plan.RealBarRects(right).both, shifted(rects.both, 4, -2), size .. "% both real bar")
         eq(Plan.BarSpots(moved("outer left diamond", 30, 30, { panelSize = size })), bars, size .. "%: an outer panel moved a bar")
     end
-    -- The wheels: up and down with the bottom anchor, never sideways, and only with their switch.
+    -- The wheels: up and down with the bottom anchor, never sideways. 0.20.0: no switch of
+    -- their own (a saved arrangeWheel of any value changes nothing in the plan).
     local v = moved("spell wheels", 40, 30)
     eq(Plan.BarSpots(v).bottom, { x = 0, y = 268, s = 1 })
     eq(Plan.Wheels(v), { { x = -138, y = 218, r = 87.5 }, { x = 138, y = 218, r = 87.5 } })
     eq({ Plan.Moved(v, "spell wheels") }, { 40, 30 })
     v.arrangeWheel = 0
-    eq(Plan.BarSpots(v).bottom, { x = 0, y = 238, s = 1 }, "moved with its own switch off")
-    eq(Plan.Wheels(v), Plan.Wheels())
-    eq(Plan.Rects(v), Plan.Rects({}))
+    eq(Plan.BarSpots(v).bottom, { x = 0, y = 268, s = 1 })
+    eq(Plan.Wheels(v), { { x = -138, y = 218, r = 87.5 }, { x = 138, y = 218, r = 87.5 } })
     -- The targeting pictures.
     eq(Plan.Shoulders(moved("LB targeting picture", -5, 7)), { left = { "BOTTOMRIGHT", -183, 162 }, right = { "BOTTOMLEFT", 178, 155 } })
     eq(Plan.SHOULDERS, { left = { "BOTTOMRIGHT", -178, 155 }, right = { "BOTTOMLEFT", 178, 155 } }, "the built-in numbers changed")
@@ -461,7 +471,7 @@ test("arrange plan: bad and old saved offsets are ignored without an error", fun
         -- A live piece's key in the file of the Edit Mode pieces: not that piece's place.
         ["inner left diamond"] = { x = 20, y = 20 },
     }
-    local v = { arrange = 1, arrangeWheel = 1, offsets = bad, charOffsets = { chat = { x = 9, y = 9 }, ["outer left diamond"] = { x = {}, y = 2 },
+    local v = { arrange = 1, offsets = bad, charOffsets = { chat = { x = 9, y = 9 }, ["outer left diamond"] = { x = {}, y = 2 },
         ["spell wheels"] = "up" } }
     eq(Plan.Rects(v), base)
     eq(Plan.Pieces(v), Plan.Pieces({}))
@@ -607,10 +617,11 @@ test("arrange switch: Off by default; On rewrites the pieces that have a saved o
     check(row ~= nil, "no Arrange it yourself row")
     eq(row.label, "Arrange it yourself")
     eq({ row.choices[1].value, row.choices[1].label, row.choices[2].value, row.choices[2].label }, { 0, "Off", 1, "On" })
-    eq(optRow(PE, "arrangeWheel").label, "Arrange: spell wheels")
+    eq(optRow(PE, "arrangeWheel"), nil, "0.20.0: the row Arrange: spell wheels is gone")
+    eq(optRow(PE, "Arrange: spell wheels"), nil)
     local fresh = select(2, T.new({}))
     eq(fresh:GetModule("ctrlLayout").opts.arrange, 0)
-    eq(fresh:GetModule("ctrlLayout").opts.arrangeWheel, 0)
+    eq(fresh:GetModule("ctrlLayout").opts.arrangeWheel, nil)
     -- Every piece marked, to see which are rewritten.
     for _, e in ipairs(ours(c).systems) do if e.anchorInfo then e.anchorInfo.offsetX = 222 end end
     choose(c, PE, "arrange", 1)
@@ -664,7 +675,7 @@ end)
 test("arrange on: a session that begins On places every piece at its saved offset, builds the layout with them and asks for no reload", function()
     local char = { ctrlArrange = { offsets = { ["inner left diamond"] = { x = -20, y = 10 }, ["inner right diamond"] = { x = 20, y = 10 },
         ["RB targeting picture"] = { x = 6, y = -4 }, ["spell wheels"] = { x = 0, y = 30 } } } }
-    local c, PE = client({ offsets = { chat = { x = 30, y = 20 } }, char = char })
+    local c, PE = client({ wheel = 1, offsets = { chat = { x = 30, y = 20 } }, char = char })
     local Plan = PE.LayoutPlan
     check(Plan.session ~= nil, "the session's offsets are not set")
     local f, pu = barFrames(c)
@@ -674,9 +685,9 @@ test("arrange on: a session that begins On places every piece at its saved offse
     x, y = barAt(c, f.both)
     near(x, 190, "LT+RT bar x")
     near(y, 66 - 21 + 10, "LT+RT bar y")
-    -- The wheels' switch is Off: their saved offset is not applied.
+    -- The wheels (their offset was saved with the old switch On): 30 up.
     x, y = barAt(c, f.bottom)
-    eq({ x, y }, { 0, 238 })
+    eq({ x, y }, { 0, 268 })
     local p = c._state(pu.RightShoulderBackground).points[1]
     eq({ p.point, p.x, p.y }, { "BOTTOMLEFT", 184, 151 })
     p = c._state(pu.LeftShoulderBackground).points[1]
@@ -694,9 +705,9 @@ test("arrange on: a session that begins On places every piece at its saved offse
     eq(saves(c), 1)
     eq(reloadReason(PE), nil)
     -- The log says so.
-    check(noted(c, "on (spell wheels=0, steps 2 and 10, centre snap 6)"), "no start line: " .. T.show(notes(c)))
+    check(noted(c, "on (steps 2 and 10, centre snap 6)"), "no start line: " .. T.show(notes(c)))
     check(notedLike(c, "^offset: chat 30,20 %-> l="), "the chat's offset is not in the log")
-    check(noted(c, "offset: spell wheels 0,30 (its switch is off: not applied) -> l=-157 b=169 w=38 h=38"), "the wheels' line: " .. T.show(notes(c)))
+    check(noted(c, "offset: spell wheels 0,30 -> l=-157 b=199 w=38 h=38"), "the wheels' line: " .. T.show(notes(c)))
     check(notedLike(c, "^pair LB targeting picture / RB targeting picture: NOT a mirror"), "the pair that is not a mirror is not named")
     c:assertClean()
 end)
@@ -722,25 +733,140 @@ test("arrange on: at another Spell panel size the offsets sit on that size's spo
     end
 end)
 
-test("arrange on: the spell wheels move with their own switch, at once, and go back when it is switched off", function()
-    local char = { ctrlArrange = { offsets = { ["spell wheels"] = { x = 0, y = 30 } } } }
-    local c, PE = client({ wheel = 1, char = char })
+---------------------------------------------------------------------------
+-- 0.20.0: the spell wheels and their buttons without a switch of their own (spec
+-- 2026-11-25-0.20.0-after-first-sitting.md, 4)
+---------------------------------------------------------------------------
+
+-- Every call made on the game's bottom anchor (both sub-menu buttons, their prompts and both
+-- wheels hang on it), as "Method arg,arg".
+local function bottomCalls(c)
+    local out = {}
+    for _, call in ipairs(c.calls) do
+        local method = call.name:match("^GamepadBar%.BottomCenteredAnchor:(.+)$")
+        if method then
+            local a = {}
+            for i = 1, #(call.args or {}) do a[i] = type(call.args[i]) == "table" and "UIParent" or tostring(call.args[i]) end
+            out[#out + 1] = method .. (#a > 0 and (" " .. table.concat(a, ",")) or "")
+        end
+    end
+    return out
+end
+
+-- Recorded from 0.19.0 (HEAD ec9b32a) with "Arrange it yourself" On and "Arrange: spell wheels"
+-- Off: a switch-on and one more placement (PLAYER_ENTERING_WORLD).
+local BOTTOM_CALLS_0_19 = {
+    "GetNumPoints", "GetPoint 1", "GetScale",
+    "ClearAllPoints", "SetScale 1", "SetPoint CENTER,UIParent,BOTTOM,0,238",
+    "SetAlpha 0",
+    "ClearAllPoints", "SetScale 1", "SetPoint CENTER,UIParent,BOTTOM,0,238",
+}
+
+test("0.20.0 wheels: with nothing moved the calls on the game's bottom anchor are those of 0.19.0 with the switch Off", function()
+    for _, o in ipairs({ {}, { wheel = 0 }, { wheel = 1 }, { arrange = 0 }, { char = { ctrlArrange = { offsets = {} } } } }) do
+        local c, PE = client(o)
+        c:fire("PLAYER_ENTERING_WORLD")
+        c:advance(0.1)
+        eq(bottomCalls(c), BOTTOM_CALLS_0_19, T.show(o))
+        c:assertClean()
+    end
+end)
+
+test("0.20.0 wheels: with Arrange it yourself On the piece is offered with no other switch, up and down only, and the window says so", function()
+    local c, PE, A = client()
+    eq(opts(PE).arrangeWheel, nil)
     local f = barFrames(c)
-    eq({ barAt(c, f.bottom) }, { 0, 268 })
-    choose(c, PE, "arrangeWheel", 0)
     eq({ barAt(c, f.bottom) }, { 0, 238 })
-    choose(c, PE, "arrangeWheel", 1)
-    eq({ barAt(c, f.bottom) }, { 0, 268 })
+    -- Sideways is refused; up and down moves the one anchor both wheels hang on, at once.
+    eq({ A:Step("spell wheels", 1, 0) }, { false, "it moves up and down only" })
+    eq(A:Step("spell wheels", 0, 1), true)
+    eq({ barAt(c, f.bottom) }, { 0, 240 })
+    eq(charStore(PE).offsets["spell wheels"], { x = 0, y = 2 })
     eq(saves(c), 1, "the layout was written")
     eq(reloadReason(PE), nil)
-    -- Sideways is refused; up and down moves the one anchor both wheels hang on.
-    eq({ PE.Arrange:Step("spell wheels", 1, 0) }, { false, "it moves up and down only" })
-    eq(PE.Arrange:Step("spell wheels", 0, 1), true)
-    eq({ barAt(c, f.bottom) }, { 0, 270 })
-    -- Its switch off: not in the list.
-    choose(c, PE, "arrangeWheel", 0)
-    eq({ PE.Arrange:Step("spell wheels", 0, 1) }, { false, "that piece is not on the screen now" })
+    -- In the window: listed, its name, its note; no other piece has the note.
+    open(c, PE)
+    local seen = {}
+    for _ = 1, 30 do
+        seen[A:Picked()] = true
+        local text = windowText(c)
+        local has = text:find("Up and down only. Both sides move together.", 1, true) ~= nil
+        eq(has, A:Picked() == "spell wheels", "the note while " .. tostring(A:Picked()) .. " is picked")
+        -- Every other live piece still says how it moves.
+        if A:Picked() == "LB targeting picture" then check(text:find("Moves as you press.", 1, true), "the live line is gone") end
+        c:click(button(c, "Next piece"))
+    end
+    check(seen["spell wheels"], "the spell wheels are not in the list")
+    check(A:Pick("spell wheels"), "the piece cannot be picked")
+    eq(c._state(panel(c).peTitle).text, "Arrange: Spell wheels and their buttons")
+    -- The line with the note fits the window (the stand-in's letter widths).
+    local fits = false
+    walk(c, panel(c), function(w)
+        for _, r in ipairs(c._state(w).regions or {}) do
+            local st = c._state(r)
+            if st.type == "FontString" and st.shown ~= false and tostring(st.text):find("Up and down only.", 1, true) then
+                fits = r:GetUnboundedStringWidth() <= st.width
+            end
+        end
+    end)
+    check(fits, "the note's line is wider than the window")
     c:assertClean()
+end)
+
+test("0.20.0 wheels: a saved arrangeWheel is cleared at load; an offset saved while it was On still applies", function()
+    local function char() return { ctrlArrange = { offsets = { ["spell wheels"] = { x = 0, y = 30 }, ["LB targeting picture"] = { x = 4, y = 0 } } } } end
+    local c, PE = client({ wheel = 1, char = char() })
+    eq(opts(PE).arrangeWheel, nil)
+    eq({ barAt(c, barFrames(c).bottom) }, { 0, 268 })
+    eq(charStore(PE).offsets["spell wheels"], { x = 0, y = 30 })
+    eq(charStore(PE).offsets["LB targeting picture"], { x = 4, y = 0 })
+    -- The next login of the same character (the saved files as this one left them): still there.
+    local c2, PE2 = T.new({ gamepadUI = true, saved = rawget(c.env, "PocketEssentialsDB"), savedChar = rawget(c.env, "PocketEssentialsCharDB"),
+        setup = function(cl) cl.world.layouts = c.world.layouts end })
+    c2:advance(0.1)
+    eq(opts(PE2).arrangeWheel, nil)
+    eq({ barAt(c2, barFrames(c2).bottom) }, { 0, 268 })
+    c:assertClean()
+    c2:assertClean()
+end)
+
+test("0.20.0 wheels: an offset saved while the old switch was Off or never set was not applied before, and is cleared, not applied", function()
+    for _, wheel in ipairs({ 0, "absent" }) do
+        local char = { ctrlArrange = { offsets = { ["spell wheels"] = { x = 0, y = 30 }, ["LB targeting picture"] = { x = 4, y = 0 } } } }
+        local c, PE = client({ wheel = wheel ~= "absent" and wheel or nil, char = char, debug = true })
+        eq(opts(PE).arrangeWheel, nil, tostring(wheel))
+        eq({ barAt(c, barFrames(c).bottom) }, { 0, 238 }, tostring(wheel))
+        eq(charStore(PE).offsets["spell wheels"], nil, tostring(wheel))
+        eq(charStore(PE).offsets["LB targeting picture"], { x = 4, y = 0 }, "another piece's offset was touched")
+        check(noted(c, "spell wheels: an offset saved while their old switch was Off (0,30) is removed: it was never applied"),
+            "not in the log: " .. T.show(notes(c)))
+        -- Moved now, it stays over a login.
+        eq(PE.Arrange:Step("spell wheels", 0, 1), true)
+        local c2, PE2 = T.new({ gamepadUI = true, saved = rawget(c.env, "PocketEssentialsDB"), savedChar = rawget(c.env, "PocketEssentialsCharDB"),
+            setup = function(cl) cl.world.layouts = c.world.layouts end })
+        c2:advance(0.1)
+        eq({ barAt(c2, barFrames(c2).bottom) }, { 0, 240 }, tostring(wheel) .. ": a move made in 0.20.0 was lost")
+        c:assertClean()
+    end
+end)
+
+test("0.20.0 wheels: two characters: each one's saved offset is judged by the old switch, whoever logs in first", function()
+    -- The account's file with the old switch On; "Tester" logs in first, "Bee" later.
+    local function char() return { ctrlArrange = { offsets = { ["spell wheels"] = { x = 0, y = 30 } } } } end
+    local a, PEa = client({ wheel = 1, char = char() })
+    eq(opts(PEa).arrangeWheel, nil)
+    local b, PEb = T.new({ gamepadUI = true, saved = rawget(a.env, "PocketEssentialsDB"), savedChar = char(),
+        setup = function(cl) cl.world.playerName = "Bee"; cl.world.layouts = a.world.layouts end })
+    b:advance(0.1)
+    eq(PEb.charDB.ctrlArrange.offsets["spell wheels"], { x = 0, y = 30 }, "the second character's offset was lost")
+    eq({ barAt(b, barFrames(b).bottom) }, { 0, 268 })
+    -- And with the old switch Off, the second character's is cleared too.
+    local a2, PEa2 = client({ wheel = 0, char = char() })
+    local b2, PEb2 = T.new({ gamepadUI = true, saved = rawget(a2.env, "PocketEssentialsDB"), savedChar = char(),
+        setup = function(cl) cl.world.playerName = "Bee"; cl.world.layouts = a2.world.layouts end })
+    b2:advance(0.1)
+    eq(PEb2.charDB.ctrlArrange.offsets["spell wheels"], nil)
+    eq({ barAt(b2, barFrames(b2).bottom) }, { 0, 238 })
 end)
 
 ---------------------------------------------------------------------------
@@ -1178,7 +1304,9 @@ test("arrange window: opened from the Controller tab's row; it names the piece, 
     eq(A:Picked(), "swing timers")
     c:click(button(c, "Previous piece"))
     c:click(button(c, "Previous piece"))
-    eq(A:Picked(), "RB targeting picture", "Previous from the first is the last (the wheels are not listed)")
+    eq(A:Picked(), "spell wheels", "Previous from the first is the last (0.20.0: the spell wheels)")
+    c:click(button(c, "Previous piece"))
+    eq(A:Picked(), "RB targeting picture")
     eq(c._state(panel(c).peTitle).text, "Arrange: RB targeting picture")
     text = windowText(c)
     check(text:find("Moves as you press.", 1, true), "it does not say how a live piece moves")
@@ -1194,7 +1322,8 @@ test("arrange window: opened from the Controller tab's row; it names the piece, 
         c:click(button(c, "Next piece"))
     end
     check(seen.player and seen.target, "the game's frames are not in the list")
-    check(not seen["player bar"] and not seen["spell wheels"], "a piece that cannot be seen is in the list")
+    check(not seen["player bar"], "a piece that cannot be seen is in the list")
+    check(seen["spell wheels"], "0.20.0: the spell wheels are not in the list")
     -- Close: the settings come back.
     c:click(button(c, "Close"))
     c:advance(0.1)
@@ -1360,7 +1489,7 @@ test("arrange snapshot: Save a snapshot lists the offsets, what waits and a pair
         if text then lines[#lines + 1] = text end
     end
     eq(lines, {
-        "on, spell wheels 0, 3 offsets",
+        "on, 3 offsets",
         "offset LB targeting picture 4,0",
         "offset chat 30,20",
         "offset map 0,2",

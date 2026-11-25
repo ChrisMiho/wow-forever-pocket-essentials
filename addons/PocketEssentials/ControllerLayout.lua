@@ -80,8 +80,8 @@ local ADDON_NAME, PE = ...
 --
 -- 0.18.0 (spec 2026-11-24-0.18.0-arrange.md): arrange it yourself. This file holds the list
 -- of pieces that can be moved (Plan.ARRANGE), adds each one's saved offset inside the plan
--- (Plan.Moved), and has the two switches (opts.arrange, opts.arrangeWheel, both Off by
--- default) and the "Arrange the screen" row. Arrange.lua (PE.Arrange) is the window and its
+-- (Plan.Moved), and has the switch (opts.arrange, Off by default; until 0.19.0 a second one,
+-- opts.arrangeWheel, for the spell wheels) and the "Arrange the screen" row. Arrange.lua (PE.Arrange) is the window and its
 -- rules; it is never called in a session that began with the switch Off, and Plan.session
 -- is never set then, so every number of the plan is 0.17.0's.
 --
@@ -118,8 +118,9 @@ Plan.DEFAULTS = {
     -- 0.20.0: the names on the slim bars: 1 Whole name (first name and surname), 0 First name.
     slimNames = 1,
     -- 0.18.0: arrange it yourself (Arrange.lua): 0 Off, 1 On. Off, no saved offset is added
-    -- anywhere and Arrange.lua is never called. arrangeWheel: the spell wheels as a piece.
-    arrange = 0, arrangeWheel = 0,
+    -- anywhere and Arrange.lua is never called. (0.20.0: the second switch, arrangeWheel, is
+    -- gone: the spell wheels are a piece like the others. See Snap.Carry for a saved value.)
+    arrange = 0,
     -- 0.19.0: the map's look: 0 Round (as 0.18.0 has it), 1 Square, bigger (MapLook.lua).
     mapLook = 0,
 }
@@ -435,10 +436,10 @@ end
 --   twin   the key of its mirror on the other side of the screen; pair: the pair's name (the
 --          left one's key)
 --   rects  the rectangles of Plan.Rects that move with it, the first one its main one
---   when   listed only then: "slim" (Slim bars On), "noslim" (Off), "wheel" (its own switch),
+--   when   listed only then: "slim" (Slim bars On), "noslim" (Off),
 --          "face" (our spell pictures show: with them off nothing is drawn at the panels' spots)
---   gate   the option that must be 1 for its offset to count at all
 --   axis   "y": moves up and down only
+--   note   a line the Arrange window shows while the piece is picked
 Plan.ARRANGE = {
     { key = "map", label = "Map", kind = "apply", rects = { "map", "title strip" } },
     { key = "swing timers", label = "Swing timers", kind = "apply", rects = { "MainHand timer", "OffHand timer", "Ranged timer" } },
@@ -470,8 +471,11 @@ Plan.ARRANGE = {
     -- Both sub-menu buttons, their prompts and where both wheels open hang on one frame of
     -- the game's (PageUnit.BottomCenteredAnchor: Blizzard_GamepadActionBars/MainActionBarFrame.xml:94-135,
     -- FlyoutRadial.lua:218-220), which the layout already places: so one piece, and up and
-    -- down only (a sideways move would push both sides the same way).
-    { key = "spell wheels", label = "Spell wheels and their buttons", kind = "live", when = "wheel", gate = "arrangeWheel", axis = "y",
+    -- down only (a sideways move would push both sides the same way). 0.20.0: always listed
+    -- (until 0.19.0 behind a switch of its own, "Arrange: spell wheels"). With no offset saved
+    -- the bottom anchor is placed exactly as the layout always placed it (BarSpots).
+    { key = "spell wheels", label = "Spell wheels and their buttons", kind = "live", axis = "y",
+      note = "Up and down only. Both sides move together.",
       rects = { "LB+LT button", "LB+LT prompt", "RB+RT button", "RB+RT prompt" } },
 }
 Plan.ARRANGE_BY = {}
@@ -479,7 +483,7 @@ for i = 1, #Plan.ARRANGE do Plan.ARRANGE_BY[Plan.ARRANGE[i].key] = Plan.ARRANGE[
 -- A saved offset further than this either way is not believed.
 Plan.ARRANGE_LIMIT = 1500
 -- The offsets of the session: set by the module, once, when the session began with
--- "Arrange it yourself" On ({ arrange = 1, arrangeWheel, offsets, charOffsets }); nil
+-- "Arrange it yourself" On ({ arrange = 1, offsets, charOffsets }); nil
 -- otherwise, and then nothing below adds anything.
 Plan.session = nil
 
@@ -494,7 +498,7 @@ Plan.Moved = function(v, key)
     if type(src) ~= "table" or src.arrange == nil then src = Plan.session end
     if type(src) ~= "table" or src.arrange ~= 1 then return 0, 0 end
     local def = Plan.ARRANGE_BY[key]
-    if not def or (def.gate and src[def.gate] ~= 1) then return 0, 0 end
+    if not def then return 0, 0 end
     local store = def.kind == "live" and src.charOffsets or src.offsets
     local e = type(store) == "table" and store[key] or nil
     if type(e) ~= "table" then return 0, 0 end
@@ -2271,6 +2275,40 @@ local function RestoreNow()
     if PE.debugOn then PE:Debug("ctrlLayout", "bars put back" .. (compact and " (compact)" or "")) end
 end
 
+-- 0.20.0: saved data of an older version carried over, once. Called at login (OnLoad) and
+-- again before the session's offsets are first used; what was done is marked in the saved
+-- files, so a second call, and every later login, changes nothing.
+--
+-- The row "Arrange: spell wheels" (opts.arrangeWheel) is gone: the piece is always listed.
+-- An offset saved for it counted only while that switch was On, so one saved with the switch
+-- Off (or never set) was never applied and must not suddenly apply: it is removed. The
+-- switch was the account's and the offset is each character's, so the account's file keeps
+-- what the switch was (opts.wheelWas: 1 On, 0 Off) for the characters that log in later, and
+-- each character's file is marked once it is done (ctrlArrange.wheel = 1).
+Snap.Carry = function()
+    local opts = type(mod and mod.opts) == "table" and mod.opts or nil
+    if not opts then return end
+    if opts.arrangeWheel ~= nil then
+        opts.wheelWas = opts.arrangeWheel == 1 and 1 or 0
+        opts.arrangeWheel = nil
+    end
+    local char = CharDB()
+    local store = char and char.ctrlArrange
+    if type(store) ~= "table" then return end -- nothing saved for this character
+    if store.wheel ~= 1 then
+        store.wheel = 1
+        local e = type(store.offsets) == "table" and store.offsets["spell wheels"] or nil
+        if e ~= nil and opts.wheelWas ~= 1 then
+            store.offsets["spell wheels"] = nil
+            if PE.debugOn then
+                PE:Debug("ctrlLayout", "arrange: spell wheels: an offset saved while their old switch was Off ("
+                    .. (type(e) == "table" and (PE.Plain(e.x) .. "," .. PE.Plain(e.y)) or "not readable")
+                    .. ") is removed: it was never applied")
+            end
+        end
+    end
+end
+
 -- 0.18.0: what this session is drawn with, as one options table for the plan: the Spell panel
 -- size and Slim bars of the session, the rows that count at once, and, when the session
 -- began with "Arrange it yourself" On, the saved offsets themselves (by reference: a step in
@@ -2281,12 +2319,14 @@ Snap.View = function()
     local opts = type(mod and mod.opts) == "table" and mod.opts or nil
     if not opts then return nil end
     if Snap.arrangeOn == nil then
+        Snap.Carry() -- 0.20.0: saved data of an older version, before it is used
         if Snap.arrangeLogin == nil then Snap.arrangeLogin = opts.arrange == 1 end
         Snap.arrangeOn = Snap.arrangeLogin
         if Snap.arrangeOn then
             if type(opts.offsets) ~= "table" then opts.offsets = {} end
             local char = CharDB() or {} -- not loaded (never seen): the moves last for the session
-            if type(char.ctrlArrange) ~= "table" then char.ctrlArrange = {} end
+            -- A table made now holds nothing an older version saved: marked as carried over.
+            if type(char.ctrlArrange) ~= "table" then char.ctrlArrange = { wheel = 1 } end
             if type(char.ctrlArrange.offsets) ~= "table" then char.ctrlArrange.offsets = {} end
             if type(char.ctrlArrange.alone) ~= "table" then char.ctrlArrange.alone = {} end
             Snap.view = { arrange = 1, offsets = opts.offsets, charOffsets = char.ctrlArrange.offsets,
@@ -2298,7 +2338,7 @@ Snap.View = function()
     end
     local view = Snap.view
     view.panelSize = SessionSize()
-    view.hints, view.mapButtons, view.arrangeWheel = opts.hints, opts.mapButtons, opts.arrangeWheel
+    view.hints, view.mapButtons = opts.hints, opts.mapButtons
     -- 0.19.0: the map look counts at once (the size it asks of Edit Mode follows the reload).
     view.mapLook = Plan.MapLook(opts)
     Plan.look = view.mapLook == 1 and 1 or nil
@@ -2903,12 +2943,8 @@ do
             PE:Print("Arrange it yourself counts from the next reload.")
         end
     end }
-    -- The spell wheels as a piece: live, so it counts at once (the bars are placed again).
-    OPTIONS[#OPTIONS + 1] = { key = "arrangeWheel", label = "Arrange: spell wheels", choices = ON_OFF, OnChange = function()
-        if PE.debugOn then PE:Debug("ctrlLayout", "arrange: spell wheels switch is now " .. tostring(mod.opts.arrangeWheel)) end
-        if wanted then SyncBars() end
-        Snap.ArrangeCall("Changed")
-    end }
+    -- (0.20.0: the row "Arrange: spell wheels" that stood here is gone; the piece is always
+    -- in the Arrange window. See Snap.Carry.)
     OPTIONS[#OPTIONS + 1] = { label = "Arrange the screen", button = "Arrange", action = function()
         Snap.View()
         if Snap.arrangeOn ~= true then
@@ -3076,6 +3112,7 @@ mod = PE:RegisterModule({
         if type(self.opts) ~= "table" then return end
         -- 0.20.0: values saved for rows that are gone (the "Part: ..." rows) are removed.
         for _, key in ipairs(Plan.GONE) do self.opts[key] = nil end
+        Snap.Carry() -- the old "Arrange: spell wheels" switch and what was saved with it
         -- A Spell panel size that is not one of the five shows and reads as 100%.
         self.opts.panelSize = Plan.PanelSize(self.opts)
         Snap.arrangeLogin = self.opts.arrange == 1 -- 0.18.0: the session's value (Snap.View)

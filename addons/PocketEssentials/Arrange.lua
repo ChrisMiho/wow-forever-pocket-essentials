@@ -44,7 +44,7 @@ local ADDON_NAME, PE = ...
 --   Step(key, dirX, dirY)   one step of that piece; true, or false and why
 --   Reset(key)  ResetAll()  ToggleStep()  ToggleTwins(key)  Apply()
 --   MirrorCheck()  OverlapsOf(key)  Waiting()
---   Started()  Placed()  Written(ok)  Changed()     called by ControllerLayout.lua
+--   Started()  Placed()  Written(ok)     called by ControllerLayout.lua
 
 local Arrange = {}
 PE.Arrange = Arrange
@@ -125,7 +125,6 @@ end
 local function IsListed(view, def)
     if def.when == "slim" then return view.slim == 1 end
     if def.when == "noslim" then return view.slim ~= 1 end
-    if def.when == "wheel" then return view.arrangeWheel == 1 end
     if def.when == "face" then return not view.faceOff end
     return true
 end
@@ -559,9 +558,7 @@ local function OffsetLines(view)
             if why then
                 bad[#bad + 1] = tostring(key) .. " (" .. why .. ")"
             else
-                local def = plan.ARRANGE_BY[key]
-                local gated = def.gate and view[def.gate] ~= 1
-                good[#good + 1] = key .. " " .. Fmt(e.x) .. "," .. Fmt(e.y) .. (gated and " (its switch is off: not applied)" or "")
+                good[#good + 1] = key .. " " .. Fmt(e.x) .. "," .. Fmt(e.y)
             end
         end
     end
@@ -579,7 +576,7 @@ local function SnapshotSource()
     local view = View()
     if not view or not PE.debugOn then return end
     local good, bad = OffsetLines(view)
-    PE:Debug("snapshot", "arrange: on, spell wheels " .. tostring(view.arrangeWheel) .. ", " .. #good .. " offsets")
+    PE:Debug("snapshot", "arrange: on, " .. #good .. " offsets")
     for _, l in ipairs(good) do PE:Debug("snapshot", "arrange: offset " .. l) end
     for _, l in ipairs(bad) do PE:Debug("snapshot", "arrange: ignored " .. l) end
     for _, m in ipairs(MirrorList(view)) do
@@ -596,7 +593,7 @@ Arrange["Started"] = function()
         Note("on, but the saved offsets could not be read: nothing is moved")
         return
     end
-    Note(format("on (spell wheels=%s, steps %d and %d, centre snap %d)", tostring(view.arrangeWheel), STEP_SMALL, STEP_BIG, SNAP))
+    Note(format("on (steps %d and %d, centre snap %d)", STEP_SMALL, STEP_BIG, SNAP))
     local good, bad, keys = OffsetLines(view)
     local plan = Plan()
     if type(UIParent) == "table" then
@@ -628,11 +625,6 @@ Arrange["Written"] = function(_, ok, why)
     else
         Note("the layout could not be written (" .. tostring(why or "see the Errors page") .. "); the pieces go on waiting")
     end
-    if Refresh then Refresh() end
-end
-
--- A row that counts at once changed (the spell wheels' switch).
-Arrange["Changed"] = function()
     if Refresh then Refresh() end
 end
 
@@ -839,7 +831,10 @@ Refresh = function()
     local main = rects[def.rects[1]]
     local centred = main and not def.twin and abs((main[1] + main[3]) / 2) < TINY
     lines[1]:SetText(OffsetText(x, y) .. (centred and " On the centre line." or ""))
-    lines[2]:SetText((def.kind == "live" and "Moves as you press." or "Moves after Apply and a reload.")
+    -- A piece's own note stands in for how it moves (the spell wheels: "Up and down only. Both
+    -- sides move together."): the line has no room for both.
+    lines[2]:SetText(((type(def.note) == "string" and def.note) or (def.kind == "live" and "Moves as you press.")
+            or "Moves after Apply and a reload.")
         .. (lastNote and (" Not moved: " .. tostring(lastNote) .. ".") or "")
         .. (view.faceOff and " Spell panels not listed: the spell pictures are off." or ""))
     local others, mine = 0, nil

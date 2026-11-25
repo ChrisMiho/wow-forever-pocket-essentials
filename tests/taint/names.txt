@@ -415,6 +415,7 @@ CancelAllGuided	-
 CancelGuided	-
 CancelReload	-
 Card	-
+Carry	-
 CastInfo	-
 CastTick	-
 Cell	-
@@ -1734,7 +1735,6 @@ areaIdToUiMapId	-
 areaIdToUiMapIdOverride	-
 arena	-
 arrange	-
-arrangeWheel	-
 arrow	-
 aside	-
 asideQuest	-
@@ -2467,7 +2467,6 @@ warning	-
 watch	-
 welcome	-
 what	-
-wheel	-
 where	-
 whisper	-
 whole	-

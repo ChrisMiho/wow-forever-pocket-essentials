@@ -1368,8 +1368,9 @@ test("rows: Spell panel size, the three timer rows and Start over", function()
         "Names on the bars",
         -- 0.19.0: the map's look, Round until the square map is tried on the device
         "Map look",
-        -- 0.18.0: arrange it yourself, both Off until tried on the device, and the way in
-        "Arrange it yourself", "Arrange: spell wheels", "Arrange the screen",
+        -- 0.18.0: arrange it yourself, Off until tried on the device, and the way in (0.20.0:
+        -- the row "Arrange: spell wheels" is gone)
+        "Arrange it yourself", "Arrange the screen",
         -- 0.16.4: for the device test
         "Mark a test section", "Save a snapshot" })
     eq(list[1].key, "panelSize")
