@@ -4,6 +4,26 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.16.3] - 2026-11-24
+
+Thirty-fifth test build: the fix for the refused controller actions. Found
+on the device with 0.16.2's testing rows: every part of the Controller layout
+was clean except the chat's dark box. Not yet tested on a device.
+
+### Fixed
+
+- **The game refused its own controller actions while the Controller layout
+  was on** (targeting yourself or your pet, the B button, jump, spell presses;
+  "Interface action failed because of an AddOn"). The layout removed the
+  chat's dark box with a game function that leaves the addon's mark on the
+  chat window. It now only hides the box's pictures and shows them again when
+  the layout goes off.
+
+### Kept for now
+
+- The six testing rows on the Controller tab stay until this is confirmed on
+  the device.
+
 ## [0.16.2] - 2026-11-24
 
 Thirty-fourth test build: a finder build, not a fix. With the Controller

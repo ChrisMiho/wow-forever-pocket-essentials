@@ -1490,18 +1490,20 @@ do
 
     -- The chat's dark box. Each chat window's box is the textures listed in CHAT_FRAME_TEXTURES
     -- (Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua:43-63, named after the window).
-    -- FCF_SetWindowAlpha (same file, 1053-1063) sets them all; its third argument leaves the
-    -- player's saved value alone (SetChatWindowAlpha is skipped), and it keeps the new value as
-    -- frame.oldAlpha. The game also draws the box when the chat fades in, opened or pointed at:
-    -- FCF_FadeInChatFrame (1237-1246) fades every shown box texture to at least
-    -- DEFAULT_CHATFRAME_ALPHA (0.25, line 22), whatever oldAlpha says, and
-    -- FloatingChatFrame_Update (488-498) sets the saved value again. So each box texture is
-    -- hidden as well: both fades skip a hidden texture (1243, 1276) and no chat code shows one
-    -- again. At the end each window gets its saved see-through back (RestoreChat); the one it
-    -- had before the first change (oldAlpha, or the game's default when the window has none, as
-    -- at 1239) is kept only for when the saved one cannot be read.
-    local chatFound = {}   -- [window] = its see-through before the first change
-    local chatOrder = {}   -- the windows in chatFound, in order
+    -- Each one that shows is hidden with its own Hide, and shown again at the end: nothing
+    -- else. The game draws the box when the chat fades in, opened or pointed at
+    -- (FCF_FadeInChatFrame, 1237-1246) and fades it out again (1276), but both skip a hidden
+    -- texture and no chat code shows one again. A texture's see-through is never touched, so
+    -- the player's own value is still on it when it is shown again.
+    --
+    -- 0.16.3: no FCF_ function is called. Until 0.16.2 this called FCF_SetWindowAlpha (1053-1063),
+    -- which writes frame.oldAlpha on the chat window. Written from addon code, that field carries
+    -- the addon's mark; the game's chat code reads it, the chat window is one of the windows that
+    -- takes the controller (137-146), and from login on the game refused its own controller
+    -- actions in the addon's name (SetPreferredGamepadInteractTarget, TargetUnit, ClearTarget,
+    -- UseAction...). Found on the device on 2026-11-24 with 0.16.2's testing rows: every other
+    -- part of the layout on, no refusal; this part on, refusals at once
+    -- (docs/superpowers/plans/2026-11-24-blocked-action-0.16.1.md).
     local chatHidden = {}  -- box textures hidden by the addon, in order
     local chatHiddenSet = {}
 
@@ -1516,20 +1518,9 @@ do
     end
 
     local function PlaceChat()
-        local setAlpha = FCF_SetWindowAlpha
-        if type(setAlpha) ~= "function" then return SayMissing("the chat's box (FCF_SetWindowAlpha)") end
-        local textures = type(CHAT_FRAME_TEXTURES) == "table" and CHAT_FRAME_TEXTURES or {}
-        local default = type(DEFAULT_CHATFRAME_ALPHA) == "number" and DEFAULT_CHATFRAME_ALPHA or 0.25
+        if type(CHAT_FRAME_TEXTURES) ~= "table" then return SayMissing("the chat's box (CHAT_FRAME_TEXTURES)") end
         for _, w in ipairs(ChatWindows()) do
-            local f = w.frame
-            if chatFound[f] == nil then
-                local was = f.oldAlpha
-                chatFound[f] = type(was) == "number" and was or default
-                chatOrder[#chatOrder + 1] = f
-            end
-            local ok, err = pcall(setAlpha, f, 0, true)
-            if not ok then PE:LogError("ctrlLayout", "The chat's box could not be made see-through: " .. tostring(err)) end
-            for _, value in ipairs(textures) do
+            for _, value in ipairs(CHAT_FRAME_TEXTURES) do
                 local t = _G[w.name .. tostring(value)]
                 if Showable(t) and IsShownNow(t) then
                     pcall(t.Hide, t)
@@ -1545,27 +1536,6 @@ do
     local function RestoreChat()
         for _, t in ipairs(chatHidden) do pcall(t.Show, t) end
         chatHidden, chatHiddenSet = {}, {}
-        local setAlpha = FCF_SetWindowAlpha
-        if type(setAlpha) == "function" then
-            -- The game rewrites frame.oldAlpha itself, so the value put back is the window's
-            -- saved see-through, read now from GetChatWindowInfo (its sixth answer), the same
-            -- source FloatingChatFrame_Update uses (FloatingChatFrame.lua:461 and 488). The value
-            -- remembered before the first change is used only when that cannot be read.
-            local info = GetChatWindowInfo
-            for _, f in ipairs(chatOrder) do
-                local alpha = chatFound[f]
-                if type(info) == "function" and type(f.GetID) == "function" then
-                    local okId, id = pcall(f.GetID, f)
-                    if okId and type(id) == "number" then
-                        local okInfo, _, _, _, _, _, saved = pcall(info, id)
-                        if okInfo and type(saved) == "number" and saved >= 0 and saved <= 1 then alpha = saved end
-                    end
-                end
-                local ok, err = pcall(setAlpha, f, alpha, true)
-                if not ok then PE:LogError("ctrlLayout", "The chat's box could not be put back: " .. tostring(err)) end
-            end
-        end
-        chatFound, chatOrder = {}, {}
     end
 
     -- The map's gold ring: MinimapCompassTexture, and MinimapCompassTextureUnderlay under it

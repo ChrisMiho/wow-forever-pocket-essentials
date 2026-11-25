@@ -3058,7 +3058,7 @@ end)
 
 test("0.16.2: with every testing row On the layout does what it did", function()
     local c, PE = onClient()
-    check(#c:callsTo("FCF_SetWindowAlpha") > 0, "the chat's box was not touched")
+    eq(c.env.ChatFrame1Background:IsShown(), false, "the chat's box was not hidden")
     check(barCalls(c, "SetScale") > 0, "the bars were not placed")
 end)
 
@@ -3067,7 +3067,7 @@ test("0.16.2: with every testing row Off the layout leaves each part alone", fun
     local c, PE = layoutClient({}, 3)
     for _, key in ipairs(Plan.TEST_PARTS) do opts(PE)[key] = 0 end
     switchOn(c, PE)
-    eq(#c:callsTo("FCF_SetWindowAlpha"), 0, "the chat's box was touched")
+    eq(c.env.ChatFrame1Background:IsShown(), true, "the chat's box was touched")
     eq(barCalls(c, "SetScale"), 0, "the bars were scaled")
     eq(barCalls(c, "SetPoint"), 0, "the bars were moved")
     eq(barCalls(c, "SetAlpha"), 0, "the bars were faded")
@@ -3285,59 +3285,62 @@ test("0.16.0: Controls reminder On writes the game setting once and Off hides it
     c2:assertClean()
 end)
 
-test("0.16.0: the chat's box is see-through while placed and the player's value comes back", function()
+-- 0.16.3: the chat's box is hidden by hiding its textures, and nothing else. Until 0.16.2 the
+-- addon called FCF_SetWindowAlpha, which writes frame.oldAlpha on the chat window
+-- (FloatingChatFrame.lua:1062); with that call the game refused its own controller actions in
+-- the addon's name from login on (device, 2026-11-24, the testing rows of 0.16.2).
+test("0.16.3: the chat's box is hidden without FCF_SetWindowAlpha and no field is written on a chat window", function()
     local c, PE = layoutClient({}, 3, { setup = function(c0)
         c0.env.FCF_SetWindowAlpha(c0.chatWindows[2], 0.6, true) -- the player's own see-through on window 2
         c0.chatAlphas[2] = 0.6                                    -- as the game saved it
     end })
     local w1, w2 = c.chatWindows[1], c.chatWindows[2]
     local bg1, bg2 = c.env.ChatFrame1Background, c.env.ChatFrame2Background
+    local before1, before2 = rawget(w1, "oldAlpha"), rawget(w2, "oldAlpha")
+    local callsBefore = #c:callsTo("FCF_SetWindowAlpha")
     switchOn(c, PE)
-    eq(w1.oldAlpha, 0)
-    eq(bg1:GetAlpha(), 0)
-    eq(w2.oldAlpha, 0)
-    -- Opening or pointing at the chat fades the box in (FloatingChatFrame.lua:1237-1246): it stays unseen.
+    eq(bg1:IsShown(), false, "window 1's box shows")
+    eq(bg2:IsShown(), false, "window 2's box shows")
+    eq(c.env.ChatFrame1TopLeftTexture:IsShown(), false, "the border shows")
+    -- Opening or pointing at the chat fades the box in (FloatingChatFrame.lua:1237-1246): a hidden texture is skipped.
     c.env.FCF_FadeInChatFrame(w1)
-    check(not bg1:IsShown() or bg1:GetAlpha() == 0, "the box shows when the chat fades in")
-    check(not c.env.ChatFrame1TopLeftTexture:IsShown() or c.env.ChatFrame1TopLeftTexture:GetAlpha() == 0,
-        "the border shows when the chat fades in")
+    eq(bg1:IsShown(), false, "the box shows when the chat fades in")
+    eq(rawget(w1, "oldAlpha"), before1, "a field was written on window 1")
+    eq(rawget(w2, "oldAlpha"), before2, "a field was written on window 2")
     switchOff(c, PE)
-    eq(w1.oldAlpha, 0.25)
-    eq(bg1:GetAlpha(), 0.25)
     eq(bg1:IsShown(), true)
-    eq(w2.oldAlpha, 0.6)
-    eq(bg2:GetAlpha(), 0.6)
     eq(bg2:IsShown(), true)
-    local calls = c:callsTo("FCF_SetWindowAlpha")
-    check(#calls > 1, "FCF_SetWindowAlpha was not called")
-    for i, call in ipairs(calls) do eq(call.args[3], true, "call " .. i .. " saved the value") end
+    eq(bg2:GetAlpha(), 0.6, "the player's see-through on window 2 was changed")
+    eq(rawget(w1, "oldAlpha"), before1)
+    eq(rawget(w2, "oldAlpha"), before2)
+    eq(#c:callsTo("FCF_SetWindowAlpha"), callsBefore, "FCF_SetWindowAlpha was called by the addon")
     eq(#c:callsTo("SetChatWindowAlpha"), 0, "the player's saved value was changed")
     c:assertClean()
 end)
 
-test("0.16.0: the chat's put-back uses the window's saved see-through, not what the game last left on the window", function()
-    local c, PE = layoutClient({}, 3, { setup = function(c0)
-        c0.chatAlphas[2] = 0.6                          -- the player's saved see-through on window 2
-        rawset(c0.chatWindows[2], "oldAlpha", 0.1)      -- the game left another value on the window
-    end })
-    local w2, bg2 = c.chatWindows[2], c.env.ChatFrame2Background
+test("0.16.3: a box texture the game had hidden stays hidden at put-back; on and off twice ends as found", function()
+    local c, PE = layoutClient({}, 3)
+    local bg, top = c.env.ChatFrame1Background, c.env.ChatFrame1TopLeftTexture
+    top:Hide() -- hidden by the game beforehand
+    local alpha = bg:GetAlpha()
     switchOn(c, PE)
-    eq(bg2:GetAlpha(), 0)
-    rawset(w2, "oldAlpha", 0.9)                         -- and rewrites it while the layout is on
     switchOff(c, PE)
-    eq(bg2:GetAlpha(), 0.6, "the saved value came back")
-    eq(w2.oldAlpha, 0.6)
-    eq(c.chatWindows[1].oldAlpha, 0.25, "window 1: the game's default")
+    switchOn(c, PE)
+    eq(bg:IsShown(), false)
+    switchOff(c, PE)
+    eq(bg:IsShown(), true)
+    eq(bg:GetAlpha(), alpha)
+    eq(top:IsShown(), false, "a texture the game had hidden was shown")
+    eq(#c:callsTo("FCF_SetWindowAlpha"), 0)
     c:assertClean()
-    -- Without GetChatWindowInfo the value remembered before the first change comes back.
-    local c2, PE2 = layoutClient({}, 3, { setup = function(c0)
-        rawset(c0.env, "GetChatWindowInfo", nil)
-        rawset(c0.chatWindows[2], "oldAlpha", 0.4)
-    end })
-    switchOn(c2, PE2)
-    switchOff(c2, PE2)
-    eq(c2.env.ChatFrame2Background:GetAlpha(), 0.4)
-    c2:assertClean()
+end)
+
+test("0.16.3: a client without the chat's texture list changes nothing and raises nothing", function()
+    local c, PE = layoutClient({}, 3, { setup = function(c0) rawset(c0.env, "CHAT_FRAME_TEXTURES", nil) end })
+    switchOn(c, PE)
+    eq(c.env.ChatFrame1Background:IsShown(), true)
+    switchOff(c, PE)
+    c:assertClean()
 end)
 
 test("0.16.0: the map's ring is hidden, the black border shown, and both survive the game redrawing the ring", function()
@@ -3413,10 +3416,10 @@ test("0.16.0: a client without the calendar button or the ring still places the 
     end)
     switchOn(c, PE)
     eq(c.world.cvars[HINTS], "0", "the hint step did not run")
-    eq(c.chatWindows[1].oldAlpha, 0, "the chat step did not run")
+    eq(c.env.ChatFrame1Background:IsShown(), false, "the chat step did not run")
     eq(c.env.MinimapCluster.Tracking:IsShown(), false, "the tracking button step did not run")
     switchOff(c, PE)
-    eq(c.chatWindows[1].oldAlpha, 0.25)
+    eq(c.env.ChatFrame1Background:IsShown(), true)
     eq(c.env.MinimapCluster.Tracking:IsShown(), true)
     c:assertClean()
 end)
@@ -3443,10 +3446,10 @@ test("0.16.0: none of it runs in a fight", function()
     n = #c.calls
     switchOff(c, PE)
     for i = n + 1, #c.calls do check(not game[c.calls[i].name], "called in a fight: " .. c.calls[i].name) end
-    eq(c.chatWindows[1].oldAlpha, 0)
+    eq(c.env.ChatFrame1Background:IsShown(), false, "the chat's box came back in the fight")
     c:leaveCombat()
     c:advance(0.1)
-    eq(c.chatWindows[1].oldAlpha, 0.25)
+    eq(c.env.ChatFrame1Background:IsShown(), true)
     eq(c.env.MinimapCompassTexture:IsShown(), true)
     c:assertClean()
 end)
