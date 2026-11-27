@@ -1636,13 +1636,60 @@ test("0.22.0 marks: with the row Off the small glyph shows and the big mark is h
     PE:SetDebug(true)
     for _, g in ipairs(Face.view) do
         for _, p in ipairs(g.pics) do
-            eq(shown(c, p.bigMark), false)
+            eq(p.bigMark, nil, "no mark is built while the row is Off")
             eq(smallShown(c, p), #p.small)
         end
     end
     eq(#pic(Face, 1, 1).small, 6, "a d-pad glyph: backing, middle dot, four dots")
     eq(#pic(Face, 1, 5).small, 5, "a face glyph: backing and four dots")
     eq(marksLines(c), {}, "no line while the row is Off")
+    c:assertClean()
+end)
+
+-- How many frames and regions the pictures' file made.
+local function madeCount(c)
+    local frames, regions = 0, 0
+    for _, rec in ipairs(faceFrames(c)) do
+        frames = frames + 1
+        regions = regions + #rec.regions
+    end
+    return frames, regions
+end
+
+test("0.22.0 marks: with the row never On no mark is built; switching On builds it once, Off hides it", function()
+    local c, PE, Face = started()
+    local f0, r0 = madeCount(c)
+    -- Recorded from commit 34c7455 (0.22.0 before any mark code): the same login made 108 frames and 438 regions.
+    eq({ f0, r0 }, { 108, 438 }, "with the row Off the pictures make what 0.21.0 made")
+    for _, g in ipairs(Face.view) do
+        for _, p in ipairs(g.pics) do eq(p.bigMark, nil) end
+    end
+    marksOn(PE, true)
+    PE.Batch.Changed("b22Marks")
+    local f1, r1 = madeCount(c)
+    eq(f1 - f0, 32, "one frame per picture")
+    check(r1 > r0, "regions were made")
+    for _, g in ipairs(Face.view) do
+        for _, p in ipairs(g.pics) do
+            check(p.bigMark ~= nil, "the mark exists")
+            eq(shown(c, p.bigMark), true)
+            eq(smallShown(c, p), 0)
+        end
+    end
+    marksOn(PE, false)
+    PE.Batch.Changed("b22Marks")
+    marksOn(PE, true)
+    PE.Batch.Changed("b22Marks")
+    local f2, r2 = madeCount(c)
+    eq({ f2, r2 }, { f1, r1 }, "built once, kept")
+    marksOn(PE, false)
+    PE.Batch.Changed("b22Marks")
+    for _, g in ipairs(Face.view) do
+        for _, p in ipairs(g.pics) do
+            eq(shown(c, p.bigMark), false)
+            eq(smallShown(c, p), #p.small)
+        end
+    end
     c:assertClean()
 end)
 
@@ -1687,6 +1734,36 @@ test("0.22.0 marks: a d-pad mark is a plus of five touching squares, the pressed
     end
 end)
 
+-- A part's rectangle (x1, y1, x2, y2) about the mark's centre.
+local function dotRect(c, t)
+    local s = st(c, t)
+    local pt = s.points[1]
+    return { pt.x - s.width / 2, pt.y - s.height / 2, pt.x + s.width / 2, pt.y + s.height / 2 }
+end
+
+test("0.22.0 marks: face dots stay apart and inside the backing at every Spell panel size", function()
+    for _, size in ipairs({ 80, 90, 100, 110, 120 }) do
+        local c, PE, Face = new()
+        marksOn(PE, true)
+        check(Face:Start(nil, size) == true, "Start failed")
+        for q = 1, 4 do
+            local p = pic(Face, 1, 4 + q)
+            for a = 1, 4 do
+                for b = a + 1, 4 do
+                    local ra, rb = dotRect(c, p.bigParts[a]), dotRect(c, p.bigParts[b])
+                    local gap = math.max(ra[1] - rb[3], rb[1] - ra[3], ra[2] - rb[4], rb[2] - ra[4])
+                    check(gap >= 1, "size " .. size .. " quad " .. q .. " dots " .. a .. "/" .. b .. " gap " .. gap)
+                end
+            end
+            local half = p.bigSize / 2
+            for k = 1, 4 do
+                local r = dotRect(c, p.bigParts[k])
+                check(r[1] >= -half and r[2] >= -half and r[3] <= half and r[4] <= half, "size " .. size .. " dot " .. k .. " fits")
+            end
+        end
+    end
+end)
+
 test("0.22.0 marks: a face mark is four separate square dots, the pressed one gold and a third larger", function()
     local c, PE, Face = new()
     marksOn(PE, true)
@@ -1704,9 +1781,20 @@ test("0.22.0 marks: a face mark is four separate square dots, the pressed one go
             local s = st(c, p.bigParts[k])
             eq({ s.width, s.height }, k == q and { 8, 8 } or { 6, 6 }, "dot " .. k)
         end
-        -- Gaps between the dots (they do not touch), which a d-pad's plus does not have.
-        local a, b = st(c, p.bigParts[1]).points[1], st(c, p.bigParts[2]).points[1]
-        check(math.abs(a.x - b.x) + math.abs(a.y - b.y) > 6 + 4, "the dots are apart")
+        -- No two dots touch: every pair has a gap of at least 1 unit on one axis.
+        for a = 1, 4 do
+            for b = a + 1, 4 do
+                local ra, rb = dotRect(c, p.bigParts[a]), dotRect(c, p.bigParts[b])
+                local gx = math.max(ra[1] - rb[3], rb[1] - ra[3])
+                local gy = math.max(ra[2] - rb[4], rb[2] - ra[4])
+                check(math.max(gx, gy) >= 1, "dots " .. a .. " and " .. b .. " of quad " .. q .. " are apart")
+            end
+        end
+        local half = p.bigSize / 2
+        for k = 1, 4 do
+            local r = dotRect(c, p.bigParts[k])
+            check(r[1] >= -half and r[2] >= -half and r[3] <= half and r[4] <= half, "dot " .. k .. " fits the backing")
+        end
     end
 end)
 

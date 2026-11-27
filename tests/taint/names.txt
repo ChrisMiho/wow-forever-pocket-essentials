@@ -2186,6 +2186,7 @@ outerLeft	-
 outerRight	-
 outline	-
 outlineModeShowLootEffectWhenDisabled	-
+over	-
 overlap	-
 owner	-
 ox	-
@@ -2274,6 +2275,7 @@ pvp	-
 pw	-
 px	-
 py	-
+quad	-
 quality	-
 quest	-
 questArrow	-

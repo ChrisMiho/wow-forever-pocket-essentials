@@ -441,7 +441,8 @@ end
 -- MapLook's SetMaskTexture is the Minimap widget's own method and cannot be used on a texture.
 -- So the face buttons' "round" dots are small squares: the plus (parts touching) and the
 -- separate dots are what tell the two marks apart.
--- The marks are built with the picture and only shown or hidden by the row. ShowEmpty does not
+-- A picture's mark is built the first time the row is On (at build, or when the row is switched
+-- On), once, and kept: with the row never On, no frame or texture is made for it. ShowEmpty does not
 -- touch them: as in 0.21.0, an empty picture keeps its position mark.
 local MARK_BASE = 16
 local MARK_GOLD, MARK_GREY = { 0.95, 0.84, 0.48 }, { 0.55, 0.55, 0.53 }
@@ -477,7 +478,10 @@ local function MakeBigMark(over, p, size, quad, dpad)
         for k, step in ipairs(SPOT_STEPS) do part(u, step[1] * u, step[2] * u, k == quad and MARK_GOLD or MARK_GREY) end
     else
         local d = max(1, math.floor(m / 4))
-        local step = max(1, math.floor(m * 0.3))
+        -- The gold dot is a third larger; its corner must not touch a neighbour's: a gap of one unit
+        -- between a gold dot and a grey one (centres on the two axes, so the gap is step - (g + d) / 2).
+        local g = math.floor(d * 4 / 3 + 0.5)
+        local step = math.ceil((g + d) / 2) + 1
         for k, st in ipairs(SPOT_STEPS) do
             local big = k == quad
             part(big and math.floor(d * 4 / 3 + 0.5) or d, st[1] * step, st[2] * step, big and MARK_GOLD or MARK_GREY)
@@ -487,8 +491,13 @@ local function MakeBigMark(over, p, size, quad, dpad)
     return f, back, parts, m
 end
 
--- The mark shown and the small glyph hidden while the row is On, and the reverse.
+-- The mark shown and the small glyph hidden while the row is On, and the reverse. Builds the
+-- mark when the row is On and there is none yet; with the row Off and no mark, nothing is done.
 local function ApplyMark(pic, on)
+    if on and not pic.bigMark then
+        local a = pic.markArgs
+        pic.bigMark, pic.bigBack, pic.bigParts, pic.bigSize = MakeBigMark(a.over, a.p, a.size, a.quad, a.dpad)
+    end
     if not pic.bigMark then return end
     for _, t in ipairs(pic.small) do
         if on then t:Hide() else t:Show() end
@@ -573,7 +582,7 @@ local function MakePicture(parent, x, y, size, quad, dpad)
         dot:SetColorTexture(1, 1, 1, k == quad and 1 or 0.35)
         pic.small[#pic.small + 1] = dot
     end
-    pic.bigMark, pic.bigBack, pic.bigParts, pic.bigSize = MakeBigMark(over, p, size, quad, dpad)
+    pic.markArgs = { over = over, p = p, size = size, quad = quad, dpad = dpad }
     ApplyMark(pic, MarksOn())
     local rangeSize, rangeIn = Scaled(4, size), Scaled(2, size)
     pic.range = over:CreateTexture(nil, "OVERLAY")
@@ -1126,7 +1135,7 @@ function LogMarks()
     local n, units = 0, 0
     for _, g in ipairs(groups) do
         for _, pic in ipairs(g.pics) do
-            n = n + 1
+            if pic.bigMark then n = n + 1 end
             units = pic.bigSize or units
         end
     end
