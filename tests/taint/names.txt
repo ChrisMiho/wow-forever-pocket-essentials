@@ -1099,6 +1099,7 @@ Paint	-
 PairedStamp	-
 Panel	-
 PanelLayout	-
+PanelLift	-
 PanelSize	-
 PanelsOn	-
 ParentOf	-
@@ -1504,6 +1505,7 @@ Skip	-
 SlashCommand	-
 SlimBars	-
 SlimCall	-
+SlimLift	-
 SlimRects	-
 SlotOf	-
 Small	-

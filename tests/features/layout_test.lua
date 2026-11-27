@@ -4788,4 +4788,77 @@ test("0.22.0 panels: row Off, 110% and 120% still reach under the screen's botto
     near(Plan.Rects(v)["inner left diamond"][2], 6, "saved offset on top of the lift")
 end)
 
+-- 0.22.0 fix round 1: what the lifted panels run into, with the owner's switches.
+test("0.22.0 panels: lifted, the diamonds clear the cast bar; the pictures and slim bars rise by one amount each; row Off is 0.21.0's", function()
+    local OWNER = { slim = 1, mapLook = 1, mapButtons = 1, hints = 1, arrange = 1 }
+    local function opts(size)
+        local o = with(OWNER)
+        o.panelSize, o.offsets, o.charOffsets = size, {}, {}
+        return o
+    end
+    local DIAMONDS = { "inner left diamond", "inner right diamond", "outer left diamond", "outer right diamond" }
+    local function isDiamond(n) return n:find(" diamond$") ~= nil end
+    local off, offOverlaps = {}, {}
+    for _, size in ipairs(plan().PANEL_SIZES) do
+        local Plan = plan()
+        off[size] = Plan.Rects(opts(size))
+        offOverlaps[size] = Plan.Overlaps(off[size])
+    end
+    -- row Off: nothing touches the cast bar, whatever the size (0.21.0's numbers).
+    for _, size in ipairs(plan().PANEL_SIZES) do
+        for _, o in ipairs(offOverlaps[size]) do
+            check(not ((o.a == "cast bar" or o.b == "cast bar") and (isDiamond(o.a) or isDiamond(o.b))), "cast bar overlap with the row Off")
+        end
+    end
+    for _, size in ipairs(plan().PANEL_SIZES) do
+        local Plan, _, PE = plan()
+        PE.db.options.ctrlLayout.b22Panels = 1
+        local r = Plan.Rects(opts(size))
+        for _, k in ipairs(DIAMONDS) do
+            check(r["cast bar"][2] >= r[k][4] + 2 - 1e-9, "cast bar bottom " .. r["cast bar"][2] .. " under " .. k .. " top " .. r[k][4] .. " at " .. size)
+        end
+        -- Overlaps with a diamond: only the two picture pairs, no larger than with the row Off.
+        local was = {}
+        for _, o in ipairs(offOverlaps[size]) do if isDiamond(o.a) or isDiamond(o.b) then was[o.a .. "|" .. o.b] = o end end
+        for _, o in ipairs(Plan.Overlaps(r)) do
+            if isDiamond(o.a) or isDiamond(o.b) then
+                local w = was[o.a .. "|" .. o.b]
+                check(w ~= nil and (o.a:find("targeting picture") or o.b:find("targeting picture")), "new diamond overlap " .. o.a .. " / " .. o.b .. " at " .. size)
+                check(o.w <= w.w + 1e-9 and o.h <= w.h + 1e-9, "larger overlap " .. o.a .. " / " .. o.b .. " at " .. size)
+            end
+        end
+        -- The slim group moved by one amount: every rectangle by the same dy, x unchanged.
+        local lift
+        for _, name in ipairs({ "player bar", "pet bar", "target bar", "target of target bar", "cast bar", "pet boxes room", "target boxes room" }) do
+            local d = r[name][2] - off[size][name][2]
+            lift = lift or d
+            near(d, lift, name .. " lifted alike")
+            near(r[name][4] - off[size][name][4], lift, name .. " top lifted alike")
+            near(r[name][1], off[size][name][1], name .. " x")
+        end
+        if size <= 100 then near(lift, 0, "slim group at " .. size) end
+        if size == 120 then near(lift, 9.6, "slim group at 120%") end
+        -- The pictures rise by the diamonds' lift.
+        local dl = r["inner left diamond"][2] - off[size]["inner left diamond"][2]
+        for _, name in ipairs({ "LB targeting picture", "RB targeting picture" }) do
+            near(r[name][2] - off[size][name][2], dl, name .. " lift")
+        end
+    end
+    -- Row Off: every rectangle equals the plan without any row (checked against a fresh plan).
+    for _, size in ipairs(plan().PANEL_SIZES) do
+        local Plan, _, PE = plan()
+        PE.db.options.ctrlLayout.b22Panels = 0
+        eq(Plan.Rects(opts(size)), off[size])
+    end
+    -- The saved offsets are added after the lifts.
+    local Plan, _, PE = plan()
+    PE.db.options.ctrlLayout.b22Panels = 1
+    local o = opts(120)
+    o.offsets = { ["LB targeting picture"] = { x = 0, y = 3 } }
+    o.charOffsets = { ["LB targeting picture"] = { x = 0, y = 3 }, ["target bar"] = { x = 0, y = 4 } }
+    local r = Plan.Rects(o)
+    near(r["LB targeting picture"][2] - off[120]["LB targeting picture"][2], 9.8 + 3, "picture: lift then offset")
+    near(r["cast bar"][2] - off[120]["cast bar"][2], 9.6 + 4, "slim: lift then offset")
+end)
+
 return { known = KNOWN_FAILURES }

@@ -558,6 +558,34 @@ function Plan.PanelsOn()
     return type(batch) == "table" and type(batch.On) == "function" and batch.On("b22Panels") == true
 end
 
+-- 0.22.0 (row b22Panels): how far the diamonds rise, before any saved offset: the shortfall
+-- of their bottom under 1, found from the built-in numbers only (0 with the row Off, and at
+-- 100% and below). The two targeting pictures rise by the same amount.
+function Plan.PanelLift(v)
+    if not Plan.PanelsOn() then return 0 end
+    local _, by = Plan.Base("inner left diamond")
+    local face = Plan.Face(v)
+    local bottom = Plan.FACE_Y + by - (face.dy + face.button / 2)
+    return bottom < 1 and 1 - bottom or 0
+end
+
+-- 0.22.0 (row b22Panels): how far the slim bars group rises, one amount for every part and
+-- both sides, before the saved offsets: exactly enough that the cast bar's bottom is
+-- Plan.PANEL_CAST_CLEAR above the lifted diamonds' top (0 where it already is, and with the
+-- row Off). Built-in numbers only, so a diamond or bar the player moved does not move the group.
+Plan.PANEL_CAST_CLEAR = 2
+function Plan.SlimLift(v)
+    if not Plan.PanelsOn() then return 0 end
+    local S = Plan.SLIM
+    local _, dby = Plan.Base("inner left diamond")
+    local face = Plan.Face(v)
+    local top = Plan.FACE_Y + dby + Plan.PanelLift(v) + face.dy + face.button / 2
+    local _, tby = Plan.Base("target bar")
+    local castBottom = S.y - S.cast.gap - S.cast.h + tby
+    local need = top + Plan.PANEL_CAST_CLEAR - castBottom
+    return need > 0 and need or 0
+end
+
 -- How far a piece is from the spot worked out in this file: its built-in amount (always)
 -- plus its saved offset (v as Plan.Offset takes it). What the plan adds to a piece's spot.
 --
@@ -571,11 +599,7 @@ end
 Plan.Moved = function(v, key)
     local bx, by = Plan.Base(key)
     local x, y = Plan.Offset(v, key)
-    if type(key) == "string" and key:find(" diamond$") and Plan.PanelsOn() then
-        local face = Plan.Face(v)
-        local bottom = Plan.FACE_Y + by - (face.dy + face.button / 2)
-        if bottom < 1 then by = by + (1 - bottom) end
-    end
+    if type(key) == "string" and key:find(" diamond$") then by = by + Plan.PanelLift(v) end
     return bx + x, by + y
 end
 
@@ -766,8 +790,9 @@ local TOOLTIP = { x = -10, over = 6, w = 200, h = 100 }
 --               its bottom 141 up (the design's 132 px); 280 by 28 (264 by 26 px)
 --   health, power  inside a main bar: 1 border, the power bar 6, 1 line, the health bar 19,
 --               1 border
---   cast        the target's cast bar: 12 tall, 2 under the target bar (127 to 139 up; the
---               diamonds end 124.8 up at the largest Spell panel size)
+--   cast        the target's cast bar: 12 tall, 2 under the target bar (127 to 139 up
+--               before the built-in -16; the diamonds, centred 50 up after their -16, end
+--               118.6 up at 120%, so with the row b22Panels On the group rises, Plan.SlimLift)
 --   small       the pet bar and the target of target bar: 136 by 17 (128 by 16 px), 3 over
 --               the main bars, lined up with their outer ends
 --   boxes       the room kept for the buff and debuff boxes, which are not built yet: a row
@@ -799,6 +824,10 @@ function Plan.SlimRects(v)
         ["pet boxes room"] = { -r, petBoxes, -l, petBoxes + S.boxes.h },
         ["target boxes room"] = { l, row, r - S.small.w - S.boxes.short, row + S.boxes.h },
     }
+    local lift = Plan.SlimLift(v) -- 0.22.0: the whole group, before the saved offsets
+    if lift ~= 0 then
+        for _, q in pairs(out) do q[2], q[4] = q[2] + lift, q[4] + lift end
+    end
     for _, key in ipairs({ "player bar", "target bar" }) do
         local dx, dy = Plan.Moved(v, key)
         if dx ~= 0 or dy ~= 0 then
@@ -821,7 +850,7 @@ function Plan.Shoulders(v)
     for side, key in pairs({ left = "LB targeting picture", right = "RB targeting picture" }) do
         local s = Plan.SHOULDERS[side]
         local dx, dy = Plan.Moved(v, key)
-        out[side] = { s[1], s[2] + (side == "left" and -further or further) + dx, s[3] + dy }
+        out[side] = { s[1], s[2] + (side == "left" and -further or further) + dx, s[3] + dy + Plan.PanelLift(v) }
     end
     return out
 end

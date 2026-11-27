@@ -779,6 +779,7 @@ local function Build(size)
         groups[gi] = g
     end
     LogMarks()
+    LogPanels(face)
     return true
 end
 

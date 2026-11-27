@@ -1838,4 +1838,28 @@ test("0.22.0 marks: an empty picture keeps its mark as in 0.21.0, and the row st
     c:assertClean()
 end)
 
+local function panelLines(c)
+    local out = {}
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        local text = line:match("^%S+ ctrlLayout: (panels: .*)$")
+        if text then out[#out + 1] = text end
+    end
+    return out
+end
+
+test("0.22.0 panels: the row Off logs nothing; On, the pictures say their size and the lowest bottom", function()
+    local c, PE, Face = new()
+    PE:SetDebug(true)
+    check(Face:Start(nil, 120) == true, "Start failed")
+    eq(panelLines(c), {}, "no line while the row is Off")
+    c, PE, Face = new()
+    PE:SetDebug(true)
+    PE.db.options.ctrlLayout.b22Panels = 1
+    check(Face:Start(nil, 120) == true, "second Start failed")
+    local lines = panelLines(c)
+    eq(#lines, 1)
+    eq(lines[1], "panels: size 120%, lowest button's bottom at 1.0")
+    c:assertClean()
+end)
+
 return { known = KNOWN_FAILURES }
