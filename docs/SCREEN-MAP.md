@@ -5,10 +5,14 @@ kept free. Read it before moving or adding a piece. **A change that moves, adds 
 piece updates this page in the same change** (the note beside `Plan.BASE_2` in
 `addons/PocketEssentials/ControllerLayout.lua` says the same).
 
-- Written 2026-11-27 for addon 0.21.0, built-in arrangement 2 (`Plan.ARRANGEMENT`).
+- Written 2026-11-27 for addon 0.22.0, built-in arrangement 2 (`Plan.ARRANGEMENT`). With every
+  0.22.0 row Off the tables are 0.21.0's. A piece or spot marked "while its 0.22.0 row is On"
+  exists only then; every 0.22.0 row is Off until the player turns it on (Controller tab, the
+  "0.22.0" heading) and none is device-tested yet.
 - The numbers in "Pieces the plan places" are not typed by hand: they are what
   `PE.LayoutPlan.Rects(options)` returns under the offline harness (`tests/lib/fakeclient.lua`)
-  with the owner's switches. If this page and that function disagree, the function is right
+  with the owner's switches (Slim bars, Map look Square, Map buttons, hints, Spell panel size 100%,
+  Arrange it yourself On), once with the 0.22.0 rows Off and once with them On. If this page and that function disagree, the function is right
   and this page is out of date.
 - Rows marked "measured" were read off a device screenshot and are good to a few units only.
 
@@ -22,12 +26,12 @@ page before any spec is written.
 
 | Screen on the page | What it shows | State |
 |---|---|---|
-| Option 1: map stays bottom middle | The playing screen as first designed (2026-11-24) | Built, 0.16.0 to 0.21.0 |
+| Option 1: map stays bottom middle | The playing screen as first designed (2026-11-24) | Built, 0.16.0 to 0.21.0 (0.19.0 to 0.21.0 reported working) |
 | Option 2: map in the top corner | The same with the map top right | Wanted later |
-| Timers: icons bottom left, bars on the right | The Cooldown Manager placed, bars by the target (`#artboard-Timers`) | Approved 2026-11-27; now the alternative |
-| Timers: bars on the left, by your name | The same with the bars above your slim bars and the chat ending higher (`#artboard-TimersLeft`) | Chosen 2026-11-27 to build first and try on the device. Redrawn the same day at the game's real sizes: bars and icons at Icon Size 80%, bar width 100%, the tracked buff icons beside the bars. The owner's target for the icons: what the warlock has plus a few, so one row of six large icons and seven small ones, with room kept above for a second row of large ones |
-| Direction marks on the spell pictures | Today's mark and two options, at true size and three times larger (`#artboard-Marks`) | The owner picked Option A on 2026-11-27: a cross in a square for the d-pad, four round buttons in a circle for the face buttons, the pressed part gold, 22 px (about 24 units) |
-| Target menu: opens above the tooltip corner | The bottom right quarter of the screen: where the target's menu opens today (over the tooltip) and where it is proposed (the same right edge, one menu height higher) (`#artboard-TargetMenu`) | Drawn 2026-11-27, waiting for the owner |
+| Timers: icons bottom left, bars on the right | The Cooldown Manager placed, bars by the target (`#artboard-Timers`) | Approved 2026-11-27; built in 0.22.0 as the row "Buff timer bars: Right, by the target", not yet tested |
+| Timers: bars on the left, by your name | The same with the bars above your slim bars and the chat ending higher (`#artboard-TimersLeft`) | Built in 0.22.0 (row "Place the game's timers", the default side), not yet tested. Drawn at the game's real sizes: icons and bars at Icon Size 80%, bar width 100%, one row of six large icons and seven small ones, the tracked buff icons beside the bars, room kept above for a second row of large ones |
+| Direction marks on the spell pictures | Today's mark and two options, at true size and three times larger (`#artboard-Marks`) | Option A picked 2026-11-27; built in 0.22.0 (row "Bigger direction marks"), not yet tested. Built with squares: five touching squares in a cross for the D-pad, four separate square dots for the face buttons, the pressed part gold, both on a square dark backing, 24 units. No round art could be verified for this client |
+| Target menu: opens above the tooltip corner | The bottom right quarter of the screen: where the target's menu opens today (over the tooltip) and where it is proposed (the same right edge, one menu height higher) (`#artboard-TargetMenu`) | Approved 2026-11-27; built in 0.22.0 (row "Target menu above the tooltip", needs Slim bars On), not yet tested. The lift of 174 comes from this mockup |
 
 To add or change a screen: read the page's `project/canvas.json` and the screen's file with the
 Artifact tool, edit the copies, and publish back to the same link.
@@ -81,6 +85,29 @@ rewriting the layout, then a reload). "Addon" means the addon draws or places it
 | Focus frame (the game's own, small size; the same row) | 1068.7 | 377 | 174 | 75 | Layout, at the Gamepad preset's spot | Yes, while the row is On; it overlaps the lower quest list as before |
 | PE button (round), default spot | 10 | 529.2 | 76.8 | 76.8 | Addon (Hub.lua) | No; it is in the "Move" window |
 
+Pieces and spots that exist or change only **while their 0.22.0 row is On** (the same numbers,
+from `Plan.Rects` with the owner's switches and that row On; none tested on a device):
+
+| Piece | Left | Top | Width | Height | Placed by | In Arrange |
+|---|---|---|---|---|---|---|
+| Timer icons, large (the game's Cooldown Manager, "Place the game's timers", needs Slim bars) | 41 | 693 | 250 | 40 | Layout; icons 80%, six to a row | Yes, while the row is On |
+| Room kept above the large icons (a seventh and more start a second row there) | 41 | 653 | 250 | 40 | Kept free | No |
+| Timer icons, small | 111 | 736 | 180 | 24 | Layout | Yes, while the row is On |
+| Timer bars, bars on the left (the default side) | 166.7 | 485 | 176 | 82 | Layout; width 100% (stored as 50), growing up | Yes, while the row is On |
+| Tracked buff icons, bars on the left | 351 | 535 | 107 | 32 | Layout; beside the bars | Yes, while the row is On |
+| Timer bars, bars on the right ("Buff timer bars: Right, by the target"); the large and small icons stay where they are | 918.7 | 505 | 176 | 82 | Layout | Yes, while the row is On |
+| Tracked buff icons, bars on the right | 1103 | 555 | 107 | 32 | Layout | Yes, while the row is On |
+| Chat, with the bars on the left (it ends higher; 43 above its spot in the main table) | 17 | 310 | 450 | 170 | Layout | Yes |
+| PE button, with the timers placed (once moved there; the owner's own moved spot is cleared once) | 61 | 576.2 | 76.8 | 76.8 | Addon (Hub.lua) | No |
+| The game's target frame, invisible with Slim bars On, 174 higher so its menu opens above the tooltip ("Target menu above the tooltip") | not in `Plan.Rects` | | | | Layout (piece written from BOTTOMLEFT y 56 to 230); its tap guard moves with it | No |
+
+With "Large spell panels, whole" On, Spell panel size 110% and 120% change as follows (still at
+100%: nothing moves). The four diamonds rise by what they were short of the screen's bottom edge
+(4.9 at 110%, 9.8 at 120%), so the lowest button ends 1 above the edge; the LB and RB pictures rise
+by the same amount; at 120% the slim bars, the cast bar and the boxes rooms rise 9.6 so the cast
+bar stays at least 2 above the diamonds' tops. The timer icon rows end further left at 110% and
+120% so they stay clear of the outer spell panels (right edge 264 and 238, not 291).
+
 The game's four real action bars sit invisible under the inner spell panels (`Plan.RealBarRects`).
 
 ## The addon's pieces outside the plan
@@ -97,57 +124,58 @@ The game's four real action bars sit invisible under the inner spell panels (`Pl
 | Area | Left | Top | Width | Height | Why |
 |---|---|---|---|---|---|
 | Target boxes room | 918.7 | 591 | 140 | 21 | One row for the target's buff and debuff boxes, not built yet (`Plan.SLIM.boxes`). It is left of the target of target bar, above the target bar. |
-| Pet boxes room | 166.7 | 571 | 280 | 21 | The same for your side, above the pet bar. |
-| Bottom right corner | about 1155 | about 560 | to the edge | to the edge | The tooltip grows up from here, and the game's target menu (Interact With Target, Target Marker Icon, Set Focus, Edit Mode) appears here. Put nothing new in it. Which frame the target menu is, is not yet known (handoff 2026-11-27, item 6). |
+| Pet boxes room | 166.7 | 571 | 280 | 21 | The same for your side, above the pet bar. The timer bars (bars on the left) stand on it, 4 above its top, while "Place the game's timers" is On. |
+| Bottom right corner | about 1155 | about 560 | to the edge | to the edge | The tooltip grows up from here, and the game's target menu (Interact With Target, Target Marker Icon, Set Focus, Edit Mode) appears here. Put nothing new in it. The menu is the target's ordinary unit menu, pinned to the game's target frame (`TargetFrame.lua:674-676`); while "Target menu above the tooltip" is On it opens one menu height higher, about 191 up and above the tooltip, and the invisible frame's tap guard sits there too. |
 
 ## Free space today
 
 | Area | Left | Top | Width | Height | Note |
 |---|---|---|---|---|---|
-| Bottom left corner | 0 | 643 | 300 | 125 | Under your slim bar, left of the outer left spell panel. The owner's PE button sits in it today. |
+| Bottom left corner | 0 | 643 | 300 | 125 | Under your slim bar, left of the outer left spell panel. The owner's PE button sits in it today. While "Place the game's timers" is On the large and small timer icons fill it (left 41 to 291, down to 760). |
 | Left edge, under the chat | 0 | 523 | 167 | 245 | Left of the pet and your slim bars; joins the corner above. |
 | Right side, between the quest list and the target bars | about 919 | about 405 | to the edge | about 185 | Only while the quest list is short: the list is 400 tall at least and grows down with more quests. |
 | Left side, between the hints box and the chat | 0 | 105 | about 470 | 248 | Nothing of ours is there. |
 
-## The game's pieces we do not place yet
+## The game's pieces, placed only while their 0.22.0 row is On
 
-These show on the handheld and our layout holds no spot for them, so the game puts them at its
-own default spots. All positions here are measured from the screenshots of 2026-11-27.
+These show on the handheld whether or not our layout holds a spot for them. With every 0.22.0
+row Off the game puts them at its own default spots, as below (measured from the screenshots of
+2026-11-27). With the row named in the last column On, they get a spot in our layout and move
+up into the second pieces table.
 
-| Piece | Where it lands | Trouble |
-|---|---|---|
-| Cooldown Manager, two icon rows (`EssentialCooldownViewer`, `UtilityCooldownViewer`) | about left 587 to 779, top 601 to 686 | Straight on top of the map |
-| Cooldown Manager, tracked buff bars (`BuffBarCooldownViewer`) | about left 871 to 1202, top 316 to 338 per bar; held by its bottom edge 430 up, 420 right of centre (`Blizzard_EditMode/Mainline/EditModePresetLayouts.lua:850-870`) | Across the quest list |
-| Cooldown Manager, tracked buff icons (`BuffIconCooldownViewer`) | a box just above the map | Near the swing timers |
-| The game's own cast bar (yours) | about left 576 to 786, top 425 to 448 (Edit Mode's box, 12 taller than the bar under it) | None seen. With the row "Arrange: cast bar and focus frame" On it is in the first table |
-| A unit frame box in Edit Mode (the focus frame; the preset puts it at left 1068.7, top 377, 174 by 75) | about left 1084 to 1223, top 388 to 455 | Over the lower quest list when it shows. With the same row On it is in the first table |
-| The game's target menu | bottom right | See "Areas kept on purpose" |
+| Piece | Where it lands with its row Off | Trouble | Row that places it |
+|---|---|---|---|
+| Cooldown Manager, two icon rows (`EssentialCooldownViewer`, `UtilityCooldownViewer`) | about left 587 to 779, top 601 to 686 | Straight on top of the map | "Place the game's timers" (needs Slim bars On) |
+| Cooldown Manager, tracked buff bars (`BuffBarCooldownViewer`) | about left 871 to 1202, top 316 to 338 per bar; held by its bottom edge 430 up, 420 right of centre (`Blizzard_EditMode/Mainline/EditModePresetLayouts.lua:850-870`) | Across the quest list | the same row; side chosen by "Buff timer bars" |
+| Cooldown Manager, tracked buff icons (`BuffIconCooldownViewer`) | a box just above the map | Near the swing timers | the same row |
+| The game's own cast bar (yours) | about left 576 to 786, top 425 to 448 (Edit Mode's box, 12 taller than the bar under it) | None seen | "Arrange: cast bar and focus frame" |
+| A unit frame box in Edit Mode (the focus frame; the preset puts it at left 1068.7, top 377, 174 by 75) | about left 1084 to 1223, top 388 to 455 (the box Edit Mode draws is smaller than the 174 by 75 the source gives) | Over the lower quest list when it shows | the same row |
+| The game's target menu | bottom right, over the tooltip | See "Areas kept on purpose" | "Target menu above the tooltip" |
 
-Arrange does not offer any of these. Handoff item 7 asks that Arrange cover every piece we
-place; when one of these gets a spot in the layout it moves up into the first table.
+With the rows Off, Arrange offers none of these. With "Arrange: cast bar and focus frame" On it
+lists the cast bar and the focus frame, and with the timers row On it lists the four timer
+pieces.
+
+Two things in the map are still not placed or identified: a small "?" on the square map's left
+edge (probably the game's controller button holder, which the source shows as an empty frame; it
+is left alone and the log says so), and the target's and the pet's buff and debuff boxes (their
+rooms stay reserved).
 
 ## Decided, not built yet
 
-From the owner, 2026-11-27 (handoff item 8). These need a mockup, then a spec.
+What is left of the owner's decisions of 2026-11-27 (handoff item 7 and the open question):
 
-- **PE button** moves to the left of your slim bars (about left 61, top 588, 60 across: level
-  with the pet bar and your bar, about 46 clear of them and 61 in from the screen's edge).
-  The owner's rule: a buffer from the bars, but never hugging the screen's edge, where the
-  edge of a hand holding the device can touch it, which empties the bottom left corner. The
-  owner's first idea, beside the Controls reminder box, was dropped the same day.
-- **Cooldown Manager icon rows** go into the bottom left corner.
-- **Cooldown Manager buff bars:** a column at half width, growing upward, the game's own piece
-  with the game's own settings (no upright bars, no drawing of our own for now). Two spots,
-  chosen by a row; the piece is also offered in Arrange:
-  - **Left, by your name (the owner's preference, later the same day):** its bottom edge above
-    the pet boxes room, lined up with your slim bar. They are your own buffs, so they read
-    correctly there. Planned for three bars at once, which needs the chat to end a little
-    higher; a fourth and more grow up over the chat's lowest lines, and the player moves
-    things from there.
-  - **Right, by the target (the first mockup, approved):** its bottom edge above the target
-    boxes room, lined up with the target bar's left end. Nothing is in its way, but beside the
-    target it can be read as the target's buffs.
-  - The game has no limit on how many bars can be tracked in the source read so far; how many
-    a class can keep running is not known from the source.
+- **Starting arrangements:** rows that choose the default positions before the player adjusts in
+  Arrange (for example the map in a top corner, "Option 2" on the mockup page). Not in 0.22.0.
 - **Open:** whether the target's buff and debuff boxes need more than the one 21-tall row the
   plan keeps today. If they get two rows, the buff bar column starts that much higher.
+- **Open:** the game has no limit on how many bars can be tracked in the source read so far; how
+  many a class can keep running is not known, and a fourth timer bar grows up over the chat's
+  lowest lines.
+- **Open:** a handheld-only profile (handoff item 9) and anything that asks which device this is.
+
+Built in 0.22.0 (see the second pieces table, not yet tested): the PE button's move to the left
+of the slim bars (61 in from the screen's edge, the owner's rule of never hugging it), the
+Cooldown Manager icon rows in the bottom left corner, the buff bars on the left by your name
+(or on the right by the target, chosen by a row), the chat ending higher, and the cast bar and
+the focus frame as Arrange pieces.

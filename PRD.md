@@ -123,8 +123,31 @@ Chatting is hard on a handheld because targets are too small to tap.
 
 ## Status
 
-**0.21.0, Quick slots (the mount square), built 2026-11-25, not yet tested
-on a device** (branch `playing-screen-0.17.0`, on top of 0.20.0): a row
+**0.22.0, the parked batch, built 2026-11-27, not yet tested on a device**
+(branch `batch-0.22.0`, on top of 0.21.0): eleven rows and one choice row
+under a "0.22.0" heading on the Controller tab, all Off by default, with
+"Turn all on" and "Turn all off" and a login line in the Debug log that lists
+every row: empty spell slots drawn cleanly, menu arrows always, the D-pad by
+direction, the square map's name strip, bigger direction marks, the target
+menu above the tooltip, the cast bar and focus frame in Arrange, the game's
+timers placed (with a left or right choice for the buff bars), a layout for
+each character, large spell panels whole at 110% and 120%, and the mount
+square redrawn live. Installing it changes nothing until a row is turned
+On. Waiting for the device test: `docs/TESTING.md` 37. Unproven off the
+device: `docs/ARCHITECTURE.md` ("Unverified API", the 0.22.0 rows) and the
+spec's "As built" (`2026-11-27-0.22.0-parked-batch.md`).
+
+**0.19.0 to 0.21.0, reported working by the owner, formal steps not run**
+(0.19.0 and 0.20.0 on 2026-11-25: the square map "looked so nice", whole
+names work; 0.21.0 on 2026-11-26: "this version is working great, including
+the mount button", so an addon's tap may summon the mount). The saved file of
+2026-11-27 shows no refused action dated after 2026-11-24, a second
+character (a new mage) taking the built-in arrangement with no layout write,
+49 fights, and the mount called on the warlock. `docs/TESTING.md` 34 to 36
+were not run step by step.
+
+**0.21.0, Quick slots (the mount square), built 2026-11-25** (reported
+working, see above) (branch `playing-screen-0.17.0`, on top of 0.20.0): a row
 "Quick slots" in the Chat picker's settings, Off by default; with it On the
 window the round button opens ends with a "Quick slots" line holding one
 square, the mount. A tap gets on the chosen mount or gets off
@@ -132,28 +155,26 @@ square, the mount. A tap gets on the chosen mount or gets off
 does) and closes the window; in a fight a tap asks nothing of the game. A
 row "Mount" steps through the character's mounts ("First favourite" until
 one is picked; saved per character). Nothing listens or ticks, and nothing
-is put on a spell bar. Not known off the device: whether an addon's tap may
-summon at all (`docs/ARCHITECTURE.md`, "Unverified API"). Waiting for the
-device test: `docs/TESTING.md` 36. Spec
+is put on a spell bar. Whether an addon's tap may summon was the open
+question; the owner's report of 2026-11-26 says it does. Spec
 `docs/superpowers/specs/2026-11-25-0.21.0-mount-slot.md` (with "As built").
 
-**0.20.0, after the first sitting, built 2026-11-25, not yet tested on a
-device** (branch `playing-screen-0.17.0`, on top of 0.19.0): whole names on
+**0.20.0, after the first sitting, built 2026-11-25** (reported working) (branch `playing-screen-0.17.0`, on top of 0.19.0): whole names on
 the slim bars (row "Names on the bars", Whole name by default); the
 arrangement saved on the device on 2026-11-25 is the built-in one, and saved
 offsets are counted from it once, so with Arrange it yourself On nothing
 moves; the seven "Part: ..." rows and the untried trigger hook are removed;
 the spell wheel buttons are a piece of the Arrange window without a second
-switch. Waiting for the device test: `docs/TESTING.md` 35 (with 34 for the
-square map). What the offline tests cannot show: `docs/ARCHITECTURE.md`
+switch. `docs/TESTING.md` 35 (with 34 for the
+square map) was not run step by step. What the offline tests cannot show: `docs/ARCHITECTURE.md`
 ("Unverified API": the surname read, the wheels after a move) and the spec's
 "As built" (`2026-11-25-0.20.0-after-first-sitting.md`).
 
-**0.19.0, the square map, built 2026-11-25, not yet tested on a device**
+**0.19.0, the square map, built 2026-11-25** (reported working)
 (branch `playing-screen-0.17.0`): a row "Map look" on the Controller tab,
 Round by default; "Square, bigger" gives a 200-across square map at the
 bottom middle with the place name, clock and coordinates inside it. Round is
-0.18.0 unchanged. Waiting for the device test: `docs/TESTING.md` 34. What
+0.18.0 unchanged. `docs/TESTING.md` 34 was not run step by step. What
 the offline tests cannot show is listed in `docs/ARCHITECTURE.md`
 ("Unverified API", the square map's rows) and in the spec's "As built".
 

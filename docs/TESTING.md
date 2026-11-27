@@ -2288,7 +2288,9 @@ Things to watch for (known, not fixed):
 
 ### 34. Version 0.19.0: the square map
 
-Not yet tested on a device. Made while you were away, from the look you
+Reported working by the owner on 2026-11-25 ("looked so nice"; the map is
+square and sits low). The numbered steps below were not run. Made while you
+were away, from the look you
 picked on the mockup (the square, bigger map): say what you would change.
 Same setup as before: Debug log On, Catch all errors on, Controller layout
 on, and your own arrangement and Slim bars as you left them. **Mark** and
@@ -2395,7 +2397,10 @@ Things to watch for (known, not fixed):
 
 ### 35. Version 0.20.0: whole names, your arrangement built in, fewer rows
 
-Not yet tested on a device. Made while you were away, from what you asked
+Reported working by the owner on 2026-11-25 (whole names work; the saved
+file shows no new refused action). The numbered steps below were not run, so
+there is no before and after pair for "nothing moved at the first login".
+Made while you were away, from what you asked
 for after the first sitting of 0.18.0. This build also has 0.19.0's square
 map, so section 34 can be done in the same sitting, before or after this
 one. Same setup as before: Debug log On, Catch all errors on, Controller
@@ -2516,7 +2521,12 @@ Things to watch for (known, not fixed):
 
 ### 36. Version 0.21.0: Quick slots, the mount square
 
-Not yet tested on a device. This is the build for getting on your mount
+Reported working by the owner on 2026-11-26 ("this version is working great,
+including the mount button"), so a tap from an addon may summon the mount on
+this client. The numbered steps below were not run. The saved file of
+2026-11-27 (a second character, a new mage, and 49 fights, with the mount
+called on the warlock) shows no refused action dated after 2026-11-24, and
+the new mage took the built-in arrangement with no layout write. This is the build for getting on your mount
 without a spell slot: one square in the window the round PE button opens.
 It also has 0.19.0 and 0.20.0 in it, so sections 34 and 35 can be done in
 the same sitting. Same setup as before: Debug log On, Catch all errors on.
@@ -2614,3 +2624,196 @@ Things to watch for (known, not fixed):
 - With "Chat picker size" small, a long mount name beside the square may be
   cut at the window's edge.
 - The setup guide does not show the two new rows; they are in the settings.
+
+### 37. Version 0.22.0: the parked batch, every row Off until you turn it on
+
+Not yet tested on a device. This is one build with eleven new rows and one
+choice row, all Off. Installing it should change nothing you can see. Then
+you turn rows on and check them one at a time. If something misbehaves, you
+can find which row did it by turning rows Off again. It has 0.19.0 to 0.21.0
+in it too. Same setup as before: Controller layout On, **Slim bars On**,
+**Arrange it yourself On**, **Map look: Square, bigger**, Chat picker On with
+**Quick slots On** (the mount square). The marks go on counting; the numbers
+below assume the first one here is 38, and one number is used for each
+section below. The game's own timers (the Cooldown
+Manager) must be switched on in the game's settings for the timers check; the
+addon never switches them on or off.
+
+**What this is.** At the bottom of the Controller tab there is a new heading
+**0.22.0**. Under it: a line **Everything in 0.22.0** with **Turn all on** and
+**Turn all off**, then one row for each item, in this order:
+
+1. Empty slots, clean
+2. Menu arrows, always
+3. D-pad moves by direction
+4. Map name strip, tidy
+5. Bigger direction marks
+6. Target menu above the tooltip (reload)
+7. Arrange: cast bar and focus frame (reload)
+8. Place the game's timers (reload), and under it **Buff timer bars**
+9. A layout for each character (reload)
+10. Large spell panels, whole
+11. Mount square, live
+
+"(reload)" means it counts from the next reload; the others work at once.
+
+Section 38, every row Off: nothing should change.
+
+1. Before installing, take a screenshot of the playing screen standing still
+   with a target picked, and another with the PE window open.
+2. Install the build and log in. **Mark** (38). Take the same screenshots.
+   Did anything move or look different, even a little? (It should not.)
+3. Settings, Controller tab, scroll to the bottom. Screenshot the heading
+   **0.22.0** and its rows. Every row should read **Off**. The timers row
+   may read "needs Slim bars" if Slim bars is Off.
+
+Section 39, set up the log, then turn everything on.
+
+4. Settings, Debug log tab: switch **Debug log** On, and **Catch all errors**
+   On. Back on the Controller tab, tap **Snapshot**. In the log the first
+   lines should include one that starts `batch: 0.22.0 rows:` with every row
+   `off`.
+5. **Mark** (39). Tap **Turn all on**. Every row should read **On** at once.
+   Several rows ask for a reload; tap Save (it reloads).
+6. After the reload: **Mark** (40). Screenshot the whole playing screen. The
+   line at login in the log should now say every row `on`. Do not worry yet
+   if something looks different; the checks below say what to look for.
+
+Section 40, one check for each row, in the order of the rows. Take a
+screenshot for each. If a check is wrong, say its number and what you saw.
+
+7. **Empty slots, clean.** Look at the spell panels: any slot with no spell
+   (the top button of the right group, or most of a new character's panels).
+   It should show only a thin faint outline, the same at rest, with a
+   trigger held (LT and RT) and with a targeting bar showing. Wrong: a grey
+   box, a striped smear, a glow, a number or a dark shade on an empty slot.
+   (We do not yet know what the old smear was. The log says why each empty
+   slot is empty, under "empty slots".)
+8. **Menu arrows, always.** Open a long list: Settings, Controller tab.
+   Without touching the screen, do you see the small scroll arrows at the
+   side of the list? Wrong: no arrows on a long list; arrows on a list that
+   fits in its window.
+9. **D-pad moves by direction.** Open **Arrange the screen** and press the
+   D-pad Left, Right, Up and Down. The highlight should go to the nearest
+   button in that direction, and stay where it is when there is none. Wrong:
+   it walks round all the buttons in order ("circling"), or jumps across the
+   window. Try the settings window too: its tabs keep their own way.
+10. **Map name strip, tidy.** Go where the place name is long (the one that was cut as "Powderfuse
+    Po", for instance). The whole name should show, cut with "..."
+    only when it is wider than the map. The sun or moon mark should sit in
+    the map's top right corner, not over the name. Look at the map's left
+    edge: is the small "?" still there? We could not find what it is, so it
+    was left alone; say whether you see it.
+11. **Bigger direction marks.** Look at a D-pad panel and a face button panel.
+    Can you tell the two apart at a glance? The D-pad mark should be a cross
+    of squares; the face buttons four separate dots; the part you are
+    holding should be gold. Both sit on a dark square. They are squares, not
+    round, because no round picture was found for this client. Is the mark
+    big enough, and does it hide the spell picture too much?
+12. **Target menu above the tooltip.** Needs Slim bars On. Pick a creature,
+    then a player. Press Inspect (the game's target menu: Interact With
+    Target, Set Focus, Edit Mode). It should open on the right, above the
+    tooltip and the little target of target bar, not over them. Wrong: it
+    still covers the tooltip, or the target bar moved. Tap the world in the
+    right side of the screen about where the tooltip used to be: the lift
+    moves a tap guard up with it, so a spot there may take a tap and do
+    nothing. Say if that gets in your way. A player's menu is longer: does
+    it still fit?
+13. **Arrange: cast bar and focus frame.** Cast a spell with a cast time: the
+    bar must not have jumped from where it was before (compare with your
+    screenshot from step 2). Open **Arrange the screen** and step through the
+    pieces: **Your cast bar** and **Focus frame** should be there. Set a focus
+    (Set Focus in the target menu). Does the focus frame's box look right?
+    (Its size comes from the game's files and may be bigger than the box
+    Edit Mode shows.)
+14. **Place the game's timers.** Needs Slim bars On and the game's own timers
+    switched on. Expected, with **Buff timer bars: Left, by your name**:
+    - Large timer icons in the bottom left corner, under your slim bar, up
+      to six in a row, the small ones below them.
+    - The timer bars above your slim bars on the left, growing upward, at
+      the standard width (the game's own default is wider, which is what the
+      old screenshot showed); three fit, and the chat ends higher.
+    - The tracked buff icons in a row beside the bars.
+    - The round PE button to the left of your slim bars, not hugging the
+      screen's edge. If you had moved it, it is put at the new spot once,
+      and you can move it again.
+    Wrong: any of them over the map, over the spell panels or over each
+    other. Then tap **Buff timer bars: Right, by the target**, reload, and
+    check the bars now stand above the target bar. Put it back to Left.
+    At Spell panel size 110% or 120% the timer icon rows shift left, which
+    is expected. Screenshot all of it.
+15. **A layout for each character.** After the reload chat should say once
+    that Pocket Essentials uses its own screen layout for this character,
+    and the Controller tab should say it too. Open Edit Mode (Escape, Edit
+    Mode): the layout list should hold one named like "Forgot Shards -PE".
+    Your own layouts must not have changed. Leave Edit Mode without
+    changing anything. Everything on screen should look the same as before
+    (it is built from the built-in arrangement). Then log out to the
+    character list and in again: is the layout still there and still the
+    active one? If the Controller tab says the game did not keep it, the
+    shared layout stays and nothing is lost: say so. If you can, log in on
+    a second character too: it should get its own layout.
+16. **Large spell panels, whole.** Set **Spell panel size** to 110%, reload,
+    then to 120%, reload. Look at the bottom edge: is any spell button cut
+    off by the screen's edge? The panels rise a little, and the slim bars
+    rise a little with them at 120%. Wrong: a cut button, or something newly
+    overlapping. Note: switching this row On or Off while playing moves only
+    the spell pictures until the next reload, so reload after changing it.
+    Set the size back to 100%.
+17. **Mount square, live.** With Quick slots On, open the PE window and leave
+    it open. Mount up some other way (the game's own button): the square
+    should change to "Get off" without closing the window. Start a fight with
+    the window open: the square should grey. Dismount: it should show
+    ready again. Wrong: a square that stays as it was until you reopen the
+    window.
+
+Section 41, if something misbehaves.
+
+18. Do not guess which row it is. Turn the rows **Off one at a time**, in
+    any order, **Reload** after each (the rows marked "(reload)" count from
+    the next reload anyway), and look again. The row that makes it stop is
+    the cause. Say which. **Turn all off** and a reload should bring back
+    exactly what you had in 0.21.0.
+
+Section 42, send it.
+
+19. **Mark** (42). Tap **Snapshot**. Settings, Errors tab: screenshot it.
+    Tap **Save** (reload). Send `SavedVariables/PocketEssentials.lua` and
+    `SavedVariables/<your character>/PocketEssentials.lua` with the
+    screenshots. The Debug log inside holds a line for every row and why it
+    did what it did.
+
+What I most want to hear:
+- Did anything change at step 2, with every row Off? (It should not.)
+- Which rows worked, which looked wrong, and which row was the cause of
+  anything that did.
+- Any "Interface action failed", a "blocked" pop-up, or a controller button
+  that does nothing afterwards.
+- The timers: are the sizes and places right, or what should move?
+
+Things to look at while you are there:
+- **The cast bar** must not jump when row 7 is turned On (check 13).
+- **The timers row** does nothing without Slim bars On, and says so in its
+  name.
+- **A character that already has five layouts** gets no layout of its own:
+  the Controller tab says so, and the shared one stays.
+- **Switching rows Off** puts things back: the timers, the cast bar and the
+  target menu go back to where they were at the next reload.
+
+Things to watch for (known, not fixed):
+- The cause of the empty slot smear was not proven; the log line settles it.
+- The "?" at the map's left edge was not identified and is left alone.
+- The direction marks are squares, not round.
+- The timers row needs Slim bars On. At Spell panel size 110% and 120% the
+  timer icon rows shift left, and with **Large spell panels, whole** On the
+  slim bars rise.
+- The buff timer bars' width is stored as 50, which the game reads as 100%
+  (it stores the percent minus 50); its own default is 150%.
+- The focus frame's size is taken from the game's files and differs from the
+  box in Edit Mode.
+- It is not verified that the game keeps a character layout saved by an
+  addon. If it does not, the shared layout stays.
+- The target menu's lift of 174 comes from the mockup, not from a
+  measurement on the device.
+- Switching **Large spell panels, whole** live moves only the spell pictures
+  until the next reload.

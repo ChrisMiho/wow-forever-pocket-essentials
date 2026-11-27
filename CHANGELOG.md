@@ -4,6 +4,94 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.22.0] - 2026-11-27
+
+Forty-second test build: all the parked fixes and ideas in one go, each behind
+its own switch. **Every switch starts Off, so installing this changes nothing
+on screen until you turn a row On. Not yet tested on a device.** Spec
+`docs/superpowers/specs/2026-11-27-0.22.0-parked-batch.md` (with "As built").
+It sits on top of 0.21.0.
+
+### Added
+
+- **A "0.22.0" heading at the bottom of the Controller tab** with one row for
+  each item below, all Off, and a line **Everything in 0.22.0** with **Turn
+  all on** and **Turn all off**. Rows that count from the next reload say
+  "(reload)" in their name. If something misbehaves, turn rows Off one at a
+  time and reload until it stops: the row that stopped it names the cause.
+- **A line in the Debug log at every login** that lists every row and whether
+  it is on, for example `batch: 0.22.0 rows: b22Empty=off b22Arrows=on ...`.
+  Each row writes its own lines too, only while the Debug log is On.
+- **Empty slots, clean.** An empty spell slot shows only a thin faint
+  outline, with no leftover shade, glow, count or range dot. The Debug log
+  says why each empty picture is empty, to find what the old smear was.
+- **Menu arrows, always.** The scroll arrows at the side of a long menu show
+  for controller players too, not only for touch.
+- **D-pad moves by direction.** In our windows a D-pad press goes to the
+  nearest button in that direction, and stays put when there is none. A
+  window that already has its own cross rule keeps it.
+- **Map name strip, tidy.** On the square map the whole place name shows
+  (cut with "..." only when wider than the map), the day and night mark moves
+  to the map's top right corner, and the game's controller button holder
+  under the strip is hidden. Needs Map look: Square.
+- **Bigger direction marks.** The mark on a spell picture is 24 units, not
+  11: a cross of five squares for the D-pad and four separate dots for the
+  face buttons, the pressed part gold, on a dark square.
+- **Target menu above the tooltip (reload).** The game's target menu
+  (Interact With Target, Set Focus, Edit Mode) opens 174 higher, above the
+  tooltip and the target of target bar. Needs Slim bars On.
+- **Arrange: cast bar and focus frame (reload).** Your own cast bar and the
+  focus frame become pieces of our layout at the spots the game gives them
+  today, and the Arrange window lists them.
+- **Place the game's timers (reload).** The game's own timers (the Cooldown
+  Manager) get a place: large icons bottom left under your slim bar, small
+  ones under them, the buff timer bars above your slim bars, and the tracked
+  buff icons beside the bars, all at 80% size. The chat ends higher to make
+  room, and the PE button moves to the left of your slim bars once. Needs
+  Slim bars On. The new row **Buff timer bars** chooses left, by your name,
+  or right, by the target.
+- **A layout for each character (reload).** Each character gets its own Edit
+  Mode layout, named "First Last -PE", built fresh from the built-in
+  arrangement. Your own layouts are never changed. If the game does not keep
+  it, or the character already has five, the shared layout stays.
+- **Large spell panels, whole.** At Spell panel size 110% and 120% the
+  lowest button is no longer cut by the screen's edge. The panels rise just
+  enough, and the pictures and slim bars rise with them so nothing new
+  overlaps.
+- **Mount square, live.** The mount square in the PE window redraws while the
+  window stays open: mounted, in a fight, cannot mount here, ready.
+
+### Notes
+
+- Spec item 11 ("Map buttons says when it does nothing") was found to be
+  built already in 0.19.0, so there are eleven rows, plus the choice row.
+- The cause of the empty slot smear is not proven. Turn **Empty slots, clean**
+  On and read the Debug log's "empty slots" lines.
+- The direction marks are squares, not round: no round picture that loads on
+  this client could be found. Both marks share a square backing.
+- The "?" at the map's left edge is not identified and was left alone; the
+  log says so.
+- The timers row needs **Slim bars** On. At Spell panel size 110% and 120%
+  the timer icon rows shift left, and with **Large spell panels, whole** On
+  the slim bars rise. Switching **Large spell panels, whole** while playing
+  moves only the spell pictures until the next reload.
+- The game's own default for the buff timer bars is 150% wide; the row writes
+  100%.
+- The cast bar is normally placed by the game itself, so watch it when the
+  cast bar row is turned On: it should not jump.
+- For the technically minded: the new game calls are checked against
+  Blizzard's source and the ones that could not be are listed in
+  `docs/ARCHITECTURE.md` with their worst case. The row that would take a
+  layout saved by an addon as a character layout is the least certain.
+
+### Also recorded
+
+- 0.19.0 and 0.20.0 were reported working on the device on 2026-11-25 ("looked
+  so nice"; whole names work) and 0.21.0 on 2026-11-26 ("this version is
+  working great, including the mount button"), so a tap from our button may
+  summon your mount. The numbered steps of TESTING 34 to 36 were not run. The
+  saved file of 2026-11-27 shows no refused action after 2026-11-24.
+
 ## [0.21.0] - 2026-11-25
 
 Forty-first test build: a way to get on your mount without a spell slot.
