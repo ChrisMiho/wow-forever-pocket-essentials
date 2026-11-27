@@ -869,6 +869,7 @@ Kill	-
 LabelText	-
 Large	-
 LastRowStart	-
+LayName	-
 LayStrips	-
 LayoutBottomRow	-
 LayoutButton	-
@@ -1559,8 +1560,11 @@ StopWaiting	-
 StopWords	-
 Store	-
 Str	-
+StripRowOn	-
+StripSay	-
 Strips	-
 StylePin	-
+SunLeft	-
 Supported	-
 SurnameJoin	-
 Swatter	-
@@ -1607,6 +1611,9 @@ TextWidth	-
 Theme	-
 ThisPrev	-
 Tick	-
+TidyHolder	-
+TidyStrip	-
+TidySun	-
 Tiles	-
 Timer	-
 Timers	-
@@ -1656,6 +1663,7 @@ UnitPowerType	-
 Unknown	-
 Unlower	-
 UnregisterCoreEvent	-
+Untidy	-
 Up	-
 UpdateBadge	-
 UpdateColour	-

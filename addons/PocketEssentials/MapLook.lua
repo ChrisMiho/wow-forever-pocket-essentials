@@ -66,6 +66,24 @@ local ADDON_NAME, PE = ...
 --     and TIMEMANAGER_TICKER_24HOUR or TIMEMANAGER_TICKER_12HOUR (same file, lines 9-33). The
 --     same calls are made here, the settings read with C_CVar.GetCVar: GetGameTime
 --     (SystemTimeDocumentation.lua:10).
+--   The name strip, tidy (0.22.0, row b22Strip of PE.Batch, off by default; the code is
+--     "The name strip" below). Two game frames are handled, both plain frames that are no Edit
+--     Mode system, and handled the way PlayerCoords is: its points read first, written back
+--     only while they are still the ones written here, nothing assigned on the frame:
+--       the day and night mark, MinimapCluster.DielFrame: a plain Frame made in Lua, a child
+--       of the map's frame (M/Camelot/Diel.lua:18-29), anchored CENTER at 55, 86 of that frame
+--       (lines 28, 56), 42 across (BorderAtlas "UI-HUD-Minimap-Frame-Cycle"), so it sits over
+--       the top of the map and over the end of a long place name. It is moved with SetPoint
+--       to the map's top right corner. The game anchors it again only in SetEditModeScale
+--       (lines 49-63, Edit Mode's scale change); the next placement moves it again.
+--       the controller buttons holder, MinimapCluster.GamepadButtons: an empty Frame, 10 by 10,
+--       anchored under the strip (M/Mainline/Minimap.xml:304-309). Nothing in the pinned
+--       source adds a child to it or shows or hides it. It is hidden (Hide, Show to give
+--       back, as the strip is).
+--     The "?" at the map's left edge in the saved screenshots is NOT identified: it is not
+--     the holder (that is under the map, and empty), and not the event button (hidden in the
+--     saved file; its icon is a spell picture, M/Shared/ExternalEventURLMinimapButton.xml:11).
+--     It is left alone and said so in the log.
 --   The place name: the game's strip shows GetMinimapZoneText() coloured by
 --     C_PvP.GetZonePVPInfo() (Minimap_Update, M/Mainline/Minimap.lua:169-185;
 --     ZoneScriptDocumentation.lua:19, PvpInfoDocumentation.lua:847), refreshed on
@@ -115,6 +133,10 @@ local lowered              -- { frame, points = the game's own, set = { point, r
 local headerHooked = false
 local coords = { mode = nil, applied = false } -- mode "game" or "ours" once decided
 local lastName, lastClock, lastCoords
+local batchRows = PE.Batch -- Batch.lua loads first
+local nameWidth            -- the name's own width while the name strip is tidy, else nil
+local tidySun              -- { frame, points = the game's own, set } while the mark is moved
+local tidyHolder           -- { frame, shown } while the holder is hidden
 local sinceClock, sinceCoords = 0, 0
 
 local function Debug(text)
@@ -132,6 +154,13 @@ local function Note(key, text)
     if noted[key] == text then return end
     noted[key] = text
     Debug(text)
+end
+
+-- The name strip's lines ("map strip: ..."), written again only when they read differently.
+local function StripSay(key, text)
+    if noted[key] == text then return end
+    noted[key] = text
+    if PE.debugOn then PE:Debug(KEY, "map strip: " .. text) end
 end
 
 local function SayMissing(what)
@@ -405,12 +434,20 @@ end
 
 RefreshPlaceName = function()
     local text = ZoneName() or ""
-    local room = (Num(words, "GetWidth") or 198) - 2 * INSET
+    local room = nameWidth or ((Num(words, "GetWidth") or 198) - 2 * INSET)
     local r, g, b = ZoneColour()
     words.name:SetTextColor(r, g, b)
     if text == lastName and room == words.nameRoom then return end
     lastName, words.nameRoom = text, room
-    Fit(words.name, text, room)
+    local shown = Fit(words.name, text, room)
+    if nameWidth and PE.debugOn then
+        local label = text:sub(1, 100)
+        if shown == text then
+            StripSay("strip name", "name \"" .. label .. "\" fits")
+        else
+            StripSay("strip name", "name \"" .. label .. "\" cut at " .. #shown - 3)
+        end
+    end
 end
 
 RefreshClock = function()
@@ -613,6 +650,129 @@ local function ShowStrip()
     hiddenFound, hiddenOrder = {}, {}
 end
 
+---------------------------------------------------------------------------
+-- The name strip (row b22Strip)
+---------------------------------------------------------------------------
+
+local NAME_GAP = 4 -- between the place name and the day and night mark (map units)
+
+local function StripRowOn()
+    return type(batchRows) == "table" and type(batchRows.On) == "function" and batchRows.On("b22Strip") == true
+end
+
+-- The name's own text frame: x in from the map's left, `width` across. width nil: as 0.21.0
+-- has it (centred under the top edge, as wide as the text).
+local function LayName(x, width)
+    local name = words.name
+    name:ClearAllPoints()
+    if width then
+        name:SetPoint("TOPLEFT", words, "TOPLEFT", x, -INSET)
+        name:SetWidth(width)
+    else
+        name:SetPoint("TOP", words, "TOP", 0, -INSET)
+        name:SetWidth(0)
+    end
+end
+
+-- The mark's distance from the map's left edge, in map units, or nil.
+local function SunLeft(map, sun)
+    local l, s = Num(sun, "GetLeft"), Num(sun, "GetEffectiveScale")
+    local ml, ms = Num(map, "GetLeft"), Num(map, "GetEffectiveScale")
+    if not (l and s and ml and ms) or ms <= 0 then return nil end
+    return (l * s - ml * ms) / ms
+end
+
+-- Moves the day and night mark to the map's top right corner. Returns the name's left and
+-- width, or nil after saying why the mark was left alone.
+local function TidySun(map, cluster, mapWidth)
+    local sun = Child(cluster, "DielFrame")
+    if not Showable(sun) then
+        StripSay("strip sun", "day and night mark left alone because it was not found")
+        return nil
+    end
+    if not IsShownNow(sun) then
+        StripSay("strip sun", "day and night mark left alone because it is hidden")
+        return nil
+    end
+    local wanted = { "TOPRIGHT", map, "TOPRIGHT", 0, 0 }
+    local now = ReadPoints(sun)
+    local why
+    if not now then
+        why = "its place could not be read"
+    elseif not (tidySun and tidySun.frame == sun and #now == 1 and SamePoint(now[1], tidySun.set)) then
+        -- Not where this file put it: the game's own points are kept for giving back.
+        if WritePoints(sun, { wanted }) then
+            tidySun = { frame = sun, points = now, set = wanted }
+        else
+            WritePoints(sun, now)
+            tidySun = nil
+            why = "the game refused to move it"
+        end
+    end
+    local sunWidth, sunScale, mapScale = Num(sun, "GetWidth"), Num(sun, "GetEffectiveScale"), Num(map, "GetEffectiveScale")
+    if not why and not (sunWidth and sunScale and mapScale and mapScale > 0) then
+        why = "its size could not be read"
+    end
+    if not why then
+        StripSay("strip sun", "day and night mark moved to the map's top right corner")
+        return 0, max(1, mapWidth - sunWidth * sunScale / mapScale - NAME_GAP)
+    end
+    -- Left where it is: the name stops short of it.
+    local left = SunLeft(map, sun)
+    StripSay("strip sun", "day and night mark left alone because " .. why)
+    if left and left < mapWidth then
+        return INSET, max(1, left - NAME_GAP - INSET)
+    end
+    return nil
+end
+
+local function TidyHolder(cluster)
+    local holder = Child(cluster, "GamepadButtons")
+    if not Showable(holder) then
+        StripSay("strip holder", "controller buttons holder left alone because it was not found")
+        return
+    end
+    if not tidyHolder or tidyHolder.frame ~= holder then
+        tidyHolder = { frame = holder, shown = IsShownNow(holder) }
+    end
+    if IsShownNow(holder) then pcall(holder.Hide, holder) end
+    StripSay("strip holder", "controller buttons holder hidden")
+end
+
+-- The name strip tidied: the mark moved, the holder hidden, the name given its own width.
+local function TidyStrip(map, cluster)
+    local mapWidth = Num(map, "GetWidth") or 198
+    local x, width = TidySun(map, cluster, mapWidth)
+    if not width then x, width = INSET, max(1, mapWidth - 2 * INSET) end
+    TidyHolder(cluster)
+    StripSay("strip mark", "the \"?\" mark at the map's left edge left alone because it is not identified (see the rim lines)")
+    if nameWidth ~= width or words.nameX ~= x then
+        nameWidth, words.nameX = width, x
+        LayName(x, width)
+        lastName = nil
+    end
+end
+
+-- Everything the row did is given back: the mark where the game had it, the holder shown,
+-- the name as 0.21.0 has it. Nothing to do (and no game call) when it did nothing.
+local function Untidy()
+    if tidySun then
+        local now = ReadPoints(tidySun.frame)
+        if now and #now == 1 and SamePoint(now[1], tidySun.set) then WritePoints(tidySun.frame, tidySun.points) end
+        tidySun = nil
+    end
+    if tidyHolder then
+        if tidyHolder.shown then pcall(tidyHolder.frame.Show, tidyHolder.frame) end
+        tidyHolder = nil
+    end
+    if nameWidth then
+        nameWidth, words.nameX = nil, nil
+        if words then LayName() end
+        lastName = nil
+    end
+    noted["strip name"], noted["strip sun"], noted["strip holder"], noted["strip mark"] = nil, nil, nil, nil
+end
+
 -- The coordinates. The game's own text is used when its setting is on and it stays where
 -- it is put; decided once a session, then kept.
 local function OursBecause(why)
@@ -776,6 +936,7 @@ local function RestoreNow()
     SetSquare(false)
     Unlower()
     ShowStrip()
+    Untidy()
     RestoreCoords()
     noted = {}
     if wasOn then Debug("off: the round map, the game's strip shown again") end
@@ -794,6 +955,7 @@ local function PlaceNow(opts, redraw)
     HookHeader(cluster)
     LowerMapFrame(map, box, cluster)
     HideStrip(cluster)
+    if StripRowOn() then TidyStrip(map, cluster) else Untidy() end
     local level = Num(map, "GetFrameLevel") or 0
     words:SetFrameLevel(level + WORDS_LEVEL)
     if square then
@@ -842,6 +1004,14 @@ function Look:Place(opts, redraw)
     local held = waiting and want.mapLook == look and want.redraw
     want = { mapLook = look, redraw = (redraw or held) and true or false }
     Replace()
+end
+
+-- The row b22Strip changed: placed again at once (or given back). Registered once at load;
+-- it does nothing unless Square is placed.
+if type(batchRows) == "table" and type(batchRows.Listen) == "function" then
+    batchRows.Listen("b22Strip", PE:Wrap(KEY, function()
+        if on then Replace() end
+    end))
 end
 
 function Look:Restore()

@@ -1766,6 +1766,11 @@ function Client.new(opts)
         mail:SetSize(32, 24)
         mail:SetPoint("BOTTOMLEFT", strip, "TOPLEFT", 0, 0)
         rawset(cluster, "IndicatorFrame", mail)
+        -- The holder for the controller's buttons: empty, under the strip (M/Mainline/Minimap.xml:304-309).
+        local holder = Blizz("Frame", nil, cluster)
+        holder:SetSize(10, 10)
+        holder:SetPoint("TOP", strip, "BOTTOM", 0, -2)
+        rawset(cluster, "GamepadButtons", holder)
         local zoomIn = Blizz("Button", nil, minimap)
         zoomIn:SetSize(17, 17)
         zoomIn:SetPoint("CENTER", minimap, "CENTER", 88, -68)
@@ -1800,7 +1805,7 @@ function Client.new(opts)
             end,
             __tostring = mt.__tostring,
         })
-        return { cluster = cluster, box = box, strip = strip, clock = clock, coords = coords }
+        return { cluster = cluster, box = box, strip = strip, clock = clock, coords = coords, holder = holder }
     end
     function c:setPage(n)
         Protect("SetCurrentPage", function() c.barParts[gamepadBar].PageUnit:SetCurrentPage(n) end)

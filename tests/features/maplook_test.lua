@@ -113,7 +113,7 @@ local function wordsOf(c)
         local rec = st(c, r)
         if rec.type == "FontString" then
             local point = rec.points[1].point
-            out[point == "TOP" and "name" or point == "BOTTOMRIGHT" and "clock" or "coords"] = rec
+            out[(point == "TOP" or point == "TOPLEFT") and "name" or point == "BOTTOMRIGHT" and "clock" or "coords"] = rec
         end
     end
     return out, words
@@ -951,6 +951,157 @@ test("map look layout: a missing MapLook file changes nothing", function()
     check(PE:GetModule("ctrlLayout"):Snapshot() ~= nil)
     PE:SetModuleEnabled("ctrlLayout", false)
     c:advance(0.1)
+    c:assertClean()
+end)
+
+---------------------------------------------------------------------------
+-- The name strip, tidy (row b22Strip, 0.22.0 spec item 4)
+---------------------------------------------------------------------------
+
+local function stripOn(PE) PE.db.options.ctrlLayout.b22Strip = 1 end
+
+-- The lines under "map strip: ".
+local function stripNotes(c)
+    local out = {}
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        local text = line:match("^%S+ ctrlLayout: map strip: (.*)$")
+        if text then out[#out + 1] = text end
+    end
+    return out
+end
+
+local function hasNote(c, pattern)
+    for _, l in ipairs(stripNotes(c)) do if l:find(pattern, 1, true) then return true end end
+    return false
+end
+
+-- A client with the square map placed and the row On.
+local function tidy(opts)
+    opts = opts or {}
+    local c, PE, Look, parts = new(opts)
+    stripOn(PE)
+    Look:Place(SQUARE, false)
+    check(Look:IsSquare() == true, "the square map was not placed")
+    return c, PE, Look, parts
+end
+
+test("map strip: Off, the name and the game's marks are exactly 0.21.0's", function()
+    local c, _, Look, parts = new({ setup = function(c) c.world.zoneText = "Powderfuse Pond Of The Deep" end })
+    local diel = rawget(parts.cluster, "DielFrame")
+    local dielPoint = pointOf(c, diel)
+    Look:Place(SQUARE, false)
+    local w, words = wordsOf(c)
+    eq({ w.name.points[1].point, w.name.points[1].x, w.name.points[1].y }, { "TOP", 0, -4 })
+    eq(#w.name.points, 1)
+    eq(w.name.width, nil, "a width was set")
+    eq(pointOf(c, diel), dielPoint)
+    eq(st(c, parts.holder).shown ~= false, true, "the holder was hidden")
+    eq(#stripNotes(c), 0)
+    eq(#c:callsTo("MinimapCluster.GamepadButtons:Hide"), 0)
+    c:assertClean()
+end)
+
+test("map strip: On, the name's frame is the map less the mark and 4, and a long name ends in ...", function()
+    local c, _, Look, parts = tidy({ setup = function(c) c.world.zoneText = "Powderfuse Pond Of The Deep Mines" end })
+    local w = wordsOf(c)
+    -- The map is 198 across, the mark 42: 198 - 42 - 4.
+    near(c.env.Minimap:GetWidth(), 198, "the map's width")
+    near(w.name.frame:GetWidth(), 152, "the name's width")
+    eq(w.name.wordWrap, false)
+    eq(w.name.points[1].point, "TOPLEFT")
+    local text = w.name.text
+    check(text:sub(-3) == "...", "not cut: " .. text)
+    check(w.name.frame:GetUnboundedStringWidth() <= 152, "wider than its room: " .. text)
+    check(hasNote(c, 'name "' .. "Powderfuse Pond Of The Deep Mines" .. '" cut at ' .. (#text - 3)), table.concat(stripNotes(c), " | "))
+    c.world.zoneText = "Rog'mar"
+    c:fire("ZONE_CHANGED")
+    eq(w.name.text, "Rog'mar")
+    check(hasNote(c, 'name "Rog\'mar" fits'), table.concat(stripNotes(c), " | "))
+    c:assertClean()
+end)
+
+test("map strip: On, the mark sits in the map's top right corner and the name does not overlap it", function()
+    local c, _, _, parts = tidy({ setup = function(c) c.world.zoneText = "Powderfuse Pond Of The Deep Mines" end })
+    local diel = rawget(parts.cluster, "DielFrame")
+    local sun = rectOf(c, diel)
+    local map = rectOf(c, c.env.Minimap)
+    near(sun[3], map[3], "the mark's right edge")
+    near(sun[4], map[4], "the mark's top edge")
+    local w = wordsOf(c)
+    local name = rectOf(c, w.name.frame)
+    check(name[3] + 4 <= sun[1] + 1e-6, "the name reaches the mark: " .. name[3] .. " and " .. sun[1])
+    check(name[1] >= map[1] - 1e-6, "the name starts left of the map")
+    check(hasNote(c, "day and night mark moved to the map's top right corner"), table.concat(stripNotes(c), " | "))
+    c:assertClean()
+end)
+
+test("map strip: On, the controller buttons holder is hidden, and shown again when the row goes Off", function()
+    local c, PE, Look, parts = tidy()
+    eq(st(c, parts.holder).shown, false)
+    check(hasNote(c, "controller buttons holder hidden"), table.concat(stripNotes(c), " | "))
+    local diel = rawget(parts.cluster, "DielFrame")
+    PE.db.options.ctrlLayout.b22Strip = 0
+    PE.Batch.Changed("b22Strip")
+    c:advance(0.1)
+    eq(st(c, parts.holder).shown ~= false, true, "the holder stayed hidden")
+    eq(pointOf(c, diel), { "CENTER", parts.box, "CENTER", 55, 86 })
+    local w = wordsOf(c)
+    eq({ w.name.points[1].point, w.name.points[1].x, w.name.points[1].y }, { "TOP", 0, -4 })
+    eq(#w.name.points, 1)
+    check(Look:IsSquare(), "the square map went with the row")
+    stripOn(PE)
+    PE.Batch.Changed("b22Strip")
+    c:advance(0.1)
+    eq(st(c, parts.holder).shown, false)
+    near(w.name.frame:GetWidth(), 152)
+    Look:Restore()
+    eq(st(c, parts.holder).shown ~= false, true, "the holder stayed hidden after Restore")
+    eq(pointOf(c, diel), { "CENTER", parts.box, "CENTER", 55, 86 })
+    c:assertClean()
+end)
+
+test("map strip: when the game puts the mark back, it is moved again at the next placement", function()
+    local c, _, Look, parts = tidy()
+    local diel = rawget(parts.cluster, "DielFrame")
+    diel:ClearAllPoints()
+    diel:SetPoint("CENTER", parts.box, "CENTER", 55, 86)
+    Look:Place(SQUARE, true)
+    eq(pointOf(c, diel), { "TOPRIGHT", c.env.Minimap, "TOPRIGHT", 0, 0 })
+    Look:Restore()
+    eq(pointOf(c, diel), { "CENTER", parts.box, "CENTER", 55, 86 })
+    c:assertClean()
+end)
+
+test("map strip: a mark that cannot be moved is left alone and the name's room is shortened", function()
+    local c, _, _, parts = tidy({ setup = function(c, parts)
+        c.world.zoneText = "Powderfuse Pond Of The Deep Mines"
+        local diel = rawget(parts.cluster, "DielFrame")
+        local original = diel.SetPoint
+        rawset(diel, "SetPoint", function(self, point, ...)
+            if point == "TOPRIGHT" then error("refused") end
+            return original(self, point, ...)
+        end)
+    end })
+    local diel = rawget(parts.cluster, "DielFrame")
+    eq(pointOf(c, diel), { "CENTER", parts.box, "CENTER", 55, 86 })
+    local w = wordsOf(c)
+    local name, sun = rectOf(c, w.name.frame), rectOf(c, diel)
+    check(name[3] + 4 <= sun[1] + 1e-6, "the name reaches the mark")
+    check(w.name.text:sub(-3) == "...", "not cut")
+    check(hasNote(c, "day and night mark left alone because"), table.concat(stripNotes(c), " | "))
+    c:assertClean()
+end)
+
+test("map strip: a missing mark or holder is said and the name keeps the map's width", function()
+    local c = tidy({ setup = function(c, parts)
+        c.world.zoneText = "Powderfuse Pond Of The Deep Mines"
+        rawset(parts.cluster, "DielFrame", nil)
+        rawset(parts.cluster, "GamepadButtons", nil)
+    end })
+    local w = wordsOf(c)
+    near(w.name.frame:GetWidth(), 190, "the name's width")
+    check(hasNote(c, "day and night mark left alone because it was not found"), table.concat(stripNotes(c), " | "))
+    check(hasNote(c, "controller buttons holder left alone because it was not found"), table.concat(stripNotes(c), " | "))
     c:assertClean()
 end)
 
