@@ -2059,7 +2059,13 @@ function Client.new(opts)
         -- EditModeManagerConstantsDocumentation.lua (build 1.60.1.70938): the systems, settings and
         -- indices Controller layout writes.
         EditModeSystem = { ActionBar = 0, CastBar = 1, Minimap = 2, UnitFrame = 3, AuraFrame = 6, ChatFrame = 8,
-            HudTooltip = 11, ObjectiveTracker = 12, StatusTrackingBar = 15, SwingTimer = 29, GamepadMainActionBar = 30 },
+            HudTooltip = 11, ObjectiveTracker = 12, StatusTrackingBar = 15, CooldownViewer = 20, SwingTimer = 29,
+            GamepadMainActionBar = 30 },
+        -- 0.22.0: the game's timers (EditModeManagerConstantsDocumentation.lua:377-409).
+        EditModeCooldownViewerSetting = { Orientation = 0, IconLimit = 1, IconDirection = 2, IconSize = 3, IconPadding = 4,
+            Opacity = 5, VisibleSetting = 6, BarContent = 7, HideWhenInactive = 8, ShowTimer = 9, ShowTooltips = 10,
+            BarWidthScale = 11 },
+        EditModeCooldownViewerSystemIndices = { Essential = 1, Utility = 2, BuffIcon = 3, BuffBar = 4 },
         EditModeMinimapSetting = { HeaderUnderneath = 0, RotateMinimap = 1, Size = 2, IconScale = 3 },
         EditModeUnitFrameSetting = { HidePortrait = 0, CastBarUnderneath = 1, BuffsOnTop = 2, UseLargerFrame = 3 },
         EditModeChatFrameSetting = { WidthHundreds = 0, WidthTensAndOnes = 1, HeightHundreds = 2, HeightTensAndOnes = 3 },
@@ -2115,6 +2121,20 @@ function Client.new(opts)
             -- the tooltip's default spot (Mainline/EditModePresetLayouts.lua:543-553)
             { system = 11, isInDefaultPosition = true, settings = {},
               anchorInfo = { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOMRIGHT", offsetX = -9, offsetY = 85 } },
+            -- 0.22.0: the game's four timer pieces, as the preset has them (Mainline/EditModePresetLayouts.lua:780-870;
+            -- settings: IconSize 3, IconLimit 1, IconPadding 4, BarWidthScale 11, Orientation 0)
+            { system = 20, systemIndex = 1, isInDefaultPosition = true,
+              settings = { { setting = 0, value = 0 }, { setting = 1, value = 12 }, { setting = 3, value = 5 }, { setting = 4, value = 2 } },
+              anchorInfo = { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = 0, offsetY = 310 } },
+            { system = 20, systemIndex = 2, isInDefaultPosition = true,
+              settings = { { setting = 0, value = 0 }, { setting = 1, value = 7 }, { setting = 3, value = 5 }, { setting = 4, value = 2 } },
+              anchorInfo = { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = 0, offsetY = 240 } },
+            { system = 20, systemIndex = 3, isInDefaultPosition = true,
+              settings = { { setting = 0, value = 0 }, { setting = 3, value = 5 }, { setting = 4, value = 5 } },
+              anchorInfo = { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = 0, offsetY = 370 } },
+            { system = 20, systemIndex = 4, isInDefaultPosition = true,
+              settings = { { setting = 3, value = 5 }, { setting = 4, value = 5 }, { setting = 11, value = 100 } },
+              anchorInfo = { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = 420, offsetY = 430 } },
         } },
     }
     -- EditModePresetLayoutsManager.lua:46: a fresh copy of the three presets on each call.

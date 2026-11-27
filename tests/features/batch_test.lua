@@ -10,9 +10,11 @@ local KNOWN_FAILURES = {
 
 local KEYS = { "b22Empty", "b22Arrows", "b22Dpad", "b22Strip", "b22Marks", "b22Menu", "b22More", "b22Timers",
     "b22OwnLayout", "b22Panels", "b22Mount" }
+-- The rows as the Controller tab shows them in a fresh install (Slim bars Off, so the timers'
+-- row says what it needs: Task 8, spec item 8).
 local LABELS = { "Empty slots, clean", "Menu arrows, always", "D-pad moves by direction", "Map name strip, tidy",
     "Bigger direction marks", "Target menu above the tooltip (reload)", "Arrange: cast bar and focus frame (reload)",
-    "Place the game's timers (reload)", "A layout for each character (reload)", "Large spell panels, whole",
+    "Place the game's timers (reload): needs Slim bars", "A layout for each character (reload)", "Large spell panels, whole",
     "Mount square, live" }
 
 local function opts(PE) return PE.db.options.ctrlLayout end

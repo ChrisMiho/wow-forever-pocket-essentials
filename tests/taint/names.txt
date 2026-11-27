@@ -376,6 +376,7 @@ BarName	-
 BarOffScreen	-
 BarRect	-
 BarSpots	-
+BarWidthScale	-
 BarsSnapshot	-
 Base	-
 BeginClean	-
@@ -389,7 +390,9 @@ BottomCenteredAnchor	-
 Box	-
 BoxCount	-
 BoxShown	-
+BuffBar	-
 BuffFrame	-
+BuffIcon	-
 BugGrabber	-
 BugSack	-
 BuildDebug	-
@@ -413,6 +416,7 @@ ButtonOf	-
 ButtonUp	-
 ButtonsWanted	-
 CANT_TELL	-
+CDM	-
 CVarOn	-
 Call	-
 CanAddress	-
@@ -496,6 +500,7 @@ ControllerLayout	-
 ControllerSpot	-
 Cooldown	-
 CooldownFrameTemplate	-
+CooldownViewer	-
 CoordsPoint	-
 CoordsText	-
 CopyIcon	-
@@ -534,6 +539,7 @@ CurrentChoice	-
 CurrentHandler	-
 CurrentTextSize	-
 CustomAuraContainerTemplate	-
+D	-
 DEBUG_CAP	-
 DEFAULTS	-
 DashedBox	-
@@ -598,6 +604,7 @@ ErrorBox	-
 ErrorHandlerFor	-
 Errors	-
 Escape	-
+Essential	-
 Essentials	-
 Evaluate	-
 EventNeeded	-
@@ -802,6 +809,9 @@ HubPicture	-
 HubSpot	-
 HudTooltip	-
 Hundredths	-
+IconDirection	-
+IconLimit	-
+IconPadding	-
 IconRowWanted	-
 IconSize	-
 Idle	-
@@ -979,6 +989,7 @@ MoveButton	-
 MovePicture	-
 Moved	-
 MovedTable	-
+N	-
 NAME	-
 NavActivate	-
 NavApi	-
@@ -1076,6 +1087,7 @@ OptionRow	-
 Optional	-
 Options	-
 Opts	-
+Orientation	-
 Orphan	-
 Other	-
 OtherWindowShown	-
@@ -1625,7 +1637,17 @@ TidyStrip	-
 TidySun	-
 Tiles	-
 Timer	-
+TimerSpots	-
 Timers	-
+TimersActive	-
+TimersBack	-
+TimersHub	-
+TimersKeep	-
+TimersKept	-
+TimersLog	-
+TimersOn	-
+TimersRow	-
+TimersSide	-
 Tiny	-
 TitleContainer	-
 TitleFor	-
@@ -1688,6 +1710,7 @@ Use	-
 UseContainerItem	-
 UseFont	-
 UsesTouch	-
+Utility	-
 VERSION	-
 ValidPin	-
 Value	-
@@ -1813,6 +1836,7 @@ b22OwnLayout	-
 b22Panels	-
 b22Strip	-
 b22Timers	-
+b22TimersBefore	-
 backing	-
 bag	-
 bagWindow	-
@@ -1839,6 +1863,7 @@ border	-
 both	-
 bottom	-
 box	-
+buffIconsW	-
 buffs	-
 button	-
 buttons	-
@@ -1865,6 +1890,7 @@ channelling	-
 charDB	-
 charOffsets	-
 chat	-
+chatBefore	-
 chatFrame	-
 chatPrompt	-
 chatType	-
@@ -1894,6 +1920,7 @@ contentHeight	-
 contentWidth	-
 controller	-
 cooldown	-
+cooldownViewerEnabled	-
 coords	-
 core	-
 corner	-
@@ -2043,12 +2070,15 @@ hold	-
 hook	-
 hooksecurefunc	-
 horde	-
+horizontal	-
 hostile	-
 hostileTargetingBar	-
 how	-
 hub	-
 hubColor	-
 hubPos	-
+hubX	-
+hubY	-
 hyperlink	-
 i	-
 icon	-
@@ -2462,6 +2492,7 @@ sub	-
 summon	-
 surname	-
 switch	-
+systems	-
 t	-
 t0	-
 tBars	-
@@ -2492,6 +2523,7 @@ tile	-
 time	-
 timeMgrUseLocalTime	-
 timeMgrUseMilitaryTime	-
+timers	-
 tinsert	-
 tiny	-
 tipX	-

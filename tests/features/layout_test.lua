@@ -57,6 +57,13 @@ local function fakeEnums()
     e.index.SwingTimer.MainHand, e.index.SwingTimer.OffHand, e.index.SwingTimer.Ranged = 1, 2, 3
     e.index.StatusTrackingBar.StatusTrackingBar1, e.index.StatusTrackingBar.StatusTrackingBar2 = 1, 2
     e.setting.Minimap.HeaderUnderneath = num()
+    -- 0.22.0: the game's timers (left out by a test that strips them).
+    e.system.CooldownViewer = num()
+    e.setting.CooldownViewer = {}
+    for _, k in ipairs({ "Orientation", "IconLimit", "IconDirection", "IconSize", "IconPadding", "BarWidthScale" }) do
+        e.setting.CooldownViewer[k] = num()
+    end
+    e.index.CooldownViewer = { Essential = 1, Utility = 2, BuffIcon = 3, BuffBar = 4 }
     return e
 end
 
@@ -4859,6 +4866,481 @@ test("0.22.0 panels: lifted, the diamonds clear the cast bar; the pictures and s
     local r = Plan.Rects(o)
     near(r["LB targeting picture"][2] - off[120]["LB targeting picture"][2], 9.8 + 3, "picture: lift then offset")
     near(r["cast bar"][2] - off[120]["cast bar"][2], 9.6 + 4, "slim: lift then offset")
+end)
+
+---------------------------------------------------------------------------
+-- 0.22.0 (spec item 8, rows b22Timers and b22BarsSide): the game's timers (the Cooldown
+-- Manager) placed through our layout. Units as Plan.Rects has them; the spots written into the
+-- layout count from the screen's left edge (BOTTOMLEFT), 682.665 left of Plan.Rects' x.
+---------------------------------------------------------------------------
+-- The helpers hang on one table: a test file has Lua's limit of 200 locals too.
+local TM = { HALF = 1365.33 / 2,
+    RECTS = { "large timer icons", "large timer icons room", "small timer icons", "tracked buff icons", "buff timer bars" },
+    NAME = {} }
+for _, n in ipairs(TM.RECTS) do TM.NAME[n] = true end
+-- An entry of a layout by system number and index (entryOf is taken by a later helper here).
+function TM.entry(layout, system, index)
+    for _, e in ipairs(layout.systems) do
+        if e.system == system and (index == nil or e.systemIndex == index) then return e end
+    end
+    return nil
+end
+
+-- The plan with the batch rows given (PE.db.options.ctrlLayout), as Batch.On reads them.
+function TM.plan(rows)
+    local Plan, c, PE = plan()
+    for k, v in pairs(rows or {}) do PE.db.options.ctrlLayout[k] = v end
+    return Plan, c, PE
+end
+
+-- The owner's switches with Arrange On and nothing moved, at Spell panel size `size`.
+function TM.opts(size, side, more)
+    local o = { slim = 1, mapLook = 1, mapButtons = 1, hints = 1, arrange = 1, offsets = {}, charOffsets = {} }
+    o.panelSize, o.b22BarsSide = size or 100, side
+    for k, v in pairs(more or {}) do o[k] = v end
+    return o
+end
+
+function TM.cdm(list)
+    local out = {}
+    for _, p in ipairs(list) do if p.system == "CooldownViewer" then out[#out + 1] = p end end
+    return out
+end
+
+test("0.22.0 timers: row Off, or On without Slim bars, places nothing; the plan is 0.21.0's", function()
+    local cases = {}
+    for _, size in ipairs({ 80, 90, 100, 110, 120 }) do
+        for _, slim in ipairs({ 0, 1 }) do
+            for _, side in ipairs({ 0, 1 }) do
+                cases[#cases + 1] = TM.opts(size, side, { slim = slim })
+            end
+        end
+    end
+    for _, o in ipairs(cases) do
+        local Plan = TM.plan({ b22Timers = 0 })
+        local what = o.panelSize .. "% slim " .. o.slim .. " side " .. o.b22BarsSide
+        eq(#TM.cdm(Plan.Pieces(o)), 0, what .. ": a timer piece with the row Off")
+        local r = Plan.Rects(o)
+        for _, n in ipairs(TM.RECTS) do eq(r[n], nil, what .. ": " .. n .. " with the row Off") end
+        -- On without Slim bars: exactly as Off.
+        if o.slim == 0 then
+            local On = TM.plan({ b22Timers = 1 })
+            eq(On.Pieces(o), Plan.Pieces(o), what .. ": pieces")
+            eq(On.Rects(o), r, what .. ": rectangles")
+            eq({ On.HubSpot(o) }, { Plan.HubSpot(o) }, what .. ": PE button")
+            eq(On.Pending(o), Plan.Pending(o), what .. ": pending")
+            eq(On.TimerSpots(o), nil)
+        end
+    end
+    -- 0.21.0's numbers at 100%: the chat 245 up, the PE button 10 in and 162 up.
+    local Plan = TM.plan({ b22Timers = 0 })
+    local o = TM.opts(100, 0)
+    eq(piece(Plan.Pieces(o), "ChatFrame").anchor.y, 245)
+    eq(Plan.Rects(o).chat[2], 245)
+    eq({ Plan.HubSpot(o) }, { "BOTTOMLEFT", 10, 162 })
+    -- A number or nil (the callers that pass a Spell panel size) never places them.
+    local On = TM.plan({ b22Timers = 1 })
+    eq(On.TimerSpots(100), nil)
+    eq({ On.HubSpot(100) }, { "BOTTOMLEFT", 10, 162 })
+    eq(#TM.cdm(On.Pieces(nil)), 0)
+end)
+
+test("0.22.0 timers: row On, the four pieces' spots and settings, bars on the left and on the right", function()
+    local Plan = TM.plan({ b22Timers = 1 })
+    local ICONS = { IconSize = 3, IconPadding = 2, Orientation = 0, IconDirection = 1 }
+    for _, side in ipairs({ 0, 1 }) do
+        local list = Plan.Pieces(TM.opts(100, side))
+        eq(#TM.cdm(list), 4, "side " .. side)
+        local ess, uti = piece(list, "CooldownViewer", "Essential"), piece(list, "CooldownViewer", "Utility")
+        local bic, bar = piece(list, "CooldownViewer", "BuffIcon"), piece(list, "CooldownViewer", "BuffBar")
+        local function spot(p) return { p.anchor.point, p.anchor.relativeTo, p.anchor.relativePoint } end
+        eq(spot(ess), { "BOTTOMRIGHT", "UIParent", "BOTTOMLEFT" })
+        eq({ ess.anchor.x, ess.anchor.y }, { 291, 35 })
+        local s = with(ICONS); s.IconLimit = 6
+        eq(ess.settings, s)
+        eq(spot(uti), { "BOTTOMRIGHT", "UIParent", "BOTTOMLEFT" })
+        eq({ uti.anchor.x, uti.anchor.y }, { 291, 8 })
+        s = with(ICONS); s.IconLimit = 7
+        eq(uti.settings, s)
+        eq(spot(bic), { "BOTTOMLEFT", "UIParent", "BOTTOMLEFT" })
+        eq(bic.settings, { IconSize = 3, IconPadding = 5, Orientation = 0, IconDirection = 1 })
+        eq(spot(bar), { "BOTTOMLEFT", "UIParent", "BOTTOMLEFT" })
+        -- Bar Width 100% is stored as 50 (50 to 200 in steps of 1, saved as steps from 50).
+        eq(bar.settings, { IconSize = 3, BarWidthScale = 50, IconPadding = 5 })
+        for _, p in ipairs(TM.cdm(list)) do eq(p.moved, true, p.index) end
+        eq({ ess.arrange, uti.arrange, bic.arrange, bar.arrange }, { "timer icons", "timer icons", "tracked buff icons", "buff timer bars" })
+        local chat = piece(list, "ChatFrame")
+        if side == 0 then
+            near(bar.anchor.x, 166.665, "bars x, left"); eq(bar.anchor.y, 201)
+            eq({ bic.anchor.x, bic.anchor.y }, { 351, 201 })
+            eq(chat.anchor.y, 288, "the chat over three bars")
+        else
+            near(bar.anchor.x, 918.665, "bars x, right"); eq(bar.anchor.y, 181)
+            eq({ bic.anchor.x, bic.anchor.y }, { 1103, 181 })
+            eq(chat.anchor.y, 245, "the chat as before")
+        end
+    end
+    -- A side that is not 1 is the left.
+    eq(Plan.Pieces(TM.opts(100, nil)), Plan.Pieces(TM.opts(100, 0)))
+    eq(Plan.Pieces(TM.opts(100, "x")), Plan.Pieces(TM.opts(100, 0)))
+end)
+
+test("0.22.0 timers: the rectangles at 100%, and the bars follow the slim bars when they rise", function()
+    local Plan = TM.plan({ b22Timers = 1 })
+    local function same(got, want, what) for i = 1, 4 do near(got[i], want[i], what .. " " .. i) end end
+    local r = Plan.Rects(TM.opts(100, 0))
+    same(r["large timer icons"], { 41 - TM.HALF, 35, 291 - TM.HALF, 75 }, "large")
+    same(r["large timer icons room"], { 41 - TM.HALF, 75, 291 - TM.HALF, 115 }, "room")
+    same(r["small timer icons"], { 111 - TM.HALF, 8, 291 - TM.HALF, 32 }, "small")
+    same(r["buff timer bars"], { -516, 201, -340, 283 }, "bars left")
+    same(r["tracked buff icons"], { 351 - TM.HALF, 201, 458 - TM.HALF, 233 }, "tracked left")
+    eq(r.chat[2], 288)
+    -- The bars stand 4 over the pet's boxes room and start at the pet bar's left edge.
+    near(r["buff timer bars"][2], r["pet boxes room"][4] + 4, "4 over the room")
+    near(r["buff timer bars"][1], r["pet boxes room"][1], "lined up")
+    r = Plan.Rects(TM.opts(100, 1))
+    same(r["buff timer bars"], { 236, 181, 412, 263 }, "bars right")
+    same(r["tracked buff icons"], { 1103 - TM.HALF, 181, 1210 - TM.HALF, 213 }, "tracked right")
+    near(r["buff timer bars"][2], r["target boxes room"][4] + 4, "4 over the target's room")
+    eq(r.chat[2], 245)
+    -- 110% and 120%: the icon rows end 8 short of the outer left spell panel (rounded down to a
+    -- whole unit), and at 120% the large row holds five.
+    for _, size in ipairs({ 80, 90, 100, 110, 120 }) do
+        local o = TM.opts(size, 0)
+        local rr, list = Plan.Rects(o), Plan.Pieces(o)
+        local ess = piece(list, "CooldownViewer", "Essential")
+        local panel = TM.HALF + rr["outer left diamond"][1]
+        check(ess.anchor.x <= panel - 8 + 1e-9, size .. "%: the large icons reach the spell panel")
+        eq(ess.anchor.x, ({ [80] = 291, [90] = 291, [100] = 291, [110] = 264, [120] = 238 })[size], size .. "% right edge")
+        eq(ess.settings.IconLimit, size == 120 and 5 or 6, size .. "% icons in the large row")
+        eq(piece(list, "CooldownViewer", "Utility").settings.IconLimit, 7)
+        near(rr["large timer icons"][3], ess.anchor.x - TM.HALF, "rectangle and spot agree")
+    end
+    -- With b22Panels On the slim group rises at 120% (Plan.SlimLift, 9.6): the bars, the icons
+    -- beside them and the PE button rise with it; the chat stays over the bars.
+    local Lift = TM.plan({ b22Timers = 1, b22Panels = 1 })
+    for _, side in ipairs({ 0, 1 }) do
+        local was, now = Plan.Rects(TM.opts(120, side)), Lift.Rects(TM.opts(120, side))
+        local lift = now["pet bar"][2] - was["pet bar"][2]
+        near(lift, 9.6, "the slim group's lift")
+        for _, n in ipairs({ "buff timer bars", "tracked buff icons" }) do
+            near(now[n][2] - was[n][2], lift, n .. " rises with the slim bars, side " .. side)
+        end
+        near(now["buff timer bars"][2], (side == 0 and 201 or 181) + 9.6, "side " .. side)
+        local bars = piece(Lift.Pieces(TM.opts(120, side)), "CooldownViewer", "BuffBar")
+        near(bars.anchor.y, (side == 0 and 201 or 181) + 9.6, "written spot follows")
+        if side == 0 then check(now.chat[2] >= now["buff timer bars"][4] + 5 - 1e-9, "chat over the lifted bars") end
+        near(select(3, Lift.HubSpot(TM.opts(120, side), 64)), 149 + 9.6 - 32, "PE button follows")
+    end
+    -- At 100% the lift is 0: 201, 181 and 288 with b22Panels On too.
+    eq(Lift.Rects(TM.opts(100, 0))["buff timer bars"][2], 201)
+    eq(Lift.Rects(TM.opts(100, 1))["buff timer bars"][2], 181)
+    eq(Lift.Rects(TM.opts(100, 0)).chat[2], 288)
+    -- The chat's bottom with the bars on the left, at every size: 5 over the third bar, or higher.
+    for _, size in ipairs({ 80, 90, 100, 110, 120 }) do
+        local rr = Lift.Rects(TM.opts(size, 0))
+        check(rr.chat[2] >= rr["buff timer bars"][4] + 5 - 1e-9, size .. "%: chat over the bars")
+    end
+end)
+
+test("0.22.0 timers: no timer rectangle overlaps another piece or leaves the screen, owner's switches, 80% to 120%, both sides", function()
+    for _, panels in ipairs({ 0, 1 }) do
+        local Plan = TM.plan({ b22Timers = 1, b22Panels = panels })
+        for _, size in ipairs({ 80, 90, 100, 110, 120 }) do
+            for _, side in ipairs({ 0, 1 }) do
+                local what = size .. "% side " .. side .. " panels " .. panels
+                local r = Plan.Rects(TM.opts(size, side))
+                for _, n in ipairs(TM.RECTS) do
+                    local q = r[n]
+                    check(q ~= nil, what .. ": no " .. n)
+                    check(q[1] >= -TM.HALF - 1e-9 and q[3] <= TM.HALF + 1e-9 and q[2] >= 0 and q[4] <= 768, what .. ": " .. n .. " off screen")
+                end
+                for _, o in ipairs(Plan.Overlaps(r)) do
+                    check(not TM.NAME[o.a] and not TM.NAME[o.b], what .. ": " .. o.a .. " overlaps " .. o.b
+                        .. " (" .. o.w .. " by " .. o.h .. ")")
+                end
+            end
+        end
+    end
+end)
+
+test("0.22.0 timers: the PE button 61 in, beside the slim bars, centred between the pet bar and the player bar", function()
+    local Plan = TM.plan({ b22Timers = 1 })
+    for _, side in ipairs({ 0, 1 }) do
+        local o = TM.opts(100, side)
+        -- The three button sizes of UI.lua:22-24 (56, 60 and 72 px on a 720 px screen).
+        eq({ Plan.HubSpot(o, 56 * 768 / 720) }, { "BOTTOMLEFT", 61, 149 - 28 * 768 / 720 })
+        eq({ Plan.HubSpot(o, 64) }, { "BOTTOMLEFT", 61, 117 })
+        -- The largest would reach 4.4 into the room for a second row of large icons: it sits on it.
+        eq({ Plan.HubSpot(o) }, { "BOTTOMLEFT", 61, 115 })
+        eq({ Plan.HubSpot(o, 72 * 768 / 720) }, { "BOTTOMLEFT", 61, 115 })
+        for _, size in ipairs({ 80, 90, 100, 110, 120 }) do
+            local r = Plan.Rects(TM.opts(size, side))
+            local hub = r["round button"]
+            near(hub[1], -TM.HALF + 61, "61 in")
+            check(hub[1] + TM.HALF >= 40, "clear of the screen's edge")
+            check(r["player bar"][1] - hub[3] >= 20, size .. "%: 20 clear of the player bar, got " .. (r["player bar"][1] - hub[3]))
+            check(r["pet bar"][1] - hub[3] >= 20, size .. "%: 20 clear of the pet bar")
+        end
+    end
+end)
+
+test("0.22.0 timers: without the game's timers in the enums the pieces are skipped and nothing raises", function()
+    local Plan = TM.plan({ b22Timers = 1 })
+    local function layoutWithTimers(e, sys)
+        local l = baseLayout(e)
+        for i = 1, 4 do
+            l.systems[#l.systems + 1] = { system = sys, systemIndex = i, isInDefaultPosition = true,
+                settings = { { setting = 3, value = 5 } },
+                anchorInfo = { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = 0, offsetY = 300 + i } }
+        end
+        return l
+    end
+    local pieces = Plan.Pieces(TM.opts(100, 0))
+    -- With them: every piece written.
+    local full = fakeEnums()
+    local l = layoutWithTimers(full, full.system.CooldownViewer)
+    Plan.Apply(l, pieces, full)
+    local ess = TM.entry(l, full.system.CooldownViewer, 1)
+    eq({ ess.anchorInfo.point, ess.anchorInfo.offsetX, ess.anchorInfo.offsetY }, { "BOTTOMRIGHT", 291, 35 })
+    eq(ess.isInDefaultPosition, false)
+    eq(settingValue(ess, full.setting.CooldownViewer.IconLimit), 6)
+    eq(settingValue(TM.entry(l, full.system.CooldownViewer, 4), full.setting.CooldownViewer.BarWidthScale), 50)
+    -- The system, the indices or the settings stripped: the system number of the full set is
+    -- kept on the layout's entries, which must come out as they went in.
+    for _, strip in ipairs({ "system", "index", "setting" }) do
+        local e = fakeEnums()
+        local sys = e.system.CooldownViewer
+        e[strip].CooldownViewer = nil
+        local lay = layoutWithTimers(e, sys)
+        local before = deepCopy(lay)
+        local ok, err = pcall(Plan.Apply, lay, pieces, e)
+        check(ok, strip .. " stripped: " .. tostring(err))
+        local other = fakeEnums()
+        other[strip].CooldownViewer = nil
+        local plain = baseLayout(other)
+        local n = Plan.Apply(plain, Plan.Pieces(TM.opts(100, 0, { slim = 1 })), other)
+        check(type(n) == "number", strip)
+        for i = 1, 4 do
+            if strip == "setting" then
+                -- Spots still written, the settings left as they were.
+                eq(TM.entry(lay, sys, i).settings, before.systems[#before.systems - 4 + i].settings, strip .. " " .. i)
+                check(TM.entry(lay, sys, i).anchorInfo.offsetY ~= 300 + i, "spot written without settings")
+            else
+                eq(TM.entry(lay, sys, i), before.systems[#before.systems - 4 + i], strip .. " stripped: entry " .. i .. " changed")
+            end
+        end
+    end
+end)
+
+test("0.22.0 timers: three Arrange pieces, listed only while placed, move their rectangles and spots by a saved offset", function()
+    local Plan = TM.plan({ b22Timers = 1 })
+    for _, key in ipairs({ "timer icons", "tracked buff icons", "buff timer bars" }) do
+        local def = Plan.ARRANGE_BY[key]
+        check(def ~= nil, "no Arrange piece " .. key)
+        eq(def.kind, "apply"); eq(def.when, "timers")
+    end
+    eq(Plan.ARRANGE_BY["timer icons"].rects, { "large timer icons", "large timer icons room", "small timer icons" })
+    local o = TM.opts(100, 0)
+    local base = Plan.Rects(o)
+    o.offsets = { ["timer icons"] = { x = 5, y = 3 }, ["buff timer bars"] = { x = -2, y = 4 }, ["tracked buff icons"] = { x = 7, y = -1 } }
+    local r = Plan.Rects(o)
+    local function moved(n, dx, dy) for i = 1, 4 do near(r[n][i], base[n][i] + ((i % 2 == 1) and dx or dy), n .. " " .. i) end end
+    moved("large timer icons", 5, 3); moved("large timer icons room", 5, 3); moved("small timer icons", 5, 3)
+    moved("buff timer bars", -2, 4); moved("tracked buff icons", 7, -1)
+    eq(r["round button"], base["round button"], "the PE button keeps its built-in spot")
+    local list = Plan.Pieces(o)
+    local ess = piece(list, "CooldownViewer", "Essential")
+    eq({ ess.anchor.x, ess.anchor.y, ess.dx, ess.dy }, { 296, 38, 5, 3 })
+    local bar = piece(list, "CooldownViewer", "BuffBar")
+    near(bar.anchor.x, 164.665, "bars moved"); eq(bar.anchor.y, 205)
+    -- What waits for a write: the three, while placed; none of them with the row Off or Slim bars Off.
+    local pend = {}
+    for _, k in ipairs(Plan.Pending(o)) do pend[k] = true end
+    check(pend["timer icons"] and pend["buff timer bars"] and pend["tracked buff icons"], "not pending while placed")
+    local Off = TM.plan({ b22Timers = 0 })
+    for _, k in ipairs(Off.Pending(o)) do check(Plan.ARRANGE_BY[k].when ~= "timers", k .. " pending with the row Off") end
+    o.slim = 0
+    for _, k in ipairs(Plan.Pending(o)) do check(Plan.ARRANGE_BY[k].when ~= "timers", k .. " pending without Slim bars") end
+end)
+
+-- On the stand-in client: the layout is on and ours is active, Slim bars On (or as given), the
+-- Debug log on. Returns c, PE, the module.
+function TM.client(o)
+    o = o or {}
+    local saved = { options = { ctrlLayout = { slim = o.slim == nil and 1 or o.slim } }, debug = { on = true } }
+    if o.ui then saved.ui = o.ui end
+    local c, PE = layoutClient({}, 3, { saved = saved, setup = function(c2)
+        if o.cvar then c2.world.cvars.cooldownViewerEnabled = o.cvar end
+    end })
+    PE:SetDebug(true)
+    switchOn(c, PE)
+    PE:GetModule("ctrlLayout"):CancelReload()
+    return c, PE, PE:GetModule("ctrlLayout")
+end
+
+function TM.timer(c, index) return TM.entry(ours(c), 20, index) end
+
+function TM.lines(c)
+    local out = {}
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        local text = line:match("^%S+ ctrlLayout: timers: (.*)$")
+        if text then out[#out + 1] = text end
+    end
+    return out
+end
+
+function TM.logged(c, text)
+    for _, l in ipairs(TM.lines(c)) do if l == text then return true end end
+    return false
+end
+
+test("0.22.0 timers: On writes the four pieces and the chat and asks for the reload; the side row moves the bars; Off puts back what was there", function()
+    local c, PE, m = TM.client()
+    local before = {}
+    for i = 1, 4 do before[i] = deepCopy(TM.timer(c, i)) end
+    eq(before[1].anchorInfo.offsetY, 310, "the preset's spot before")
+    local saves = #c:callsTo("C_EditMode.SaveLayouts")
+    choose(c, PE, "b22Timers", 1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves + 1, "one write")
+    eq(reloadReason(PE), RELOAD)
+    local ess = TM.timer(c, 1)
+    eq({ ess.anchorInfo.point, ess.anchorInfo.relativePoint, ess.anchorInfo.offsetX, ess.anchorInfo.offsetY }, { "BOTTOMRIGHT", "BOTTOMLEFT", 291, 35 })
+    eq(settingValue(ess, 1), 6, "six large icons a row")
+    eq(settingValue(ess, 3), 3, "80%")
+    eq(TM.timer(c, 4).anchorInfo.offsetY, 201)
+    eq(settingValue(TM.timer(c, 4), 11), 50, "Bar Width 100%")
+    eq(TM.entry(ours(c), SYS.ChatFrame).anchorInfo.offsetY, 288)
+    check(type(m.opts.b22TimersBefore) == "table", "what was there is kept")
+    -- The side row: the bars and the tracked buff icons move right, the chat comes back down.
+    m:CancelReload()
+    choose(c, PE, "b22BarsSide", 1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves + 2)
+    eq(reloadReason(PE), RELOAD)
+    near(TM.timer(c, 4).anchorInfo.offsetX, 918.665, "bars on the right")
+    eq(TM.timer(c, 3).anchorInfo.offsetX, 1103)
+    eq(TM.entry(ours(c), SYS.ChatFrame).anchorInfo.offsetY, 245)
+    -- Off: the four entries as they were, the chat at 0.21.0's spot.
+    m:CancelReload()
+    choose(c, PE, "b22Timers", 0)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves + 3)
+    eq(reloadReason(PE), RELOAD)
+    for i = 1, 4 do eq(TM.timer(c, i), before[i], "entry " .. i .. " put back") end
+    eq(TM.entry(ours(c), SYS.ChatFrame).anchorInfo.offsetY, 245)
+    eq(m.opts.b22TimersBefore, nil)
+    check(TM.logged(c, "the four pieces put back in the layout as they were before"), "put back not logged")
+    -- Off again, or the side row while Off: nothing written.
+    m:CancelReload()
+    choose(c, PE, "b22BarsSide", 0)
+    choose(c, PE, "b22Timers", 0)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves + 3)
+    eq(reloadReason(PE), nil)
+    c:assertClean()
+end)
+
+test("0.22.0 timers: the log says where each piece went, the side, the chat, the PE button and the game's switch", function()
+    local c, PE = TM.client({ cvar = "1" })
+    choose(c, PE, "b22Timers", 1)
+    for _, line in ipairs({
+        "large timer icons written at 291, 35, size 80%, 6 per row",
+        "small timer icons written at 291, 8, size 80%, 7 per row",
+        "tracked buff icons written at 351, 201, size 80%, all in one row",
+        "buff timer bars written at 166.7, 201, size 80%, width 100%",
+        "bars on the left",
+        "chat ends at 288 (was 245)",
+        "the game's timers are switched on",
+    }) do check(TM.logged(c, line), "not logged: " .. line .. "\n" .. table.concat(TM.lines(c), "\n")) end
+    local hub
+    for _, l in ipairs(TM.lines(c)) do if l:find("^PE button at ") then hub = l end end
+    check(hub and hub:find("^PE button at 61, [%d.]+ %(was 10, 162%)$"), "PE button line: " .. tostring(hub))
+    for _, l in ipairs(TM.lines(c)) do check(#l <= 190, "a line too long: " .. l) end
+    local c2, PE2 = TM.client({ cvar = "0" })
+    choose(c2, PE2, "b22Timers", 1)
+    check(TM.logged(c2, "the game's timers are switched off"), "off not logged")
+    eq(c2.world.cvars.cooldownViewerEnabled, "0", "the game's switch was changed")
+    eq(#c2:callsTo("C_CVar.SetCVar"), 0, "a game setting was written")
+    local c3, PE3 = TM.client()
+    choose(c3, PE3, "b22Timers", 1)
+    check(TM.logged(c3, "the game's timers are switched not readable"), "not readable not logged")
+end)
+
+test("0.22.0 timers: without Slim bars the row writes nothing, asks for no reload, and its name says why", function()
+    local c, PE, m = TM.client({ slim = 0 })
+    local row = optRow(PE, "b22Timers")
+    eq(row.label, "Place the game's timers (reload)")
+    eq(row.value(m), "needs Slim bars")
+    local saves = #c:callsTo("C_EditMode.SaveLayouts")
+    choose(c, PE, "b22Timers", 1)
+    choose(c, PE, "b22BarsSide", 1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves, "written without Slim bars")
+    eq(reloadReason(PE), nil)
+    eq(m.opts.b22TimersBefore, nil)
+    eq(m.opts.b22HubCleared, nil)
+    check(TM.logged(c, "nothing placed: needs Slim bars (Slim bars are Off)"), "not said in the log")
+    for i = 1, 4 do eq(TM.timer(c, i).anchorInfo.offsetY, ({ 310, 240, 370, 430 })[i]) end
+    -- With Slim bars On the name has no note.
+    local _, _, m2 = TM.client()
+    eq(row.value(m2), nil)
+    c:assertClean()
+end)
+
+test("0.22.0 timers: turned On in a fight, the layout is written when the fight ends; with Edit Mode open the row is put back", function()
+    local c, PE = TM.client()
+    local saves = #c:callsTo("C_EditMode.SaveLayouts")
+    c:enterCombat()
+    choose(c, PE, "b22Timers", 1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves, "written in a fight")
+    eq(TM.timer(c, 1).anchorInfo.offsetY, 310)
+    c:leaveCombat()
+    c:advance(0.1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves + 1)
+    eq(TM.timer(c, 1).anchorInfo.offsetY, 35)
+    local c2, PE2, m2 = TM.client()
+    c2.world.editMode = true
+    local saves2 = #c2:callsTo("C_EditMode.SaveLayouts")
+    choose(c2, PE2, "b22Timers", 1)
+    eq(m2.opts.b22Timers, 0, "the row is put back")
+    eq(#c2:callsTo("C_EditMode.SaveLayouts"), saves2)
+end)
+
+test("0.22.0 timers: the PE button's own move is cleared once, when the timers are first placed", function()
+    local ui = { size = "medium", hubPos = "LEFT", moved = { hub = { x = 30, y = -20 } } }
+    -- Without Slim bars nothing is placed, so nothing is cleared.
+    local c0, PE0, m0 = TM.client({ slim = 0, ui = ui })
+    choose(c0, PE0, "b22Timers", 1)
+    eq(PE0.db.ui.moved.hub, { x = 30, y = -20 })
+    eq(m0.opts.b22HubCleared, nil)
+    -- Slim bars On: the first On clears it.
+    local c, PE, m = TM.client({ ui = { size = "medium", hubPos = "LEFT", moved = { hub = { x = 30, y = -20 } } } })
+    choose(c, PE, "b22Timers", 1)
+    eq(PE.db.ui.moved.hub, nil, "the move was not cleared")
+    eq(m.opts.b22HubCleared, 1)
+    check(TM.logged(c, "the PE button's own move was cleared, once: it goes to its new spot"), "not logged")
+    -- Moved again, Off and On again: kept.
+    PE.db.ui.moved.hub = { x = 12, y = 4 }
+    choose(c, PE, "b22Timers", 0)
+    choose(c, PE, "b22Timers", 1)
+    eq(PE.db.ui.moved.hub, { x = 12, y = 4 }, "cleared a second time")
+    -- Slim bars turned On while the row is On: the first placement then clears it.
+    local c2, PE2, m2 = TM.client({ slim = 0, ui = { size = "medium", hubPos = "LEFT", moved = { hub = { x = 30, y = -20 } } } })
+    choose(c2, PE2, "b22Timers", 1)
+    choose(c2, PE2, "slim", 1)
+    eq(PE2.db.ui.moved.hub, nil)
+    eq(m2.opts.b22HubCleared, 1)
+    eq(TM.timer(c2, 1).anchorInfo.offsetY, 35, "Slim bars On wrote the timers")
+end)
+
+test("0.22.0 timers: while placed the PE button takes its new spot at once, centred for its own size", function()
+    local c, PE, m = TM.client()
+    local function spot() local p, _, _, x, y = PE.Hub.button:GetPoint(1) return p, x, y end
+    eq({ spot() }, { "BOTTOMLEFT", 10, 162 })
+    choose(c, PE, "b22Timers", 1)
+    local size = PE.UI:Metrics().hub
+    local p, x, y = spot()
+    eq({ p, x }, { "BOTTOMLEFT", 61 })
+    near(y, math.max(149 - size / 2, 115), "centred on 149")
+    choose(c, PE, "b22Timers", 0)
+    eq({ spot() }, { "BOTTOMLEFT", 10, 162 })
 end)
 
 return { known = KNOWN_FAILURES }

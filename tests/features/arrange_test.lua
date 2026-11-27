@@ -313,6 +313,8 @@ test("arrange plan: the list of pieces, their kinds and their twins", function()
         ["inner left diamond"] = "live", ["inner right diamond"] = "live", ["outer left diamond"] = "live",
         ["outer right diamond"] = "live", ["LB targeting picture"] = "live", ["RB targeting picture"] = "live",
         ["player bar"] = "live", ["target bar"] = "live", ["spell wheels"] = "live",
+        -- 0.22.0 (row b22Timers): the game's timers, listed only while they are placed.
+        ["timer icons"] = "apply", ["tracked buff icons"] = "apply", ["buff timer bars"] = "apply",
     })
     eq(twins, {
         player = "target", target = "player",
@@ -2128,6 +2130,33 @@ test("0.20.0 arrangement: the Arrange window counts from the built-in spots, and
     p = c._state(pu.LeftShoulderBackground).points[1]
     eq({ p.point, p.x, p.y }, { "BOTTOMRIGHT", -84, 99 })
     c:assertClean()
+end)
+
+-- 0.22.0 (spec item 8, row b22Timers): the three pieces of the game's timers are in the Arrange
+-- window only while the timers are placed (the row On and Slim bars On).
+test("0.22.0 timers: the Arrange window lists the timer pieces only while they are placed", function()
+    local KEYS = { "timer icons", "tracked buff icons", "buff timer bars" }
+    local function seenIn(o)
+        local c, PE, A = client(o)
+        open(c, PE)
+        local seen = {}
+        for _ = 1, 40 do
+            seen[A:Picked()] = true
+            c:click(button(c, "Next piece"))
+        end
+        return seen, c, PE, A
+    end
+    local seen, c, PE, A = seenIn({ slim = 1, more = { b22Timers = 1 } })
+    for _, k in ipairs(KEYS) do check(seen[k], k .. " is not listed while placed") end
+    -- One of them moved: saved with the Edit Mode pieces' offsets, like the chat.
+    check(A:Pick("timer icons") == true, "could not pick the timer icons")
+    c:click(button(c, "Right"))
+    check(type(opts(PE).offsets["timer icons"]) == "table" and opts(PE).offsets["timer icons"].x > 0, "the move was not saved")
+    c:assertClean()
+    for _, o in ipairs({ { slim = 1, more = { b22Timers = 0 } }, { slim = 0, more = { b22Timers = 1 } } }) do
+        local s2 = seenIn(o)
+        for _, k in ipairs(KEYS) do check(not s2[k], k .. " is listed while not placed") end
+    end
 end)
 
 return { known = KNOWN_FAILURES }

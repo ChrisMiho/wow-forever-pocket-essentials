@@ -182,6 +182,19 @@ test("hub: with the controller layout placed the default spot is the layout's", 
     c:assertClean("layout spot")
 end)
 
+-- 0.22.0 (spec item 8): the layout is told the button's size, so it can centre the button on its spot.
+test("hub: the layout's spot is asked for with the button's size", function()
+    local c, PE = T.new({})
+    local asked = {}
+    rawset(PE.ControllerLayout, "HubSpot", function(_, size) asked[#asked + 1] = size return "BOTTOMLEFT", 61, 117 end)
+    PE.Hub:Refresh()
+    check(#asked >= 1, "the spot was not asked for")
+    eq(asked[#asked], PE.UI:Metrics().hub)
+    local p, x, y = point(PE)
+    eq({ p, x, y }, { "BOTTOMLEFT", 61, 117 })
+    c:assertClean("size asked")
+end)
+
 test("hub: a button the player moved keeps its offset from the old default", function()
     local saved = { version = 1, enabled = {}, options = {}, ui = { size = "medium", hubPos = "LEFT", moved = { hub = { x = 30, y = -20 } } }, errors = {} }
     local c, PE = T.new({ saved = saved })

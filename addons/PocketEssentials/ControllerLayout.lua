@@ -443,7 +443,8 @@ end
 --          left one's key)
 --   rects  the rectangles of Plan.Rects that move with it, the first one its main one
 --   when   listed only then: "slim" (Slim bars On), "noslim" (Off),
---          "face" (our spell pictures show: with them off nothing is drawn at the panels' spots)
+--          "face" (our spell pictures show: with them off nothing is drawn at the panels' spots),
+--          "timers" (0.22.0: the game's timers are placed, Plan.TimersActive)
 --   axis   "y": moves up and down only
 --   note   a line the Arrange window shows while the piece is picked
 Plan.ARRANGE = {
@@ -483,6 +484,12 @@ Plan.ARRANGE = {
     { key = "spell wheels", label = "Spell wheels and their buttons", kind = "live", axis = "y",
       note = "Up and down only. Both sides move together.",
       rects = { "LB+LT button", "LB+LT prompt", "RB+RT button", "RB+RT prompt" } },
+    -- 0.22.0 (row b22Timers): the game's own timers, listed only while they are placed
+    -- ("timers": the row On and Slim bars On, Plan.TimersActive). Both icon rows are one piece.
+    { key = "timer icons", label = "Timer icons", kind = "apply", when = "timers",
+      rects = { "large timer icons", "large timer icons room", "small timer icons" } },
+    { key = "tracked buff icons", label = "Tracked buff icons", kind = "apply", when = "timers", rects = { "tracked buff icons" } },
+    { key = "buff timer bars", label = "Buff timer bars", kind = "apply", when = "timers", rects = { "buff timer bars" } },
 }
 Plan.ARRANGE_BY = {}
 for i = 1, #Plan.ARRANGE do Plan.ARRANGE_BY[Plan.ARRANGE[i].key] = Plan.ARRANGE[i] end
@@ -840,6 +847,136 @@ function Plan.SlimRects(v)
     return out
 end
 
+-- 0.22.0 (spec item 8, row b22Timers, Off by default): the game's own timers, the Cooldown
+-- Manager (Blizzard_CooldownViewer, loaded for camelot: Blizzard_CooldownViewer.toc:2). They are
+-- four Edit Mode pieces of the system CooldownViewer (Blizzard_APIDocumentationGenerated/
+-- EditModeManagerConstantsDocumentation.lua:758), indices Essential 1, Utility 2, BuffIcon 3 and
+-- BuffBar 4 (same file, 399-409), with the settings of 377-396. Our layout gives them a spot and
+-- settings the way it does for the swing timers; nothing of the game's is called, and whether
+-- the game shows them at all stays the player's choice (the setting cooldownViewerEnabled,
+-- Blizzard_CooldownViewer/CooldownViewer.lua:1628 and 1905, is never set). The numbers:
+--   size     Icon Size 80%. Stored as (80 - 50) / 10 = 3: the setting runs 50 to 200 in steps of
+--            10 (Blizzard_EditMode/Shared/EditModeSettingDisplayInfo.lua:926-936) and is saved
+--            as steps from 50 (ConvertValueDefault, the same file, 8-14); read back as a percent
+--            (EditModeSystemTemplates.lua:2992-2995), each icon and bar is scaled by it
+--            (CooldownViewer.lua:2006-2008).
+--   width    Bar Width 100%, the standard width. Stored as 100 - 50 = 50: 50 to 200 in steps of 1
+--            with the same conversion (EditModeSettingDisplayInfo.lua:948-958), read back as a
+--            percent (EditModeSystemTemplates.lua:3027-3028). The game's own preset stores 100
+--            (Mainline/EditModePresetLayouts.lua:863), which is 150%: the 331 unit wide bar seen
+--            on the device on 2026-11-27 (220 x 1.5).
+--   icon     the sizes at 100%: Essential 50, Utility 30, a tracked buff 40, a buff bar 220 by 30
+--            with its icon (CooldownViewer.xml:21, 90, 159, 210); at 80% 40, 24, 32, and 176 by 24
+--   limit    icons in a row (IconLimit): six large ones, seven small ones. The tracked buff icons
+--            and the bars have no such setting: always one row and one column
+--            (EditModeSystemTemplates.lua:2944-2956, CooldownViewer.lua:2299-2302, 2329-2332)
+--   pad      IconPadding: 2 between the timer icons, 5 for the buffs (the game's preset numbers,
+--            Mainline/EditModePresetLayouts.lua:787, 810, 833, 856)
+--   right    the right edge of both icon rows, from the screen's left edge: 291, which is 8 left
+--            of the outer left spell panel at 100% (rounded down). At 110% and 120% that panel
+--            reaches further out, so the rows end 8 short of it there (264 and 238), and the large
+--            row holds fewer icons where six no longer fit on the screen (five at 120%)
+--   essentialY, utilityY  the two rows' bottoms: 35 and 8
+--   above    the bars and the tracked buff icons start 4 over the room kept for the buff boxes
+--            of their side (Plan.SLIM.boxes), so they rise with the slim bars (Plan.SlimLift)
+--   iconsGap the tracked buff icons 8 right of the bars, rounded up to a whole unit
+--   bars     three bars fit; with the bars on the left the chat's bottom is 5 over the third
+--   hub      the PE button's left edge 61 in from the screen's: more than 40, a full button
+--            away from the edge, where a hand holding the device would touch it. Centred
+--            between the pet bar's top and the player bar's bottom (149 at 100%)
+-- How the rectangles allow for the game's own spacing: the game lays the icons 4 closer than
+-- the padding says, and the bars 2 closer (CooldownViewerMixin:GetAdditionalPaddingOffset and
+-- BuffBarCooldownViewerMixin:GetAdditionalPaddingOffset, CooldownViewer.lua:2015-2017 and
+-- 2372-2374, added to the padding at 2061-2063, "to allow the icons to touch"). The rectangles
+-- below are worked out with the padding as set, so each one is a little larger than what the
+-- game draws, never smaller: six large icons are 6 x 40 + 5 x 2 = 250 wide here and about 230
+-- on screen. The tracked buff icons are taken at 107 by 32 (three icons of 32, 5 apart, and one
+-- to spare); a fourth one or more reaches further right, into free space.
+-- A large row holds at most six: a seventh starts a second row. The game lays horizontal rows
+-- from the top down (CooldownViewer.lua:2052-2056) and the piece is held by its bottom edge, so
+-- the piece grows upward: the room for that second row, the same size directly above, is kept free.
+Plan.CDM = {
+    size = 80, width = 100,
+    icon = { Essential = 50, Utility = 30, BuffIcon = 40 }, bar = { w = 220, h = 30, count = 3 },
+    limit = { Essential = 6, Utility = 7 }, pad = { icons = 2, buffs = 5 }, buffIconsW = 107,
+    right = 291, diamondGap = 8, essentialY = 35, utilityY = 8,
+    above = 4, iconsGap = 8, chatOver = 5, hubX = 61,
+    -- Orientation Horizontal 0, IconDirection Right 1 (EditModeManagerConstantsDocumentation.lua:131-144).
+    horizontal = 0, rightward = 1,
+    order = { "Essential", "Utility", "BuffIcon", "BuffBar" },
+    names = { Essential = "large timer icons", Utility = "small timer icons", BuffIcon = "tracked buff icons",
+        BuffBar = "buff timer bars" },
+    keys = { Essential = "timer icons", Utility = "timer icons", BuffIcon = "tracked buff icons", BuffBar = "buff timer bars" },
+}
+
+-- Whether the row b22Timers (Batch.lua) is On.
+function Plan.TimersOn()
+    local batch = PE.Batch
+    return type(batch) == "table" and type(batch.On) == "function" and batch.On("b22Timers") == true
+end
+
+-- Whether the timers are placed for v: the row is On and v is an options table with Slim bars
+-- On. The pieces stand on the slim bars' spots, so without them the row places nothing.
+function Plan.TimersActive(v)
+    return Plan.TimersOn() and type(v) == "table" and Fill(v).slim == 1
+end
+
+-- The side of the buff timer bars for v (the row b22BarsSide): 0 left, by your name; 1 right.
+function Plan.TimersSide(v)
+    return type(v) == "table" and v.b22BarsSide == 1 and 1 or 0
+end
+
+-- The four pieces' spots, settings and rectangles at their built-in places, for v (an options
+-- table), or nil while they are not placed (Plan.TimersActive). A fresh table:
+--   [index name] = { point, x, y (on UIParent's BOTTOMLEFT), settings, key (Plan.ARRANGE),
+--                    rect = { left, bottom, right, top } from the screen's bottom centre,
+--                    limit (icons in a row; the bars: nil) }
+--   room     the rectangle kept for a second row of large icons
+--   side     0 or 1; chatY  the least bottom of the chat (side 0 only, else nil)
+--   hubMid   the PE button's centre, up from the bottom
+-- No saved offset is added (the three pieces of Plan.ARRANGE get theirs where they are used):
+-- the slim bars and the spell panels are taken where the plan puts them before a player's move.
+function Plan.TimerSpots(v)
+    if not Plan.TimersActive(v) then return nil end
+    local C, half = Plan.CDM, SCREEN_W / 2
+    local s = C.size / 100
+    local stored = (C.size - 50) / 10
+    local slim = Plan.SlimRects({ arrange = 0, panelSize = Plan.PanelSize(v) })
+    local g = Geometry(v)
+    local dx = Plan.Base("outer left diamond")
+    local panelLeft = half - g.outer + dx - g.w / 2 -- from the screen's left edge
+    local right = math.min(C.right, math.floor(panelLeft - C.diamondGap + 1e-9))
+    local out = { side = Plan.TimersSide(v) }
+    for _, name in ipairs({ "Essential", "Utility" }) do
+        local icon, pad = C.icon[name] * s, C.pad.icons
+        local limit = math.min(C.limit[name], math.floor((right + pad) / (icon + pad) + 1e-9))
+        local w = limit * icon + (limit - 1) * pad
+        local y = name == "Essential" and C.essentialY or C.utilityY
+        out[name] = { point = "BOTTOMRIGHT", x = right, y = y, limit = limit, key = C.keys[name],
+            rect = { right - w - half, y, right - half, y + icon },
+            settings = { IconSize = stored, IconLimit = limit, IconPadding = pad, Orientation = C.horizontal,
+                IconDirection = C.rightward } }
+    end
+    local e = out.Essential.rect
+    out.room = { e[1], e[4], e[3], e[4] + (e[4] - e[2]) }
+    local room = out.side == 1 and slim["target boxes room"] or slim["pet boxes room"]
+    local barW, barH = C.bar.w * s * C.width / 100, C.bar.h * s
+    local barsH = C.bar.count * barH + (C.bar.count - 1) * C.pad.buffs
+    local y = room[4] + C.above
+    local barX = half + room[1]
+    out.BuffBar = { point = "BOTTOMLEFT", x = barX, y = y, key = C.keys.BuffBar,
+        rect = { room[1], y, room[1] + barW, y + barsH },
+        settings = { IconSize = stored, BarWidthScale = C.width - 50, IconPadding = C.pad.buffs } }
+    local iconX = math.ceil(barX + barW + C.iconsGap - 1e-9)
+    local icon = C.icon.BuffIcon * s
+    out.BuffIcon = { point = "BOTTOMLEFT", x = iconX, y = y, key = C.keys.BuffIcon,
+        rect = { iconX - half, y, iconX - half + C.buffIconsW, y + icon },
+        settings = { IconSize = stored, IconPadding = C.pad.buffs, Orientation = C.horizontal, IconDirection = C.rightward } }
+    if out.side == 0 then out.chatY = math.ceil(y + barsH + C.chatOver - 1e-9) end
+    out.hubMid = (slim["player bar"][2] + slim["pet bar"][4]) / 2
+    return out
+end
+
 -- 0.18.0: the two targeting pictures' spots with their offsets: { left = { point, x, y },
 -- right = { point, x, y } } on UIParent's bottom, a fresh table. Plan.SHOULDERS stays the
 -- built-in numbers. 0.19.0: with the square map each is 20 further out before its offset is
@@ -894,7 +1031,8 @@ function Plan.Pending(opts)
     local out = {}
     local written = type(opts) == "table" and type(opts.offsetsWritten) == "table" and opts.offsetsWritten or {}
     for _, def in ipairs(Plan.ARRANGE) do
-        if def.kind == "apply" then
+        -- 0.22.0: the timer pieces only while they are placed (Plan.TimersActive).
+        if def.kind == "apply" and (def.when ~= "timers" or Plan.TimersActive(opts)) then
             local dx, dy = Plan.Moved(type(opts) == "table" and opts or { arrange = 0 }, def.key)
             local w = written[def.key]
             local wx = type(w) == "table" and type(w.x) == "number" and w.x or 0
@@ -940,12 +1078,25 @@ local function Rising(v)
     local tipY = frameY + UNIT.h + Plan.TOT_SPOT.y + SMALL.h + TOOLTIP.over
     local tipX = TOOLTIP.x
     if tipY + TOOLTIP.h > SCREEN_H + TRACKER.y - TRACKER.h then tipX = AURA_X end
-    return { hubY = hubY, chatY = chatY, tipX = tipX, tipY = tipY }
+    -- 0.22.0 (row b22Timers): with the buff timer bars on the left the chat ends higher, over
+    -- them (Plan.TimerSpots); chatBefore is where it would be without them.
+    local chatBefore = chatY
+    local timers = Plan.TimerSpots(v)
+    if timers and timers.chatY then chatY = math.max(chatY, timers.chatY) end
+    return { hubY = hubY, chatY = chatY, tipX = tipX, tipY = tipY, chatBefore = chatBefore }
 end
 
 -- The PE button's default spot while the layout is placed: point, x, y on UIParent, in UI
--- units, for the options (or a Spell panel size, or nil).
-function Plan.HubSpot(opts)
+-- units, for the options (or a Spell panel size, or nil). 0.22.0 (row b22Timers): while the
+-- game's timers are placed, left of the slim bars: 61 in, centred on Plan.TimerSpots' hubMid for
+-- a button of `size` (nil: the largest, HUB.size), but never lower than the room kept for a
+-- second row of large timer icons under it (the largest button would reach 4.4 into it at 100%).
+function Plan.HubSpot(opts, size)
+    local timers = Plan.TimerSpots(opts)
+    if timers then
+        if type(size) ~= "number" or size <= 0 then size = HUB.size end
+        return "BOTTOMLEFT", Plan.CDM.hubX, math.max(timers.hubMid - size / 2, timers.room[4])
+    end
     return "BOTTOMLEFT", HUB.x, Rising(opts).hubY
 end
 
@@ -1044,6 +1195,12 @@ function Plan.Rects(v)
         for name, rect in pairs(Plan.SlimRects(v)) do r[name] = rect end
         local tip = Plan.SLIM.tooltip
         r.tooltip = { W / 2 + tip.x - TOOLTIP.w, tip.y, W / 2 + tip.x, tip.y + TOOLTIP.h }
+    end
+    -- 0.22.0 (row b22Timers): the game's four timer pieces and the room over the large icons.
+    local cdm = Plan.TimerSpots(v)
+    if cdm then
+        for _, name in ipairs(Plan.CDM.order) do r[Plan.CDM.names[name]] = cdm[name].rect end
+        r["large timer icons room"] = cdm.room
     end
     -- 0.18.0: the Edit Mode pieces where the player moved them (the live ones were worked
     -- out moved above: FaceSpots, Shoulders, SlimRects, the bottom anchor).
@@ -1147,6 +1304,15 @@ function Plan.Pieces(opts)
     for _, name in ipairs(TIMER.order) do
         add("SwingTimer", name, Spot("BOTTOM", "BOTTOM", timers.x, timers.y[name]),
             { Scale = 3, Width = 0, Height = 0, Visibility = visibility[name] }, "swing timers")
+    end
+    -- 0.22.0 (row b22Timers, with Slim bars On): the game's four timer pieces (Plan.TimerSpots).
+    -- Left out by Plan.Apply on a client without them.
+    local cdm = Plan.TimerSpots(opts)
+    if cdm then
+        for _, name in ipairs(Plan.CDM.order) do
+            local t = cdm[name]
+            add("CooldownViewer", name, Spot(t.point, "BOTTOMLEFT", t.x, t.y), t.settings, t.key)
+        end
     end
     return list
 end
@@ -1348,6 +1514,9 @@ local function ReadEnums()
             -- 0.16.0 (EditModeManagerConstantsDocumentation.lua:749): may be missing on another
             -- client: Plan.Apply then leaves the tooltip out.
             HudTooltip = Optional(function() return Enum.EditModeSystem.HudTooltip end),
+            -- 0.22.0 (row b22Timers): the game's timers (EditModeManagerConstantsDocumentation.lua:758).
+            -- Here and below each may be missing on another client: Plan.Apply then leaves the four out.
+            CooldownViewer = Optional(function() return Enum.EditModeSystem.CooldownViewer end),
         },
         setting = {
             -- HeaderUnderneath may be nil (an older client): Plan.Apply then leaves it out.
@@ -1376,6 +1545,17 @@ local function ReadEnums()
             UnitFrame = {
                 BuffsOnTop = Optional(function() return Enum.EditModeUnitFrameSetting.BuffsOnTop end),
             },
+            -- 0.22.0 (EditModeManagerConstantsDocumentation.lua:377-396).
+            CooldownViewer = Optional(function()
+                return {
+                    Orientation = Enum.EditModeCooldownViewerSetting.Orientation,
+                    IconLimit = Enum.EditModeCooldownViewerSetting.IconLimit,
+                    IconDirection = Enum.EditModeCooldownViewerSetting.IconDirection,
+                    IconSize = Enum.EditModeCooldownViewerSetting.IconSize,
+                    IconPadding = Enum.EditModeCooldownViewerSetting.IconPadding,
+                    BarWidthScale = Enum.EditModeCooldownViewerSetting.BarWidthScale,
+                }
+            end),
         },
         index = {
             AuraFrame = {
@@ -1396,6 +1576,15 @@ local function ReadEnums()
                 StatusTrackingBar1 = Enum.EditModeStatusTrackingBarSystemIndices.StatusTrackingBar1,
                 StatusTrackingBar2 = Enum.EditModeStatusTrackingBarSystemIndices.StatusTrackingBar2,
             },
+            -- 0.22.0 (EditModeManagerConstantsDocumentation.lua:399-409).
+            CooldownViewer = Optional(function()
+                return {
+                    Essential = Enum.EditModeCooldownViewerSystemIndices.Essential,
+                    Utility = Enum.EditModeCooldownViewerSystemIndices.Utility,
+                    BuffIcon = Enum.EditModeCooldownViewerSystemIndices.BuffIcon,
+                    BuffBar = Enum.EditModeCooldownViewerSystemIndices.BuffBar,
+                }
+            end),
         },
         layoutType = {
             Preset = Enum.EditModeLayoutType.Preset,
@@ -2519,6 +2708,7 @@ Snap.View = function()
     view.mapLook = Plan.MapLook(opts)
     Plan.look = view.mapLook == 1 and 1 or nil
     view.slim = (Snap.slimOn == true or (Snap.slimOn == nil and opts.slim == 1)) and 1 or 0
+    view.b22BarsSide = opts.b22BarsSide -- 0.22.0: the side of the game's buff timer bars
     -- Our spell pictures are off (FaceBars.lua says why): no panel is drawn.
     view.faceOff = FaceStatus() ~= nil and true or nil
     if Snap.arrangeOn and not Snap.arrangeStarted then
@@ -2562,6 +2752,11 @@ end
 
 local function PlaceNow()
     Snap.View() -- 0.18.0: the session's offsets are known before anything is placed
+    -- 0.22.0: once a session, where the game's timers are (while their row is On).
+    if not Snap.timersLogged and Plan.TimersOn() then
+        Snap.timersLogged = true
+        Snap.TimersLog()
+    end
     PlaceScreen() -- the hint box, the chat's box, the map's border and buttons go with our layout, bars or not
     -- 0.17.0: and so do the slim bars, when the session began with their switch on.
     if Snap.slimOn == nil then Snap.slimOn = type(mod and mod.opts) == "table" and mod.opts.slim == 1 end
@@ -2700,6 +2895,7 @@ local function AddOurs(state, e)
         Fail("The game's preset layouts could not be copied")
         return false, false
     end
+    local kept = Plan.TimersActive(mod.opts) and Snap.TimersKept(base, e) or nil -- 0.22.0, before the build
     local layout = Plan.Build(base, mod.opts, e)
     local newIndex = lastAccount and (lastAccount + 1) or (state.numPresets + 1)
     local list = {}
@@ -2718,7 +2914,9 @@ local function AddOurs(state, e)
     end
     mod.opts.template = Plan.TEMPLATE
     Plan.MarkWritten(mod.opts, Plan.Pieces(mod.opts)) -- 0.18.0: the offsets it was built with
+    mod.opts.b22TimersBefore = kept -- 0.22.0: what the new layout held for the game's timers
     if PE.debugOn then PE:Debug("ctrlLayout", "saved the Pocket Essentials layout at index " .. newIndex) end
+    if kept then Snap.TimersLog(layout, e) end
     return true, true
 end
 
@@ -2753,6 +2951,7 @@ local function Rebuild()
         return false
     end
     base.layoutIndex = nil
+    local kept = Plan.TimersActive(mod.opts) and Snap.TimersKept(base, e) or nil -- 0.22.0, before the build
     state.saved[pos] = Plan.Build(base, mod.opts, e)
     local ok, err = SaveAll(state, state.saved)
     if not ok then
@@ -2761,6 +2960,9 @@ local function Rebuild()
     end
     mod.opts.template = Plan.TEMPLATE
     Plan.MarkWritten(mod.opts, Plan.Pieces(mod.opts)) -- 0.18.0
+    -- 0.22.0: the layout is the preset's again, so what was kept for the game's timers is its.
+    mod.opts.b22TimersBefore = kept
+    if kept then Snap.TimersLog(state.saved[pos], e) end
     if PE.debugOn then PE:Debug("ctrlLayout", "the Pocket Essentials layout was rebuilt from the template") end
     return true
 end
@@ -2900,6 +3102,8 @@ local function RememberApplied(opts)
     local o = Fill(opts)
     for k in pairs(Plan.DEFAULTS) do applied[k] = o[k] end
     applied.panelSize = Plan.PanelSize(opts)
+    -- 0.22.0: the two timer rows, which rewrite pieces too (put back on a refusal).
+    if type(opts) == "table" then applied.b22Timers, applied.b22BarsSide = opts.b22Timers, opts.b22BarsSide end
 end
 
 -- Which pieces of Plan.Pieces each row rewrites: its own swing timer only (one
@@ -2914,12 +3118,158 @@ local REWRITES = {
     -- The Spell panel size: the player, pet and target frames (they rise at 110% and 120%),
     -- the chat over them and the tooltip over the target of target. The pictures and the
     -- real bars take the new size after the reload asked for.
-    panelSize = function(p) return p.system == "UnitFrame" or p.system == "ChatFrame" or p.system == "HudTooltip" end,
-    -- 0.17.0, Slim bars: the tooltip's spot (the corner while they are on).
-    slim = function(p) return p.system == "HudTooltip" end,
+    -- 0.22.0: and the game's timers, whose large icons end short of the larger spell panels and
+    -- whose bars stand on the slim bars (only in the list while they are placed).
+    panelSize = function(p) return p.system == "UnitFrame" or p.system == "ChatFrame" or p.system == "HudTooltip"
+        or p.system == "CooldownViewer" end,
+    -- 0.17.0, Slim bars: the tooltip's spot (the corner while they are on). 0.22.0: with the row
+    -- b22Timers On also the game's timers, which need the slim bars, and the chat over them.
+    slim = function(p) return p.system == "HudTooltip"
+        or (Plan.TimersOn() and (p.system == "CooldownViewer" or p.system == "ChatFrame")) end,
+    -- 0.22.0 (rows b22Timers and b22BarsSide): the game's four timer pieces and the chat, which
+    -- ends higher while the bars are on the left.
+    b22Timers = function(p) return p.system == "CooldownViewer" or p.system == "ChatFrame" end,
+    b22BarsSide = function(p) return p.system == "CooldownViewer" or p.system == "ChatFrame" end,
     -- 0.19.0, Map look: the map (its size and spot) and the three swing timers (14 up with Square).
     mapLook = function(p) return p.system == "Minimap" or p.system == "SwingTimer" end,
 }
+
+-- 0.22.0 (rows b22Timers and b22BarsSide, spec item 8): the game's timers in our layout. On a
+-- table, not locals (this file is at Lua's limit of 200).
+--   Snap.TimersKept(layout, e)  copies of what the layout holds for the four pieces, or nil
+--   Snap.TimersKeep(layout, e, pieces)  before the first write of the four (one of them in
+--          pieces): those copies saved as opts.b22TimersBefore, so the row Off puts back exactly
+--          what was there, the player's own Edit Mode changes too
+--   Snap.TimersBack(layout)  while the timers are not placed and copies are saved: puts them
+--          back into the layout, in place; true when it did (the copies are dropped after the save)
+--   Snap.TimersLog(layout, e)  the debug lines (spec item 8, "Log"); layout: the layout just
+--          written (nil at login), to say which pieces it does not hold
+--   Snap.TimersRow(key)  a change of either row: the pieces rewritten, out of a fight, and the
+--          reload asked for; nothing while the timers are not placed and nothing is to be put back
+--   Snap.TimersHub()  the first time the timers are placed: the PE button's own move (Move.lua,
+--          PE.db.ui.moved.hub) is cleared once, so it goes to its new spot; opts.b22HubCleared
+Snap.TimersKept = function(layout, e)
+    local sys = e and e.system and e.system.CooldownViewer
+    local idx = e and e.index and e.index.CooldownViewer
+    if not sys or type(idx) ~= "table" or type(layout) ~= "table" then return nil end
+    local kept = {}
+    for _, name in ipairs(Plan.CDM.order) do
+        local entry = idx[name] and FindEntry(layout, sys, idx[name])
+        if entry then kept[#kept + 1] = DeepCopy(entry) end
+    end
+    return kept
+end
+Snap.TimersKeep = function(layout, e, pieces)
+    if type(mod.opts.b22TimersBefore) == "table" then return end
+    for _, p in ipairs(pieces or {}) do
+        if p.system == "CooldownViewer" then
+            mod.opts.b22TimersBefore = Snap.TimersKept(layout, e)
+            return
+        end
+    end
+end
+Snap.TimersBack = function(layout)
+    local kept = mod.opts.b22TimersBefore
+    if type(kept) ~= "table" or Plan.TimersActive(mod.opts) or type(layout) ~= "table" or type(layout.systems) ~= "table" then
+        return false
+    end
+    for _, old in ipairs(kept) do
+        for i, entry in ipairs(layout.systems) do
+            if type(old) == "table" and type(entry) == "table" and entry.system == old.system and entry.systemIndex == old.systemIndex then
+                layout.systems[i] = DeepCopy(old)
+                break
+            end
+        end
+    end
+    return true
+end
+Snap.TimersLog = function(layout, e)
+    if not PE.debugOn then return end
+    local o = mod.opts
+    local function D(text) PE:Debug("ctrlLayout", "timers: " .. text) end
+    local function N(x)
+        if type(x) ~= "number" then return tostring(x) end
+        if x == math.floor(x) then return tostring(x) end
+        return string.format("%.1f", x)
+    end
+    if not Plan.TimersActive(o) then
+        D("nothing placed: needs Slim bars (Slim bars are Off)")
+        return
+    end
+    for _, p in ipairs(Plan.Pieces(o)) do
+        if p.system == "CooldownViewer" then
+            local name = Plan.CDM.names[p.index]
+            local sys = e and e.system and e.system.CooldownViewer
+            local group = e and e.index and e.index.CooldownViewer
+            local idx = type(group) == "table" and group[p.index] or nil
+            if layout and not (sys and idx) then
+                D(name .. " not written: this game version has no such piece")
+            elseif layout and not FindEntry(layout, sys, idx) then
+                D(name .. " not written: the Pocket Essentials layout holds no such piece")
+            else
+                local set = p.settings
+                local last = p.index == "BuffBar" and ("width " .. N(set.BarWidthScale + 50) .. "%")
+                    or (set.IconLimit and (N(set.IconLimit) .. " per row") or "all in one row")
+                D(name .. " written at " .. N(p.anchor.x) .. ", " .. N(p.anchor.y) .. ", size " .. N(set.IconSize * 10 + 50)
+                    .. "%, " .. last)
+            end
+        end
+    end
+    D("bars on the " .. (Plan.TimersSide(o) == 1 and "right" or "left"))
+    local rise = Rising(o)
+    D("chat ends at " .. N(rise.chatY) .. " (was " .. N(rise.chatBefore) .. ")")
+    local view = type(Snap.view) == "table" and Snap.view or o
+    local size
+    local ui = PE.UI
+    if type(ui) == "table" and type(ui.Metrics) == "function" then
+        local ok, m = pcall(ui.Metrics, ui)
+        if ok and type(m) == "table" and type(m.hub) == "number" then size = m.hub end
+    end
+    local _, hx, hy = Plan.HubSpot(view, size)
+    D("PE button at " .. N(hx) .. ", " .. N(hy) .. " (was " .. N(HUB.x) .. ", " .. N(Rising(view).hubY) .. ")")
+    -- The game's own switch for its timers (Blizzard_CooldownViewer/CooldownViewer.lua:1628,
+    -- read there at 1905), read for this line only and never set: so a test with them switched
+    -- off is not taken for a fault. C_CVar.GetCVar: CVarDocumentation.lua.
+    local state = "not readable"
+    if type(C_CVar) == "table" and type(C_CVar.GetCVar) == "function" then
+        local ok, value = pcall(function() return C_CVar.GetCVar("cooldownViewerEnabled") end) -- the audit reads the name
+        if ok and value == "1" then state = "on" elseif ok and value == "0" then state = "off" end
+    end
+    D("the game's timers are switched " .. state)
+end
+Snap.TimersRow = function(key)
+    local o = mod and mod.opts
+    if type(o) ~= "table" then return end
+    if not Plan.TimersActive(o) and type(o.b22TimersBefore) ~= "table" then
+        if PE.debugOn then
+            PE:Debug("ctrlLayout", Plan.TimersOn() and "timers: nothing placed: needs Slim bars (Slim bars are Off)"
+                or "timers: the row is Off; nothing was placed, nothing to put back")
+        end
+        if not Plan.TimersOn() then RefreshHub() end -- the PE button back at its spot, whatever happened before
+        return
+    end
+    if not Snap.RewritePieces(REWRITES[key], key) then return end -- RewritePieces, defined below
+    if PE.debugOn then
+        PE:Debug("ctrlLayout", "timers: " .. key .. " is now " .. tostring(o[key]) .. "; the game's timers follow the next reload")
+    end
+    Snap.TimersHub()
+    RefreshHub() -- the PE button takes its spot at once
+end
+Snap.TimersHub = function()
+    local o = mod.opts
+    if o.b22HubCleared == 1 or not Plan.TimersActive(o) then return end
+    o.b22HubCleared = 1
+    local ui = PE.db and PE.db.ui
+    local had = type(ui) == "table" and type(ui.moved) == "table" and ui.moved.hub ~= nil
+    local move = PE.Move
+    if had and type(move) == "table" and type(move.ClearOffset) == "function" then
+        PE:Safe("ctrlLayout", move.ClearOffset, move, "hub")
+    end
+    if PE.debugOn then
+        PE:Debug("ctrlLayout", had and "timers: the PE button's own move was cleared, once: it goes to its new spot"
+            or "timers: the PE button had no move of its own to clear")
+    end
+end
 
 local function RunRewrites()
     if not wanted or #pendingRewrites == 0 then return end -- kept for the next switch-on
@@ -2949,7 +3299,9 @@ local function RunRewrites()
     for i, p in ipairs(all) do
         if picked[i] or (p.arrange and keys[p.arrange]) then pieces[#pieces + 1] = p end
     end
+    Snap.TimersKeep(state.saved[pos], e, pieces) -- 0.22.0: before the game's timers are first written
     Plan.Apply(state.saved[pos], pieces, e) -- our entry, in place (GetLayouts gave a copy)
+    local timersBack = Snap.TimersBack(state.saved[pos]) -- 0.22.0: the row Off puts them back
     local ok, err = SaveAll(state, state.saved)
     if not ok then
         PE:LogError("ctrlLayout", err)
@@ -2969,6 +3321,17 @@ local function RunRewrites()
     end
     Snap.lastWrite = { ok = true }
     Plan.MarkWritten(mod.opts, pieces, all) -- 0.18.0: which offsets our layout holds now
+    -- 0.22.0: the game's timers, written or put back.
+    if timersBack then
+        mod.opts.b22TimersBefore = nil
+        if PE.debugOn then PE:Debug("ctrlLayout", "timers: the four pieces put back in the layout as they were before") end
+    end
+    for _, p in ipairs(pieces) do
+        if p.system == "CooldownViewer" then
+            Snap.TimersLog(state.saved[pos], e)
+            break
+        end
+    end
     if PE.debugOn then
         local keys, seen = {}, {}
         for _, p in ipairs(pieces) do
@@ -3093,10 +3456,12 @@ do
     -- our Edit Mode layout, so a change rewrites that piece (out of a fight) and asks for the
     -- reload; the bars themselves start or stop with that reload (Snap.slimOn).
     OPTIONS[#OPTIONS + 1] = { key = "slim", label = "Slim bars", choices = ON_OFF, OnChange = function()
-        if RewritePieces(REWRITES.slim, "slim") and not Snap.slimTold then
+        local ok = RewritePieces(REWRITES.slim, "slim")
+        if ok and not Snap.slimTold then
             Snap.slimTold = true
             PE:Print("Slim bars count from the next reload.")
         end
+        if ok then Snap.TimersHub() end -- 0.22.0: the game's timers placed for the first time
     end }
     -- 0.20.0: the names on the slim bars (SlimBars.lua). It changes no Edit Mode piece: the
     -- bars read their names again at once, in a session that began with Slim bars On.
@@ -3159,9 +3524,20 @@ do
         OPTIONS[#OPTIONS + 1] = { key = key, label = row.label .. (row.reload and " (reload)" or ""), choices = ON_OFF, always = true,
             OnChange = function() PE.Batch.Changed(key) end }
     end
-    -- Where the buff timer bars sit (used by a later part of the batch).
+    -- 0.22.0 (spec item 8): the game's timers stand on the slim bars' spots, so without Slim bars
+    -- the row places nothing and says so in its name.
+    for _, o in ipairs(OPTIONS) do
+        if o.key == "b22Timers" then
+            o.value = function(m) if type(m.opts) == "table" and m.opts.slim ~= 1 then return "needs Slim bars" end end
+        end
+    end
+    local batchRows = PE.Batch
+    batchRows.Listen("b22Timers", function() Snap.TimersRow("b22Timers") end)
+    -- Where the buff timer bars sit (spec item 8): a change rewrites the game's timers while they
+    -- are placed and asks for the reload.
     OPTIONS[#OPTIONS + 1] = { key = "b22BarsSide", label = "Buff timer bars", always = true,
-        choices = { { value = 0, label = "Left, by your name" }, { value = 1, label = "Right, by the target" } } }
+        choices = { { value = 0, label = "Left, by your name" }, { value = 1, label = "Right, by the target" } },
+        OnChange = function() Snap.TimersRow("b22BarsSide") end }
 end
 -- 0.16.4, for the device test (spec 2026-11-24-0.16.4-cleanup.md, 6 and 7): a numbered mark
 -- in the debug log, and the snapshot (the block at the end of the file). `always`: the two
@@ -3378,9 +3754,12 @@ mod = PE:RegisterModule({
 -- The PE button's default spot (Hub.lua): point, x, y on UIParent while the bars are
 -- placed by us, else nil. "Placed" is what SyncBars decides: the switch is on and our layout
 -- is the active one. Reads only.
-function mod:HubSpot()
+-- size: the button's size in UI units (0.22.0: the spot centres it on its new place while the
+-- game's timers are placed; nil means the largest). The session's view gives the plan the
+-- session's Slim bars and the side of the timers' bars.
+function mod:HubSpot(size)
     if not (wanted and placed) then return nil end
-    return Plan.HubSpot(SessionSize())
+    return Plan.HubSpot(type(Snap.view) == "table" and Snap.view or SessionSize(), size)
 end
 PE.ControllerLayout = mod
 

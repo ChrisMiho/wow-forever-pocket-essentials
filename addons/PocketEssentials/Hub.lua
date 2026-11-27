@@ -125,7 +125,8 @@ local function Placement()
     local layout = PE.ControllerLayout
     if (key == nil or key == "LEFT") and dx == 0 and dy == 0 and type(layout) == "table"
         and type(layout.HubSpot) == "function" then
-        local ok, point, lx, ly = pcall(layout.HubSpot, layout)
+        -- 0.22.0: the size, so the layout can centre the button on its spot.
+        local ok, point, lx, ly = pcall(layout.HubSpot, layout, size)
         if ok and type(point) == "string" and type(lx) == "number" and type(ly) == "number" then
             return point, lx, ly, size
         end

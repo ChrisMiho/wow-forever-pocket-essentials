@@ -131,6 +131,11 @@ local function IsListed(view, def)
     if def.when == "slim" then return view.slim == 1 end
     if def.when == "noslim" then return view.slim ~= 1 end
     if def.when == "face" then return not view.faceOff end
+    -- 0.22.0: the game's timers, while they are placed (the row b22Timers On, Slim bars On).
+    if def.when == "timers" then
+        local plan = Plan()
+        return plan ~= nil and type(plan.TimersActive) == "function" and plan.TimersActive(view) == true
+    end
     return true
 end
 
