@@ -1604,4 +1604,150 @@ test("0.22.0 empty slots: one log line per picture when its emptiness or its rea
     c:assertClean()
 end)
 
+-- 0.22.0 item 5 (spec 2026-11-27-0.22.0-parked-batch.md): bigger direction marks, row b22Marks.
+local function marksOn(PE, on) PE.db.options.ctrlLayout.b22Marks = on and 1 or nil end
+
+local function marksLines(c)
+    local out = {}
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        local text = line:match("^%S+ ctrlLayout: (marks: .*)$")
+        if text then out[#out + 1] = text end
+    end
+    return out
+end
+
+local function smallShown(c, p)
+    local n = 0
+    for _, t in ipairs(p.small) do if shown(c, t) then n = n + 1 end end
+    return n
+end
+
+local function partColours(c, p)
+    local out = {}
+    for _, t in ipairs(p.bigParts) do
+        local col = st(c, t).color
+        out[#out + 1] = { col[1], col[2], col[3] }
+    end
+    return out
+end
+
+test("0.22.0 marks: with the row Off the small glyph shows and the big mark is hidden", function()
+    local c, PE, Face = started()
+    PE:SetDebug(true)
+    for _, g in ipairs(Face.view) do
+        for _, p in ipairs(g.pics) do
+            eq(shown(c, p.bigMark), false)
+            eq(smallShown(c, p), #p.small)
+        end
+    end
+    eq(#pic(Face, 1, 1).small, 6, "a d-pad glyph: backing, middle dot, four dots")
+    eq(#pic(Face, 1, 5).small, 5, "a face glyph: backing and four dots")
+    eq(marksLines(c), {}, "no line while the row is Off")
+    c:assertClean()
+end)
+
+test("0.22.0 marks: with the row On the big mark shows in the corner, 24 units at 42, the small glyph hidden", function()
+    local c, PE, Face = new()
+    marksOn(PE, true)
+    PE:SetDebug(true)
+    check(Face:Start() == true, "Start failed")
+    for _, g in ipairs(Face.view) do
+        for _, p in ipairs(g.pics) do
+            eq(shown(c, p.bigMark), true)
+            eq(smallShown(c, p), 0)
+            local s = st(c, p.bigMark)
+            eq({ s.width, s.height }, { 24, 24 })
+            eq(s.points[1].point, "TOPLEFT")
+            eq(st(c, p.bigBack).color, { 0, 0, 0, 0.85 })
+        end
+    end
+    eq(marksLines(c), { "marks: bigger marks drawn on 32 pictures (size 24)" })
+    c:assertClean()
+end)
+
+test("0.22.0 marks: a d-pad mark is a plus of five touching squares, the pressed arm gold, the others grey", function()
+    local c, PE, Face = new()
+    marksOn(PE, true)
+    check(Face:Start() == true, "Start failed")
+    local GOLD, GREY = { 0.95, 0.84, 0.48 }, { 0.55, 0.55, 0.53 }
+    for q = 1, 4 do
+        local p = pic(Face, 1, q)
+        eq(#p.bigParts, 5)
+        local cols = partColours(c, p)
+        eq(cols[1], GREY, "the middle")
+        for k = 1, 4 do eq(cols[k + 1], k == q and GOLD or GREY, "arm " .. k .. " of " .. q) end
+        local mid = st(c, p.bigParts[1])
+        eq({ mid.width, mid.height }, { 8, 8 })
+        -- The arms touch the middle square: a connected plus.
+        local want = { { -8, 0 }, { 0, 8 }, { 8, 0 }, { 0, -8 } }
+        for k = 1, 4 do
+            local pt = st(c, p.bigParts[k + 1]).points[1]
+            eq({ pt.x, pt.y }, want[k], "arm " .. k)
+        end
+    end
+end)
+
+test("0.22.0 marks: a face mark is four separate square dots, the pressed one gold and a third larger", function()
+    local c, PE, Face = new()
+    marksOn(PE, true)
+    check(Face:Start() == true, "Start failed")
+    local GOLD, GREY = { 0.95, 0.84, 0.48 }, { 0.55, 0.55, 0.53 }
+    for q = 1, 4 do
+        local p = pic(Face, 1, 4 + q)
+        eq(#p.bigParts, 4)
+        eq(partColours(c, p), (function()
+            local t = {}
+            for k = 1, 4 do t[k] = k == q and GOLD or GREY end
+            return t
+        end)())
+        for k = 1, 4 do
+            local s = st(c, p.bigParts[k])
+            eq({ s.width, s.height }, k == q and { 8, 8 } or { 6, 6 }, "dot " .. k)
+        end
+        -- Gaps between the dots (they do not touch), which a d-pad's plus does not have.
+        local a, b = st(c, p.bigParts[1]).points[1], st(c, p.bigParts[2]).points[1]
+        check(math.abs(a.x - b.x) + math.abs(a.y - b.y) > 6 + 4, "the dots are apart")
+    end
+end)
+
+test("0.22.0 marks: the row changing switches every picture at once, both ways, and nothing ticks", function()
+    local c, PE, Face = started()
+    PE:SetDebug(true)
+    marksOn(PE, true)
+    PE.Batch.Changed("b22Marks")
+    for _, g in ipairs(Face.view) do
+        for _, p in ipairs(g.pics) do
+            eq(shown(c, p.bigMark), true)
+            eq(smallShown(c, p), 0)
+        end
+    end
+    eq(#marksLines(c), 1)
+    marksOn(PE, false)
+    PE.Batch.Changed("b22Marks")
+    for _, g in ipairs(Face.view) do
+        for _, p in ipairs(g.pics) do
+            eq(shown(c, p.bigMark), false)
+            eq(smallShown(c, p), #p.small)
+        end
+    end
+    eq(#marksLines(c), 1, "switching Off writes nothing")
+    eq(onUpdates(c), 0)
+    c:assertClean()
+end)
+
+test("0.22.0 marks: an empty picture keeps its mark as in 0.21.0, and the row stopping leaves no listener work", function()
+    local c, PE, Face = new()
+    marksOn(PE, true)
+    check(Face:Start() == true, "Start failed")
+    emptyOn(PE, true)
+    PE.Batch.Changed("b22Empty")
+    c:advance(0.1)
+    local p = pic(Face, 1, 3)
+    eq(p.empty, true)
+    eq(shown(c, p.bigMark), true, "the mark stays on an empty slot")
+    Face:Stop()
+    PE.Batch.Changed("b22Marks") -- nothing runs: no error
+    c:assertClean()
+end)
+
 return { known = KNOWN_FAILURES }

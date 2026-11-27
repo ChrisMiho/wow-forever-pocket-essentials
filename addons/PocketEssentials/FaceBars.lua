@@ -431,6 +431,71 @@ local function Scaled(n, size)
     return max(1, math.floor(n * size / BASE_BUTTON + 0.5))
 end
 
+-- 0.22.0 (spec 2026-11-27-0.22.0-parked-batch.md, item 5; row "b22Marks", Off by default).
+-- A bigger direction mark, drawn in the same corner as the small glyph: a connected plus in a
+-- square for the d-pad, four separate dots in a square for the face buttons, the pressed part gold.
+-- Round shapes were looked for and not used. A MaskTexture with the atlas "CircleMaskScalable"
+-- exists in the game's source, but only in files that load for other game types (for example
+-- Blizzard_Commentator/Classic/Blizzard_CommentatorUnitFrame.xml:32 and the Mainline PVP
+-- interface), the addon has no round art of its own, and the test stand-in does not model masks.
+-- MapLook's SetMaskTexture is the Minimap widget's own method and cannot be used on a texture.
+-- So the face buttons' "round" dots are small squares: the plus (parts touching) and the
+-- separate dots are what tell the two marks apart.
+-- The marks are built with the picture and only shown or hidden by the row. ShowEmpty does not
+-- touch them: as in 0.21.0, an empty picture keeps its position mark.
+local MARK_BASE = 16
+local MARK_GOLD, MARK_GREY = { 0.95, 0.84, 0.48 }, { 0.55, 0.55, 0.53 }
+
+local LogMarks -- set below, after the groups exist
+
+local function MarksOn()
+    local batch = PE.Batch
+    return type(batch) == "table" and type(batch.On) == "function" and batch.On("b22Marks") == true
+end
+
+local function MakeBigMark(over, p, size, quad, dpad)
+    local m = Scaled(MARK_BASE, size)
+    local f = CreateFrame("Frame", nil, over)
+    f:SetSize(m, m)
+    f:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
+    f:SetFrameLevel(over:GetFrameLevel() + 1)
+    local parts = {}
+    local function part(w, dx, dy, colour)
+        local t = f:CreateTexture(nil, "OVERLAY")
+        t:SetSize(w, w)
+        t:SetPoint("CENTER", f, "CENTER", dx, dy)
+        t:SetColorTexture(colour[1], colour[2], colour[3], 1)
+        parts[#parts + 1] = t
+        return t
+    end
+    local back = f:CreateTexture(nil, "ARTWORK")
+    back:SetAllPoints(f)
+    back:SetColorTexture(0, 0, 0, 0.85)
+    if dpad then
+        local u = max(1, math.floor(m / 3))
+        part(u, 0, 0, MARK_GREY)
+        for k, step in ipairs(SPOT_STEPS) do part(u, step[1] * u, step[2] * u, k == quad and MARK_GOLD or MARK_GREY) end
+    else
+        local d = max(1, math.floor(m / 4))
+        local step = max(1, math.floor(m * 0.3))
+        for k, st in ipairs(SPOT_STEPS) do
+            local big = k == quad
+            part(big and math.floor(d * 4 / 3 + 0.5) or d, st[1] * step, st[2] * step, big and MARK_GOLD or MARK_GREY)
+        end
+    end
+    f:Hide()
+    return f, back, parts, m
+end
+
+-- The mark shown and the small glyph hidden while the row is On, and the reverse.
+local function ApplyMark(pic, on)
+    if not pic.bigMark then return end
+    for _, t in ipairs(pic.small) do
+        if on then t:Hide() else t:Show() end
+    end
+    if on then pic.bigMark:Show() else pic.bigMark:Hide() end
+end
+
 -- One picture, centred (x, y) UI units from its half's centre (parent is the half's
 -- frame). quad is its spot in the diamond (1 left, 2 up, 3 right, 4 down); dpad draws
 -- the glyph as a plus, else as four dots. The glow, inset, glyph, range dot and count
@@ -493,18 +558,23 @@ local function MakePicture(parent, x, y, size, quad, dpad)
     glyph:SetSize(glyphSize, glyphSize)
     glyph:SetPoint("TOPLEFT", p, "TOPLEFT", 0, 0)
     glyph:SetColorTexture(0, 0, 0, 0.7)
+    pic.small = { glyph }
     if dpad then
         local mid = over:CreateTexture(nil, "OVERLAY")
         mid:SetSize(dotSize, dotSize)
         mid:SetPoint("CENTER", glyph, "CENTER", 0, 0)
         mid:SetColorTexture(1, 1, 1, 0.35)
+        pic.small[#pic.small + 1] = mid
     end
     for k, step in ipairs(SPOT_STEPS) do
         local dot = over:CreateTexture(nil, "OVERLAY")
         dot:SetSize(dotSize, dotSize)
         dot:SetPoint("CENTER", glyph, "CENTER", step[1] * dotStep, step[2] * dotStep)
         dot:SetColorTexture(1, 1, 1, k == quad and 1 or 0.35)
+        pic.small[#pic.small + 1] = dot
     end
+    pic.bigMark, pic.bigBack, pic.bigParts, pic.bigSize = MakeBigMark(over, p, size, quad, dpad)
+    ApplyMark(pic, MarksOn())
     local rangeSize, rangeIn = Scaled(4, size), Scaled(2, size)
     pic.range = over:CreateTexture(nil, "OVERLAY")
     pic.range:SetSize(rangeSize, rangeSize)
@@ -686,6 +756,7 @@ local function Build(size)
         end
         groups[gi] = g
     end
+    LogMarks()
     return true
 end
 
@@ -1047,6 +1118,32 @@ local function ForgetDim()
     for _, g in ipairs(groups) do
         for _, pic in ipairs(g.pics) do pic.dimSlot = nil end
     end
+end
+
+-- The line for the bigger marks: how many pictures carry one now, written only while the row is On.
+function LogMarks()
+    if not PE.debugOn or not MarksOn() then return end
+    local n, units = 0, 0
+    for _, g in ipairs(groups) do
+        for _, pic in ipairs(g.pics) do
+            n = n + 1
+            units = pic.bigSize or units
+        end
+    end
+    PE:Debug(KEY, "marks: bigger marks drawn on " .. n .. " pictures (size " .. units .. ")")
+end
+
+-- The row b22Marks changed: each picture's mark is switched at once. Registered once at load.
+local marksRows = PE.Batch
+if type(marksRows) == "table" and type(marksRows.Listen) == "function" then
+    marksRows.Listen("b22Marks", Guard(function()
+        if not running then return end
+        local on = MarksOn()
+        for _, g in ipairs(groups) do
+            for _, pic in ipairs(g.pics) do ApplyMark(pic, on) end
+        end
+        LogMarks()
+    end))
 end
 
 -- The row b22Empty changed: every picture is drawn again (cleared, or as 0.21.0 draws it).
