@@ -798,4 +798,146 @@ test("quick slots: nothing is asked of the journal while the window is closed", 
     eq(j.calls.GetMountInfoByID, 0)
 end)
 
+
+---------------------------------------------------------------------------
+-- The row "Mount square, live" (b22Mount; spec item 12 of the 0.22.0 batch)
+---------------------------------------------------------------------------
+
+-- The two events nothing else listens to. PLAYER_REGEN_ENABLED shares its listener with the
+-- game-window navigation, so it cannot be counted; leaving a fight is tested by its redraw.
+local LIVE_EVENTS = { "PLAYER_MOUNT_DISPLAY_CHANGED", "MOUNT_JOURNAL_USABILITY_CHANGED" }
+
+-- How many of those events are listened to.
+local function listening(c)
+    local n = 0
+    for _, e in ipairs(LIVE_EVENTS) do n = n + #c:_eventOrder(e) end
+    return n
+end
+
+-- A client with one horse, the Quick slots row On and, with live, the row b22Mount On.
+local function liveClient(live, horse)
+    local c, PE, _, j, world = new({ horse }, { on = { "chat" }, quick = true })
+    if live then PE.db.options.ctrlLayout.b22Mount = 1 end
+    return c, PE, j, world
+end
+
+local function lines(PE)
+    local out = {}
+    for _, l in ipairs(PE.db.debug.lines) do
+        local text = type(l) == "table" and (l.text or l[2]) or l
+        if type(text) == "string" and text:find("mount square redrawn", 1, true) then out[#out + 1] = text:gsub("^[%d:%.]+ chat: ", "") end
+    end
+    return out
+end
+
+test("mount square live: fight, mounting and indoors each redraw the open square", function()
+    local horse = HORSE()
+    local c, PE, _, world = liveClient(true, horse)
+    PE.debugOn = true
+    tapHub(c, PE)
+    eq(square(c).peStyle, "normal")
+    eq(texts(c)["Brown Horse"], true)
+    -- a fight starts: greyed, though the game's lock is not on yet when the event arrives
+    c:enterCombat()
+    eq(square(c).peStyle, "disabled")
+    c:leaveCombat()
+    eq(square(c).peStyle, "normal")
+    -- on a mount
+    world.mounted = true
+    c:fire("PLAYER_MOUNT_DISPLAY_CHANGED")
+    eq(texts(c)["Get off"], true)
+    world.mounted = false
+    c:fire("PLAYER_MOUNT_DISPLAY_CHANGED")
+    eq(texts(c)["Brown Horse"], true)
+    -- indoors: the mount cannot be used
+    horse.usable = false
+    c:fire("MOUNT_JOURNAL_USABILITY_CHANGED")
+    eq(square(c).peStyle, "disabled")
+    horse.usable = true
+    c:fire("MOUNT_JOURNAL_USABILITY_CHANGED")
+    eq(square(c).peStyle, "normal")
+    c:assertClean("live redraws")
+end)
+
+test("mount square live: the log line carries one of the four words", function()
+    local horse = HORSE()
+    local c, PE, _, world = liveClient(true, horse)
+    PE.debugOn = true
+    tapHub(c, PE)
+    c:enterCombat()
+    c:leaveCombat()
+    world.mounted = true
+    c:fire("PLAYER_MOUNT_DISPLAY_CHANGED")
+    world.mounted = false
+    horse.usable = false
+    c:fire("MOUNT_JOURNAL_USABILITY_CHANGED")
+    horse.usable = true
+    c:fire("MOUNT_JOURNAL_USABILITY_CHANGED")
+    eq(lines(PE), {
+        "quick slots: mount square redrawn: in a fight",
+        "quick slots: mount square redrawn: ready",
+        "quick slots: mount square redrawn: mounted",
+        "quick slots: mount square redrawn: cannot mount here",
+        "quick slots: mount square redrawn: ready",
+    })
+end)
+
+test("mount square live: events are registered only while the window is open and the row is On", function()
+    local c, PE = liveClient(true, HORSE())
+    eq(listening(c), 0)
+    tapHub(c, PE)
+    eq(listening(c), 2)
+    PE:GetModule("chat").opts.quickSlots = 0
+    PE.Batch.Changed("b22Mount")
+    eq(listening(c), 0)
+    PE:GetModule("chat").opts.quickSlots = 1
+    PE.Batch.Changed("b22Mount")
+    eq(listening(c), 2)
+    panelOf(c):Hide()
+    eq(listening(c), 0)
+    tapHub(c, PE)
+    eq(listening(c), 2)
+    PE.db.options.ctrlLayout.b22Mount = 0
+    PE.Batch.Changed("b22Mount")
+    eq(listening(c), 0)
+    c:assertClean("registration")
+end)
+
+test("mount square live: with the window closed nothing is redrawn or asked of the journal", function()
+    local c, PE, j, world = liveClient(true, HORSE())
+    tapHub(c, PE)
+    panelOf(c):Hide()
+    local asked = j.calls.GetMountIDs
+    c:enterCombat()
+    c:leaveCombat()
+    world.mounted = true
+    c:fire("PLAYER_MOUNT_DISPLAY_CHANGED")
+    c:fire("MOUNT_JOURNAL_USABILITY_CHANGED")
+    c:advance(30)
+    eq(j.calls.GetMountIDs, asked)
+end)
+
+test("mount square live: with the row Off nothing is registered and the open square stays as drawn", function()
+    local c, PE, j, world = liveClient(false, HORSE())
+    tapHub(c, PE)
+    eq(listening(c), 0)
+    local asked = j.calls.GetMountIDs
+    world.mounted = true
+    c:fire("PLAYER_MOUNT_DISPLAY_CHANGED")
+    c:fire("MOUNT_JOURNAL_USABILITY_CHANGED")
+    c:enterCombat()
+    c:leaveCombat()
+    eq(j.calls.GetMountIDs, asked)
+    eq(texts(c)["Brown Horse"], true)
+    c:assertClean("row off")
+end)
+
+test("mount square live: the window closing for good (Chat picker off) drops the events", function()
+    local c, PE = liveClient(true, HORSE())
+    tapHub(c, PE)
+    eq(listening(c), 2)
+    PE:SetModuleEnabled("chat", false)
+    eq(listening(c), 0)
+end)
+
 return { known = KNOWN_FAILURES }

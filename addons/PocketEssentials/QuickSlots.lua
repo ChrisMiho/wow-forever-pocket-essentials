@@ -8,9 +8,10 @@
 -- is active, else C_MountJournal.SummonByID(mountID); the same call is at
 -- Mainline/Blizzard_MountCollection.lua:833).
 --
--- This file makes no frame, registers no event and starts no timer. The game
--- is asked only when the window is drawn, when the square is tapped and when
--- the settings show the "Mount" row. Nothing is put on a spell bar.
+-- This file makes no frame, registers no event and starts no timer (Chat.lua
+-- registers the events of the row "Mount square, live"). The game is asked
+-- only when the window is drawn, when the square is tapped and when the
+-- settings show the "Mount" row. Nothing is put on a spell bar.
 --
 -- SummonByID(0), the game's "random favourite", is never used: the game's own
 -- button for it is commented out on this client
@@ -183,11 +184,14 @@ end
 
 -- The square as it is right now: its state, the mount it stands for (nil
 -- with none), the owned mounts and whether the mount is the built-in choice.
-function QS:Line()
+-- fight: true or false to say it, when the caller knows (the combat event
+-- arrives before the game's combat lock is on); nil asks the game.
+function QS:Line(fight)
     local list = QS.Mounts(GameApi())
     local entry, isDefault = QS.Pick(list, SavedId())
     -- PE:InCombat() is InCombatLockdown() (RestrictedActionsDocumentation.lua:45).
-    return QS.State(entry, Mounted(entry), PE:InCombat()), entry, list, isDefault
+    if fight == nil then fight = PE:InCombat() end
+    return QS.State(entry, Mounted(entry), fight), entry, list, isDefault
 end
 
 -- A tap on the square. Returns what was done: "summon" or "dismiss" (the one

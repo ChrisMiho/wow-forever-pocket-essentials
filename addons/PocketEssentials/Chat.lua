@@ -675,7 +675,7 @@ end
 -- a button of our own from the window's button maker with a picture of our
 -- own on it; QuickSlots.lua says what it shows (QS:Line) and does the tap
 -- (QS:Tap). The game is asked when the window is drawn and on a tap, never
--- in between: nothing listens while the window is open or closed.
+-- in between, except with the row "Mount square, live" On (see Live below).
 ---------------------------------------------------------------------------
 
 local function QuickOn()
@@ -683,14 +683,24 @@ local function QuickOn()
 end
 
 -- What the square should show right now, or nil when the line is not drawn.
-local function QuickState()
+-- fight: true or false when the caller knows better than InCombatLockdown (see Live below).
+local function QuickState(fight)
     if not QuickOn() then return nil end
-    local ok, state = mod:Safe(PE.QuickSlots.Line, PE.QuickSlots)
+    local ok, state = mod:Safe(PE.QuickSlots.Line, PE.QuickSlots, fight)
     if ok and type(state) == "table" then return state end
     return nil
 end
 
 local Refresh
+
+-- The row "Mount square, live" (b22Mount): while it is On, the Quick slots line
+-- is On and the window is open, the square is drawn again when a fight starts
+-- or ends, when the player mounts or gets off, and when the game says whether
+-- a mount can be used here has changed (going indoors or outdoors). The events
+-- are registered only for that time. No timer. registered: whether they are;
+-- fight: what to draw as "in a fight" while the answer of InCombatLockdown is
+-- not yet right; last: the state of the latest drawing, for the log line.
+local Live = { registered = false, fight = nil, last = nil }
 
 -- A tap on the square. Getting on or off closes the window. In a fight
 -- nothing is asked of the game and the line says so; the window stays open.
@@ -819,7 +829,8 @@ local function DoRefresh()
     local head = lineHeight + gap * 0.4
     local contentHeight = head + GridHeight(#targets) + gap * 1.5 + head
         + (#shown > 0 and GridHeight(#shown + 1) or lineHeight)
-    local quick = QuickState()
+    local quick = QuickState(Live.fight)
+    Live.last = quick
     if quick then contentHeight = contentHeight + QuickHeight(head) end
 
     -- As tall as the content. Only if that is taller than the screen allows
@@ -979,6 +990,66 @@ local function HookSettings()
     end))
 end
 
+---------------------------------------------------------------------------
+-- The row "Mount square, live"
+-- Events, from the pinned source (Blizzard_APIDocumentationGenerated):
+--   PLAYER_REGEN_DISABLED, PLAYER_REGEN_ENABLED: UnitDocumentation.lua:3887, :3893
+--   PLAYER_MOUNT_DISPLAY_CHANGED: UnitDocumentation.lua:3861
+--   MOUNT_JOURNAL_USABILITY_CHANGED: MountJournalDocumentation.lua:650; the
+--   game's own Mount list redraws on it (Blizzard_Collections/Classic/
+--   Blizzard_MountCollection.lua:22 and :222). It also covers going indoors
+--   and outdoors, which is when a mount stops or starts being usable.
+-- PLAYER_REGEN_DISABLED is already listened to for the whole session by the
+-- "press A to type" prompt (OnEnable below); its handler calls LiveRedraw too,
+-- which does nothing unless Live.registered. It arrives before the game's
+-- combat lock is on, so that call says "in a fight" itself.
+---------------------------------------------------------------------------
+
+local LIVE_EVENTS = { "PLAYER_REGEN_ENABLED", "PLAYER_MOUNT_DISPLAY_CHANGED", "MOUNT_JOURNAL_USABILITY_CHANGED" }
+
+-- The word for the log: what the square says now.
+local function LiveWord(state)
+    if state.bright then return "mounted" end
+    if state.action == "combat" then return "in a fight" end
+    if state.greyed then return "cannot mount here" end
+    return "ready"
+end
+
+local function LiveRedraw(fight)
+    if not Live.registered then return end
+    Live.fight, Live.last = fight, nil
+    Refresh()
+    Live.fight = nil
+    local state = Live.last
+    if state and PE.debugOn then
+        PE:Debug("chat", "quick slots: mount square redrawn: " .. LiveWord(state))
+    end
+end
+
+local function LiveWanted()
+    local batch = PE.Batch
+    return built and panel:IsShown() and QuickOn() and type(batch) == "table" and batch.On("b22Mount")
+end
+
+-- Registers or drops the events to match: called when the window opens or
+-- closes, and when either row changes.
+local function LiveSync()
+    local want = LiveWanted() and true or false
+    if want == Live.registered then return end
+    Live.registered = want
+    if want then
+        Live.handler = Live.handler or mod:Wrap(function() LiveRedraw(nil) end)
+        for _, event in ipairs(LIVE_EVENTS) do mod:RegisterEvent(event, Live.handler) end
+    else
+        for _, event in ipairs(LIVE_EVENTS) do mod:UnregisterEvent(event) end
+    end
+end
+
+local batchRows = PE.Batch
+if type(batchRows) == "table" and type(batchRows.Listen) == "function" then
+    batchRows.Listen("b22Mount", function() LiveSync() end)
+end
+
 local function Build()
     UI = PE.UI
     onTargetClick = mod:Wrap(TargetClicked)
@@ -1010,6 +1081,9 @@ local function Build()
         PE:OpenSettings()
         HookSettings()
     end))
+
+    panel:HookScript("OnShow", mod:Wrap(LiveSync))
+    panel:HookScript("OnHide", mod:Wrap(LiveSync))
 
     UI:AttachNav(panel, function() return navList end)
     panel.peNavArea = area   -- lets the d-pad page the list when touch is off (UI.lua NavMove)
@@ -1268,6 +1342,7 @@ end
 local function QuickSet(self, value)
     self.opts.quickSlots = (value == 1) and 1 or 0
     if PE.debugOn then PE:Debug("chat", "quick slots: " .. (value == 1 and "on" or "off")) end
+    LiveSync()
     Refresh()
 end
 
@@ -1337,7 +1412,10 @@ mod = PE:RegisterModule({
         CleanList()
         self:RegisterEvent("CHAT_MSG_WHISPER", OnWhisper)
         self:RegisterEvent("CHAT_MSG_WHISPER_INFORM", OnWhisper)
-        self:RegisterEvent("PLAYER_REGEN_DISABLED", function() TypeKeyDisarm("fight started") end)
+        self:RegisterEvent("PLAYER_REGEN_DISABLED", function()
+            TypeKeyDisarm("fight started")
+            LiveRedraw(true)
+        end)
         hubClick = hubClick or self:Wrap(TogglePanel)
         local hub = PE.Hub
         if hub and hub.SetClickHandler then hub:SetClickHandler(hubClick) end
