@@ -5767,5 +5767,367 @@ test("0.22.0 menu: the row is a batch row that asks for a reload", function()
     check(optRow(PE, "b22Menu") ~= nil, "no row")
 end)
 
+---------------------------------------------------------------------------
+-- 0.22.0 (spec item 9, row b22OwnLayout): a layout for each character, named after it
+---------------------------------------------------------------------------
+
+local OL = {
+    NOTE = "Pocket Essentials uses its own screen layout for this character. Your own layouts are not changed. "
+        .. "Turning Controller layout off puts back the one you had.",
+    OLD = "The older shared layout \"Pocket Essentials\" is no longer used and can be deleted in Edit Mode.",
+    FIVE = "This character already has five layouts of its own, so the shared layout \"Pocket Essentials\" stays in use.",
+    NOT_KEPT = "The game did not keep this character's own layout, so the shared layout \"Pocket Essentials\" stays in use. "
+        .. "Turn the row off and on again to try once more.",
+    NO_NAME = "This character's name could not be read, so the shared layout \"Pocket Essentials\" stays in use.",
+    OWN = "Forgot Shards -PE",
+}
+
+-- A client logged in with the row as given (o.row, default On), the feature saved as o.on, the
+-- character "Forgot Shards" (o.first / o.last; false: none), the Debug log on.
+function OL.client(o)
+    o = o or {}
+    local saved = o.saved or { options = { ctrlLayout = { b22OwnLayout = o.row == nil and 1 or o.row, slim = o.slim } } }
+    saved.debug = saved.debug or { on = true }
+    saved.debug.on = true
+    if o.on ~= nil then
+        saved.enabled = saved.enabled or {}
+        saved.enabled.ctrlLayout = o.on
+    end
+    local c, PE = T.new({ gamepadUI = true, saved = saved, savedChar = o.char, setup = function(c2)
+        c2.world.layouts = o.layouts or { layouts = o.list or {}, activeLayout = o.active or 3 }
+        if o.first == false then c2.world.playerName = nil else c2.world.playerName = o.first or "Forgot" end
+        if o.last == false then c2.world.playerSurname = nil else c2.world.playerSurname = o.last or "Shards" end
+        if o.setup then o.setup(c2) end
+    end })
+    return c, PE, PE:GetModule("ctrlLayout")
+end
+
+-- The next login of the same character and account, with the layouts the last client left.
+function OL.relogin(c, o)
+    o = o or {}
+    local db = rawget(c.env, "PocketEssentialsDB")
+    if o.row ~= nil then db.options.ctrlLayout.b22OwnLayout = o.row end
+    if o.on ~= nil then db.enabled.ctrlLayout = o.on end
+    return OL.client({ saved = db, char = charDB(c), layouts = c.world.layouts, first = o.first, last = o.last, setup = o.setup })
+end
+
+function OL.lines(c)
+    local out = {}
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        local text = line:match("^%S+ ctrlLayout: layout: (.*)$")
+        if text then out[#out + 1] = text end
+    end
+    return out
+end
+
+function OL.logged(c, text)
+    for _, l in ipairs(OL.lines(c)) do if l == text then return true end end
+    return false
+end
+
+function OL.find(c, name, layoutType)
+    for i, l in ipairs(c.world.layouts.layouts) do
+        if l.layoutName == name and (layoutType == nil or l.layoutType == layoutType) then return l, i + 3 end
+    end
+    return nil
+end
+
+function OL.chatCount(c, text)
+    local n = 0
+    for _, line in ipairs(T.chatLines(c)) do if line == text then n = n + 1 end end
+    return n
+end
+
+function OL.status(PE)
+    local s = PE:GetModule("ctrlLayout"):status()
+    return type(s) == "table" and s or { s }
+end
+
+function OL.has(list, text)
+    for _, l in ipairs(list) do if l == text then return true end end
+    return false
+end
+
+test("0.22.0 own layout: the name is the first name, the surname and \" -PE\", 30 at most, the first name cut first", function()
+    local Plan = plan()
+    eq(Plan.LayoutName("Forgot", "Shards"), "Forgot Shards -PE")
+    eq(Plan.LayoutName("Rogmar", nil), "Rogmar -PE")
+    eq(Plan.LayoutName("Rogmar", ""), "Rogmar -PE")
+    local twelve = Plan.LayoutName("Abcdefghijkl", "Mnopqrstuvwx")
+    eq(twelve, "Abcdefghijkl Mnopqrstuvwx -PE")
+    eq(#twelve, 29, "two names of 12 letters")
+    -- 16 and 6 letters make 27 with the tag: whole.
+    eq(Plan.LayoutName("Abcdefghijklmnop", "Shards"), "Abcdefghijklmnop Shards -PE")
+    -- 20 and 6 make 31: the first name loses one letter, the surname and the tag stay.
+    local cut = Plan.LayoutName("Abcdefghijklmnopqrst", "Shards")
+    eq(cut, "Abcdefghijklmnopqrs Shards -PE")
+    eq(#cut, 30)
+    eq(Plan.LayoutName("Forgot", string.rep("s", 24)), "F " .. string.rep("s", 24) .. " -PE", "one letter of the first name fits")
+    eq(Plan.LayoutName("Forgot", string.rep("s", 25)), string.rep("s", 25) .. " -PE", "no room left for the first name")
+    eq(Plan.LayoutName("Forgot", string.rep("s", 26)), string.rep("s", 26) .. " -PE", "the surname alone just fits")
+    local long = Plan.LayoutName("Forgot", string.rep("s", 40))
+    eq(long, string.rep("s", 26) .. " -PE", "only a surname too long by itself is cut")
+    eq(#long, 30)
+    eq(Plan.LayoutName(string.rep("f", 40), nil), string.rep("f", 26) .. " -PE")
+    eq(Plan.LayoutName(nil, "Shards"), "Shards -PE")
+    eq(Plan.LayoutName("", "Shards"), "Shards -PE")
+    eq(Plan.LayoutName(nil, nil), nil, "no name at all: nothing")
+    eq(Plan.LayoutName("", ""), nil)
+    eq(Plan.LayoutName(7, {}), nil, "not names")
+    -- Letters of two bytes: cut at whole letters, the whole never over 30 bytes.
+    local u = Plan.LayoutName(string.rep("\195\169", 14), "Shards")
+    check(#u <= 30, "over 30: " .. #u)
+    eq(u:sub(-11), " Shards -PE")
+    eq(u:sub(1, #u - 11), string.rep("\195\169", 9), "whole letters kept")
+end)
+
+test("0.22.0 own layout: with the row Off nothing is per character: the shared account layout, the account's offsets", function()
+    local c, PE, m = OL.client({ row = 0 })
+    check(rawequal(m.opts, PE.db.options.ctrlLayout), "the options table is not the saved one")
+    switchOn(c, PE)
+    local shared = OL.find(c, NAME, 1)
+    check(shared ~= nil, "the shared layout was not made")
+    eq(#c.world.layouts.layouts, 1)
+    eq(OL.find(c, OL.OWN), nil)
+    eq(charDB(c).ctrlOwn, nil, "a per-character record")
+    eq(PE.db.options.ctrlLayout.template, 5, "the template is not the account's")
+    for _, l in ipairs(OL.lines(c)) do check(l:find("^active at login ") ~= nil, "a layout line with the row Off: " .. l) end
+    check(not OL.has(OL.status(PE), OL.NOTE), "the note with the row Off")
+    eq(OL.chatCount(c, OL.NOTE), 0)
+    c:assertClean()
+end)
+
+test("0.22.0 own layout: switched on, a Character layout named after the character, built fresh from the preset, made active", function()
+    -- A Gamepad account layout of the player's own is active: it is not the base, the preset is.
+    local mine = saved("Mine", 1, 1)
+    local c, PE, m = OL.client({ list = { saved("A1"), mine, saved("C1", 2) }, active = 5 })
+    switchOn(c, PE)
+    check(PE:IsModuleEnabled("ctrlLayout"), "the feature did not stay on")
+    local saves = c:callsTo("C_EditMode.SaveLayouts")
+    eq(#saves, 1, "SaveLayouts calls")
+    local list = saves[1].args[1].layouts
+    eq(#list, 7, "presets, the three saved, ours")
+    eq(list[6].layoutName, "C1")
+    local own = list[7]
+    eq(own.layoutName, OL.OWN)
+    eq(own.layoutType, 2, "Character")
+    eq(own.interfaceStyle, 1, "Gamepad")
+    eq(#own.systems, #list[3].systems, "built from the Gamepad preset")
+    eq(own.systems[1].anchorInfo, { point = "BOTTOM", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = -6, offsetY = 0 })
+    local added = c:callsTo("C_EditMode.OnLayoutAdded")
+    eq({ added[1].args[1], added[1].args[2], added[1].args[3] }, { 7, true, false }, "after the last character layout")
+    eq(c.world.layouts.activeLayout, 7)
+    eq(OL.find(c, NAME), nil, "the shared layout was made")
+    eq(c.world.layouts.layouts[2], mine, "the player's own layout changed")
+    eq(prev(PE).name, "Mine")
+    eq(prev(PE).layoutType, 1)
+    eq(reloadReason(PE), RELOAD)
+    check(OL.logged(c, 'made "Forgot Shards -PE" for this character from the default setup'), table.concat(OL.lines(c), "\n"))
+    eq(OL.chatCount(c, OL.NOTE), 1, "the note in chat")
+    local st = OL.status(PE)
+    eq(st[1], USING)
+    check(OL.has(st, OL.NOTE), "no note on the tab")
+    check(not OL.has(st, OL.OLD), "the old shared layout named while there is none")
+    -- What our layout was built with is this character's, not the account's.
+    eq(charDB(c).ctrlOwn.name, OL.OWN)
+    eq(charDB(c).ctrlOwn.template, 5)
+    eq(m.opts.template, 5)
+    eq(PE.db.options.ctrlLayout.template, nil, "written into the account's options")
+    -- With no layout of the player's own before it, the first one is right after the account ones.
+    local c2, PE2 = OL.client({ list = { saved("A1") }, active = 3 })
+    switchOn(c2, PE2)
+    eq(c2:callsTo("C_EditMode.OnLayoutAdded")[1].args[1], 5)
+    local c3, PE3 = OL.client({ list = {}, active = 3, last = false, first = "Rogmar" })
+    switchOn(c3, PE3)
+    eq(c3:callsTo("C_EditMode.OnLayoutAdded")[1].args[1], 4)
+    eq(c3.world.layouts.layouts[1].layoutName, "Rogmar -PE")
+    c:assertClean()
+end)
+
+test("0.22.0 own layout: a character on the shared layout gets its own at the next login; the shared one is kept, the layout to go back to too", function()
+    local c, PE = OL.client({ row = 0 })
+    switchOn(c, PE)
+    local shared = deepCopy(OL.find(c, NAME, 1))
+    eq(prev(PE).preset, 2)
+    local c2, PE2 = OL.relogin(c, { row = 1 })
+    check(PE2:IsModuleEnabled("ctrlLayout"), "not on")
+    eq(#c2:callsTo("C_EditMode.SaveLayouts"), 1)
+    local own, index = OL.find(c2, OL.OWN, 2)
+    check(own ~= nil, "no own layout")
+    eq(index, 5, "after the shared one")
+    eq(c2.world.layouts.activeLayout, 5)
+    eq(OL.find(c2, NAME, 1), shared, "the shared layout was written")
+    eq(prev(PE2).preset, 2, "the layout to go back to changed")
+    eq(prev(PE2).name, "Gamepad")
+    eq(reloadReason(PE2), RELOAD)
+    eq(OL.chatCount(c2, OL.NOTE), 1)
+    check(OL.has(OL.status(PE2), OL.OLD), "the old shared layout is not named")
+    check(OL.logged(c2, 'active at login "Pocket Essentials" (account)'), table.concat(OL.lines(c2), "\n"))
+    -- The login after: nothing changes, the note again on the tab but not in chat.
+    local c3, PE3 = OL.relogin(c2)
+    eq(layoutCalls(c3), 0, "a layout call")
+    eq(OL.status(PE3)[1], USING)
+    check(OL.has(OL.status(PE3), OL.NOTE) and OL.has(OL.status(PE3), OL.OLD), "the notes")
+    eq(OL.chatCount(c3, OL.NOTE), 0, "the chat note twice")
+    check(OL.logged(c3, 'active at login "Forgot Shards -PE" (character)'), table.concat(OL.lines(c3), "\n"))
+    -- Switched off: the remembered preset back; both of ours stay saved and unchanged.
+    switchOff(c3, PE3)
+    eq(c3.world.layouts.activeLayout, 3)
+    eq(OL.find(c3, NAME, 1), shared)
+    check(OL.find(c3, OL.OWN, 2) ~= nil, "the own layout was deleted")
+    eq(prev(PE3), nil)
+    c3:assertClean()
+end)
+
+test("0.22.0 own layout: the row turned Off brings back the shared layout; switched off then, the player's own comes back", function()
+    local c, PE = OL.client({ row = 0 })
+    switchOn(c, PE)
+    local c2 = OL.relogin(c, { row = 1 })
+    eq(c2.world.layouts.activeLayout, 5)
+    local c3, PE3 = OL.relogin(c2, { row = 0 })
+    eq(#c3:callsTo("C_EditMode.SaveLayouts"), 0)
+    eq(c3:callsTo("C_EditMode.SetActiveLayout")[1].args[1], 4, "the shared layout made active")
+    eq(prev(PE3).preset, 2, "the layout to go back to changed")
+    eq(reloadReason(PE3), RELOAD)
+    eq(OL.status(PE3)[1], USING)
+    -- Row Off, feature off, the own layout active: the player's preset comes back.
+    local c4 = OL.relogin(c2, { row = 0, on = false })
+    eq(c4.world.layouts.activeLayout, 3)
+    eq(charDB(c4).ctrlLayoutPrev, nil)
+end)
+
+test("0.22.0 own layout: Edit Mode pieces' offsets are this character's, starting empty; the account's stay as they were", function()
+    local acct = { map = { x = 0, y = 30 } }
+    local saved = { options = { ctrlLayout = { b22OwnLayout = 1, arrange = 1, offsets = acct, arrangeBase = 2 } } }
+    local c, PE, m = OL.client({ saved = saved })
+    switchOn(c, PE)
+    local own = OL.find(c, OL.OWN, 2)
+    eq(own.systems[1].anchorInfo.offsetY, 0, "the account's offset was used")
+    -- Moved in the Arrange window and applied: written into our layout and saved per character.
+    local view = m:View()
+    view.offsets.map = { x = 0, y = 12 }
+    m:CancelReload()
+    local ok = m:ArrangeApply()
+    check(ok, "Apply refused")
+    eq(OL.find(c, OL.OWN, 2).systems[1].anchorInfo.offsetY, 12)
+    eq(charDB(c).ctrlOwn.offsets.map, { x = 0, y = 12 })
+    eq(charDB(c).ctrlOwn.offsetsWritten.map, { x = 0, y = 12 })
+    eq(PE.db.options.ctrlLayout.offsets, { map = { x = 0, y = 30 } }, "the account's offsets changed")
+    eq(PE.db.options.ctrlLayout.offsetsWritten, nil)
+    -- The row Off again: the shared layout is built with the account's offsets.
+    local c2 = OL.relogin(c, { row = 0 })
+    eq(OL.find(c2, NAME, 1).systems[1].anchorInfo.offsetY, 30)
+end)
+
+test("0.22.0 own layout: with five character layouts nothing is made, the shared layout is used and the tab says so", function()
+    local list = {}
+    for i = 1, 5 do list[i] = saved("C" .. i, 2) end
+    local c, PE, m = OL.client({ list = list })
+    switchOn(c, PE)
+    check(PE:IsModuleEnabled("ctrlLayout"), "not on")
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), 1)
+    local shared, index = OL.find(c, NAME, 1)
+    check(shared ~= nil, "the shared layout was not made")
+    eq(index, 4, "before the character layouts")
+    eq(c.world.layouts.activeLayout, 4)
+    eq(OL.find(c, OL.OWN), nil)
+    check(OL.logged(c, "five layouts already, nothing made"), table.concat(OL.lines(c), "\n"))
+    check(OL.has(OL.status(PE), OL.FIVE), "the tab does not say so")
+    check(not OL.has(OL.status(PE), OL.NOTE), "the note while the shared layout is used")
+    check(rawequal(m.opts, PE.db.options.ctrlLayout), "still on the character's record")
+    eq(PE.db.options.ctrlLayout.template, 5)
+    eq(charDB(c).ctrlOwn.name, nil)
+end)
+
+test("0.22.0 own layout: a layout the game does not keep, or a save that raises, falls back to the shared one once", function()
+    for _, how in ipairs({ "drop", "raise" }) do
+        local c, PE, m = OL.client({ setup = function(c2) c2.world.characterLayouts = how end })
+        switchOn(c, PE)
+        check(PE:IsModuleEnabled("ctrlLayout"), how .. ": not on")
+        eq(#c:callsTo("C_EditMode.SaveLayouts"), 2, how .. ": the own one, then the shared one")
+        local _, index = OL.find(c, NAME, 1)
+        eq(c.world.layouts.activeLayout, index, how)
+        eq(OL.find(c, OL.OWN), nil, how)
+        check(OL.logged(c, '"Forgot Shards -PE" was not kept by the game, the shared layout stays'), how .. "\n" .. table.concat(OL.lines(c), "\n"))
+        check(OL.has(OL.status(PE), OL.NOT_KEPT), how .. ": the tab does not say so")
+        check(rawequal(m.opts, PE.db.options.ctrlLayout), how)
+        eq(charDB(c).ctrlOwn.notKept, OL.OWN, how)
+        eq(prev(PE).preset, 2, how)
+        -- The next login does not try again.
+        local c2, PE2 = OL.relogin(c)
+        eq(layoutCalls(c2), 0, how .. ": tried again")
+        check(OL.has(OL.status(PE2), OL.NOT_KEPT), how .. ": the tab at the next login")
+        -- Turning the row off and on again lets the next login try once more.
+        choose(c2, PE2, "b22OwnLayout", 0)
+        choose(c2, PE2, "b22OwnLayout", 1)
+        eq(charDB(c2).ctrlOwn.notKept, nil, how)
+        local c3 = OL.relogin(c2, { setup = function(c4) c4.world.characterLayouts = nil end })
+        check(OL.find(c3, OL.OWN, 2) ~= nil, how .. ": not tried once more")
+        eq(c3.world.layouts.activeLayout, select(2, OL.find(c3, OL.OWN, 2)), how)
+    end
+end)
+
+test("0.22.0 own layout: a name that does not read keeps the shared layout and says so", function()
+    for _, first in ipairs({ false, "Unknown" }) do
+        local c, PE, m = OL.client({ first = first, last = false })
+        switchOn(c, PE)
+        check(OL.find(c, NAME, 1) ~= nil, tostring(first) .. ": the shared layout was not made")
+        eq(#c.world.layouts.layouts, 1)
+        check(OL.logged(c, "the character's name does not read, the shared layout stays"), table.concat(OL.lines(c), "\n"))
+        check(OL.has(OL.status(PE), OL.NO_NAME), "the tab")
+        check(rawequal(m.opts, PE.db.options.ctrlLayout))
+    end
+    -- Read once and saved: a later login whose name does not read finds the same layout.
+    local c, PE = OL.client({})
+    switchOn(c, PE)
+    local c2, PE2 = OL.relogin(c, { first = false, last = false })
+    eq(layoutCalls(c2), 0)
+    eq(OL.status(PE2)[1], USING)
+end)
+
+test("0.22.0 own layout: the timers row writes into this character's layout and keeps its copies with it", function()
+    local c, PE, m = OL.client({ row = 0, slim = 1 })
+    switchOn(c, PE)
+    local shared = deepCopy(OL.find(c, NAME, 1))
+    local c2, PE2, m2 = OL.relogin(c, { row = 1 })
+    m2:CancelReload()
+    local own = OL.find(c2, OL.OWN, 2)
+    local before = {}
+    for i = 1, 4 do before[i] = deepCopy(TM.entry(own, 20, i)) end
+    local saves = #c2:callsTo("C_EditMode.SaveLayouts")
+    choose(c2, PE2, "b22Timers", 1)
+    eq(#c2:callsTo("C_EditMode.SaveLayouts"), saves + 1)
+    eq(TM.entry(OL.find(c2, OL.OWN, 2), 20, 1).anchorInfo.offsetY, 35, "not written into the own layout")
+    eq(OL.find(c2, NAME, 1), shared, "the shared layout was written")
+    check(type(charDB(c2).ctrlOwn.b22TimersBefore) == "table", "the copies are not this character's")
+    eq(PE2.db.options.ctrlLayout.b22TimersBefore, nil, "the copies went to the account's options")
+    choose(c2, PE2, "b22Timers", 0)
+    for i = 1, 4 do eq(TM.entry(OL.find(c2, OL.OWN, 2), 20, i), before[i], "entry " .. i .. " put back") end
+    eq(charDB(c2).ctrlOwn.b22TimersBefore, nil)
+    eq(OL.find(c2, NAME, 1), shared)
+end)
+
+test("0.22.0 own layout: the row changed, and a login, in a fight wait for its end", function()
+    local c, PE = OL.client({ row = 0 })
+    switchOn(c, PE)
+    local m = PE:GetModule("ctrlLayout")
+    m:CancelReload()
+    local calls = layoutCalls(c)
+    c:enterCombat()
+    choose(c, PE, "b22OwnLayout", 1)
+    eq(reloadReason(PE), nil, "asked in the fight")
+    c:leaveCombat()
+    c:advance(0.1)
+    eq(reloadReason(PE), RELOAD, "the reload not asked for after the fight")
+    eq(layoutCalls(c), calls, "a layout call before the reload")
+    check(OL.logged(c, "a layout for each character is now on; it counts from the next reload"), table.concat(OL.lines(c), "\n"))
+    -- The next login in a fight: nothing until it ends.
+    local c2 = OL.relogin(c, { setup = function(c3) c3.world.inCombat = true end })
+    eq(layoutCalls(c2), 0, "a layout call in the fight")
+    c2:leaveCombat()
+    c2:advance(0.1)
+    check(OL.find(c2, OL.OWN, 2) ~= nil, "not made after the fight")
+end)
+
 
 return { known = KNOWN_FAILURES }

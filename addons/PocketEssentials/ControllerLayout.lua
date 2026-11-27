@@ -104,6 +104,47 @@ PE.LayoutPlan = Plan
 
 Plan.NAME = "Pocket Essentials"
 
+-- 0.22.0 (spec item 9, row b22OwnLayout, Off by default): a layout for each character, of the
+-- game's type Character, named "<first name> <surname> -PE" (spec item 9, 2026-11-27: one pattern
+-- for every character, the tag " -PE" always). The game's own name box takes 30 letters
+-- (Blizzard_EditMode/Shared/EditModeDialogs.xml:12, letters="30"); whether a longer name saved
+-- by an addon is taken is not known, so the name stays within 30. Whether the box counts letters
+-- or bytes is not known either, so it is counted in bytes (never more than letters), and cut only
+-- at whole letters (a UTF-8 letter's later bytes are 128 to 191), as the slim bars cut a name
+-- (SlimBars.lua, FitName). When something must go, the first name is cut, never the tag and
+-- never the surname, unless the surname with the tag alone is too long.
+Plan.OWN_TAG = " -PE"
+Plan.OWN_NAME_MAX = 30
+
+-- s cut to at most n bytes, at a whole letter.
+function Plan.CutName(s, n)
+    if #s <= n then return s end
+    while n > 0 do
+        local b = s:byte(n + 1)
+        if b and b >= 128 and b <= 191 then n = n - 1 else break end
+    end
+    return s:sub(1, n)
+end
+
+-- The name of a character's own layout, or nil when there is no name to give it. first, last:
+-- the first name and the surname (nil or "" for none).
+function Plan.LayoutName(first, last)
+    if type(first) ~= "string" or first == "" then first = nil end
+    if type(last) ~= "string" or last == "" then last = nil end
+    local room = Plan.OWN_NAME_MAX - #Plan.OWN_TAG
+    if not last then
+        if not first then return nil end
+        return Plan.CutName(first, room) .. Plan.OWN_TAG
+    end
+    if not first or #last + 2 > room then return Plan.CutName(last, room) .. Plan.OWN_TAG end
+    return Plan.CutName(first, room - #last - 1) .. " " .. last .. Plan.OWN_TAG
+end
+
+-- The character's own layout this session, set by the module (row b22OwnLayout On at login):
+-- { rec = the character's saved record, name = the layout's name once known }; nil otherwise,
+-- and then the layout is the shared account-wide one, as before 0.22.0.
+Plan.own = nil
+
 -- 0.12.0 (spec 2026-11-23-controller-layout-0.12.0-mockup-setup.md): one setup,
 -- the mockup's "Face bars (one setup)" with the game's real bars. The only options left are the three
 -- swing timers' visibility. Every spot below is in UI units at UI scale 1
@@ -1470,11 +1511,12 @@ function Plan.Apply(layout, pieces, enums)
 end
 
 -- A new layout: a copy of `base` with our name, the account-wide type and the
--- Gamepad style, and every piece applied.
-function Plan.Build(base, opts, enums)
+-- Gamepad style, and every piece applied. 0.22.0 (row b22OwnLayout): with `name`, a character's
+-- own layout: that name and the type Character.
+function Plan.Build(base, opts, enums, name)
     local layout = DeepCopy(base)
-    layout.layoutName = Plan.NAME
-    layout.layoutType = enums and enums.layoutType and enums.layoutType.Account
+    layout.layoutName = name or Plan.NAME
+    layout.layoutType = enums and enums.layoutType and (name and enums.layoutType.Character or enums.layoutType.Account)
     layout.interfaceStyle = enums and enums.style and enums.style.Gamepad
     Plan.Apply(layout, Plan.Pieces(opts), enums)
     return layout
@@ -1685,6 +1727,9 @@ local function ReadEnums()
         layoutType = {
             Preset = Enum.EditModeLayoutType.Preset,
             Account = Enum.EditModeLayoutType.Account,
+            -- 0.22.0 (row b22OwnLayout; EditModeManagerConstantsDocumentation.lua:520). May be
+            -- missing on another client: a character's own layout is then not made.
+            Character = Optional(function() return Enum.EditModeLayoutType.Character end),
         },
         style = { Gamepad = Enum.InputDeviceInterfaceType.Gamepad },
         preset = { Gamepad = Enum.EditModePresetLayouts.Gamepad },
@@ -1813,10 +1858,16 @@ local function FindPreset(state, id)
     return nil
 end
 
--- The index of our saved layout, or nil.
+-- The index of our saved layout, or nil. 0.22.0 (row b22OwnLayout): in a session with the
+-- character's own layout (Plan.own) that one, of type Character, and nil until its name is known.
 local function OursIndex(state)
     local e = Enums()
     if not state or not e then return nil end
+    local own = Plan.own
+    if own then
+        if not own.name or not e.layoutType.Character then return nil end
+        return (FindSaved(state, own.name, e.layoutType.Character))
+    end
     return (FindSaved(state, Plan.NAME, e.layoutType.Account))
 end
 
@@ -2899,6 +2950,7 @@ end
 -- else puts them back; out of combat. Safe to call in any state.
 SyncBars = function()
     PE:RunOutOfCombat("ctrlLayout:bars", function()
+        Snap.LogActive() -- 0.22.0: the layout active at login, once (Debug log on only)
         if wanted and IsOursActive() then PlaceNow() else RestoreNow() end
     end)
 end
@@ -2920,6 +2972,220 @@ local function HookRefresh()
         if wanted then SyncBars() end
     end))
     refreshHooked = ok and true or false
+end
+
+---------------------------------------------------------------------------
+-- 0.22.0 (spec item 9, row b22OwnLayout, Off by default, counts from the next reload): a layout
+-- for each character. With the row On at login, our layout is this character's own one, of the
+-- game's type Character, named by Plan.LayoutName from the character's whole name (read as the
+-- slim bars read it: PE.SlimBars.NameParts), and built fresh from the default setup: the Gamepad
+-- preset with every piece of Plan.Pieces for this character's options (no other layout is
+-- copied). The shared account-wide "Pocket Essentials" is then never written and never deleted.
+--
+-- What belongs to our layout is saved with it (Snap.OWN_KEYS: the template it was built from, the
+-- offsets written into it, the copies the 0.22.0 rows keep to put pieces back, the Edit Mode
+-- pieces' arranged offsets and the arrangement they count from). Row Off, they are the account's
+-- options, as before. Row On, they are this character's record, PE.charDB.ctrlOwn, which starts
+-- empty: for the session mod.opts reads and writes those keys there and every other key in the
+-- account's options (Snap.OwnStart), so every reader of the options (Plan.Pieces, Plan.Pending,
+-- the rows of tasks 8 to 10, Arrange.lua) acts on this character's layout without a change of its
+-- own. The account's options are left untouched for when the row is Off.
+--
+-- The record also keeps the layout's name once made (rec.name), so a later login whose name does
+-- not read finds it, and a login with the row Off can tell it is ours: that login puts the shared
+-- layout back (feature On) or the player's own one (feature Off). A character that never had the
+-- row On has no record, and nothing here reads the game for it.
+--
+-- The name is read when Edit Mode's layouts are known (Settle), not at the first moment of the
+-- login: "the character's name does not read: realm empty" in a saved file (LogNameOnce) comes
+-- from GetRealmName, which answers "" on this client; the name itself read there. A name that
+-- does not read (no answer, or the game's UNKNOWNOBJECT, "Unknown", early in a login) is never
+-- turned into a layout name: the shared layout is used for the session, and the log says so.
+--
+-- Where the game takes no layout of ours (five of the type already, the name refused, the
+-- layout gone again after saving, or the save raising), the shared layout is used for the
+-- session exactly as with the row Off (Snap.Fallback), the tab and the log say so, and a layout
+-- the game did not keep is not tried again until the row is turned off and on (rec.notKept).
+--
+-- Order and index (Blizzard_EditMode/Shared/EditModeManager.lua): GetLayouts lists the saved
+-- layouts after the presets (UpdateLayoutInfo, 1018-1020), the account ones before the character
+-- ones, and a new layout goes into that list right after the last one of its type, or for the
+-- first character layout right after the last account layout (MakeNewLayout, 1575-1584: the
+-- position counts the presets and is what OnLayoutAdded takes). The dropdown sorts them its own
+-- way (SortLayouts, 1160-1168) and changes nothing saved. Five of a type at most
+-- (Constants.EditModeConsts.EditModeMaxLayoutsPerType, 1002-1003;
+-- EditModeManagerConstantsDocumentation.lua:1044; MAX_LAYOUTS above).
+---------------------------------------------------------------------------
+Snap.OWN_KEYS = { template = true, offsetsWritten = true, offsets = true, arrangeBase = true,
+    b22TimersBefore = true, b22MoreBefore = true, b22MoreAlone = true }
+Snap.OWN_TEXT = {
+    note = "Pocket Essentials uses its own screen layout for this character. Your own layouts are not changed. "
+        .. "Turning Controller layout off puts back the one you had.",
+    old = "The older shared layout \"Pocket Essentials\" is no longer used and can be deleted in Edit Mode.",
+    five = "This character already has five layouts of its own, so the shared layout \"Pocket Essentials\" stays in use.",
+    notKept = "The game did not keep this character's own layout, so the shared layout \"Pocket Essentials\" stays in use. "
+        .. "Turn the row off and on again to try once more.",
+    noName = "This character's name could not be read, so the shared layout \"Pocket Essentials\" stays in use.",
+    noType = "This game version has no layouts for one character, so the shared layout \"Pocket Essentials\" stays in use.",
+}
+
+-- Whether the row is On (Batch.lua).
+Snap.OwnRow = function()
+    local batch = PE.Batch
+    return type(batch) == "table" and type(batch.On) == "function" and batch.On("b22OwnLayout") == true
+end
+
+-- At login (OnLoad), before anything reads the options: with the row On, the session uses this
+-- character's own layout (Plan.own) and mod.opts becomes a table that reads and writes
+-- Snap.OWN_KEYS in the character's record and everything else in the account's options. A table
+-- of no fields of its own: `pairs` sees nothing in it (the snapshot reads Snap.real).
+Snap.OwnStart = function()
+    local char = CharDB()
+    if not Snap.OwnRow() or not char or type(mod.opts) ~= "table" then return end
+    if type(char.ctrlOwn) ~= "table" then char.ctrlOwn = { arrangeBase = Plan.ARRANGEMENT } end
+    local rec = char.ctrlOwn
+    if rec.notKept ~= nil then
+        Snap.ownNote = Snap.OWN_TEXT.notKept
+        if PE.debugOn then
+            PE:Debug("ctrlLayout", "layout: \"" .. tostring(rec.notKept) .. "\" was not kept by the game, the shared layout stays")
+        end
+        return
+    end
+    local real = mod.opts
+    Snap.real = real
+    Plan.own = { rec = rec }
+    mod.opts = setmetatable({}, {
+        __index = function(_, k) if Snap.OWN_KEYS[k] then return rec[k] end return real[k] end,
+        __newindex = function(_, k, v) if Snap.OWN_KEYS[k] then rec[k] = v else real[k] = v end end,
+    })
+end
+
+-- The session goes back to the shared layout, exactly as with the row Off: mod.opts is the
+-- account's options again (their saved data carried over as at a login, Snap.Carry), and the
+-- Arrange window's offsets are the account's. line: the debug line; text: the tab's line.
+Snap.Fallback = function(line, text)
+    if PE.debugOn then PE:Debug("ctrlLayout", line) end
+    Snap.ownNote = text
+    Plan.own = nil
+    local real = Snap.real
+    if not real then return end
+    Snap.real = nil
+    mod.opts = real
+    Snap.Carry()
+    local view = Snap.view
+    if type(view) == "table" and view.arrange == 1 then
+        if type(real.offsets) ~= "table" then real.offsets = {} end
+        view.offsets = real.offsets
+    end
+end
+
+-- The character's first name and surname as the slim bars read them, or nil when the name does
+-- not read. UnitName (Blizzard_APIDocumentationGenerated/UnitDocumentation.lua:2489-2503),
+-- UNKNOWNOBJECT ("Unknown", compared the same way in Blizzard_RaidUI/Mainline/Blizzard_RaidUI.lua:706).
+Snap.ReadName = function()
+    local slim = PE.SlimBars
+    if type(UnitName) ~= "function" or type(slim) ~= "table" or type(slim.NameParts) ~= "function" then return nil end
+    local ok, name, second = pcall(UnitName, "player")
+    if not ok then return nil end
+    local first, last = slim.NameParts(name, second)
+    if first == UNKNOWNOBJECT then return nil end
+    return first, last
+end
+
+-- Once Edit Mode's layouts are known (Settle): the own layout's name, the one saved in the
+-- record, else the one read now; or the shared layout for the session.
+Snap.OwnResolve = function()
+    local own = Plan.own
+    if not own or own.name then return end
+    local e = Enums()
+    if not (e and e.layoutType.Character) then
+        Snap.Fallback("layout: this game version has no character layouts, the shared layout stays", Snap.OWN_TEXT.noType)
+        return
+    end
+    local name = own.rec.name
+    if type(name) ~= "string" or name == "" then name = Plan.LayoutName(Snap.ReadName()) end
+    if not name then
+        Snap.Fallback("layout: the character's name does not read, the shared layout stays", Snap.OWN_TEXT.noName)
+        return
+    end
+    own.name = name
+end
+
+-- The index of this character's own layout (this session's, else the one its record names), or nil.
+Snap.OwnIndex = function(state)
+    local e = Enums()
+    local char = CharDB()
+    local rec = char and char.ctrlOwn
+    local name = Plan.own and Plan.own.name or (type(rec) == "table" and rec.name or nil)
+    if type(name) ~= "string" or not state or not e or not e.layoutType.Character then return nil end
+    return (FindSaved(state, name, e.layoutType.Character))
+end
+
+-- The active layout is ours but not the one this session uses: the shared one in a session with
+-- the character's own, the character's own in a session with the shared one. Reads only.
+Snap.OtherOursActive = function(state)
+    if not state then return false end
+    if Plan.own then
+        local e = Enums()
+        local shared = e and FindSaved(state, Plan.NAME, e.layoutType.Account)
+        return shared ~= nil and state.active == shared
+    end
+    local index = Snap.OwnIndex(state)
+    return index ~= nil and state.active == index
+end
+
+-- At a login whose character has its layout to go back to (Settle): true when the layout of this
+-- session is to be made or made active, the other one of ours being active. No game call for a
+-- character that never had the row On.
+Snap.NeedsSwitch = function()
+    local char = CharDB()
+    local rec = char and char.ctrlOwn
+    if not Plan.own and not (type(rec) == "table" and rec.name) then return false end
+    local state = ReadState()
+    if not state then return false end
+    local ours = OursIndex(state)
+    if ours and state.active == ours then return false end
+    return Snap.OtherOursActive(state)
+end
+
+-- The debug line naming the layout that is active at login, once a session, as soon as Edit
+-- Mode's layouts are known (with the Debug log on only).
+Snap.LogActive = function()
+    if not PE.debugOn or Snap.activeLogged or not Snap.loginRead or not EditModeReady() then return end
+    Snap.activeLogged = true
+    local state = ReadState()
+    local cur = state and state.current
+    if not cur then
+        PE:Debug("ctrlLayout", "layout: active at login not readable")
+        return
+    end
+    local e = Enums()
+    local kind = (cur.isPreset and "preset") or (e and cur.layoutType == e.layoutType.Account and "account")
+        or (e and e.layoutType.Character and cur.layoutType == e.layoutType.Character and "character") or "other"
+    PE:Debug("ctrlLayout", "layout: active at login \"" .. tostring(cur.name) .. "\" (" .. kind .. ")")
+end
+
+-- The tab's lines while the row is On and the feature is on: s (the status as it was) and
+-- the note. Row Off: s itself.
+Snap.OwnLines = function(s)
+    if not Snap.OwnRow() or not mod:IsEnabled() then return s end
+    local add = {}
+    if Snap.ownNote then
+        add[1] = Snap.ownNote
+    elseif Plan.own then
+        add[1] = Snap.OWN_TEXT.note
+        local state, e = ReadState(), Enums()
+        if state and e and FindSaved(state, Plan.NAME, e.layoutType.Account) then add[2] = Snap.OWN_TEXT.old end
+    end
+    if #add == 0 then return s end
+    local lines = {}
+    if type(s) == "table" then
+        for _, l in ipairs(s) do lines[#lines + 1] = l end
+    elseif s ~= nil then
+        lines[1] = s
+    end
+    for _, l in ipairs(add) do lines[#lines + 1] = l end
+    return lines
 end
 
 -- The base of a new layout: a copy of the active layout if it is a Gamepad
@@ -2964,30 +3230,49 @@ end
 -- makes it active. Returns ok, wrote: ok is true if the game took it; wrote is
 -- true once something was written (even if a later call failed). On failure it
 -- says why or logs it, and switches the feature back off.
+--
+-- 0.22.0 (row b22OwnLayout): in a session with the character's own layout (Plan.own), that one,
+-- of type Character, after the last character layout (else after the last account one), built
+-- from the Gamepad preset. Where the game takes none (see the notes above Snap.OWN_KEYS) nothing
+-- is said or switched off here: a third answer, "five" or "notKept", tells SwitchOn to go on with
+-- the shared layout.
 local function AddOurs(state, e)
-    local count, lastAccount = 0, nil
+    local own = Plan.own and Plan.own.name
+    local kind = own and e.layoutType.Character or e.layoutType.Account
+    local count, lastAccount, lastKind = 0, nil, nil
     for i, layout in ipairs(state.saved) do
         if type(layout) ~= "table" then
             Fail("C_EditMode.GetLayouts gave a layout that is not a table")
             return false, false
         end
-        if layout.layoutType == e.layoutType.Account then
+        if layout.layoutType == e.layoutType.Account then lastAccount = state.numPresets + i end
+        if layout.layoutType == kind then
             count = count + 1
-            lastAccount = state.numPresets + i
+            lastKind = state.numPresets + i
         end
     end
     if count >= MAX_LAYOUTS then
+        if own then return false, false, "five" end
         Refuse("You already have " .. MAX_LAYOUTS .. " account-wide layouts. Delete one in Edit Mode, then switch this on again.")
         return false, false
     end
     if type(state.api.IsValidLayoutName) == "function" then
-        local ok, valid = pcall(state.api.IsValidLayoutName, Plan.NAME)
+        local ok, valid = pcall(state.api.IsValidLayoutName, own or Plan.NAME)
         if ok and not valid then
+            if own then return false, false, "notKept" end
             Refuse(TEXT_NAME_REFUSED)
             return false, false
         end
     end
-    local base = TemplateBase(state, e)
+    local base
+    if own then
+        -- Fresh from the default setup: the Gamepad preset, never the active layout.
+        local presets = CopyOfPresets()
+        base = presets and presets[e.preset.Gamepad + 1]
+        if type(base) == "table" and base.layoutIndex == e.preset.Gamepad then base.layoutIndex = nil else base = nil end
+    else
+        base = TemplateBase(state, e)
+    end
     if not base then
         Fail("The game's preset layouts could not be copied")
         return false, false
@@ -2995,13 +3280,17 @@ local function AddOurs(state, e)
     local kept = Plan.TimersActive(mod.opts) and Snap.TimersKept(base, e) or nil -- 0.22.0, before the build
     mod.opts.b22MoreAlone = nil -- 0.22.0: a new layout holds the preset's spots, so nothing is left alone
     local moreKept = Plan.MoreOn() and Snap.MoreKept(base, e) or nil
-    local layout = Plan.Build(base, mod.opts, e)
-    local newIndex = lastAccount and (lastAccount + 1) or (state.numPresets + 1)
+    local layout = Plan.Build(base, mod.opts, e, own or nil)
+    local newIndex = (lastKind or lastAccount or state.numPresets) + 1
     local list = {}
     for i, l in ipairs(state.saved) do list[i] = l end
     table.insert(list, newIndex - state.numPresets, layout) -- no local for it: the file is at Lua's 200 locals
     local ok, err = SaveAll(state, list)
     if not ok then
+        if own then
+            PE:LogError("ctrlLayout", err)
+            return false, false, "notKept"
+        end
         Fail(err)
         return false, false
     end
@@ -3011,11 +3300,25 @@ local function AddOurs(state, e)
         Fail("C_EditMode.OnLayoutAdded failed: " .. tostring(err))
         return false, true
     end
+    -- 0.22.0: the character's own layout is read back; one the game did not keep is not ours.
+    if own then
+        local again = ReadState()
+        if not (again and FindSaved(again, own, e.layoutType.Character)) then return false, true, "notKept" end
+    end
     mod.opts.template = Plan.TEMPLATE
     Plan.MarkWritten(mod.opts, Plan.Pieces(mod.opts)) -- 0.18.0: the offsets it was built with
     mod.opts.b22TimersBefore = kept -- 0.22.0: what the new layout held for the game's timers
     mod.opts.b22MoreBefore = moreKept -- 0.22.0: and for the cast bar and the focus frame
     if PE.debugOn then PE:Debug("ctrlLayout", "saved the Pocket Essentials layout at index " .. newIndex) end
+    if own then
+        local rec = Plan.own.rec
+        rec.name = own
+        if PE.debugOn then PE:Debug("ctrlLayout", "layout: made \"" .. own .. "\" for this character from the default setup") end
+        if rec.told ~= 1 then
+            rec.told = 1
+            PE:Print(Snap.OWN_TEXT.note)
+        end
+    end
     if kept then Snap.TimersLog(layout, e) end
     return true, true
 end
@@ -3054,7 +3357,7 @@ local function Rebuild()
     local kept = Plan.TimersActive(mod.opts) and Snap.TimersKept(base, e) or nil -- 0.22.0, before the build
     mod.opts.b22MoreAlone = nil -- 0.22.0: the layout is the preset's again, so nothing is left alone
     local moreKept = Plan.MoreOn() and Snap.MoreKept(base, e) or nil
-    state.saved[pos] = Plan.Build(base, mod.opts, e)
+    state.saved[pos] = Plan.Build(base, mod.opts, e, Plan.own and Plan.own.name or nil) -- 0.22.0: the character's own, by its name
     local ok, err = SaveAll(state, state.saved)
     if not ok then
         PE:LogError("ctrlLayout", err)
@@ -3076,7 +3379,9 @@ local function SavedTemplate()
     return type(v) == "number" and v or 1
 end
 
-local function SwitchOn()
+-- given (0.22.0): the layout to go back to, when a switch-on to the character's own layout fell
+-- back to the shared one (AddOurs' third answer), so the second try remembers what the first read.
+local function SwitchOn(given)
     if not wanted then return end -- switched off again before this ran
     if EditModeOpen() then
         Refuse(TEXT_EDIT_MODE)
@@ -3104,6 +3409,13 @@ local function SwitchOn()
     local current = state.current
     local prev = current and { name = current.name, layoutType = current.layoutType, preset = current.preset }
         or { preset = e.preset.Gamepad }
+    -- 0.22.0 (row b22OwnLayout): the other one of ours is active (the shared one, or the
+    -- character's own while the row is Off): the layout to go back to stays the one remembered
+    -- before (the Gamepad preset when there is none), and a failure keeps it. Otherwise `keep`
+    -- is nil and every step is as before.
+    local keep = Snap.OtherOursActive(state) and (ThisPrev() or { preset = e.preset.Gamepad }) or nil
+    if keep then prev = keep end
+    if type(given) == "table" then prev = given end
     if oursIndex then
         SetThisPrev(prev)
         -- Built from an older template: rebuilt first, so this one reload brings the new
@@ -3112,25 +3424,39 @@ local function SwitchOn()
         if SavedTemplate() < Plan.TEMPLATE then Rebuild() end
         local ok, err = pcall(state.api.SetActiveLayout, oursIndex)
         if not ok then
-            SetThisPrev(nil)
+            SetThisPrev(keep)
             Fail("C_EditMode.SetActiveLayout failed: " .. tostring(err))
             return
         end
     else
         SetThisPrev(prev) -- before the write: switching off must undo even a half-done change
-        local called, ok, wrote = pcall(AddOurs, state, e)
+        local called, ok, wrote, refused = pcall(AddOurs, state, e)
         if not called then
             -- Every game call in AddOurs is protected, so an error here came
             -- before anything was written.
-            SetThisPrev(nil)
+            SetThisPrev(keep)
             Fail("Building the layout failed: " .. tostring(ok))
             return
+        end
+        if refused then
+            -- 0.22.0: the game took no layout of this character's own: the shared one, as with
+            -- the row Off, once (Plan.own is gone, so this runs no further).
+            SetThisPrev(keep)
+            local name = Plan.own and Plan.own.name
+            if refused == "five" then
+                Snap.Fallback("layout: five layouts already, nothing made", Snap.OWN_TEXT.five)
+            else
+                if Plan.own then Plan.own.rec.notKept = name end
+                Snap.Fallback("layout: \"" .. tostring(name) .. "\" was not kept by the game, the shared layout stays",
+                    Snap.OWN_TEXT.notKept)
+            end
+            return SwitchOn(prev)
         end
         if not ok then
             -- After a tap the switch-off that follows the refusal undoes a half-done
             -- change. From a login check the switch stays on: no entry, so the next
             -- login tries again.
-            if not wrote or autoSwitch then SetThisPrev(nil) end
+            if not wrote or autoSwitch then SetThisPrev(keep) end
             return
         end
     end
@@ -3161,7 +3487,9 @@ local function SwitchOff(atLogin)
     end
     local oursIndex = OursIndex(state)
     local changed = false
-    if oursIndex and state.active == oursIndex then
+    -- 0.22.0 (row b22OwnLayout): either of ours active (Snap.OtherOursActive: no game call for a
+    -- character that never had the row On).
+    if (oursIndex and state.active == oursIndex) or Snap.OtherOursActive(state) then
         local target
         if prev.preset ~= nil then
             target = FindPreset(state, prev.preset)
@@ -3788,6 +4116,21 @@ do
     batchRows.Listen("b22More", function() Snap.MoreRow() end)
     -- 0.22.0 (spec item 6): the game's target frame higher while Slim bars are On.
     batchRows.Listen("b22Menu", function() Snap.MenuRow() end)
+    -- 0.22.0 (spec item 9): a layout for each character counts from the next reload (Snap.OwnStart),
+    -- so a change only asks for it, out of a fight, while the layout is on. Turned On, a layout the
+    -- game did not keep before is tried once more at that reload.
+    batchRows.Listen("b22OwnLayout", function()
+        PE:RunOutOfCombat("ctrlLayout:ownLayout", function()
+            local on = Snap.OwnRow()
+            local char = CharDB()
+            if on and char and type(char.ctrlOwn) == "table" then char.ctrlOwn.notKept = nil end
+            if PE.debugOn then
+                PE:Debug("ctrlLayout", "layout: a layout for each character is now " .. (on and "on" or "off")
+                    .. "; it counts from the next reload")
+            end
+            if wanted then mod:RequestReload(RELOAD_REASON) end
+        end)
+    end)
     -- Where the buff timer bars sit (spec item 8): a change rewrites the game's timers while they
     -- are placed and asks for the reload.
     OPTIONS[#OPTIONS + 1] = { key = "b22BarsSide", label = "Buff timer bars", always = true,
@@ -3819,12 +4162,16 @@ Settle = function()
         return
     end
     LogNameOnce()
+    Snap.LogActive() -- 0.22.0: before anything is changed
     local byTap = pendingTap
     pending, pendingTap = false, false
     StopWaiting()
     Migrate()
+    Snap.OwnResolve() -- 0.22.0 (row b22OwnLayout): the own layout's name, or the shared layout
     if wanted then
-        if ThisPrev() then
+        -- 0.22.0: a character with its layout to go back to and the other one of ours active is
+        -- switched to this session's one (Snap.NeedsSwitch; false for one that never had the row On).
+        if ThisPrev() and not Snap.NeedsSwitch() then
             SyncBars()
             mod:RefreshPanel()
         else
@@ -3956,6 +4303,8 @@ mod = PE:RegisterModule({
     -- With the feature on, OnEnable (right after) does the same check.
     OnLoad = function(self)
         if type(self.opts) ~= "table" then return end
+        Snap.loginRead = true -- 0.22.0: the first read of the layouts names the one active at login
+        Snap.OwnStart() -- 0.22.0 (row b22OwnLayout): before anything reads the options
         -- 0.20.0: values saved for rows that are gone (the "Part: ..." rows) are removed.
         for _, key in ipairs(Plan.GONE) do self.opts[key] = nil end
         Snap.Carry() -- offsets saved for the older built-in arrangement, and the old wheels switch
@@ -3977,6 +4326,7 @@ mod = PE:RegisterModule({
         wanted = true
         startOverUntil = 0
         rowNote = nil
+        if not atLogin then Snap.loginRead = false end -- 0.22.0: switched on by a tap, not a login
         RememberApplied(self.opts)
         HookRefresh()
         self:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED", SyncBars)
@@ -3988,7 +4338,12 @@ mod = PE:RegisterModule({
             -- Option changes not yet written when the feature went off.
             if #pendingRewrites > 0 then PE:RunOutOfCombat("ctrlLayout:rewrite", RunRewrites) end
             -- A login whose layout was built from an older template: Settle rebuilds it.
-            if atLogin and SavedTemplate() < Plan.TEMPLATE then Begin(false) end
+            -- 0.22.0 (row b22OwnLayout): Settle also when this session's layout is the character's
+            -- own, or one was made for it before (it may have to be made or made active).
+            local rec = CharDB() and CharDB().ctrlOwn
+            if atLogin and (SavedTemplate() < Plan.TEMPLATE or Plan.own or (type(rec) == "table" and rec.name)) then
+                Begin(false)
+            end
         else
             -- This character's login check, or a switch-on: Settle, once the character's
             -- name and Edit Mode's layouts are known.
@@ -4005,6 +4360,11 @@ mod = PE:RegisterModule({
         PE:RunOutOfCombat("ctrlLayout:off", function() SwitchOff(false) end)
     end,
 })
+
+-- 0.22.0 (row b22OwnLayout): the tab's note under the status lines (Snap.OwnLines; with the row
+-- Off the status is exactly what it was).
+Snap.statusBase = mod.status
+mod.status = function(m) return Snap.OwnLines(Snap.statusBase(m)) end
 
 -- The PE button's default spot (Hub.lua): point, x, y on UIParent while the bars are
 -- placed by us, else nil. "Placed" is what SyncBars decides: the switch is on and our layout
@@ -4207,7 +4567,9 @@ Snap.Build = function()
         for _, m in ipairs(PE.moduleList) do items[#items + 1] = m.key .. "=" .. tostring(PE:GetModuleState(m.key)) end
         WriteList("features", items)
         items = {}
-        local opts = type(mod.opts) == "table" and mod.opts or {}
+        -- 0.22.0: the account's options themselves (with the row b22OwnLayout On, mod.opts has no
+        -- fields of its own for `pairs` to list: Snap.OwnStart).
+        local opts = (type(Snap.real) == "table" and Snap.real) or (type(mod.opts) == "table" and mod.opts) or {}
         local keys = {}
         for k, v in pairs(opts) do
             if type(k) == "string" and (type(v) == "number" or type(v) == "string" or type(v) == "boolean") then keys[#keys + 1] = k end

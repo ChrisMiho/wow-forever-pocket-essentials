@@ -441,6 +441,7 @@ ChannelLabel	-
 ChannelList	-
 CharDB	-
 CharKey	-
+Character	-
 Chat	-
 ChatFrame	-
 ChatFrame1	-
@@ -540,6 +541,7 @@ CurrentChoice	-
 CurrentHandler	-
 CurrentTextSize	-
 CustomAuraContainerTemplate	-
+CutName	-
 D	-
 DEBUG_CAP	-
 DEFAULTS	-
@@ -625,6 +627,7 @@ Factor	-
 FadeMain	-
 Fail	-
 Failed	-
+Fallback	-
 FeatureCard	-
 FeatureFields	-
 FeatureOff	-
@@ -888,6 +891,7 @@ LayoutBottomRow	-
 LayoutButton	-
 LayoutChrome	-
 LayoutHeader	-
+LayoutName	-
 LayoutRow	-
 LayoutSwitch	-
 LayoutTabs	-
@@ -912,6 +916,7 @@ LiveWord	-
 Loaded	-
 Lockdown	-
 Log	-
+LogActive	-
 LogAll	-
 LogDrawn	-
 LogError	-
@@ -1006,6 +1011,7 @@ Moved	-
 MovedTable	-
 N	-
 NAME	-
+NameParts	-
 NavActivate	-
 NavApi	-
 NavArm	-
@@ -1028,6 +1034,7 @@ Near	-
 Nearest	-
 NearestInDirection	-
 NearestMiniPin	-
+NeedsSwitch	-
 NewButton	-
 NewCooldown	-
 NewListDrawer	-
@@ -1105,6 +1112,7 @@ Opts	-
 Orientation	-
 Orphan	-
 Other	-
+OtherOursActive	-
 OtherWindowShown	-
 OurSource	-
 OursBecause	-
@@ -1115,6 +1123,11 @@ Overflow	-
 OverlapList	-
 Overlaps	-
 OverlapsOf	-
+OwnIndex	-
+OwnLines	-
+OwnResolve	-
+OwnRow	-
+OwnStart	-
 Owner	-
 OwnerLabel	-
 PANEL_SIZES	-
@@ -1286,6 +1299,7 @@ ReadDim	-
 ReadEnums	-
 ReadGrid	-
 ReadHints	-
+ReadName	-
 ReadOurs	-
 ReadPixels	-
 ReadPoints	-
@@ -1799,6 +1813,7 @@ ZoneTextButton	-
 a	-
 abs	-
 accepted	-
+account	-
 actionBars	-
 actionButtons	-
 active	-
@@ -1906,6 +1921,7 @@ channel	-
 channelling	-
 charDB	-
 charOffsets	-
+character	-
 chat	-
 chatBefore	-
 chatFrame	-
@@ -1946,6 +1962,7 @@ count	-
 create	-
 ctrlArrange	-
 ctrlLayout	-
+ctrlOwn	-
 cvarFailed	-
 cvarPrev	-
 cvarTried	-
@@ -2026,6 +2043,7 @@ finish	-
 finished	-
 finishedBy	-
 first	-
+five	-
 flag	-
 floor	-
 fn	-
@@ -2200,12 +2218,15 @@ navList	-
 navOnFocus	-
 needsOn	-
 no	-
+noName	-
 noRow	-
 noStep	-
+noType	-
 none	-
 nopos	-
 normal	-
 noslim	-
+notKept	-
 notarget	-
 note	-
 notes	-
@@ -2366,6 +2387,7 @@ reached	-
 read	-
 readable	-
 ready	-
+real	-
 reason	-
 rebuilt	-
 rect	-
@@ -2494,6 +2516,7 @@ startTime	-
 startX	-
 started	-
 status	-
+statusBase	-
 statusWhenOff	-
 step	-
 stepDim	-

@@ -226,6 +226,10 @@ function Client.new(opts)
                                      -- "SetActiveLayout") raises an error
         layoutsLag = false,          -- true: OnLayoutAdded and SetActiveLayout do not change what GetLayouts
                                      -- reads as active (the game may report it only after a reload)
+        characterLayouts = nil,      -- 0.22.0: what SaveLayouts does with a Character layout that is not
+                                     -- saved yet: nil keeps it, "drop" leaves it out of what is saved
+                                     -- (the game did not keep it), "raise" raises an error
+                                     -- (whether the game takes one an addon saves is not known)
         gamepadUI = opts.gamepadUI and true or false,
         instance = false, indoors = false,
         minimapZoom = 0,
@@ -2433,9 +2437,17 @@ function Client.new(opts)
                     error("C_EditMode.SaveLayouts(): the list does not start with the presets", 2)
                 end
             end
+            local had = {}
+            for _, l in ipairs(world.layouts.layouts) do
+                if l.layoutType == Enum.EditModeLayoutType.Character then had[l.layoutName] = true end
+            end
             local saved = {}
             for _, l in ipairs(list) do
-                if l.layoutType ~= Enum.EditModeLayoutType.Preset then saved[#saved + 1] = DeepCopy(l) end
+                local new = l.layoutType == Enum.EditModeLayoutType.Character and not had[l.layoutName]
+                if new and world.characterLayouts == "raise" then error("the stand-in's SaveLayouts refuses a new character layout") end
+                if l.layoutType ~= Enum.EditModeLayoutType.Preset and not (new and world.characterLayouts == "drop") then
+                    saved[#saved + 1] = DeepCopy(l)
+                end
             end
             world.layouts = { layouts = saved, activeLayout = info.activeLayout or world.layouts.activeLayout }
         end,

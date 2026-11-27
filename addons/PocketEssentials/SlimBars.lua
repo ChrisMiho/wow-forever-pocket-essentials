@@ -398,6 +398,17 @@ local function SurnameJoin()
     return separator
 end
 
+-- 0.20.0, shared since 0.22.0 (ControllerLayout.lua names a character's own layout with it, row
+-- b22OwnLayout): UnitName's two answers read the way the bars read them (see "Names" above). The
+-- first answer and, when a second one is there (a string that is not empty), the surname; nil
+-- for the surname when there is none. Nothing at all when either answer is hidden or the first
+-- is not a string. Joins nothing and makes no game call.
+function Slim.NameParts(name, second)
+    if IsSecret(name) or IsSecret(second) or type(name) ~= "string" then return nil end
+    if type(second) == "string" and second ~= "" then return name, second end
+    return name, nil
+end
+
 -- A plain text into a name's font string, cut with "..." so that it is at most `room` wide.
 -- Whole characters only (a UTF-8 character's later bytes are 128 to 191). The width is the
 -- font string's own (GetUnboundedStringWidth, DOC/SimpleFontStringAPIDocumentation.lua); if
@@ -444,8 +455,9 @@ local function UpdateName(bar, changed)
         return
     end
     local text = name
-    if type(name) == "string" and type(second) == "string" and second ~= "" then
-        text = name .. SurnameJoin() .. second
+    local first, surname = Slim.NameParts(name, second)
+    if surname then
+        text = first .. SurnameJoin() .. surname
         Once("a surname was joined for the " .. bar.def.label, "surname")
     end
     bar.joined = (text ~= name) or nil
