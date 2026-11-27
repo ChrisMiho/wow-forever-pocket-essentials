@@ -961,6 +961,10 @@ MeasureKey	-
 MeasuredCall	-
 Medium	-
 MemoryField	-
+MenuActive	-
+MenuOn	-
+MenuRow	-
+MenuSpot	-
 Merge	-
 MergeErrors	-
 Metric	-

@@ -5606,5 +5606,166 @@ test("0.22.0 more: the row is a batch row that asks for a reload", function()
     eq(optRow(PE, "b22More").label, "Arrange: cast bar and focus frame (reload)")
 end)
 
+---------------------------------------------------------------------------
+-- 0.22.0 (spec item 6, row b22Menu): the game's invisible target frame is written 174 higher while
+-- Slim bars are On, so the target's menu (pinned to its right edge, TargetFrame.lua:674-676)
+-- opens above the tooltip corner.
+---------------------------------------------------------------------------
+local MN = { PLAYER = 1, TARGET = 2, PET = 8 }
+
+function MN.opts(size, more)
+    local o = { slim = 1, arrange = 1, offsets = {}, charOffsets = {}, panelSize = size or 100 }
+    for k, v in pairs(more or {}) do o[k] = v end
+    return o
+end
+
+function MN.spot(e)
+    local a = e.anchorInfo
+    return { a.point, a.relativeTo, a.relativePoint, a.offsetX, a.offsetY }
+end
+
+function MN.target(c) return TM.entry(ours(c), SYS.UnitFrame, MN.TARGET) end
+
+function MN.client(rows)
+    local ctrl = { arrange = 1, arrangeBase = 2, slim = 1 }
+    for k, v in pairs(rows or {}) do ctrl[k] = v end
+    local c, PE = layoutClient({}, 3, { saved = { options = { ctrlLayout = ctrl }, debug = { on = true } } })
+    PE:SetDebug(true)
+    switchOn(c, PE)
+    PE:GetModule("ctrlLayout"):CancelReload()
+    return c, PE, PE:GetModule("ctrlLayout")
+end
+
+function MN.logs(c, pattern)
+    local out = {}
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        local text = line:match("^%S+ ctrlLayout: (target menu: .*)$")
+        if text and text:find(pattern) then out[#out + 1] = text end
+    end
+    return out
+end
+
+test("0.22.0 menu: with Slim bars Off the row changes nothing, nor any rectangle, at every Spell panel size, b22Panels Off and On", function()
+    for _, panels in ipairs({ 0, 1 }) do
+        for _, size in ipairs({ 80, 90, 100, 110, 120 }) do
+            for _, slim in ipairs({ 0, 1 }) do
+                local o = MN.opts(size, { slim = slim })
+                local Off = TM.plan({ b22Menu = 0, b22Panels = panels })
+                local On = TM.plan({ b22Menu = 1, b22Panels = panels })
+                -- Plan.Rects does not hold the unit frames while Slim bars are On; the row changes no rectangle.
+                eq(On.Rects(o), Off.Rects(o), "rectangles, slim " .. slim .. " size " .. size)
+                if slim == 0 then eq(On.Pieces(o), Off.Pieces(o), "pieces, size " .. size .. " panels " .. panels) end
+            end
+        end
+    end
+end)
+
+test("0.22.0 menu: row On with Slim bars On lifts only the target frame, by 174, at every size and with b22Panels Off and On", function()
+    for _, panels in ipairs({ 0, 1 }) do
+        for _, size in ipairs({ 80, 90, 100, 110, 120 }) do
+            local Off = TM.plan({ b22Menu = 0, b22Panels = panels })
+            local o = MN.opts(size)
+            local off = Off.Pieces(o)
+            local On = TM.plan({ b22Menu = 1, b22Panels = panels })
+            local on = On.Pieces(o)
+            eq(#on, #off)
+            for i = 1, #off do
+                local a, b = off[i], on[i]
+                if a.system == "UnitFrame" and a.index == "Target" then
+                    eq(b.anchor.x, a.anchor.x, "x of the target frame, size " .. size)
+                    eq(b.anchor.y, a.anchor.y + 174, "y of the target frame, size " .. size)
+                    eq({ b.anchor.point, b.anchor.relativeTo, b.anchor.relativePoint }, { a.anchor.point, a.anchor.relativeTo, a.anchor.relativePoint })
+                    eq(b.settings, a.settings)
+                else
+                    eq(b, a, "piece " .. i .. " changed at size " .. size)
+                end
+            end
+        end
+    end
+    local Plan = TM.plan({ b22Menu = 1 })
+    eq(Plan.MENU_LIFT, 174)
+    -- 56 becomes 230 at 100%.
+    eq(piece(Plan.Pieces(MN.opts(100)), "UnitFrame", "Target").anchor.y, 230)
+    eq(piece(TM.plan({ b22Menu = 0 }).Pieces(MN.opts(100)), "UnitFrame", "Target").anchor.y, 56)
+    -- A saved Arrange offset of the target frame is not part of the lift (it is not listed with Slim bars On).
+    eq(piece(Plan.Pieces(MN.opts(nil)), "UnitFrame", "Player").anchor.y, 56)
+end)
+
+test("0.22.0 menu: a Spell panel size number or nil never lifts the frame", function()
+    local Plan = TM.plan({ b22Menu = 1 })
+    eq(piece(Plan.Pieces(nil), "UnitFrame", "Target").anchor.y, 56)
+end)
+
+test("0.22.0 menu: On writes the target frame higher and asks for the reload; Off puts it back; the log says both", function()
+    local c, PE, m = MN.client()
+    local before = deepCopy(MN.target(c))
+    local player, pet = deepCopy(TM.entry(ours(c), SYS.UnitFrame, MN.PLAYER)), deepCopy(TM.entry(ours(c), SYS.UnitFrame, MN.PET))
+    local x, y = before.anchorInfo.offsetX, before.anchorInfo.offsetY
+    local saves = #c:callsTo("C_EditMode.SaveLayouts")
+    choose(c, PE, "b22Menu", 1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves + 1, "one write")
+    eq(reloadReason(PE), RELOAD)
+    eq(MN.target(c).anchorInfo.offsetX, x)
+    eq(MN.target(c).anchorInfo.offsetY, y + 174)
+    eq(TM.entry(ours(c), SYS.UnitFrame, MN.PLAYER), player, "the player frame moved")
+    eq(TM.entry(ours(c), SYS.UnitFrame, MN.PET), pet, "the pet frame moved")
+    eq(#MN.logs(c, "^target menu: the game's target frame written at " .. x .. ", " .. (y + 174) .. " %(was " .. x .. ", " .. y .. "%)$"), 1,
+        table.concat(MN.logs(c, ""), "\n"))
+    m:CancelReload()
+    choose(c, PE, "b22Menu", 0)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves + 2)
+    eq(reloadReason(PE), RELOAD)
+    eq(MN.target(c), before, "put back exactly")
+    c:assertClean()
+end)
+
+test("0.22.0 menu: with Slim bars Off the row writes nothing", function()
+    local c, PE, m = MN.client({ slim = 0 })
+    local before = deepCopy(MN.target(c))
+    local saves = #c:callsTo("C_EditMode.SaveLayouts")
+    choose(c, PE, "b22Menu", 1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves)
+    eq(MN.target(c), before)
+    eq(reloadReason(PE), nil)
+end)
+
+test("0.22.0 menu: turned On in a fight, written when the fight ends; with Edit Mode open the row is put back", function()
+    local c, PE = MN.client()
+    local y = MN.target(c).anchorInfo.offsetY
+    local saves = #c:callsTo("C_EditMode.SaveLayouts")
+    c:enterCombat()
+    choose(c, PE, "b22Menu", 1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves, "written in a fight")
+    eq(MN.target(c).anchorInfo.offsetY, y)
+    c:leaveCombat()
+    c:advance(0.1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves + 1)
+    eq(MN.target(c).anchorInfo.offsetY, y + 174)
+    local c2, PE2, m2 = MN.client()
+    c2.world.editMode = true
+    local saves2 = #c2:callsTo("C_EditMode.SaveLayouts")
+    choose(c2, PE2, "b22Menu", 1)
+    eq(m2.opts.b22Menu, 0, "the row is put back")
+    eq(#c2:callsTo("C_EditMode.SaveLayouts"), saves2)
+end)
+
+test("0.22.0 menu: a layout built with the row On holds the lifted spot, and turning Slim bars off or on follows", function()
+    local c, PE, m = MN.client({ b22Menu = 1 })
+    local y = MN.target(c).anchorInfo.offsetY
+    local c0, PE0 = MN.client()
+    eq(y, MN.target(c0).anchorInfo.offsetY + 174, "built lifted")
+    local saves = #c:callsTo("C_EditMode.SaveLayouts")
+    choose(c, PE, "slim", 0)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves + 1)
+    eq(MN.target(c).anchorInfo.offsetY, y - 174, "Slim bars Off: the game's frame is where it was")
+    choose(c, PE, "slim", 1)
+    eq(MN.target(c).anchorInfo.offsetY, y, "Slim bars On: lifted again")
+end)
+
+test("0.22.0 menu: the row is a batch row that asks for a reload", function()
+    local _, PE = MN.client()
+    check(optRow(PE, "b22Menu") ~= nil, "no row")
+end)
+
 
 return { known = KNOWN_FAILURES }

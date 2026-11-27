@@ -581,6 +581,28 @@ function Plan.PanelLift(v)
     return bottom < 1 and 1 - bottom or 0
 end
 
+-- 0.22.0 (spec item 6, row b22Menu, Off by default): the target's menu, which the game opens with
+-- menu:SetPoint("LEFT", self, "RIGHT") on its own target frame (Blizzard_UnitFrame/Mainline/
+-- TargetFrame.lua:674-676), follows that frame's right edge. With Slim bars On the frame is
+-- invisible, so our layout puts it higher and the menu opens above the tooltip corner and the
+-- target of target bar. The target of target hangs on the frame (Plan.TOT_SPOT) and rises with it.
+-- The tap guards (SlimBars.lua, PlaceGuards) read the game's frames' places, so they stand on the
+-- lifted frames once the layout is loaded. 174: the tooltip (TOOLTIP.h) and the target of target
+-- bar's room over the corner (spec item 6, mockup "Target menu").
+Plan.MENU_LIFT = 174
+
+-- Whether the row b22Menu (Batch.lua) is On.
+function Plan.MenuOn()
+    local batch = PE.Batch
+    return type(batch) == "table" and type(batch.On) == "function" and batch.On("b22Menu") == true
+end
+
+-- Whether the target frame is written higher for v: the row is On and v is an options table with
+-- Slim bars On (a Spell panel size number, or nil, never lifts it).
+function Plan.MenuActive(v)
+    return Plan.MenuOn() and type(v) == "table" and Fill(v).slim == 1
+end
+
 -- 0.22.0 (row b22Panels): how far the slim bars group rises, one amount for every part and
 -- both sides, before the saved offsets: exactly enough that the cast bar's bottom is
 -- Plan.PANEL_CAST_CLEAR above the lifted diamonds' top (0 where it already is, and with the
@@ -691,12 +713,14 @@ local function Geometry(v)
 end
 
 -- The player, pet and target frames' spots for size v.
+-- 0.22.0 (row b22Menu): with Slim bars On the target frame, which is invisible then, is written
+-- Plan.MENU_LIFT higher (Plan.MenuActive), on top of the rise at the larger Spell panel sizes.
 local function Frames(v)
     local y = Geometry(v).frameY
     return {
         Player = { "BOTTOMRIGHT", UI, "BOTTOM", -FRAME_X, y },
         Pet = { "BOTTOMRIGHT", UI, "BOTTOM", -FRAME_X, y + UNIT.h + SMALL_GAP },
-        Target = { "BOTTOMLEFT", UI, "BOTTOM", FRAME_X, y },
+        Target = { "BOTTOMLEFT", UI, "BOTTOM", FRAME_X, Plan.MenuActive(v) and y + Plan.MENU_LIFT or y },
     }
 end
 
@@ -3184,6 +3208,7 @@ local function RememberApplied(opts)
     -- 0.22.0: the two timer rows, which rewrite pieces too (put back on a refusal).
     if type(opts) == "table" then applied.b22Timers, applied.b22BarsSide = opts.b22Timers, opts.b22BarsSide end
     if type(opts) == "table" then applied.b22More = opts.b22More end -- 0.22.0: and the cast bar and focus frame row
+    if type(opts) == "table" then applied.b22Menu = opts.b22Menu end -- 0.22.0: and the target menu row
 end
 
 -- Which pieces of Plan.Pieces each row rewrites: its own swing timer only (one
@@ -3204,8 +3229,12 @@ local REWRITES = {
         or p.system == "CooldownViewer" end,
     -- 0.17.0, Slim bars: the tooltip's spot (the corner while they are on). 0.22.0: with the row
     -- b22Timers On also the game's timers, which need the slim bars, and the chat over them.
+    -- 0.22.0 (row b22Menu): and the target frame, which the row lifts only while they are on.
     slim = function(p) return p.system == "HudTooltip"
-        or (Plan.TimersOn() and (p.system == "CooldownViewer" or p.system == "ChatFrame")) end,
+        or (Plan.TimersOn() and (p.system == "CooldownViewer" or p.system == "ChatFrame"))
+        or (Plan.MenuOn() and p.system == "UnitFrame" and p.index == "Target") end,
+    -- 0.22.0 (row b22Menu): the target frame.
+    b22Menu = function(p) return p.system == "UnitFrame" and p.index == "Target" end,
     -- 0.22.0 (rows b22Timers and b22BarsSide): the game's four timer pieces and the chat, which
     -- ends higher while the bars are on the left.
     b22Timers = function(p) return p.system == "CooldownViewer" or p.system == "ChatFrame" end,
@@ -3437,6 +3466,31 @@ Snap.MoreRow = function()
     end
 end
 
+-- 0.22.0 (row b22Menu, spec item 6): a change of the row rewrites the target frame, out of a
+-- fight, and asks for the reload. Nothing is written while Slim bars are Off: the frame is
+-- lifted only with them On. Snap.MenuWas reads the layout's target frame spot before a write.
+Snap.MenuRow = function()
+    local o = mod and mod.opts
+    if type(o) ~= "table" then return end
+    if o.slim ~= 1 then
+        if PE.debugOn then PE:Debug("ctrlLayout", "target menu: nothing written: needs Slim bars (Slim bars are Off)") end
+        return
+    end
+    if not Snap.RewritePieces(REWRITES.b22Menu, "b22Menu") then return end -- RewritePieces, defined above
+    if PE.debugOn then
+        PE:Debug("ctrlLayout", "target menu: the row is now " .. tostring(o.b22Menu) .. "; the layout follows the next reload")
+    end
+end
+Snap.MenuSpot = function(layout, e)
+    local sys = e and e.system and e.system.UnitFrame
+    local group = e and e.index and e.index.UnitFrame
+    local idx = type(group) == "table" and group["Target"] or nil
+    local entry = sys and idx and type(layout) == "table" and FindEntry(layout, sys, idx) or nil
+    local a = entry and entry.anchorInfo
+    if type(a) ~= "table" then return nil end
+    return a.offsetX or 0, a.offsetY or 0
+end
+
 local function RunRewrites()
     if not wanted or #pendingRewrites == 0 then return end -- kept for the next switch-on
     local list = pendingRewrites
@@ -3466,6 +3520,7 @@ local function RunRewrites()
     for i, p in ipairs(all) do
         if picked[i] or (p.arrange and keys[p.arrange]) then pieces[#pieces + 1] = p end
     end
+    local menuWasX, menuWasY = Snap.MenuSpot(state.saved[pos], e) -- 0.22.0: for the target menu line, before the write
     Snap.TimersKeep(state.saved[pos], e, pieces) -- 0.22.0: before the game's timers are first written
     Plan.Apply(state.saved[pos], pieces, e) -- our entry, in place (GetLayouts gave a copy)
     local timersBack = Snap.TimersBack(state.saved[pos]) -- 0.22.0: the row Off puts them back
@@ -3513,6 +3568,17 @@ local function RunRewrites()
                 if p.arrange and Plan.MORE[p.arrange] and Snap.MoreEntry(state.saved[pos], e, p.arrange) then
                     PE:Debug("ctrlLayout", "arrange: " .. p.arrange .. " joined the layout at " .. p.anchor.x .. ", " .. p.anchor.y)
                 end
+            end
+            break
+        end
+    end
+    -- 0.22.0 (row b22Menu): where the game's target frame was written, and where it was.
+    for _, r in ipairs(list) do
+        if r.key == "b22Menu" and PE.debugOn then
+            local nx, ny = Snap.MenuSpot(state.saved[pos], e)
+            if nx and menuWasX then
+                PE:Debug("ctrlLayout", "target menu: the game's target frame written at " .. tostring(nx) .. ", " .. tostring(ny)
+                    .. " (was " .. tostring(menuWasX) .. ", " .. tostring(menuWasY) .. ")")
             end
             break
         end
@@ -3720,6 +3786,8 @@ do
     batchRows.Listen("b22Timers", function() Snap.TimersRow("b22Timers") end)
     -- 0.22.0 (spec item 7): the cast bar and the focus frame join the layout, or are put back.
     batchRows.Listen("b22More", function() Snap.MoreRow() end)
+    -- 0.22.0 (spec item 6): the game's target frame higher while Slim bars are On.
+    batchRows.Listen("b22Menu", function() Snap.MenuRow() end)
     -- Where the buff timer bars sit (spec item 8): a change rewrites the game's timers while they
     -- are placed and asks for the reload.
     OPTIONS[#OPTIONS + 1] = { key = "b22BarsSide", label = "Buff timer bars", always = true,

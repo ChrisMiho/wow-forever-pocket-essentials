@@ -1440,4 +1440,33 @@ test("0.20.0 names: a client without the game's separator joins with one space",
     eq(#PE.errors, 0)
 end)
 
+test("0.22.0 menu: the tap guards over the target frame and its target of target stand at the lifted spot", function()
+    -- The guards read the game's frames, not the plan: with the row b22Menu On the layout puts the
+    -- target frame (and so the target of target, which hangs on it) 174 higher after the reload.
+    local function lifted(rise)
+        return function(c)
+            -- The layout's load moves it, not a call of ours: the stand-in's state is set directly.
+            c._state(c.env.TargetFrame).points = { { point = "BOTTOMLEFT", rel = c.UIParent, relPoint = "BOTTOM", x = 300, y = 250 + rise } }
+        end
+    end
+    local c0, _, Slim0 = started({ setup = lifted(0) })
+    local c, _, Slim = started({ setup = lifted(174) })
+    local base = { rectOf(c0, Slim0.view.guards.target), rectOf(c0, Slim0.view.guards.tot) }
+    local game = { target = c.env.TargetFrame, tot = totFrame(c) }
+    for i, key in ipairs({ "target", "tot" }) do
+        local g = rectOf(c, Slim.view.guards[key])
+        sameRect(g, rectOf(c, game[key]), key .. " guard over its game frame")
+        near(g[2], base[i][2] + 174, key .. " guard bottom, 174 up")
+        near(g[4], base[i][4] + 174, key .. " guard top, 174 up")
+        near(g[1], base[i][1], key .. " guard left")
+        near(g[3], base[i][3], key .. " guard right")
+    end
+    eq(notedLike(c, "^tap guard over the game's target frame: BOTTOMLEFT x [%d.]+ y 424%.0, 232%.0 by 100%.0$"), 1)
+    -- The player and pet guards are where they were.
+    for _, key in ipairs({ "player", "pet" }) do
+        sameRect(rectOf(c, Slim.view.guards[key]), rectOf(c0, Slim0.view.guards[key]), key .. " guard")
+    end
+    c:assertClean()
+end)
+
 return { known = KNOWN_FAILURES }
