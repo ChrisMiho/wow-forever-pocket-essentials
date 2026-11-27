@@ -12,6 +12,7 @@
 ## AddonCompartmentFunc: PocketEssentials_OnAddonCompartmentClick
 
 Core.lua
+Batch.lua
 UI.lua
 Move.lua
 Hub.lua

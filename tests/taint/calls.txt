@@ -330,6 +330,7 @@ Select	*	ours	the local Select of Arrange.lua, Move.lua and QuestArrow.lua
 SelectTab	*	ours	local SelectTab in Settings.lua
 Set	*	ours	SegmentedMethods:Set and NumberMethods:Set (UI.lua), on the addon's own controls
 SetActiveLayout	addons/PocketEssentials/ControllerLayout.lua	engine	C_EditMode.SetActiveLayout
+SetAll	addons/PocketEssentials/ControllerLayout.lua	ours	PE.Batch.SetAll (Batch.lua): sets the batch rows in our own saved options; not Blizzard's Communities SetAll
 SetAllPoints	*	engine	widget method, called only on the addon's own frames and textures (cooldown frames from CooldownFrameTemplate included: that template has no mixin)
 SetAllPoints	addons/PocketEssentials/ControllerLayout.lua	engine	widget method on the game's bar anchors (plain Frames, ActionBarTemplates.xml:600-693; no Lua SetAllPoints, not Edit Mode systems)
 SetAlpha	*	engine	widget method, called only on the addon's own frames and textures

@@ -1865,6 +1865,8 @@ local function chosen(b) return b.peStyle == "segmentOn" end
 
 -- Checks that `top` draws (shown = true) or does not draw one option row of a feature.
 local function checkOption(c, top, mod, opt, shown, where, PE)
+    -- A heading row (0.22.0) has no name to look for and nothing to press.
+    if opt.heading ~= nil then return end
     if type(opt.choices) == "table" then
         local buttons = choiceButtons(c, top, mod, opt, PE)
         eq(buttons ~= nil, shown, where .. ": \"" .. opt.label .. "\" drawn")

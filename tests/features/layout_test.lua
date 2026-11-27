@@ -1389,7 +1389,7 @@ test("rows: Spell panel size, the three timer rows and Start over", function()
     local _, PE = layoutClient({}, 3)
     local list = PE:GetModule("ctrlLayout").options
     local labels = {}
-    for i, o in ipairs(list) do labels[i] = o.label end
+    for i, o in ipairs(list) do labels[i] = o.label or ("heading " .. tostring(o.heading)) end
     eq(labels, { "Spell panel size", "Ranged timer", "Main hand timer", "Off hand timer", "Controls reminder", "Map buttons",
         "Rebuild the layout",
         -- (0.20.0: the seven "Part: ..." rows of 0.16.2 and 0.16.4 are gone)
@@ -1403,6 +1403,11 @@ test("rows: Spell panel size, the three timer rows and Start over", function()
         -- the row "Arrange: spell wheels" is gone)
         "Arrange it yourself", "Arrange the screen",
         -- 0.16.4: for the device test
+        -- 0.22.0 (Batch.lua): the batch rows under their heading, all Off
+        "heading 0.22.0", "Everything in 0.22.0",
+        "Empty slots, clean", "Menu arrows, always", "D-pad moves by direction", "Map name strip, tidy", "Bigger direction marks",
+        "Target menu above the tooltip (reload)", "Arrange: cast bar and focus frame (reload)", "Place the game's timers (reload)",
+        "A layout for each character (reload)", "Large spell panels, whole", "Mount square, live", "Buff timer bars",
         "Mark a test section", "Save a snapshot" })
     eq(list[1].key, "panelSize")
     local n = list[1].number

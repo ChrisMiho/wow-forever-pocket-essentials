@@ -434,6 +434,8 @@ end
 --            after max, shown as allLabel ("All"); offLabel (optional) is
 --            shown at 0. A saved value that is not a whole number in the
 --            range shows the default. An end with no step is dimmed.
+--   heading: { heading = "text", always }
+--            a small title with a thin line under it; no control, nothing to tap.
 --   stepper: { label, value = function(mod) -> text, stepper =
 --            function(mod) -> { text, unit, down = fn, up = fn, downDim,
 --            upDim } or nil }
@@ -445,7 +447,12 @@ end
 function Drawer:OptionRow(mod, opt, x, y, innerWidth)
     local refresh = self.refresh
     local help = type(opt.help) == "string" and opt.help or nil
-    if IsChoiceRow(opt) then
+    if type(opt.heading) == "string" then
+        -- A heading: a small title and the thin line the cards use. No control, no focus.
+        local height = self:Text("small", opt.heading, x, y, innerWidth, COLOR.title)
+        self:Divider(x, y + height + M.gap * 0.25, innerWidth)
+        return y + height + M.gap * 0.75
+    elseif IsChoiceRow(opt) then
         local current = CurrentChoice(mod, opt)
         local items = {}
         for _, choice in ipairs(opt.choices) do

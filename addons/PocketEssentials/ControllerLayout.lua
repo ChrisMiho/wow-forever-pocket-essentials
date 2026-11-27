@@ -3097,6 +3097,22 @@ do
         end
         Snap.ArrangeCall("Open")
     end }
+    -- 0.22.0 (Batch.lua): one switch for each part of the batch, all Off until tried on the
+    -- device, under their own heading. `always`: they also show while the layout is Off, since
+    -- some of them do not need it. Turn all on and Turn all off only flip the rows.
+    OPTIONS[#OPTIONS + 1] = { heading = PE.Batch.VERSION, always = true }
+    OPTIONS[#OPTIONS + 1] = { label = "Everything in " .. PE.Batch.VERSION, always = true, buttons = {
+        { label = "Turn all on", action = function() PE.Batch.SetAll(true) mod:RefreshPanel() end },
+        { label = "Turn all off", action = function() PE.Batch.SetAll(false) mod:RefreshPanel() end },
+    } }
+    for _, row in ipairs(PE.Batch.ROWS) do
+        local key = row.key
+        OPTIONS[#OPTIONS + 1] = { key = key, label = row.label .. (row.reload and " (reload)" or ""), choices = ON_OFF, always = true,
+            OnChange = function() PE.Batch.Changed(key) end }
+    end
+    -- Where the buff timer bars sit (used by a later part of the batch).
+    OPTIONS[#OPTIONS + 1] = { key = "b22BarsSide", label = "Buff timer bars", always = true,
+        choices = { { value = 0, label = "Left, by your name" }, { value = 1, label = "Right, by the target" } } }
 end
 -- 0.16.4, for the device test (spec 2026-11-24-0.16.4-cleanup.md, 6 and 7): a numbered mark
 -- in the debug log, and the snapshot (the block at the end of the file). `always`: the two
@@ -3170,6 +3186,9 @@ end
 local defaults = DeepCopy(Plan.DEFAULTS)
 defaults.panelSize = Plan.PANEL_SIZE_DEFAULT
 defaults.prev = false -- the 0.11.0 file's single layout to go back to; read once, then false
+-- 0.22.0: every batch row starts Off (Batch.lua); the buff timer bars start on the left.
+for _, row in ipairs(PE.Batch.ROWS) do defaults[row.key] = 0 end
+defaults.b22BarsSide = 0
 -- (opts.prevs, 0.11.1's entries by character name, is only read: Migrate. Each
 -- character's entry now lives in its own saved file, PE.charDB.ctrlLayoutPrev.)
 

@@ -289,6 +289,8 @@ local function DebugSessionStart()
     local slot = debugStore.next
     PE:Debug("core", SESSION_MARK .. DebugHeader())
     headerSlot, headerLine = slot, debugStore.lines[slot]
+    -- The 0.22.0 batch rows, one line (Batch.lua), right after the header.
+    if PE.Batch then PE:Debug("core", PE.Batch.Line()) end
 end
 
 -- Called at login once the features saved on have started: the header gets

@@ -168,6 +168,7 @@ Select	Blizzard_ActionBar/Shared/StanceBar.lua:105
 SelectTab	Blizzard_FriendsFrame/Camelot/FriendsFrame.lua:646
 Set	Blizzard_CovenantCallings/CovenantCallings.lua:3
 SetActiveLayout	Blizzard_CooldownViewer/CooldownViewerSettingsLayoutManager.lua:200
+SetAll	Blizzard_Communities/CommunitiesStreams.lua:322
 SetAllPoints	Blizzard_RestrictedAddOnEnvironment/RestrictedFrames.lua:500
 SetAlpha	Blizzard_FrameXMLBase/PowerDependencyLine.lua:209
 SetAtlas	Blizzard_POIButton/POIButton.lua:59
@@ -1224,6 +1225,7 @@ QuickHide	-
 QuickOn	-
 QuickSlots	-
 QuickState	-
+ROWS	-
 Raid	-
 RaiseTestError	-
 RangeIndicator	-
@@ -1772,6 +1774,18 @@ available	-
 ax	-
 ay	-
 b	-
+b22Arrows	-
+b22BarsSide	-
+b22Dpad	-
+b22Empty	-
+b22Marks	-
+b22Menu	-
+b22More	-
+b22Mount	-
+b22OwnLayout	-
+b22Panels	-
+b22Strip	-
+b22Timers	-
 backing	-
 bag	-
 bagWindow	-
@@ -1780,6 +1794,7 @@ bar	-
 barStep	-
 bars	-
 base	-
+batch	-
 big	-
 bigFace	-
 bigFlags	-
@@ -1985,6 +2000,7 @@ h	-
 halves	-
 has	-
 hasQuestieDB	-
+heading	-
 health	-
 held	-
 help	-
