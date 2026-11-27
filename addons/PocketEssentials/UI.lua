@@ -930,9 +930,9 @@ function AreaMethods:PlaceThumb()
 end
 
 -- Shows or hides the whole bar. It stays hidden while the player does not use
--- the touch screen.
+-- the touch screen, unless the row "Menu arrows, always" is On (0.22.0).
 function AreaMethods:SetBarShown(shown)
-    shown = shown and PE:UsesTouch() or false
+    shown = shown and (PE:UsesTouch() or UI.ArrowsAlways()) or false
     self.barShown = shown
     self.upButton:SetShown(shown)
     self.downButton:SetShown(shown)
@@ -980,6 +980,11 @@ end
 function AreaMethods:SetContentHeight(height)
     self.contentHeight = max(height or 0, 1)
     self.child:SetHeight(self.contentHeight)
+    if self.barShown and PE.debugOn and UI.ArrowsAlways() and not PE:UsesTouch() then
+        local m = AreaMetrics(self)
+        PE:Debug("ui", ("menu arrows: shown (list %d rows, window fits %d)"):format(
+            math.ceil(self.contentHeight / m.row), math.floor(self.viewHeight / m.row)))
+    end
     self:ScrollTo(self.offset)
 end
 
@@ -992,7 +997,7 @@ function AreaMethods:Layout(width, height, noPaging, metrics)
     self.peMetrics = type(metrics) == "table" and metrics or nil
     local m = AreaMetrics(self)
     local column = m.button * 0.75
-    local bar = not noPaging and PE:UsesTouch()
+    local bar = not noPaging and (PE:UsesTouch() or UI.ArrowsAlways())
     width, height = max(width or 0, column + m.gap + 10), max(height or 0, 10)
     self.viewWidth = bar and (width - column - m.gap) or width
     self:SetBarShown(bar)
@@ -1167,6 +1172,49 @@ function UI:NavSameRow(a, b)
     return (a and b and SameRow(a, b)) or false
 end
 
+-- 0.22.0 row "Menu arrows, always": read at call time (Batch.lua loads first,
+-- but the row can change while the game runs).
+function UI.ArrowsAlways()
+    local batch = PE.Batch
+    return batch ~= nil and batch.On("b22Arrows") or false
+end
+
+-- 0.22.0 row "D-pad moves by direction". The rectangle of a button as
+-- { left, bottom, right, top }, from its own frame (reads only); nil when the
+-- frame has no place on screen yet.
+local function FrameRect(btn)
+    local ok, l, b, r, t = pcall(function() return btn:GetLeft(), btn:GetBottom(), btn:GetRight(), btn:GetTop() end)
+    if ok and l and b and r and t then return { l, b, r, t } end
+end
+
+-- The button the D-pad should reach from focus when dx, dy (-1, 0 or 1, y up)
+-- is pressed: among shown, enabled buttons whose centre is strictly further in
+-- that direction, the least along + 2 * across between centres. nil when none.
+-- rectOf(button) -> { left, bottom, right, top } may be passed for a test.
+function UI.NearestInDirection(buttons, focus, dx, dy, rectOf)
+    rectOf = rectOf or FrameRect
+    local from = focus and rectOf(focus)
+    if not from then return nil end
+    local fx, fy = (from[1] + from[3]) / 2, (from[2] + from[4]) / 2
+    local best, bestScore
+    for _, btn in ipairs(buttons) do
+        if btn ~= focus and not (btn.IsShown and not btn:IsShown())
+            and not (btn.IsEnabled and not btn:IsEnabled()) then
+            local rect = rectOf(btn)
+            if rect then
+                local ox, oy = (rect[1] + rect[3]) / 2 - fx, (rect[2] + rect[4]) / 2 - fy
+                local along, across
+                if dx ~= 0 then along, across = ox * dx, abs(oy) else along, across = oy * dy, abs(ox) end
+                if along > 0 then
+                    local score = along + 2 * across
+                    if not bestScore or score < bestScore then best, bestScore = btn, score end
+                end
+            end
+        end
+    end
+    return best
+end
+
 -- step = -1 / +1. byRow (up/down) skips the other buttons on the same line.
 -- A panel may split its buttons into columns:
 --   panel.navCross(focus, step, byRow) -> a button to jump to, or nil for the
@@ -1179,12 +1227,30 @@ local function NavMove(panel, step, byRow)
     if #all == 0 then return NavFocus(panel, nil) end
     local focus = panel.peNavFocus
     if not IndexOf(all, focus) then focus = nil end
+    local byDirection = PE.Batch ~= nil and PE.Batch.On("b22Dpad")
     if type(panel.navCross) == "function" then
         local ok, target = xpcall(panel.navCross, Handler(), focus, step, byRow)
         -- navCross may have redrawn the window: read its list again.
         all = NavList(panel)
         local at = ok and IndexOf(all, target)
         if at then return NavFocus(panel, target, at) end
+    end
+    -- 0.22.0: by direction. With nothing highlighted yet the usual first stop
+    -- is chosen below; with nothing that way the highlight stays.
+    if byDirection and focus then
+        local dx, dy = 0, 0
+        if byRow then dy = -step else dx = step end
+        local target = UI.NearestInDirection(all, focus, dx, dy)
+        if PE.debugOn then
+            local name = dx < 0 and "left" or dx > 0 and "right" or dy > 0 and "up" or "down"
+            if target then
+                PE:Debug("ui", ('dpad: %s from "%s" to "%s"'):format(name, focus.GetLabel and focus:GetLabel() or "", target.GetLabel and target:GetLabel() or ""))
+            else
+                PE:Debug("ui", "dpad: " .. name .. ": nothing that way")
+            end
+        end
+        if target then return NavFocus(panel, target, IndexOf(all, target)) end
+        return
     end
     if focus and type(panel.navColumn) == "function" then
         local ok, column = xpcall(panel.navColumn, Handler(), focus)

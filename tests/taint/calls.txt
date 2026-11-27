@@ -84,6 +84,7 @@ Get	addons/PocketEssentials/QuestData.lua	ours	not Blizzard's and not a frame: L
 GetActionButtonByIndex	addons/PocketEssentials/FaceBars.lua	clean	Blizzard_GamepadActionBars/ActionBar.lua:296 returns self.actionButtons[inIndex]; no write
 GetActionCooldown	addons/PocketEssentials/FaceBars.lua	engine	C_ActionBar.GetActionCooldown (the Lua global GetActionCooldown of Blizzard_DeprecatedActionBar is a different function and is not called)
 GetActiveBar	addons/PocketEssentials/FaceBars.lua	clean	Blizzard_GamepadActionBars/PageUnit.lua:542 returns self.activeBar; no write
+GetLabel	addons/PocketEssentials/UI.lua	ours	the addon's own button method (set in UI.lua, also read by T.labelOf), read for the D-pad log line; Blizzard's GamepadRadial method of that name is not involved
 GetActiveBar	probe/PocketProbe/Watch.lua	clean	Blizzard_GamepadActionBars/PageUnit.lua:542 returns self.activeBar; no write
 GetActiveFrame	probe/PocketProbe/Core.lua	clean	Blizzard_GamepadSharedUtility/FrameControlsManager.lua:834 returns self.focusedFrame; no write
 GetActiveInputDeviceIconSet	probe/PocketProbe/Trials.lua	clean	Blizzard_SharedXML/Shared/InputIcons/InputDeviceIconSetManager.lua:58 returns self.activeInputDeviceIconSet; no write

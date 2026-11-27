@@ -1334,4 +1334,175 @@ test("quest icons: the rows in the spec's order with its labels, the haze as Hid
 end)
 
 
+---------------------------------------------------------------------------
+-- 0.22.0 rows b22Arrows (menu arrows for controller players) and b22Dpad
+-- (the D-pad moves to the nearest button in the pressed direction).
+---------------------------------------------------------------------------
+
+local function rowOn(PE, key) PE.db.options.ctrlLayout[key] = 1 end
+
+test("b22Arrows: with the row On and touch off, a long list has its bar and a short one has none", function()
+    local c, PE = T.new({})
+    rowOn(PE, "b22Arrows")
+    local long = bareArea(c, PE, false, 4000)
+    check(long.upButton:IsShown() and long.downButton:IsShown() and long.track:IsShown(), "no bar on a long list")
+    check(long.viewWidth < 400, "no room kept for the bar")
+    local fits = bareArea(c, PE, false, 100, true)
+    check(not fits.upButton:IsShown() and not fits.downButton:IsShown() and not fits.track:IsShown(), "a bar on a list that fits")
+    eq(fits.viewWidth, 400)
+    c:assertClean("b22Arrows on")
+end)
+
+test("b22Arrows: Off, a controller player has no bar, as in 0.21.0", function()
+    local c, PE = T.new({})
+    local area = bareArea(c, PE, false, 4000)
+    check(not area.upButton:IsShown() and not area.downButton:IsShown() and not area.track:IsShown(), "a bar with the row Off")
+    eq(area.viewWidth, 400)
+end)
+
+test("b22Arrows: the log line says the list's rows and the rows the window fits", function()
+    local c, PE = T.new({ saved = { setup = "skipped", debug = { on = true, lines = {}, next = 1 } } })
+    rowOn(PE, "b22Arrows")
+    local area, m = bareArea(c, PE, false, 4000)
+    local found
+    for _, line in ipairs(debugLinesOf(c, "ui")) do
+        if line:find("menu arrows: shown (list " .. math.ceil(4000 / m.row) .. " rows, window fits " .. math.floor(m.button * 8 / m.row) .. ")", 1, true) then found = true end
+    end
+    check(found, "no menu arrows line: " .. table.concat(debugLinesOf(c, "ui"), " | "))
+end)
+
+local function rects(map)
+    return function(b) return map[b] end
+end
+
+local function grid(n, m)
+    local buttons, map = {}, {}
+    for r = 1, n do
+        for col = 1, m do
+            local b = { name = r .. "," .. col }
+            buttons[#buttons + 1] = b
+            map[b] = { (col - 1) * 100, -(r - 1) * 50 - 40, (col - 1) * 100 + 80, -(r - 1) * 50 }
+        end
+    end
+    return buttons, map
+end
+
+test("dpad: NearestInDirection on a 3 by 3 grid", function()
+    local UI = select(2, T.new({})).UI
+    local b, map = grid(3, 3)
+    local at = function(r, col) return b[(r - 1) * 3 + col] end
+    local of = rects(map)
+    eq(UI.NearestInDirection(b, at(2, 2), 0, 1, of), at(1, 2))
+    eq(UI.NearestInDirection(b, at(2, 2), 0, -1, of), at(3, 2))
+    eq(UI.NearestInDirection(b, at(2, 2), -1, 0, of), at(2, 1))
+    eq(UI.NearestInDirection(b, at(2, 2), 1, 0, of), at(2, 3))
+    eq(UI.NearestInDirection(b, at(1, 1), 1, 0, of), at(1, 2))
+    eq(UI.NearestInDirection(b, at(1, 1), 0, -1, of), at(2, 1))
+    eq(UI.NearestInDirection(b, at(1, 1), -1, 0, of), nil)
+    eq(UI.NearestInDirection(b, at(1, 1), 0, 1, of), nil)
+    eq(UI.NearestInDirection(b, at(3, 3), 1, 0, of), nil)
+    eq(UI.NearestInDirection(b, at(3, 3), 0, -1, of), nil)
+end)
+
+test("dpad: NearestInDirection with two rows of different lengths", function()
+    local UI = select(2, T.new({})).UI
+    local top = { name = "wide1" }
+    local topRight = { name = "wide2" }
+    local low = { name = "low" }
+    local map = {
+        [top] = { 0, 0, 80, 40 }, [topRight] = { 200, 0, 280, 40 },
+        [low] = { 190, -60, 270, -20 },
+    }
+    local all = { top, topRight, low }
+    eq(UI.NearestInDirection(all, low, 0, 1, rects(map)), topRight, "Up from the short row goes to the button above it")
+    eq(UI.NearestInDirection(all, top, 0, -1, rects(map)), low, "Down reaches the other row")
+    eq(UI.NearestInDirection(all, low, -1, 0, rects(map)), top, "Left from the short row reaches the first button")
+    eq(UI.NearestInDirection(all, topRight, 0, 1, rects(map)), nil)
+end)
+
+test("dpad: NearestInDirection with one button alone, and a hidden or disabled one skipped", function()
+    local UI = select(2, T.new({})).UI
+    local only = { }
+    eq(UI.NearestInDirection({ only }, only, 1, 0, rects({ [only] = { 0, 0, 10, 10 } })), nil)
+    local a, hidden, off, d = {}, { IsShown = function() return false end }, { IsEnabled = function() return false end }, {}
+    local map = { [a] = { 0, 0, 10, 10 }, [hidden] = { 20, 0, 30, 10 }, [off] = { 40, 0, 50, 10 }, [d] = { 60, 0, 70, 10 } }
+    eq(UI.NearestInDirection({ a, hidden, off, d }, a, 1, 0, rects(map)), d)
+end)
+
+local function dpadPanel(c, PE)
+    openSettings(c, PE, "bags")
+    local panel = settingsPanel(c)
+    dpadKey(c, "DOWN")
+    return panel
+end
+
+test("b22Dpad: On, a panel without navCross moves by direction and keeps the focus when nothing is that way", function()
+    local c, PE = T.new({ on = { "bagWindow" } })
+    rowOn(PE, "b22Dpad")
+    local panel = dpadPanel(c, PE)
+    panel.navCross = nil
+    local list = panel.peNavGet()
+    local focus = panel.peNavFocus
+    for _, d in ipairs({ { "RIGHT", 1, 0 }, { "DOWN", 0, -1 }, { "LEFT", -1, 0 }, { "UP", 0, 1 } }) do
+        local want = PE.UI.NearestInDirection(list, panel.peNavFocus, d[2], d[3]) or panel.peNavFocus
+        dpadKey(c, d[1])
+        eq(panel.peNavFocus, want, d[1])
+    end
+    -- Far left of everything: nothing that way, the highlight stays.
+    local leftmost = list[1]
+    for _, b in ipairs(list) do if b:GetLeft() < leftmost:GetLeft() then leftmost = b end end
+    panel.peNavFocus = leftmost
+    dpadKey(c, "LEFT")
+    eq(panel.peNavFocus, leftmost)
+    check(focus ~= nil)
+    c:assertClean("b22Dpad on")
+end)
+
+test("b22Dpad: a panel with navCross is asked first", function()
+    local c, PE = T.new({ on = { "bagWindow" } })
+    rowOn(PE, "b22Dpad")
+    local panel = dpadPanel(c, PE)
+    local list = panel.peNavGet()
+    local asked, pick = 0, list[#list]
+    panel.navCross = function() asked = asked + 1 return pick end
+    dpadKey(c, "RIGHT")
+    eq(asked, 1)
+    eq(panel.peNavFocus, pick)
+end)
+
+test("b22Dpad: Off, the index walk of 0.21.0", function()
+    local c, PE = T.new({ on = { "bagWindow" } })
+    local panel = dpadPanel(c, PE)
+    panel.navCross = nil
+    local list = panel.peNavGet()
+    local at
+    for i, b in ipairs(list) do if b == panel.peNavFocus then at = i end end
+    dpadKey(c, "RIGHT")
+    eq(panel.peNavFocus, list[at % #list + 1])
+end)
+
+test("b22Dpad: the log says the direction and the labels, or that nothing is that way", function()
+    local c, PE = T.new({ on = { "bagWindow" }, saved = { setup = "skipped", debug = { on = true, lines = {}, next = 1 } } })
+    rowOn(PE, "b22Dpad")
+    local panel = dpadPanel(c, PE)
+    panel.navCross = nil
+    local list = panel.peNavGet()
+    local leftmost = list[1]
+    for _, b in ipairs(list) do if b:GetLeft() < leftmost:GetLeft() then leftmost = b end end
+    panel.peNavFocus = leftmost
+    dpadKey(c, "LEFT")
+    local found
+    for _, line in ipairs(debugLinesOf(c, "ui")) do
+        if line:find("dpad: left: nothing that way", 1, true) then found = true end
+    end
+    check(found, "no nothing-that-way line")
+    dpadKey(c, "RIGHT")
+    found = nil
+    for _, line in ipairs(debugLinesOf(c, "ui")) do
+        if line:find('dpad: right from "', 1, true) then found = true end
+    end
+    check(found, "no from-to line")
+end)
+
+
 return { known = KNOWN_FAILURES }
