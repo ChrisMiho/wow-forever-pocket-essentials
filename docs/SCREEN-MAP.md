@@ -77,6 +77,8 @@ rewriting the layout, then a reload). "Addon" means the addon draws or places it
 | Spell panel, inner right | 785.7 | 669 | 134 | 98 | Addon | with inner left |
 | Spell panel, outer right | 931.7 | 669 | 134 | 98 | Addon | with outer left |
 | Tooltip (taken at 200 by 100; it grows up and left from its bottom right corner) | 1155.3 | 658 | 200 | 100 | Layout | Yes |
+| Your cast bar (the game's own; row "Arrange: cast bar and focus frame" On) | 578.7 | 425 | 208 | 11 | Layout, at the Gamepad preset's spot | Yes, while the row is On |
+| Focus frame (the game's own, small size; the same row) | 1068.7 | 377 | 174 | 75 | Layout, at the Gamepad preset's spot | Yes, while the row is On; it overlaps the lower quest list as before |
 | PE button (round), default spot | 10 | 529.2 | 76.8 | 76.8 | Addon (Hub.lua) | No; it is in the "Move" window |
 
 The game's four real action bars sit invisible under the inner spell panels (`Plan.RealBarRects`).
@@ -117,8 +119,8 @@ own default spots. All positions here are measured from the screenshots of 2026-
 | Cooldown Manager, two icon rows (`EssentialCooldownViewer`, `UtilityCooldownViewer`) | about left 587 to 779, top 601 to 686 | Straight on top of the map |
 | Cooldown Manager, tracked buff bars (`BuffBarCooldownViewer`) | about left 871 to 1202, top 316 to 338 per bar; held by its bottom edge 430 up, 420 right of centre (`Blizzard_EditMode/Mainline/EditModePresetLayouts.lua:850-870`) | Across the quest list |
 | Cooldown Manager, tracked buff icons (`BuffIconCooldownViewer`) | a box just above the map | Near the swing timers |
-| The game's own cast bar (yours) | about left 576 to 786, top 425 to 448 | None seen |
-| A unit frame box in Edit Mode (probably the focus frame) | about left 1084 to 1223, top 388 to 455 | Over the lower quest list when it shows |
+| The game's own cast bar (yours) | about left 576 to 786, top 425 to 448 (Edit Mode's box, 12 taller than the bar under it) | None seen. With the row "Arrange: cast bar and focus frame" On it is in the first table |
+| A unit frame box in Edit Mode (the focus frame; the preset puts it at left 1068.7, top 377, 174 by 75) | about left 1084 to 1223, top 388 to 455 | Over the lower quest list when it shows. With the same row On it is in the first table |
 | The game's target menu | bottom right | See "Areas kept on purpose" |
 
 Arrange does not offer any of these. Handoff item 7 asks that Arrange cover every piece we

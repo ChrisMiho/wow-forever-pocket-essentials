@@ -2121,6 +2121,12 @@ function Client.new(opts)
             -- the tooltip's default spot (Mainline/EditModePresetLayouts.lua:543-553)
             { system = 11, isInDefaultPosition = true, settings = {},
               anchorInfo = { point = "BOTTOMRIGHT", relativeTo = "UIParent", relativePoint = "BOTTOMRIGHT", offsetX = -9, offsetY = 85 } },
+            -- 0.22.0 (row b22More): the cast bar and the focus frame as the Gamepad preset has them
+            -- (Mainline/EditModePresetLayouts.lua:1289-1298 and 1326-1335)
+            { system = 1, isInDefaultPosition = true, settings = {},
+              anchorInfo = { point = "BOTTOM", relativeTo = "GamepadMainActionBarFrame", relativePoint = "TOP", offsetX = 0, offsetY = 20 } },
+            { system = 3, systemIndex = 3, isInDefaultPosition = true, settings = {},
+              anchorInfo = { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = 386, offsetY = 316 } },
             -- 0.22.0: the game's four timer pieces, as the preset has them (Mainline/EditModePresetLayouts.lua:780-870;
             -- settings: IconSize 3, IconLimit 1, IconPadding 4, BarWidthScale 11, Orientation 0)
             { system = 20, systemIndex = 1, isInDefaultPosition = true,

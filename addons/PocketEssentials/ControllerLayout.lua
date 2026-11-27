@@ -444,7 +444,8 @@ end
 --   rects  the rectangles of Plan.Rects that move with it, the first one its main one
 --   when   listed only then: "slim" (Slim bars On), "noslim" (Off),
 --          "face" (our spell pictures show: with them off nothing is drawn at the panels' spots),
---          "timers" (0.22.0: the game's timers are placed, Plan.TimersActive)
+--          "timers" (0.22.0: the game's timers are placed, Plan.TimersActive),
+--          "more" (0.22.0: the cast bar and the focus frame have joined the layout, Plan.MoreActive)
 --   axis   "y": moves up and down only
 --   note   a line the Arrange window shows while the piece is picked
 Plan.ARRANGE = {
@@ -490,6 +491,10 @@ Plan.ARRANGE = {
       rects = { "large timer icons", "large timer icons room", "small timer icons" } },
     { key = "tracked buff icons", label = "Tracked buff icons", kind = "apply", when = "timers", rects = { "tracked buff icons" } },
     { key = "buff timer bars", label = "Buff timer bars", kind = "apply", when = "timers", rects = { "buff timer bars" } },
+    -- 0.22.0 (row b22More): the game's own cast bar and focus frame, listed only while they are
+    -- in our layout (Plan.MoreActive; one the player moved in Edit Mode is left out).
+    { key = "your cast bar", label = "Your cast bar", kind = "apply", when = "more", rects = { "your cast bar" } },
+    { key = "focus frame", label = "Focus frame", kind = "apply", when = "more", rects = { "focus frame" } },
 }
 Plan.ARRANGE_BY = {}
 for i = 1, #Plan.ARRANGE do Plan.ARRANGE_BY[Plan.ARRANGE[i].key] = Plan.ARRANGE[i] end
@@ -977,6 +982,54 @@ function Plan.TimerSpots(v)
     return out
 end
 
+-- 0.22.0 (spec item 7, row b22More, Off by default): the game's own cast bar and focus frame join
+-- our layout, so the Arrange window can list and move them. Their spots are the ones the game
+-- gives them today: the Gamepad preset, which our layout is a copy of, in the file camelot loads
+-- (Blizzard_EditMode.toc: [Family]\EditModePresetLayouts.lua, here Mainline/EditModePresetLayouts.lua):
+--   CastBar (system CastBar)  BOTTOM on GamepadMainActionBarFrame's TOP, 0 and 20 (1289-1298)
+--   Focus (UnitFrame, index Focus)  BOTTOMLEFT on UIParent's BOTTOM, 386 and 316 (1326-1335)
+-- Written there, so nothing moves; an offset saved in Arrange is added to it. Sizes, for the
+-- rectangles: the cast bar 208 by 11 (Blizzard_UIPanels_Game/Mainline/CastingBarFrame.xml:469); the
+-- bar frame it hangs on, 202 high (Blizzard_GamepadActionBars/MainActionBarFrame.xml:4), stands at
+-- BOTTOM on UIParent's BOTTOM, 0 and 110 (same preset, 1272-1288) and is not moved by our layout,
+-- so its top is 312 up and the cast bar's bottom 332. The focus frame is 232 by 100
+-- (Blizzard_UnitFrame/Mainline/TargetFrame.xml:53) at the small size the preset gives it
+-- (UseLargerFrame 0), scaled by 0.75 (TargetFrame.lua:13, 1184): 174 by 75.
+-- Both agree with an Edit Mode screenshot taken on the device on 2026-11-27 (docs/SCREEN-MAP.md).
+-- The cast bar is a bottom managed frame (PlayerCastingBarFrame inherits BottomManagedFrameTemplate)
+-- that the game places itself while it is in its default position (EditModeSystemMixin:
+-- ApplySystemAnchor, Blizzard_EditMode/Shared/EditModeSystemTemplates.lua:350-365); writing the
+-- spot marks it as the layout's own, which is what makes it movable.
+-- A piece whose entry our layout holds somewhere else when the row is first turned On was moved
+-- by the player in Edit Mode: it is left alone (opts.b22MoreAlone, Snap.MoreJudge).
+Plan.MORE = {
+    order = { "your cast bar", "focus frame" },
+    ["your cast bar"] = { system = "CastBar", point = "BOTTOM", relativeTo = "GamepadMainActionBarFrame",
+        relativePoint = "TOP", x = 0, y = 20, rect = { -104, 332, 104, 343 } },
+    ["focus frame"] = { system = "UnitFrame", index = "Focus", point = "BOTTOMLEFT", relativeTo = UI,
+        relativePoint = "BOTTOM", x = 386, y = 316, rect = { 386, 316, 560, 391 } },
+}
+
+-- Whether the row b22More (Batch.lua) is On.
+function Plan.MoreOn()
+    local batch = PE.Batch
+    return type(batch) == "table" and type(batch.On) == "function" and batch.On("b22More") == true
+end
+
+-- Whether piece `key` of Plan.MORE is in our layout for v: the row is On, v is an options table
+-- and the piece is not one the player had moved in Edit Mode (v.b22MoreAlone).
+function Plan.MoreActive(v, key)
+    if not Plan.MORE[key] or not Plan.MoreOn() or type(v) ~= "table" then return false end
+    local alone = v.b22MoreAlone
+    return not (type(alone) == "table" and alone[key] == true)
+end
+
+-- The piece's anchor, as it is written with no offset: a fresh table.
+function Plan.MoreAnchor(key)
+    local m = Plan.MORE[key]
+    return { point = m.point, relativeTo = m.relativeTo, relativePoint = m.relativePoint, x = m.x, y = m.y }
+end
+
 -- 0.18.0: the two targeting pictures' spots with their offsets: { left = { point, x, y },
 -- right = { point, x, y } } on UIParent's bottom, a fresh table. Plan.SHOULDERS stays the
 -- built-in numbers. 0.19.0: with the square map each is 20 further out before its offset is
@@ -1031,8 +1084,10 @@ function Plan.Pending(opts)
     local out = {}
     local written = type(opts) == "table" and type(opts.offsetsWritten) == "table" and opts.offsetsWritten or {}
     for _, def in ipairs(Plan.ARRANGE) do
-        -- 0.22.0: the timer pieces only while they are placed (Plan.TimersActive).
-        if def.kind == "apply" and (def.when ~= "timers" or Plan.TimersActive(opts)) then
+        -- 0.22.0: the timer pieces only while they are placed (Plan.TimersActive), the cast bar
+        -- and the focus frame only while they are in the layout (Plan.MoreActive).
+        if def.kind == "apply" and (def.when ~= "timers" or Plan.TimersActive(opts))
+            and (def.when ~= "more" or Plan.MoreActive(opts, def.key)) then
             local dx, dy = Plan.Moved(type(opts) == "table" and opts or { arrange = 0 }, def.key)
             local w = written[def.key]
             local wx = type(w) == "table" and type(w.x) == "number" and w.x or 0
@@ -1202,6 +1257,13 @@ function Plan.Rects(v)
         for _, name in ipairs(Plan.CDM.order) do r[Plan.CDM.names[name]] = cdm[name].rect end
         r["large timer icons room"] = cdm.room
     end
+    -- 0.22.0 (row b22More): the cast bar and the focus frame, where the preset has them.
+    for _, key in ipairs(Plan.MORE.order) do
+        if Plan.MoreActive(v, key) then
+            local q = Plan.MORE[key].rect
+            r[key] = { q[1], q[2], q[3], q[4] }
+        end
+    end
     -- 0.18.0: the Edit Mode pieces where the player moved them (the live ones were worked
     -- out moved above: FaceSpots, Shoulders, SlimRects, the bottom anchor).
     for _, def in ipairs(Plan.ARRANGE) do
@@ -1313,6 +1375,12 @@ function Plan.Pieces(opts)
             local t = cdm[name]
             add("CooldownViewer", name, Spot(t.point, "BOTTOMLEFT", t.x, t.y), t.settings, t.key)
         end
+    end
+    -- 0.22.0 (row b22More): the cast bar and the focus frame at the preset's spots, with the
+    -- settings the layout already holds (none written). Left out by Plan.Apply on a client
+    -- without them.
+    for _, key in ipairs(Plan.MORE.order) do
+        if Plan.MoreActive(opts, key) then add(Plan.MORE[key].system, Plan.MORE[key].index, Plan.MoreAnchor(key), nil, key) end
     end
     return list
 end
@@ -1517,6 +1585,8 @@ local function ReadEnums()
             -- 0.22.0 (row b22Timers): the game's timers (EditModeManagerConstantsDocumentation.lua:758).
             -- Here and below each may be missing on another client: Plan.Apply then leaves the four out.
             CooldownViewer = Optional(function() return Enum.EditModeSystem.CooldownViewer end),
+            -- 0.22.0 (row b22More): the cast bar (EditModeManagerConstantsDocumentation.lua:739).
+            CastBar = Optional(function() return Enum.EditModeSystem.CastBar end),
         },
         setting = {
             -- HeaderUnderneath may be nil (an older client): Plan.Apply then leaves it out.
@@ -1566,6 +1636,8 @@ local function ReadEnums()
                 Player = Enum.EditModeUnitFrameSystemIndices.Player,
                 Target = Enum.EditModeUnitFrameSystemIndices.Target,
                 Pet = Enum.EditModeUnitFrameSystemIndices.Pet,
+                -- 0.22.0 (row b22More): the focus frame (EditModeManagerConstantsDocumentation.lua:825).
+                Focus = Optional(function() return Enum.EditModeUnitFrameSystemIndices.Focus end),
             },
             SwingTimer = {
                 MainHand = Enum.EditModeSwingTimerSystemIndices.MainHand,
@@ -2709,6 +2781,7 @@ Snap.View = function()
     Plan.look = view.mapLook == 1 and 1 or nil
     view.slim = (Snap.slimOn == true or (Snap.slimOn == nil and opts.slim == 1)) and 1 or 0
     view.b22BarsSide = opts.b22BarsSide -- 0.22.0: the side of the game's buff timer bars
+    view.b22MoreAlone = opts.b22MoreAlone -- 0.22.0: the pieces of the row b22More left alone
     -- Our spell pictures are off (FaceBars.lua says why): no panel is drawn.
     view.faceOff = FaceStatus() ~= nil and true or nil
     if Snap.arrangeOn and not Snap.arrangeStarted then
@@ -2896,6 +2969,8 @@ local function AddOurs(state, e)
         return false, false
     end
     local kept = Plan.TimersActive(mod.opts) and Snap.TimersKept(base, e) or nil -- 0.22.0, before the build
+    mod.opts.b22MoreAlone = nil -- 0.22.0: a new layout holds the preset's spots, so nothing is left alone
+    local moreKept = Plan.MoreOn() and Snap.MoreKept(base, e) or nil
     local layout = Plan.Build(base, mod.opts, e)
     local newIndex = lastAccount and (lastAccount + 1) or (state.numPresets + 1)
     local list = {}
@@ -2915,6 +2990,7 @@ local function AddOurs(state, e)
     mod.opts.template = Plan.TEMPLATE
     Plan.MarkWritten(mod.opts, Plan.Pieces(mod.opts)) -- 0.18.0: the offsets it was built with
     mod.opts.b22TimersBefore = kept -- 0.22.0: what the new layout held for the game's timers
+    mod.opts.b22MoreBefore = moreKept -- 0.22.0: and for the cast bar and the focus frame
     if PE.debugOn then PE:Debug("ctrlLayout", "saved the Pocket Essentials layout at index " .. newIndex) end
     if kept then Snap.TimersLog(layout, e) end
     return true, true
@@ -2952,6 +3028,8 @@ local function Rebuild()
     end
     base.layoutIndex = nil
     local kept = Plan.TimersActive(mod.opts) and Snap.TimersKept(base, e) or nil -- 0.22.0, before the build
+    mod.opts.b22MoreAlone = nil -- 0.22.0: the layout is the preset's again, so nothing is left alone
+    local moreKept = Plan.MoreOn() and Snap.MoreKept(base, e) or nil
     state.saved[pos] = Plan.Build(base, mod.opts, e)
     local ok, err = SaveAll(state, state.saved)
     if not ok then
@@ -2962,6 +3040,7 @@ local function Rebuild()
     Plan.MarkWritten(mod.opts, Plan.Pieces(mod.opts)) -- 0.18.0
     -- 0.22.0: the layout is the preset's again, so what was kept for the game's timers is its.
     mod.opts.b22TimersBefore = kept
+    mod.opts.b22MoreBefore = moreKept
     if kept then Snap.TimersLog(state.saved[pos], e) end
     if PE.debugOn then PE:Debug("ctrlLayout", "the Pocket Essentials layout was rebuilt from the template") end
     return true
@@ -3104,6 +3183,7 @@ local function RememberApplied(opts)
     applied.panelSize = Plan.PanelSize(opts)
     -- 0.22.0: the two timer rows, which rewrite pieces too (put back on a refusal).
     if type(opts) == "table" then applied.b22Timers, applied.b22BarsSide = opts.b22Timers, opts.b22BarsSide end
+    if type(opts) == "table" then applied.b22More = opts.b22More end -- 0.22.0: and the cast bar and focus frame row
 end
 
 -- Which pieces of Plan.Pieces each row rewrites: its own swing timer only (one
@@ -3130,6 +3210,8 @@ local REWRITES = {
     -- ends higher while the bars are on the left.
     b22Timers = function(p) return p.system == "CooldownViewer" or p.system == "ChatFrame" end,
     b22BarsSide = function(p) return p.system == "CooldownViewer" or p.system == "ChatFrame" end,
+    -- 0.22.0 (row b22More): the cast bar and the focus frame.
+    b22More = function(p) return p.system == "CastBar" or (p.system == "UnitFrame" and p.index == "Focus") end,
     -- 0.19.0, Map look: the map (its size and spot) and the three swing timers (14 up with Square).
     mapLook = function(p) return p.system == "Minimap" or p.system == "SwingTimer" end,
 }
@@ -3271,6 +3353,90 @@ Snap.TimersHub = function()
     end
 end
 
+-- 0.22.0 (row b22More, spec item 7): the cast bar and the focus frame in our layout. On a table,
+-- not locals (this file is at Lua's limit of 200).
+--   Snap.MoreEntry(layout, e, key) and Snap.MoreAtPreset(entry, key)  the layout's entry for a
+--          piece, and whether it is at the preset's spot
+--   Snap.MoreKept(layout, e)  copies of what the layout holds for the two pieces, or nil
+--   Snap.MoreJudge(layout, e)  the first time the row is On (nothing kept yet): each piece whose
+--          entry is still at the preset's spot is written, the others are left alone
+--          (opts.b22MoreAlone, logged); the entries it will write are kept as opts.b22MoreBefore,
+--          so the row Off puts back exactly what was there. True when it judged now.
+--   Snap.MoreBack(layout)  while the row is Off and copies are kept: puts them back into the
+--          layout, in place; true when it did (the copies are dropped after the save)
+--   Snap.MoreRow()  a change of the row: the pieces rewritten, out of a fight, and the reload
+--          asked for; nothing while the row is Off and nothing is to be put back
+Snap.MoreEntry = function(layout, e, key)
+    local m = Plan.MORE[key]
+    local sys = e and e.system and e.system[m.system]
+    local group = e and e.index and e.index[m.system]
+    local idx = m.index == nil and nil or (type(group) == "table" and group[m.index] or nil)
+    if not sys or (m.index ~= nil and not idx) or type(layout) ~= "table" then return nil end
+    return FindEntry(layout, sys, idx)
+end
+-- Whether the entry is at the spot the preset gives the piece.
+Snap.MoreAtPreset = function(entry, key)
+    local a, m = entry.anchorInfo, Plan.MORE[key]
+    if type(a) ~= "table" or entry.anchorInfo2 ~= nil then return false end
+    return a.point == m.point and a.relativeTo == m.relativeTo and a.relativePoint == m.relativePoint
+        and math.abs((a.offsetX or 0) - m.x) < 1e-6 and math.abs((a.offsetY or 0) - m.y) < 1e-6
+end
+Snap.MoreKept = function(layout, e)
+    if type(layout) ~= "table" then return nil end
+    local kept = {}
+    for _, key in ipairs(Plan.MORE.order) do
+        local entry = Snap.MoreEntry(layout, e, key)
+        if entry then kept[#kept + 1] = DeepCopy(entry) end
+    end
+    return kept
+end
+Snap.MoreJudge = function(layout, e)
+    local o = mod.opts
+    if not Plan.MoreOn() or type(o.b22MoreBefore) == "table" then return false end
+    local kept, alone = {}, nil
+    for _, key in ipairs(Plan.MORE.order) do
+        local entry = Snap.MoreEntry(layout, e, key)
+        if not entry then
+            if PE.debugOn then PE:Debug("ctrlLayout", "arrange: " .. key .. " not written: the layout holds no such piece") end
+        elseif Snap.MoreAtPreset(entry, key) then
+            kept[#kept + 1] = DeepCopy(entry)
+        else
+            alone = alone or {}
+            alone[key] = true
+            if PE.debugOn then PE:Debug("ctrlLayout", "arrange: " .. key .. " left alone: the player moved it in Edit Mode") end
+        end
+    end
+    o.b22MoreBefore, o.b22MoreAlone = kept, alone
+    return true
+end
+Snap.MoreBack = function(layout)
+    local kept = mod.opts.b22MoreBefore
+    if type(kept) ~= "table" or Plan.MoreOn() or type(layout) ~= "table" or type(layout.systems) ~= "table" then
+        return false
+    end
+    for _, old in ipairs(kept) do
+        for i, entry in ipairs(layout.systems) do
+            if type(old) == "table" and type(entry) == "table" and entry.system == old.system and entry.systemIndex == old.systemIndex then
+                layout.systems[i] = DeepCopy(old)
+                break
+            end
+        end
+    end
+    return true
+end
+Snap.MoreRow = function()
+    local o = mod and mod.opts
+    if type(o) ~= "table" then return end
+    if not Plan.MoreOn() and type(o.b22MoreBefore) ~= "table" then
+        if PE.debugOn then PE:Debug("ctrlLayout", "arrange: the cast bar and focus frame row is Off; nothing was written, nothing to put back") end
+        return
+    end
+    if not Snap.RewritePieces(REWRITES.b22More, "b22More") then return end -- RewritePieces, defined above
+    if PE.debugOn then
+        PE:Debug("ctrlLayout", "arrange: the cast bar and focus frame row is now " .. tostring(o.b22More) .. "; the layout follows the next reload")
+    end
+end
+
 local function RunRewrites()
     if not wanted or #pendingRewrites == 0 then return end -- kept for the next switch-on
     local list = pendingRewrites
@@ -3282,6 +3448,7 @@ local function RunRewrites()
         Snap.ArrangeCall("Written", false, Snap.lastWrite.why)
         return
     end
+    local judged = Snap.MoreJudge(state.saved[pos], e) -- 0.22.0: the cast bar and focus frame, before the list is made
     local all = Plan.Pieces(mod.opts)
     local picked, keys = {}, {}
     for i, p in ipairs(all) do
@@ -3302,10 +3469,13 @@ local function RunRewrites()
     Snap.TimersKeep(state.saved[pos], e, pieces) -- 0.22.0: before the game's timers are first written
     Plan.Apply(state.saved[pos], pieces, e) -- our entry, in place (GetLayouts gave a copy)
     local timersBack = Snap.TimersBack(state.saved[pos]) -- 0.22.0: the row Off puts them back
+    local moreBack = Snap.MoreBack(state.saved[pos]) -- 0.22.0: and so does the row b22More
     local ok, err = SaveAll(state, state.saved)
     if not ok then
         PE:LogError("ctrlLayout", err)
         Snap.lastWrite = { ok = false, why = tostring(err) }
+        -- 0.22.0: nothing was written, so the cast bar and the focus frame are judged again next time.
+        if judged then mod.opts.b22MoreBefore, mod.opts.b22MoreAlone = nil, nil end
         -- Nothing was written: the options go back to what the layout has, and the bars with them.
         for i = #list, 1, -1 do
             local r = list[i]
@@ -3329,6 +3499,21 @@ local function RunRewrites()
     for _, p in ipairs(pieces) do
         if p.system == "CooldownViewer" then
             Snap.TimersLog(state.saved[pos], e)
+            break
+        end
+    end
+    -- 0.22.0: the cast bar and the focus frame, written (the row's own change only) or put back.
+    if moreBack then
+        mod.opts.b22MoreBefore, mod.opts.b22MoreAlone = nil, nil
+        if PE.debugOn then PE:Debug("ctrlLayout", "arrange: the cast bar and the focus frame put back in the layout as they were before") end
+    end
+    for _, r in ipairs(list) do
+        if r.key == "b22More" and PE.debugOn then
+            for _, p in ipairs(pieces) do
+                if p.arrange and Plan.MORE[p.arrange] and Snap.MoreEntry(state.saved[pos], e, p.arrange) then
+                    PE:Debug("ctrlLayout", "arrange: " .. p.arrange .. " joined the layout at " .. p.anchor.x .. ", " .. p.anchor.y)
+                end
+            end
             break
         end
     end
@@ -3533,6 +3718,8 @@ do
     end
     local batchRows = PE.Batch
     batchRows.Listen("b22Timers", function() Snap.TimersRow("b22Timers") end)
+    -- 0.22.0 (spec item 7): the cast bar and the focus frame join the layout, or are put back.
+    batchRows.Listen("b22More", function() Snap.MoreRow() end)
     -- Where the buff timer bars sit (spec item 8): a change rewrites the game's timers while they
     -- are placed and asks for the reload.
     OPTIONS[#OPTIONS + 1] = { key = "b22BarsSide", label = "Buff timer bars", always = true,

@@ -315,6 +315,8 @@ test("arrange plan: the list of pieces, their kinds and their twins", function()
         ["player bar"] = "live", ["target bar"] = "live", ["spell wheels"] = "live",
         -- 0.22.0 (row b22Timers): the game's timers, listed only while they are placed.
         ["timer icons"] = "apply", ["tracked buff icons"] = "apply", ["buff timer bars"] = "apply",
+        -- 0.22.0 (row b22More): the game's cast bar and focus frame, listed only while the row is On.
+        ["your cast bar"] = "apply", ["focus frame"] = "apply",
     })
     eq(twins, {
         player = "target", target = "player",
@@ -2157,6 +2159,36 @@ test("0.22.0 timers: the Arrange window lists the timer pieces only while they a
         local s2 = seenIn(o)
         for _, k in ipairs(KEYS) do check(not s2[k], k .. " is listed while not placed") end
     end
+end)
+
+-- 0.22.0 (spec item 7, row b22More): the game's own cast bar and focus frame are in the Arrange
+-- window only while the row is On, and a piece the player moved in Edit Mode is left out.
+test("0.22.0 more: the Arrange window lists the cast bar and the focus frame only while the row is On", function()
+    local KEYS = { "your cast bar", "focus frame" }
+    local function seenIn(o)
+        local c, PE, A = client(o)
+        if o.alone then opts(PE).b22MoreAlone = o.alone end -- noted after the layout was built (a new one forgets it)
+        open(c, PE)
+        local seen = {}
+        for _ = 1, 40 do
+            seen[A:Picked()] = true
+            c:click(button(c, "Next piece"))
+        end
+        return seen, c, PE, A
+    end
+    local seen, c, PE, A = seenIn({ more = { b22More = 1 } })
+    for _, k in ipairs(KEYS) do check(seen[k], k .. " is not listed with the row On") end
+    -- Moved: saved with the Edit Mode pieces' offsets.
+    check(A:Pick("your cast bar") == true, "could not pick the cast bar")
+    c:click(button(c, "Right"))
+    check(type(opts(PE).offsets["your cast bar"]) == "table" and opts(PE).offsets["your cast bar"].x > 0, "the move was not saved")
+    c:assertClean()
+    local s2 = seenIn({ more = { b22More = 0 } })
+    for _, k in ipairs(KEYS) do check(not s2[k], k .. " is listed with the row Off") end
+    -- One the player moved in Edit Mode is left out; the other stays.
+    local s3 = seenIn({ more = { b22More = 1 }, alone = { ["focus frame"] = true } })
+    check(s3["your cast bar"], "the cast bar is not listed")
+    check(not s3["focus frame"], "the focus frame is listed though left alone")
 end)
 
 return { known = KNOWN_FAILURES }

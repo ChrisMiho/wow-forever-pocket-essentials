@@ -426,6 +426,7 @@ CancelGuided	-
 CancelReload	-
 Card	-
 Carry	-
+CastBar	-
 CastInfo	-
 CastTick	-
 Cell	-
@@ -655,6 +656,7 @@ FitName	-
 FlushCombatQueue	-
 FlushQuiet	-
 Fmt	-
+Focus	-
 FocusName	-
 Focused	-
 FontFile	-
@@ -980,6 +982,15 @@ MissingNeed	-
 ModuleBlockedReason	-
 ModuleLabel	-
 Money	-
+MoreActive	-
+MoreAnchor	-
+MoreAtPreset	-
+MoreBack	-
+MoreEntry	-
+MoreJudge	-
+MoreKept	-
+MoreOn	-
+MoreRow	-
 Mount	-
 MountLabel	-
 Mounted	-
@@ -1798,6 +1809,7 @@ allowed	-
 alone	-
 alpha	-
 anchor	-
+anchorInfo	-
 anchorPoints	-
 announcement	-
 answer	-
@@ -1831,6 +1843,7 @@ b22Empty	-
 b22Marks	-
 b22Menu	-
 b22More	-
+b22MoreBefore	-
 b22Mount	-
 b22OwnLayout	-
 b22Panels	-
@@ -2165,6 +2178,7 @@ mode	-
 module	-
 moduleList	-
 monster	-
+more	-
 mounted	-
 move	-
 moveNow	-
@@ -2492,6 +2506,7 @@ sub	-
 summon	-
 surname	-
 switch	-
+system	-
 systems	-
 t	-
 t0	-

@@ -136,6 +136,11 @@ local function IsListed(view, def)
         local plan = Plan()
         return plan ~= nil and type(plan.TimersActive) == "function" and plan.TimersActive(view) == true
     end
+    -- 0.22.0: the game's cast bar and focus frame, while they are in the layout (the row b22More On).
+    if def.when == "more" then
+        local plan = Plan()
+        return plan ~= nil and type(plan.MoreActive) == "function" and plan.MoreActive(view, def.key) == true
+    end
     return true
 end
 

@@ -64,6 +64,9 @@ local function fakeEnums()
         e.setting.CooldownViewer[k] = num()
     end
     e.index.CooldownViewer = { Essential = 1, Utility = 2, BuffIcon = 3, BuffBar = 4 }
+    -- 0.22.0 (row b22More): the cast bar and the focus frame.
+    e.system.CastBar = num()
+    e.index.UnitFrame.Focus = 3
     return e
 end
 
@@ -5342,5 +5345,266 @@ test("0.22.0 timers: while placed the PE button takes its new spot at once, cent
     choose(c, PE, "b22Timers", 0)
     eq({ spot() }, { "BOTTOMLEFT", 10, 162 })
 end)
+
+---------------------------------------------------------------------------
+-- 0.22.0 (spec item 7, row b22More): the game's own cast bar and focus frame join our layout at
+-- the spots the Gamepad preset gives them, so the Arrange window can list and move them.
+-- Mainline/EditModePresetLayouts.lua:1289-1298 (CastBar: BOTTOM on GamepadMainActionBarFrame's
+-- TOP, 0, 20) and 1326-1335 (Focus: BOTTOMLEFT on UIParent's BOTTOM, 386, 316).
+---------------------------------------------------------------------------
+local MC = { CAST = "your cast bar", FOCUS = "focus frame", SYS_CAST = 1, FOCUS_INDEX = 3 }
+
+function MC.opts(more)
+    local o = { arrange = 1, offsets = {}, charOffsets = {} }
+    for k, v in pairs(more or {}) do o[k] = v end
+    return o
+end
+
+function MC.list(list)
+    local out = {}
+    for _, p in ipairs(list) do
+        if p.system == "CastBar" or (p.system == "UnitFrame" and p.index == "Focus") then out[#out + 1] = p end
+    end
+    return out
+end
+
+-- The stand-in client with ours built and active; the row's value and options as given.
+function MC.client(o)
+    o = o or {}
+    local ctrl = { arrange = 1, arrangeBase = 2, offsets = o.offsets }
+    for k, v in pairs(o.rows or {}) do ctrl[k] = v end
+    local c, PE = layoutClient({}, 3, { saved = { options = { ctrlLayout = ctrl }, debug = { on = true } } })
+    PE:SetDebug(true)
+    switchOn(c, PE)
+    PE:GetModule("ctrlLayout"):CancelReload()
+    return c, PE, PE:GetModule("ctrlLayout")
+end
+
+function MC.cast(c) return TM.entry(ours(c), MC.SYS_CAST) end
+function MC.focus(c) return TM.entry(ours(c), SYS.UnitFrame, MC.FOCUS_INDEX) end
+
+function MC.lines(c)
+    local out = {}
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        local text = line:match("^%S+ ctrlLayout: (arrange: .*)$")
+        if text then out[#out + 1] = text end
+    end
+    return out
+end
+
+function MC.logged(c, text)
+    for _, l in ipairs(MC.lines(c)) do if l == text then return true end end
+    return false
+end
+
+function MC.spot(e)
+    local a = e.anchorInfo
+    return { a.point, a.relativeTo, a.relativePoint, a.offsetX, a.offsetY }
+end
+
+test("0.22.0 more: row Off places nothing and lists nothing; the plan is 0.21.0's", function()
+    local Plan = TM.plan({ b22More = 0 })
+    local o = MC.opts()
+    eq(#MC.list(Plan.Pieces(o)), 0, "a piece with the row Off")
+    local r = Plan.Rects(o)
+    eq(r[MC.CAST], nil)
+    eq(r[MC.FOCUS], nil)
+    for _, k in ipairs(Plan.Pending(MC.opts({ offsets = { [MC.CAST] = { x = 5, y = 5 } } }))) do
+        check(Plan.ARRANGE_BY[k].when ~= "more", k .. " pending with the row Off")
+    end
+    -- The same with the row On and everything else as it is: only these two are new.
+    local On = TM.plan({ b22More = 1 })
+    local off, on = Plan.Pieces(o), On.Pieces(o)
+    eq(#on, #off + 2)
+    for i = 1, #off do eq(on[i], off[i], "piece " .. i .. " changed") end
+    -- A number or nil (callers that pass a Spell panel size) never places them.
+    eq(#MC.list(On.Pieces(nil)), 0)
+    eq(#MC.list(On.Pieces(100)), 0)
+end)
+
+test("0.22.0 more: row On, both pieces at the preset's spots, their rectangles, and a saved offset moves them", function()
+    local Plan = TM.plan({ b22More = 1 })
+    local list = Plan.Pieces(MC.opts())
+    local cast, focus = piece(list, "CastBar"), piece(list, "UnitFrame", "Focus")
+    check(cast and focus, "a piece is missing")
+    eq(cast.anchor, { point = "BOTTOM", relativeTo = "GamepadMainActionBarFrame", relativePoint = "TOP", x = 0, y = 20 })
+    eq(focus.anchor, { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOM", x = 386, y = 316 })
+    eq({ cast.moved, focus.moved, cast.settings, focus.settings }, { true, true, nil, nil })
+    eq({ cast.arrange, cast.dx, cast.dy }, { MC.CAST, 0, 0 })
+    eq({ focus.arrange, focus.dx, focus.dy }, { MC.FOCUS, 0, 0 })
+    -- Rectangles from the screen's bottom centre: the bar 208 by 11 over the bar frame's top
+    -- (110 + 202) + 20; the small focus frame 232 * 0.75 by 100 * 0.75 at its corner.
+    local r = Plan.Rects(MC.opts())
+    eq(r[MC.CAST], { -104, 332, 104, 343 })
+    eq(r[MC.FOCUS], { 386, 316, 560, 391 })
+    -- A saved offset (kind "apply": the Edit Mode pieces' store) moves the spot and the rectangle.
+    local o = MC.opts({ offsets = { [MC.CAST] = { x = 7, y = -3 }, [MC.FOCUS] = { x = -20, y = 11 } } })
+    local moved = Plan.Pieces(o)
+    eq({ piece(moved, "CastBar").anchor.x, piece(moved, "CastBar").anchor.y }, { 7, 17 })
+    eq({ piece(moved, "UnitFrame", "Focus").anchor.x, piece(moved, "UnitFrame", "Focus").anchor.y }, { 366, 327 })
+    eq({ piece(moved, "UnitFrame", "Focus").dx, piece(moved, "UnitFrame", "Focus").dy }, { -20, 11 })
+    local rm = Plan.Rects(o)
+    eq(rm[MC.CAST], { -97, 329, 111, 340 })
+    eq(rm[MC.FOCUS], { 366, 327, 540, 402 })
+    -- The pieces are pending once an offset is saved and not yet written.
+    local pend = {}
+    for _, k in ipairs(Plan.Pending(o)) do pend[k] = true end
+    check(pend[MC.CAST] and pend[MC.FOCUS], "not pending")
+    -- Each piece alone is Arrange's: listed, kind apply, one rectangle, not twinned.
+    for _, k in ipairs({ MC.CAST, MC.FOCUS }) do
+        local def = Plan.ARRANGE_BY[k]
+        eq({ def.kind, def.when, def.twin, def.rects }, { "apply", "more", nil, { k } })
+    end
+    eq(Plan.ARRANGE_BY[MC.CAST].label, "Your cast bar")
+    eq(Plan.ARRANGE_BY[MC.FOCUS].label, "Focus frame")
+    -- A piece the player had moved in Edit Mode is left alone: not written, no rectangle, not pending.
+    local alone = MC.opts({ b22MoreAlone = { [MC.FOCUS] = true }, offsets = { [MC.FOCUS] = { x = 4, y = 4 } } })
+    eq(piece(Plan.Pieces(alone), "UnitFrame", "Focus"), nil)
+    check(piece(Plan.Pieces(alone), "CastBar") ~= nil, "the other piece went too")
+    eq(Plan.Rects(alone)[MC.FOCUS], nil)
+    for _, k in ipairs(Plan.Pending(alone)) do check(k ~= MC.FOCUS, "pending though left alone") end
+end)
+
+test("0.22.0 more: Plan.Apply writes the two entries, and leaves them out on a game without them", function()
+    local Plan = TM.plan({ b22More = 1 })
+    local e = fakeEnums()
+    local function layout()
+        return { systems = {
+            { system = e.system.CastBar, isInDefaultPosition = true, settings = {},
+              anchorInfo = { point = "BOTTOM", relativeTo = "GamepadMainActionBarFrame", relativePoint = "TOP", offsetX = 0, offsetY = 20 } },
+            { system = e.system.UnitFrame, systemIndex = 3, isInDefaultPosition = true, settings = {},
+              anchorInfo = { point = "BOTTOMLEFT", relativeTo = "UIParent", relativePoint = "BOTTOM", offsetX = 386, offsetY = 316 } },
+        } }
+    end
+    local l = layout()
+    eq(Plan.Apply(l, MC.list(Plan.Pieces(MC.opts({ offsets = { [MC.FOCUS] = { x = 10, y = 0 } } }))), e), 2)
+    eq(MC.spot(l.systems[1]), { "BOTTOM", "GamepadMainActionBarFrame", "TOP", 0, 20 })
+    eq(MC.spot(l.systems[2]), { "BOTTOMLEFT", "UIParent", "BOTTOM", 396, 316 })
+    eq({ l.systems[1].isInDefaultPosition, l.systems[2].isInDefaultPosition }, { false, false })
+    local e2 = fakeEnums()
+    e2.system.CastBar, e2.index.UnitFrame.Focus = nil, nil
+    local l2 = layout()
+    eq(Plan.Apply(l2, MC.list(Plan.Pieces(MC.opts())), e2), 0)
+    eq(l2, layout())
+end)
+
+test("0.22.0 more: On writes both at the preset's spots and asks for the reload; Off puts back what was there", function()
+    local c, PE, m = MC.client()
+    local castBefore, focusBefore = deepCopy(MC.cast(c)), deepCopy(MC.focus(c))
+    eq(MC.spot(castBefore), { "BOTTOM", "GamepadMainActionBarFrame", "TOP", 0, 20 }, "the preset's spot before")
+    local saves = #c:callsTo("C_EditMode.SaveLayouts")
+    choose(c, PE, "b22More", 1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves + 1, "one write")
+    eq(reloadReason(PE), RELOAD)
+    -- Nothing moves: the same spot, now held as the layout's own.
+    eq(MC.spot(MC.cast(c)), MC.spot(castBefore))
+    eq(MC.spot(MC.focus(c)), MC.spot(focusBefore))
+    eq({ MC.cast(c).isInDefaultPosition, MC.focus(c).isInDefaultPosition }, { false, false })
+    check(type(m.opts.b22MoreBefore) == "table" and #m.opts.b22MoreBefore == 2, "what was there is kept")
+    eq(m.opts.b22MoreAlone, nil)
+    for _, line in ipairs({ "arrange: " .. MC.CAST .. " joined the layout at 0, 20", "arrange: " .. MC.FOCUS .. " joined the layout at 386, 316" }) do
+        check(MC.logged(c, line), "not logged: " .. line .. "\n" .. table.concat(MC.lines(c), "\n"))
+    end
+    -- Off: the two entries exactly as they were, and nothing else touched.
+    m:CancelReload()
+    choose(c, PE, "b22More", 0)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves + 2)
+    eq(reloadReason(PE), RELOAD)
+    eq(MC.cast(c), castBefore, "the cast bar put back")
+    eq(MC.focus(c), focusBefore, "the focus frame put back")
+    eq(m.opts.b22MoreBefore, nil)
+    -- Off again: nothing written.
+    m:CancelReload()
+    choose(c, PE, "b22More", 0)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves + 2)
+    eq(reloadReason(PE), nil)
+    c:assertClean()
+end)
+
+test("0.22.0 more: a saved offset is written and a move in Arrange follows; the row Off at the start writes nothing", function()
+    local c, PE, m = MC.client({ offsets = { [MC.FOCUS] = { x = 10, y = -6 } } })
+    local saves = #c:callsTo("C_EditMode.SaveLayouts")
+    -- Off with offsets saved: nothing of the two is written (the Arrange rows are not listed).
+    eq(MC.spot(MC.focus(c)), { "BOTTOMLEFT", "UIParent", "BOTTOM", 386, 316 })
+    choose(c, PE, "b22More", 1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves + 1)
+    eq(MC.spot(MC.focus(c)), { "BOTTOMLEFT", "UIParent", "BOTTOM", 396, 310 }, "the saved offset counts")
+    eq(MC.spot(MC.cast(c)), { "BOTTOM", "GamepadMainActionBarFrame", "TOP", 0, 20 })
+    -- The write is noted, so the offset is not pending any more.
+    local Plan = PE.LayoutPlan
+    for _, k in ipairs(Plan.Pending(m.opts)) do check(k ~= MC.FOCUS, "still pending") end
+    c:assertClean()
+end)
+
+test("0.22.0 more: a piece the player moved in Edit Mode is left alone, written for the other, logged, and not put back by Off", function()
+    local c, PE, m = MC.client()
+    -- The player moved the focus frame in Edit Mode: 12 right, 8 up.
+    local entry = MC.focus(c)
+    entry.anchorInfo.offsetX, entry.anchorInfo.offsetY = 398, 324
+    entry.isInDefaultPosition = false
+    local moved = deepCopy(entry)
+    local saves = #c:callsTo("C_EditMode.SaveLayouts")
+    choose(c, PE, "b22More", 1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves + 1)
+    eq(MC.focus(c), moved, "the player's own move was written over")
+    eq({ MC.cast(c).isInDefaultPosition, MC.spot(MC.cast(c)) }, { false, { "BOTTOM", "GamepadMainActionBarFrame", "TOP", 0, 20 } })
+    eq(m.opts.b22MoreAlone, { [MC.FOCUS] = true })
+    check(#m.opts.b22MoreBefore == 1, "only the cast bar was kept")
+    check(MC.logged(c, "arrange: " .. MC.FOCUS .. " left alone: the player moved it in Edit Mode"), "not logged\n" .. table.concat(MC.lines(c), "\n"))
+    check(not MC.logged(c, "arrange: " .. MC.FOCUS .. " joined the layout at 386, 316"), "logged as joined")
+    check(MC.logged(c, "arrange: " .. MC.CAST .. " joined the layout at 0, 20"), "the other not logged as joined")
+    -- It is not in the plan, the rectangles or Arrange's pending list while it is left alone.
+    local view = PE.LayoutPlan
+    eq(piece(view.Pieces(m.opts), "UnitFrame", "Focus"), nil)
+    eq(view.Rects(m.opts)[MC.FOCUS], nil)
+    -- Off: the cast bar back as it was, the focus frame still the player's.
+    local castPreset = { "BOTTOM", "GamepadMainActionBarFrame", "TOP", 0, 20 }
+    m:CancelReload()
+    choose(c, PE, "b22More", 0)
+    eq(MC.spot(MC.cast(c)), castPreset)
+    eq(MC.cast(c).isInDefaultPosition, true, "the cast bar is the preset's again")
+    eq(MC.focus(c), moved, "the player's move was lost")
+    eq(m.opts.b22MoreAlone, nil)
+    eq(m.opts.b22MoreBefore, nil)
+    c:assertClean()
+end)
+
+test("0.22.0 more: turned On in a fight, written when the fight ends; with Edit Mode open the row is put back", function()
+    local c, PE = MC.client()
+    local saves = #c:callsTo("C_EditMode.SaveLayouts")
+    c:enterCombat()
+    choose(c, PE, "b22More", 1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves, "written in a fight")
+    eq(MC.cast(c).isInDefaultPosition, true)
+    c:leaveCombat()
+    c:advance(0.1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves + 1)
+    eq(MC.cast(c).isInDefaultPosition, false)
+    local c2, PE2, m2 = MC.client()
+    c2.world.editMode = true
+    local saves2 = #c2:callsTo("C_EditMode.SaveLayouts")
+    choose(c2, PE2, "b22More", 1)
+    eq(m2.opts.b22More, 0, "the row is put back")
+    eq(#c2:callsTo("C_EditMode.SaveLayouts"), saves2)
+end)
+
+test("0.22.0 more: a layout built or started over with the row On holds both pieces, and forgets what was left alone", function()
+    local c, PE, m = MC.client({ rows = { b22More = 1 } })
+    eq(MC.spot(MC.cast(c)), { "BOTTOM", "GamepadMainActionBarFrame", "TOP", 0, 20 })
+    eq(MC.cast(c).isInDefaultPosition, false, "written when built")
+    eq(MC.focus(c).isInDefaultPosition, false)
+    check(type(m.opts.b22MoreBefore) == "table" and #m.opts.b22MoreBefore == 2, "the preset's entries are kept")
+    m.opts.b22MoreAlone = { [MC.FOCUS] = true }
+    tapStartOver(c, PE) -- the first tap asks, the second one does it
+    tapStartOver(c, PE)
+    eq(m.opts.b22MoreAlone, nil, "start over forgets it")
+    eq(MC.focus(c).isInDefaultPosition, false)
+end)
+
+test("0.22.0 more: the row is a batch row that asks for a reload", function()
+    local _, PE = MC.client()
+    eq(optRow(PE, "b22More").label, "Arrange: cast bar and focus frame (reload)")
+end)
+
 
 return { known = KNOWN_FAILURES }
