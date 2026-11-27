@@ -500,6 +500,10 @@ Plan.session = nil
 -- them and the twins stay exact mirrors (equal up, opposite across). The map is not here:
 -- its saved "0, -2" would put it under the screen's edge, where the game does not let an
 -- Edit Mode piece go (see MAP.square above).
+--
+-- Where every piece ends up on screen, who places it, and the areas kept free are written
+-- down in docs/SCREEN-MAP.md (its numbers are what Plan.Rects returns). A change to a spot,
+-- a size or the list of pieces in this file changes that page in the same commit.
 Plan.BASE_2 = {
     ["inner left diamond"] = { 0, -16 }, ["inner right diamond"] = { 0, -16 },
     ["outer left diamond"] = { 0, -16 }, ["outer right diamond"] = { 0, -16 },
