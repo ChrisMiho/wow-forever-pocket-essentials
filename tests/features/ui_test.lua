@@ -1470,6 +1470,25 @@ test("b22Dpad: a panel with navCross is asked first", function()
     eq(panel.peNavFocus, pick)
 end)
 
+test("b22Dpad: a panel with navCross keeps its whole rule, navColumn included, when navCross answers nil", function()
+    local function move(on)
+        local c, PE = T.new({ on = { "bagWindow" } })
+        if on then rowOn(PE, "b22Dpad") end
+        local panel = dpadPanel(c, PE)
+        local list = panel.peNavGet()
+        local focus = panel.peNavFocus
+        -- A column of the focus and the last button: the 0.21.0 move goes to the last one.
+        local last = list[#list]
+        check(last ~= focus, "the last button is the focus")
+        panel.navCross = function() return nil end
+        panel.navColumn = function() return { focus, last } end
+        dpadKey(c, "RIGHT")
+        eq(panel.peNavFocus, last, on and "row On" or "row Off")
+    end
+    move(false)
+    move(true)
+end)
+
 test("b22Dpad: Off, the index walk of 0.21.0", function()
     local c, PE = T.new({ on = { "bagWindow" } })
     local panel = dpadPanel(c, PE)

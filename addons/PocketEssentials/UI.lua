@@ -1179,6 +1179,11 @@ function UI.ArrowsAlways()
     return batch ~= nil and batch.On("b22Arrows") or false
 end
 
+function UI.DpadByDirection()
+    local batch = PE.Batch
+    return batch ~= nil and batch.On("b22Dpad") or false
+end
+
 -- 0.22.0 row "D-pad moves by direction". The rectangle of a button as
 -- { left, bottom, right, top }, from its own frame (reads only); nil when the
 -- frame has no place on screen yet.
@@ -1227,7 +1232,8 @@ local function NavMove(panel, step, byRow)
     if #all == 0 then return NavFocus(panel, nil) end
     local focus = panel.peNavFocus
     if not IndexOf(all, focus) then focus = nil end
-    local byDirection = PE.Batch ~= nil and PE.Batch.On("b22Dpad")
+    -- A panel with its own rule (navCross) keeps it whole, as in 0.21.0.
+    local byDirection = type(panel.navCross) ~= "function" and UI.DpadByDirection()
     if type(panel.navCross) == "function" then
         local ok, target = xpcall(panel.navCross, Handler(), focus, step, byRow)
         -- navCross may have redrawn the window: read its list again.

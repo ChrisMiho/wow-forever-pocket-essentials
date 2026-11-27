@@ -64,6 +64,7 @@ GetFrameStrata	Blizzard_RestrictedAddOnEnvironment/RestrictedFrames.lua:151
 GetHeight	Blizzard_RestrictedAddOnEnvironment/RestrictedFrames.lua:124
 GetInfo	Blizzard_GarrisonUI/Mainline/Blizzard_AdventuresPuck.lua:479
 GetItemInfo	Blizzard_AuctionHouseUI/Shared/Blizzard_AuctionHouseSharedTemplates.lua:349
+GetLabel	Blizzard_Gamepad/UI/Radials/GamepadRadial.lua:1087
 GetLayouts	Blizzard_EditMode/Shared/EditModeManager.lua:1061
 GetLeft	Blizzard_SharedXML/Shared/Scroll/ScrollBoxPadding.lua:26
 GetManager	Blizzard_GuildRename/Blizzard_GuildRename.lua:367
@@ -322,6 +323,7 @@ AnyShown	-
 AnyUp	-
 Api	-
 ApplyGuided	-
+ApplyMark	-
 ApplyOption	-
 ApplyScaleNow	-
 ApplyState	-
@@ -337,6 +339,7 @@ ArrangeCall	-
 ArrangeFilter	-
 ArrangePlace	-
 ArrangeReady	-
+ArrowsAlways	-
 Ask	-
 AskGuided	-
 AskReload	-
@@ -564,6 +567,7 @@ DoSort	-
 Done	-
 DoneKey	-
 Down	-
+DpadByDirection	-
 DpadGlyph	-
 DrawArrow	-
 DrawPortrait	-
@@ -574,6 +578,7 @@ EditModeManagerFrame	-
 EditModeOpen	-
 EditModePresetLayoutManager	-
 EditModeReady	-
+EmptyOn	-
 EnableModule	-
 EnableMouseWheel	-
 Encounter	-
@@ -820,6 +825,7 @@ IsAddOnLoaded	-
 IsAddOnRestrictionActive	-
 IsChoiceRow	-
 IsDesaturated	-
+IsEmptyArt	-
 IsEventRegistered	-
 IsForbidden	-
 IsGamepadStyle	-
@@ -892,6 +898,7 @@ LogAll	-
 LogDrawn	-
 LogError	-
 LogErrorBody	-
+LogMarks	-
 LogMirrors	-
 LogNameOnce	-
 LogQuestError	-
@@ -906,6 +913,7 @@ MainChatWindow	-
 MainHand	-
 MainStatusTrackingBarContainer	-
 MakeArrow	-
+MakeBigMark	-
 MakeBox	-
 MakeButton	-
 MakeHandlers	-
@@ -926,6 +934,7 @@ MarkPart	-
 MarkSection	-
 MarkWhole	-
 MarkWritten	-
+MarksOn	-
 Measure	-
 MeasureCounters	-
 MeasureEnd	-
@@ -984,6 +993,7 @@ NavSameRow	-
 NavSetFocus	-
 Near	-
 Nearest	-
+NearestInDirection	-
 NearestMiniPin	-
 NewButton	-
 NewCooldown	-
@@ -1796,8 +1806,11 @@ bars	-
 base	-
 batch	-
 big	-
+bigBack	-
 bigFace	-
 bigFlags	-
+bigMark	-
+bigParts	-
 biggest	-
 blizz	-
 blocked	-
@@ -2180,12 +2193,14 @@ oy	-
 p	-
 pad	-
 pairs	-
+panel	-
 panelFooter	-
 panelRows	-
 panelSize	-
 panelTabs	-
 parkedX	-
 parkedY	-
+part	-
 particle	-
 party	-
 passable	-
@@ -2286,6 +2301,7 @@ ready	-
 reason	-
 rebuilt	-
 rect	-
+rectOf	-
 rects	-
 refresh	-
 refused	-
@@ -2396,6 +2412,7 @@ sparkles	-
 spawns	-
 spell	-
 spoiled	-
+spot	-
 spotLimit	-
 spots	-
 sqrt	-
