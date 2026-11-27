@@ -6122,6 +6122,48 @@ test("0.22.0 own layout: a layout the game does not keep, or a save that raises,
     end
 end)
 
+test("0.22.0 own layout: a dropped layout is never activated; OnLayoutAdded raising for it falls back to the shared layout too", function()
+    -- Dropped: OnLayoutAdded is never called on the index that holds nothing.
+    local c, PE = OL.client({ setup = function(c2) c2.world.characterLayouts = "drop" end })
+    switchOn(c, PE)
+    local added = c:callsTo("C_EditMode.OnLayoutAdded")
+    eq(#added, 1, "only the shared layout is added")
+    eq(added[1].args[1], 4)
+    check(PE:IsModuleEnabled("ctrlLayout"), "the feature went off")
+    -- OnLayoutAdded raising in a session with the character's own layout: the same fallback, once.
+    -- The shared layout exists already (a character that used it), so going back to it needs
+    -- only SetActiveLayout; the shared layout is saved but not active (another one was picked).
+    local c0, PE0 = OL.client({ row = 0 })
+    switchOn(c0, PE0)
+    c0.world.layouts.activeLayout = 3
+    local db0 = rawget(c0.env, "PocketEssentialsDB")
+    db0.options.ctrlLayout.b22OwnLayout = 1
+    local c2, PE2, m2 = OL.client({ saved = db0, layouts = c0.world.layouts, setup = function(c3)
+        c3.world.layoutCallFails.OnLayoutAdded = true
+    end })
+    switchOn(c2, PE2)
+    check(PE2:IsModuleEnabled("ctrlLayout"), "the feature was switched off")
+    local shared, index = OL.find(c2, NAME, 1)
+    check(shared ~= nil, "the shared layout is gone")
+    eq(c2.world.layouts.activeLayout, index, "the shared layout is not active")
+    eq(c2:callsTo("C_EditMode.SetActiveLayout")[1].args[1], index)
+    check(OL.logged(c2, '"Forgot Shards -PE" was not kept by the game, the shared layout stays'), table.concat(OL.lines(c2), "\n"))
+    check(OL.has(OL.status(PE2), OL.NOT_KEPT), "the tab does not say so")
+    eq(charDB(c2).ctrlOwn.notKept, OL.OWN)
+    check(rawequal(m2.opts, PE2.db.options.ctrlLayout), "still on the character's record")
+    eq(prev(PE2).preset, 2)
+    local c4 = OL.relogin(c2)
+    eq(layoutCalls(c4), 0, "tried again")
+    -- Row Off: an OnLayoutAdded that raises is what it was (the error, the feature off).
+    local c5, PE5 = OL.client({ row = 0, setup = function(c6) c6.world.layoutCallFails.OnLayoutAdded = true end })
+    switchOn(c5, PE5)
+    check(not PE5:IsModuleEnabled("ctrlLayout"), "the feature stayed on with the row Off")
+    eq(c5.world.layouts.layouts[1].layoutName, NAME)
+    eq(c5.world.layouts.activeLayout, 3)
+    eq(prev(PE5), nil)
+    eq(charDB(c5).ctrlOwn, nil)
+end)
+
 test("0.22.0 own layout: a name that does not read keeps the shared layout and says so", function()
     for _, first in ipairs({ false, "Unknown" }) do
         local c, PE, m = OL.client({ first = first, last = false })

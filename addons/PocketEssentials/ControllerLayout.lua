@@ -3294,16 +3294,23 @@ local function AddOurs(state, e)
         Fail(err)
         return false, false
     end
-    -- (index, activate it, imported): as Blizzard's MakeNewLayout.
-    ok, err = pcall(state.api.OnLayoutAdded, newIndex, true, false)
-    if not ok then
-        Fail("C_EditMode.OnLayoutAdded failed: " .. tostring(err))
-        return false, true
-    end
-    -- 0.22.0: the character's own layout is read back; one the game did not keep is not ours.
+    -- 0.22.0: the character's own layout is read back before it is made active: one the game did
+    -- not keep is not ours, and its index would hold nothing (or another layout).
     if own then
         local again = ReadState()
         if not (again and FindSaved(again, own, e.layoutType.Character)) then return false, true, "notKept" end
+    end
+    -- (index, activate it, imported): as Blizzard's MakeNewLayout.
+    ok, err = pcall(state.api.OnLayoutAdded, newIndex, true, false)
+    if not ok then
+        -- 0.22.0: for the character's own layout, the shared one instead (SwitchOn), as for a save
+        -- that raises; the switch is not turned off.
+        if own then
+            PE:LogError("ctrlLayout", "C_EditMode.OnLayoutAdded failed: " .. tostring(err))
+            return false, true, "notKept"
+        end
+        Fail("C_EditMode.OnLayoutAdded failed: " .. tostring(err))
+        return false, true
     end
     mod.opts.template = Plan.TEMPLATE
     Plan.MarkWritten(mod.opts, Plan.Pieces(mod.opts)) -- 0.18.0: the offsets it was built with

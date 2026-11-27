@@ -2453,6 +2453,11 @@ function Client.new(opts)
         end,
         OnLayoutAdded = function(index, activate)
             if world.layoutCallFails.OnLayoutAdded then error("the stand-in's OnLayoutAdded fails") end
+            -- An index that holds no saved layout (counting the presets) is refused, as a real call
+            -- on a missing layout plausibly would be.
+            if type(index) ~= "number" or index <= NumPresets() or index > NumPresets() + #world.layouts.layouts then
+                error("C_EditMode.OnLayoutAdded(): no layout at index " .. tostring(index), 2)
+            end
             if activate and not world.layoutsLag then world.layouts.activeLayout = index end
         end,
         -- world.layoutImport: the layout the game would read out of any string (nil: the string is refused).
