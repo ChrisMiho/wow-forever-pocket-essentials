@@ -4745,4 +4745,47 @@ test("0.20.0 arrangement: MigrateBase takes each piece's amount off its saved of
     eq(Plan.Rects({ slim = 1, arrange = 1, offsets = {}, charOffsets = carried }), was)
 end)
 
+-- 0.22.0 (spec item 10, row b22Panels): the diamonds' bottoms at every Spell panel size.
+-- Found: a diamond's centre is 66 up with the built-in -16 added in every state (Plan.Base
+-- does not look at Arrange), so 50 up; its bottom is 50 minus half its height: 1 at 100%,
+-- about -3.9 at 110% and -8.8 at 120%. Arrange Off and Arrange On with nothing moved give the
+-- same numbers.
+test("0.22.0 panels: row Off, 110% and 120% still reach under the screen's bottom; row On, every diamond is whole", function()
+    local DIAMONDS = { "inner left diamond", "inner right diamond", "outer left diamond", "outer right diamond" }
+    local function states(size)
+        return { with({ panelSize = size }), with({ panelSize = size, arrange = 1, offsets = {}, charOffsets = {} }) }
+    end
+    local was = {}
+    for _, size in ipairs(plan().PANEL_SIZES) do
+        for i, v in ipairs(states(size)) do
+            local Plan = plan()
+            local r = Plan.Rects(v)
+            was[size .. ":" .. i] = r
+            for _, k in ipairs(DIAMONDS) do
+                if size >= 110 then check(r[k][2] < 0, k .. " at " .. size .. "% reaches under 0 with the row Off") end
+            end
+        end
+    end
+    for _, size in ipairs(plan().PANEL_SIZES) do
+        for i, v in ipairs(states(size)) do
+            local Plan, _, PE = plan()
+            PE.db.options.ctrlLayout.b22Panels = 1
+            local r, spots = Plan.Rects(v), Plan.FaceSpots(v)
+            for _, k in ipairs(DIAMONDS) do
+                check(r[k][2] >= 1 - 1e-9, k .. " at " .. size .. "% (state " .. i .. ") bottom " .. r[k][2])
+                if size <= 100 then eq(r[k], was[size .. ":" .. i][k]) end
+            end
+            near(r["inner left diamond"][2], r["inner right diamond"][2], "twins alike")
+            near(r["outer left diamond"][2], r["inner left diamond"][2], "rings alike")
+            near(spots.inner.left.y, spots.inner.right.y, "spots alike")
+            if size >= 110 then near(r["inner left diamond"][2], 1, "raised by exactly the shortfall") end
+        end
+    end
+    -- A saved offset is added after the lift.
+    local Plan, _, PE = plan()
+    PE.db.options.ctrlLayout.b22Panels = 1
+    local v = { panelSize = 120, arrange = 1, offsets = {}, charOffsets = { ["inner left diamond"] = { x = 0, y = 5 } } }
+    near(Plan.Rects(v)["inner left diamond"][2], 6, "saved offset on top of the lift")
+end)
+
 return { known = KNOWN_FAILURES }

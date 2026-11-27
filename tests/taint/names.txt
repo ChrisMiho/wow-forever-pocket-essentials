@@ -605,6 +605,7 @@ Exists	-
 Explore	-
 ExternalEventURLButton	-
 FACE	-
+Face	-
 FaceBars	-
 FaceCall	-
 FaceGlyph	-
@@ -902,6 +903,7 @@ LogErrorBody	-
 LogMarks	-
 LogMirrors	-
 LogNameOnce	-
+LogPanels	-
 LogQuestError	-
 LogRim	-
 Login	-
@@ -1094,6 +1096,7 @@ PairedStamp	-
 Panel	-
 PanelLayout	-
 PanelSize	-
+PanelsOn	-
 ParentOf	-
 Party	-
 PassDone	-

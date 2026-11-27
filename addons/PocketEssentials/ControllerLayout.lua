@@ -333,6 +333,7 @@ Plan.FACE = { button = FACE.button, dx = FACE.dx, dy = FACE.dy }
 local INNER_EDGE = 103 -- the inner diamonds' inner edge, at every size
 local RING_GAP = 12    -- between an inner and an outer diamond, and an outer one and the frames
 local FACE_Y = 66      -- every diamond's centre, at every size
+Plan.FACE_Y = FACE_Y
 
 -- Which bar half is drawn at which spot for each state of the triggers (spec, "The new
 -- arrangement"). The d-pad half always left of its own face half, the way the controller
@@ -551,11 +552,30 @@ function Plan.Offset(v, key)
     return x, y
 end
 
+-- Whether the row b22Panels (Batch.lua) is On.
+function Plan.PanelsOn()
+    local batch = PE.Batch
+    return type(batch) == "table" and type(batch.On) == "function" and batch.On("b22Panels") == true
+end
+
 -- How far a piece is from the spot worked out in this file: its built-in amount (always)
 -- plus its saved offset (v as Plan.Offset takes it). What the plan adds to a piece's spot.
+--
+-- 0.22.0 (spec item 10, row b22Panels, Off by default): with the row On, a diamond whose bottom
+-- would fall under 1 (the screen's bottom edge; the game keeps nothing lower) is raised by
+-- exactly the shortfall, before the saved offset is added. Why it showed "with Arrange Off":
+-- the built-in -16 (Plan.BASE_2) is added in every state, Arrange or not, so a diamond's
+-- centre is 66 - 16 = 50 up at every size and its bottom is 50 minus half its height: 1 at
+-- 100%, about -3.9 at 110% and -8.8 at 120%. Arrange On with nothing moved is the same.
+-- Both rings and both twins have the same height and base, so they are raised alike.
 Plan.Moved = function(v, key)
     local bx, by = Plan.Base(key)
     local x, y = Plan.Offset(v, key)
+    if type(key) == "string" and key:find(" diamond$") and Plan.PanelsOn() then
+        local face = Plan.Face(v)
+        local bottom = Plan.FACE_Y + by - (face.dy + face.button / 2)
+        if bottom < 1 then by = by + (1 - bottom) end
+    end
     return bx + x, by + y
 end
 

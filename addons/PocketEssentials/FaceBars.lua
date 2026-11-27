@@ -708,6 +708,19 @@ end
 
 local OnEvent -- below
 
+-- 0.22.0 (spec item 10, row b22Panels): one line when the pictures are placed, with the lowest
+-- button's bottom (the four centres' lowest, less half a picture's height, in UI units up from
+-- the screen's bottom). Only while the row is On; ControllerLayout.lua's plan does the lifting.
+local function LogPanels(face)
+    local batch = PE.Batch
+    if not PE.debugOn or type(batch) ~= "table" or type(batch.On) ~= "function" or batch.On("b22Panels") ~= true then return end
+    local low
+    for _, c in pairs(centres) do low = low and min(low, c.y) or c.y end
+    if not low then return end
+    local bottom = low - (face.dy + face.button / 2) * panelScale
+    PE:Debug(KEY, "panels: size " .. tostring(builtSize) .. "%, lowest button's bottom at " .. string.format("%.1f", bottom))
+end
+
 -- Makes every frame, once, at the Spell panel size given (in percent). Returns true, or
 -- false and the reason. Every half starts hidden; the first Flush places the ones the
 -- state shows (ApplyState). The pictures are made at 100% and each half is scaled, so
@@ -1595,8 +1608,17 @@ function Public.Place()
             f:SetSize(r[3] - r[1], r[4] - r[2])
         end
     end
+    LogPanels(face)
     ApplyState()
     return true
+end
+
+-- The row b22Panels changed: the pictures are placed again at once (lifted, or as 0.21.0).
+local panelRows = PE.Batch
+if type(panelRows) == "table" and type(panelRows.Listen) == "function" then
+    panelRows.Listen("b22Panels", Guard(function()
+        if running then Public.Place() end
+    end))
 end
 
 Face["Start"] = function(_, whenOff, size) return Public.Start(whenOff, size) end
