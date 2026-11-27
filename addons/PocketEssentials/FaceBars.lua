@@ -193,6 +193,7 @@ local STATE_KEYS = { "rest", "lt", "rt", "both" }
 -- The bars that can take an anchor's place, in the order they win.
 local OVERRIDES = { "friendlyTargetingBar", "hostileTargetingBar", "shortcutsBar", "possessBar", "stanceBar" }
 -- A diamond's four spots in press order (left, up, right, down), in steps of dx and dy.
+local SPOT_NAMES = { "left", "up", "right", "down" } -- the same order, for the debug log
 local SPOT_STEPS = { { -1, 0 }, { 0, 1 }, { 1, 0 }, { 0, -1 } }
 local EVENTS = { "ACTIONBAR_UPDATE_COOLDOWN", "SPELL_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_STATE",
     "UPDATE_BONUS_ACTIONBAR", "UPDATE_SHAPESHIFT_FORM", "UPDATE_POSSESS_BAR" }
@@ -673,6 +674,7 @@ local function Build(size)
             for q, step in ipairs(SPOT_STEPS) do
                 local pic = MakePicture(hf, step[1] * face.dx, step[2] * face.dy, face.button, q, half == 1)
                 if not pic then return false, TEXT_NO_COOLDOWN end
+                pic.panel, pic.spot = def.key, SPOT_NAMES[q] .. (half == 1 and " dpad" or " face")
                 g.pics[(half - 1) * 4 + q] = pic
             end
             if def.tag then
@@ -687,11 +689,45 @@ local function Build(size)
     return true
 end
 
-local function ShowEmpty(pic)
+-- 0.22.0 (spec 2026-11-27-0.22.0-parked-batch.md, item 1; row "b22Empty", Off by default).
+--
+-- The smear on an empty slot (docs/11-25-evening/Screenshot_20261125-151752.png, the top face
+-- button of the right panel). What is established: ShowEmpty hid only the icon and the face; the
+-- glow, the checked edge, the range dot, the count, the cooldown and the darkening are copied by
+-- their own refreshers from the real button, so an empty slot whose real button still carried
+-- one of them kept it on our picture over the faint outline. The game's own empty-slot art is not
+-- on the real button's icon but on a separate SlotArt texture (G/ActionBarButton.lua:483-492,
+-- "gamepad-actionbar-slot-bg-empty" in G/ActionBarTemplates.xml:19), which we never copy. What is
+-- not established: which of these was on screen in that picture. It cannot be told from the
+-- image, and there is no client here. So the row clears every overlay of an empty picture, and
+-- counts an icon whose texture or atlas names the game's empty art as empty; the log line says
+-- which reason each empty picture had, to settle the cause on the device.
+-- With the row Off this is exactly 0.21.0: the icon and the face hidden, the faint backing.
+local function EmptyOn()
+    local batch = PE.Batch
+    return type(batch) == "table" and type(batch.On) == "function" and batch.On("b22Empty") == true
+end
+
+local function ShowEmpty(pic, why)
     pic.icon:Hide()
     pic.face:Hide()
     pic.back:SetColorTexture(1, 1, 1, 0.12) -- a faint outline
     pic.empty = true
+    if not EmptyOn() then return end
+    -- The overlays the game's button may still carry.
+    pic.glow:Hide()
+    pic.checked:Hide()
+    pic.range:Hide()
+    pcall(pic.count.SetText, pic.count, "")
+    if pic.cdOn then
+        pcall(pic.cd.Clear, pic.cd)
+        pic.cdOn = false
+    end
+    pic.dim:Hide()
+    if PE.debugOn and why and pic.emptyWhy ~= why then
+        PE:Debug(KEY, "empty slots: " .. tostring(pic.panel) .. " " .. tostring(pic.spot) .. ": empty because " .. why)
+    end
+    pic.emptyWhy = why
 end
 
 -- special: one of the game's special icons, drawn on a button face (see FACE_COLOUR).
@@ -707,21 +743,34 @@ local function ShowIcon(pic, r, g, b, grey, special)
         pic.face:Hide()
     end
     pic.empty = false
+    pic.emptyWhy = nil
 end
 
 -- The real icon's texture, colour (secret: white) and greying. Our texture is set
 -- only when it changed; a secret one is always set (it cannot be compared).
+-- True when the texture or atlas of the game's icon is the game's empty-slot art (a name with
+-- "empty" in it). Only read with the row On; a secret or unreadable name is not empty art.
+local function IsEmptyArt(icon, tex)
+    if type(tex) == "string" and tex:lower():find("empty", 1, true) then return true end
+    if type(icon.GetAtlas) == "function" then
+        local ok, atlas = pcall(icon.GetAtlas, icon)
+        if ok and not IsSecret(atlas) and type(atlas) == "string" and atlas:lower():find("empty", 1, true) then return true end
+    end
+    return false
+end
+
 local function CopyIcon(pic, icon)
-    if not icon or not Shown(icon) then return ShowEmpty(pic) end
+    if not icon or not Shown(icon) then return ShowEmpty(pic, "no icon shown") end
     local ok, tex = pcall(icon.GetTexture, icon)
-    if not ok then return ShowEmpty(pic) end
+    if not ok then return ShowEmpty(pic, "no texture") end
     if IsSecret(tex) then
-        if not pcall(pic.icon.SetTexture, pic.icon, tex) then pic.tex = nil return ShowEmpty(pic) end
+        if not pcall(pic.icon.SetTexture, pic.icon, tex) then pic.tex = nil return ShowEmpty(pic, "no texture") end
         pic.tex = nil
     else
-        if tex == nil or tex == "" then return ShowEmpty(pic) end
+        if tex == nil or tex == "" then return ShowEmpty(pic, "no texture") end
+        if EmptyOn() and IsEmptyArt(icon, tex) then pic.tex = nil return ShowEmpty(pic, "the game's empty art") end
         if tex ~= pic.tex then
-            if not pcall(pic.icon.SetTexture, pic.icon, tex) then pic.tex = nil return ShowEmpty(pic) end
+            if not pcall(pic.icon.SetTexture, pic.icon, tex) then pic.tex = nil return ShowEmpty(pic, "no texture") end
             pic.tex = tex
             -- Another spell in the slot, maybe: its cooldown and darkening are read again.
             pic.dCooldown = true
@@ -759,7 +808,7 @@ local function CopySpecial(pic, sp)
             end
         end
     end
-    if not done then return ShowEmpty(pic) end
+    if not done then return ShowEmpty(pic, "no texture") end
     local r, g, b = Colour(sp)
     ShowIcon(pic, r, g, b, false, true)
 end
@@ -801,7 +850,7 @@ local function RefreshIcon(pic)
     local wasEmpty, wasSpecial = pic.empty, pic.special
     if not b then
         pic.special = false
-        ShowEmpty(pic)
+        ShowEmpty(pic, "no button")
     else
         local sp = Field(b, "SpecialActionIcon")
         pic.special = sp ~= nil and Shown(sp)
@@ -815,9 +864,14 @@ local function RefreshIcon(pic)
         end
     end
     if pic.empty ~= wasEmpty or pic.special ~= wasSpecial then pic.dCooldown = true end
+    -- 0.22.0: a picture that was cleared as empty, or that is now, takes the other parts again.
+    if pic.empty ~= wasEmpty and EmptyOn() then
+        pic.dRange, pic.dCount, pic.dChecked, pic.dGlow = true, true, true, true
+    end
 end
 
 local function RefreshRange(pic)
+    if pic.empty and EmptyOn() then return pic.range:Hide() end
     local range = pic.button and Field(pic.button, "RangeIndicator")
     if range and Shown(range) then
         pic.range:SetVertexColor(Colour(range))
@@ -830,6 +884,7 @@ end
 -- The count goes from the game's text to ours as it is: in a fight it may be
 -- secret, which our SetText takes; it is never compared or changed.
 local function RefreshCount(pic)
+    if pic.empty and EmptyOn() then return pic.count:SetText("") end
     local count, text = pic.button and Field(pic.button, "Count"), ""
     if count then
         local ok, v = pcall(count.GetText, count)
@@ -839,6 +894,7 @@ local function RefreshCount(pic)
 end
 
 local function RefreshChecked(pic)
+    if pic.empty and EmptyOn() then return pic.checked:Hide() end
     local b, on = pic.button, false
     if b and not pic.special then
         local ok, v = pcall(b.GetChecked, b)
@@ -848,6 +904,7 @@ local function RefreshChecked(pic)
 end
 
 local function RefreshGlow(pic)
+    if pic.empty and EmptyOn() then return pic.glow:Hide() end
     local b, on = pic.button, false
     local manager = ActionButtonSpellAlertManager
     if b and type(manager) == "table" then
@@ -990,6 +1047,20 @@ local function ForgetDim()
     for _, g in ipairs(groups) do
         for _, pic in ipairs(g.pics) do pic.dimSlot = nil end
     end
+end
+
+-- The row b22Empty changed: every picture is drawn again (cleared, or as 0.21.0 draws it).
+-- Registered once at load; it does nothing unless the pictures run, and nothing runs after.
+local batchRows = PE.Batch
+if type(batchRows) == "table" and type(batchRows.Listen) == "function" then
+    batchRows.Listen("b22Empty", Guard(function()
+        if not running then return end
+        for _, g in ipairs(groups) do
+            for _, pic in ipairs(g.pics) do pic.emptyWhy = nil end
+        end
+        MarkAll()
+        Schedule()
+    end))
 end
 
 local function Hook(t, name, fn)

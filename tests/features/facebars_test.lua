@@ -1426,4 +1426,182 @@ test("0.16.4 face: with the debug log off no drawn line is written", function()
     eq(#rawget(c.env, "PocketEssentialsDB").debug.lines, 0)
 end)
 
+-- 0.22.0 item 1 (spec 2026-11-27-0.22.0-parked-batch.md): empty spell slots drawn cleanly, row b22Empty.
+local function emptyOn(PE, on) PE.db.options.ctrlLayout.b22Empty = on and 1 or nil end
+
+-- What a button the game leaves behind on an empty slot can carry: a range dot, a proc glow, a
+-- count, a checked edge and a cooldown. Slot 3 is the top bar's third button, empty.
+local function lingerOn(c, button, slot)
+    c:setAction(slot, { checked = true, count = "7", duration = 5 })
+    c:setRange(button, true, false)
+    c:spellAlert(button, true)
+end
+
+local function overlaysOf(c, p)
+    return { glow = shown(c, p.glow), checked = shown(c, p.checked), range = shown(c, p.range), dim = shown(c, p.dim),
+        cd = shown(c, p.cd), count = p.count:GetText() or "", icon = shown(c, p.icon), face = shown(c, p.face) }
+end
+
+local function emptyLines(c)
+    local out = {}
+    for _, line in ipairs(rawget(c.env, "PocketEssentialsDB").debug.lines) do
+        local text = line:match("^%S+ ctrlLayout: (empty slots: .*)$")
+        if text then out[#out + 1] = text end
+    end
+    return out
+end
+
+test("0.22.0 empty slots: with the row Off an empty slot is drawn as in 0.21.0 and nothing is logged", function()
+    local c, PE, Face = new()
+    PE:SetDebug(true)
+    check(Face:Start() == true, "Start failed")
+    local real, p = c.barButtons.TopCenteredAnchor[3], pic(Face, 1, 3)
+    lingerOn(c, real, 3)
+    c:advance(0.1)
+    eq(p.empty, true)
+    -- 0.21.0: only the icon and the face are hidden; the glow, edge, dot and count follow the real button.
+    eq(overlaysOf(c, p), { glow = true, checked = true, range = true, dim = false, cd = false, count = "7", icon = false, face = false })
+    eq(st(c, p.back).color, { 1, 1, 1, 0.12 })
+    eq(emptyLines(c), {}, "no line while the row is Off")
+    c:assertClean()
+end)
+
+test("0.22.0 empty slots: with the row On an empty picture shows only the faint outline, in every state", function()
+    local c, PE, Face = new({ setup = function(cl) cl:addTargetingBars() end })
+    emptyOn(PE, true)
+    check(Face:Start() == true, "Start failed")
+    local linger = {}
+    for _, g in ipairs(Face.view) do
+        for _, p in ipairs(g.pics) do
+            if p.button and type(p.button.action) == "number" and not p.special and c.world.actions[p.button.action] == nil then
+                linger[#linger + 1] = p
+                lingerOn(c, p.button, p.button.action)
+            end
+        end
+    end
+    check(#linger >= 4, "there are empty pictures to look at")
+    local EMPTY = { glow = false, checked = false, range = false, dim = false, cd = false, count = "", icon = false, face = false }
+    local function look(what)
+        c:advance(0.1)
+        local seen = 0
+        for _, g in ipairs(Face.view) do
+            for _, p in ipairs(g.pics) do
+                if p.empty and p.frame:IsVisible() then
+                    seen = seen + 1
+                    eq(overlaysOf(c, p), EMPTY, what)
+                    eq(st(c, p.back).color, { 1, 1, 1, 0.12 }, what .. " backing")
+                end
+            end
+        end
+        check(seen > 0, what .. ": an empty picture was drawn")
+    end
+    look("rest")
+    c:pressTriggers(true, false)
+    look("lt")
+    c:pressTriggers(false, true)
+    look("rt")
+    c:pressTriggers(true, true)
+    look("both")
+    c:pressTriggers(false, false)
+    c:showOverrideBar("friendlyTargetingBar", "TopCenteredAnchor")
+    look("a targeting bar")
+    c:assertClean()
+end)
+
+test("0.22.0 empty slots: a spell that arrives gets its glow, edge, dot and count back; one that leaves loses them", function()
+    local c, PE, Face = new()
+    emptyOn(PE, true)
+    check(Face:Start() == true, "Start failed")
+    local real, p = c.barButtons.TopCenteredAnchor[3], pic(Face, 1, 3)
+    lingerOn(c, real, 3)
+    c:advance(0.1)
+    eq(overlaysOf(c, p).glow, false)
+    c:setAction(3, { texture = 777, duration = 0, count = "7", checked = true })
+    c:advance(0.1)
+    eq(p.empty, false)
+    eq(overlaysOf(c, p), { glow = true, checked = true, range = true, dim = false, cd = false, count = "7", icon = true, face = false })
+    c:setAction(3, { checked = true, count = "7" })
+    c:advance(0.1)
+    eq(p.empty, true)
+    eq(overlaysOf(c, p).glow, false)
+    eq(overlaysOf(c, p).count, "")
+    c:assertClean()
+end)
+
+test("0.22.0 empty slots: the row changing redraws the pictures at once, both ways", function()
+    local c, PE, Face = started()
+    local real, p = c.barButtons.TopCenteredAnchor[3], pic(Face, 1, 3)
+    lingerOn(c, real, 3)
+    c:advance(0.1)
+    eq(overlaysOf(c, p).glow, true)
+    emptyOn(PE, true)
+    PE.Batch.Changed("b22Empty")
+    c:advance(0.1)
+    eq(overlaysOf(c, p), { glow = false, checked = false, range = false, dim = false, cd = false, count = "", icon = false, face = false })
+    emptyOn(PE, false)
+    PE.Batch.Changed("b22Empty")
+    c:advance(0.1)
+    eq(overlaysOf(c, p).glow, true)
+    eq(overlaysOf(c, p).count, "7")
+    eq(onUpdates(c), 0, "nothing ticks after the redraw")
+    c:assertClean()
+end)
+
+test("0.22.0 empty slots: the game's empty-slot art counts as empty", function()
+    local c, PE, Face = new()
+    emptyOn(PE, true)
+    check(Face:Start() == true, "Start failed")
+    local real, p = c.barButtons.TopCenteredAnchor[3], pic(Face, 1, 3)
+    c:setAction(3, { texture = "Interface\\Buttons\\UI-EmptySlot", duration = 0, count = "" })
+    c:advance(0.1)
+    eq(p.empty, true)
+    eq(shown(c, p.icon), false)
+    local q = pic(Face, 1, 1) -- a spell stays a spell
+    eq(q.empty, false)
+    -- an atlas name the game uses for empty slots, read from the real icon
+    real.icon:SetAtlas("gamepad-actionbar-slot-bg-empty")
+    rawset(real.icon, "GetTexture", function() return 4242 end)
+    c:setAction(3, { texture = 4242, duration = 0, count = "" })
+    c:advance(0.1)
+    eq(p.empty, true)
+    c:assertClean()
+end)
+
+test("0.22.0 empty slots: one log line per picture when its emptiness or its reason changes, with the row On only", function()
+    local c, PE, Face = new()
+    emptyOn(PE, true)
+    PE:SetDebug(true)
+    check(Face:Start() == true, "Start failed")
+    c:advance(0.1)
+    local lines = emptyLines(c)
+    check(#lines > 0, "empty pictures were logged")
+    local seen = {}
+    for _, l in ipairs(lines) do
+        check(#l <= 200, "a line fits")
+        check(l:match("^empty slots: %a+ %a+ %a+: empty because .+$"), "the form: " .. l)
+        check(not seen[l], "once: " .. l)
+        seen[l] = true
+    end
+    check(seen["empty slots: main right dpad: empty because no icon shown"], "slot 3 is the d-pad's right picture")
+    local n = #lines
+    c:fire("SPELL_UPDATE_COOLDOWN")
+    c:advance(0.1)
+    eq(#emptyLines(c), n, "a second look at the same state writes nothing")
+    -- A spell arrives and leaves again: the line comes again.
+    c:setAction(3, { texture = 777, duration = 0, count = "" })
+    c:advance(0.1)
+    eq(#emptyLines(c), n)
+    c:setAction(3, nil)
+    c:advance(0.1)
+    eq(#emptyLines(c), n + 1)
+    -- Another reason: the real icon shows with no texture.
+    local real = c.barButtons.TopCenteredAnchor[3]
+    rawset(real.icon, "GetTexture", function() return nil end)
+    real.icon:Show()
+    c:advance(0.1)
+    local all = emptyLines(c)
+    eq(all[#all], "empty slots: main right dpad: empty because no texture")
+    c:assertClean()
+end)
+
 return { known = KNOWN_FAILURES }
