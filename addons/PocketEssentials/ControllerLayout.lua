@@ -3795,15 +3795,12 @@ Snap.MoreRow = function()
 end
 
 -- 0.22.0 (row b22Menu, spec item 6): a change of the row rewrites the target frame, out of a
--- fight, and asks for the reload. Nothing is written while Slim bars are Off: the frame is
--- lifted only with them On. Snap.MenuWas reads the layout's target frame spot before a write.
+-- fight, and asks for the reload. It is queued whatever Slim bars are now: the spot written is
+-- worked out when the write happens (Plan.MenuActive), so no order of the two switches in a
+-- fight can leave the frame lifted. Snap.MenuSpot reads the layout's target frame spot.
 Snap.MenuRow = function()
     local o = mod and mod.opts
     if type(o) ~= "table" then return end
-    if o.slim ~= 1 then
-        if PE.debugOn then PE:Debug("ctrlLayout", "target menu: nothing written: needs Slim bars (Slim bars are Off)") end
-        return
-    end
     if not Snap.RewritePieces(REWRITES.b22Menu, "b22Menu") then return end -- RewritePieces, defined above
     if PE.debugOn then
         PE:Debug("ctrlLayout", "target menu: the row is now " .. tostring(o.b22Menu) .. "; the layout follows the next reload")

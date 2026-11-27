@@ -5719,14 +5719,14 @@ test("0.22.0 menu: On writes the target frame higher and asks for the reload; Of
     c:assertClean()
 end)
 
-test("0.22.0 menu: with Slim bars Off the row writes nothing", function()
+test("0.22.0 menu: with Slim bars Off the row leaves the target frame where it was", function()
     local c, PE, m = MN.client({ slim = 0 })
     local before = deepCopy(MN.target(c))
-    local saves = #c:callsTo("C_EditMode.SaveLayouts")
     choose(c, PE, "b22Menu", 1)
-    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves)
+    eq(MN.target(c), before, "lifted with Slim bars Off")
+    m:CancelReload()
+    choose(c, PE, "b22Menu", 0)
     eq(MN.target(c), before)
-    eq(reloadReason(PE), nil)
 end)
 
 test("0.22.0 menu: turned On in a fight, written when the fight ends; with Edit Mode open the row is put back", function()
@@ -5758,13 +5758,68 @@ test("0.22.0 menu: a layout built with the row On holds the lifted spot, and tur
     choose(c, PE, "slim", 0)
     eq(#c:callsTo("C_EditMode.SaveLayouts"), saves + 1)
     eq(MN.target(c).anchorInfo.offsetY, y - 174, "Slim bars Off: the game's frame is where it was")
+    eq(reloadReason(PE), RELOAD)
+    m:CancelReload()
     choose(c, PE, "slim", 1)
+    eq(reloadReason(PE), RELOAD)
     eq(MN.target(c).anchorInfo.offsetY, y, "Slim bars On: lifted again")
+end)
+
+test("0.22.0 menu: row and Slim bars both turned Off in a fight, in either order, leave the frame unlifted and ask for the reload", function()
+    for _, order in ipairs({ { "slim", "row" }, { "row", "slim" } }) do
+        local c, PE, m = MN.client({ b22Menu = 1, slim = 1 })
+        local lifted = MN.target(c).anchorInfo.offsetY
+        local c0 = MN.client()
+        local y0 = MN.target(c0).anchorInfo.offsetY
+        eq(lifted, y0 + 174, "built lifted")
+        m:CancelReload()
+        c:enterCombat()
+        for _, what in ipairs(order) do
+            if what == "slim" then choose(c, PE, "slim", 0) else choose(c, PE, "b22Menu", 0) end
+        end
+        eq(MN.target(c).anchorInfo.offsetY, lifted, "written in a fight")
+        c:leaveCombat()
+        c:advance(0.1)
+        eq(MN.target(c).anchorInfo.offsetY, y0, order[1] .. " then " .. order[2])
+        eq(reloadReason(PE), RELOAD, order[1] .. " then " .. order[2])
+        c:assertClean()
+    end
+end)
+
+test("0.22.0 menu: row and Slim bars both turned On in a fight, in either order, lift the frame once the fight ends", function()
+    for _, order in ipairs({ { "slim", "row" }, { "row", "slim" } }) do
+        local c, PE, m = MN.client({ b22Menu = 0, slim = 0 })
+        local y0 = MN.target(c).anchorInfo.offsetY
+        c:enterCombat()
+        for _, what in ipairs(order) do
+            if what == "slim" then choose(c, PE, "slim", 1) else choose(c, PE, "b22Menu", 1) end
+        end
+        eq(MN.target(c).anchorInfo.offsetY, y0, "written in a fight")
+        c:leaveCombat()
+        c:advance(0.1)
+        eq(MN.target(c).anchorInfo.offsetY, y0 + 174, order[1] .. " then " .. order[2])
+        eq(reloadReason(PE), RELOAD)
+        c:assertClean()
+    end
+end)
+
+test("0.22.0 menu: Slim bars Off, then the row Off, in a fight, after both were On (the reviewer's order, one more time with a later On)", function()
+    local c, PE, m = MN.client({ b22Menu = 1, slim = 1 })
+    local c0 = MN.client()
+    local y0 = MN.target(c0).anchorInfo.offsetY
+    c:enterCombat()
+    choose(c, PE, "slim", 0)
+    choose(c, PE, "b22Menu", 0)
+    choose(c, PE, "slim", 1) -- Slim bars back On with the row Off: still not lifted
+    c:leaveCombat()
+    c:advance(0.1)
+    eq(MN.target(c).anchorInfo.offsetY, y0)
 end)
 
 test("0.22.0 menu: the row is a batch row that asks for a reload", function()
     local _, PE = MN.client()
     check(optRow(PE, "b22Menu") ~= nil, "no row")
+    eq(optRow(PE, "b22Menu").label:sub(-9), " (reload)")
 end)
 
 ---------------------------------------------------------------------------
