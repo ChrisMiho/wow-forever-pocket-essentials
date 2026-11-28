@@ -829,6 +829,7 @@ InFightNow	-
 InInstance	-
 InLockdown	-
 InRepairMode	-
+InStep	-
 InUse	-
 IndexOf	-
 IndicatorFrame	-
@@ -1757,6 +1758,7 @@ ViewerStep	-
 Visibility	-
 Visible	-
 VisibleRows	-
+WROTE_ORDER	-
 WaitForFightEnd	-
 Waiting	-
 WaitingLabels	-
@@ -1801,6 +1803,8 @@ WritePixels	-
 WritePoints	-
 WriteSetting	-
 Written	-
+WroteNow	-
+WroteSet	-
 Yards	-
 Yell	-
 Yes	-
@@ -1869,6 +1873,7 @@ b22Panels	-
 b22Strip	-
 b22Timers	-
 b22TimersBefore	-
+b22Wrote	-
 backing	-
 bag	-
 bagWindow	-
@@ -2189,6 +2194,7 @@ measureClock	-
 medium	-
 memAt	-
 menuBg	-
+menuLift	-
 message	-
 mid	-
 min	-
@@ -2286,10 +2292,12 @@ panelFooter	-
 panelRows	-
 panelSize	-
 panelTabs	-
+panels	-
 parkedX	-
 parkedY	-
 part	-
 particle	-
+parts	-
 party	-
 passable	-
 passes	-
@@ -2473,6 +2481,7 @@ show	-
 showEmptyBars	-
 showTab	-
 shown	-
+side	-
 signals	-
 situations	-
 size	-

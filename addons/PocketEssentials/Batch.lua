@@ -26,7 +26,7 @@ Batch.ROWS = {
     { key = "b22More", label = "Arrange: cast bar and focus frame", reload = true },
     { key = "b22Timers", label = "Place the game's timers", reload = true },
     { key = "b22OwnLayout", label = "A layout for each character", reload = true },
-    { key = "b22Panels", label = "Large spell panels, whole", reload = false },
+    { key = "b22Panels", label = "Large spell panels, whole", reload = true },
     { key = "b22Mount", label = "Mount square, live", reload = false },
 }
 

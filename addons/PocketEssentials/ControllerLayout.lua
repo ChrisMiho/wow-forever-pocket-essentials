@@ -261,6 +261,9 @@ Plan.SQUARE_TIGHT_SIZES = {}
 -- The map look as the module last placed it (1 Square; nil Round), for the callers that
 -- pass no options (the targeting pictures' spots). Set by Snap.View.
 Plan.look = nil
+-- 0.22.0: the Spell panel size of this session the same way (nil: 100%), for the two lifts of the
+-- row b22Panels (Plan.PanelLift, Plan.SlimLift) when they are asked with no options. Set by Snap.View.
+Plan.size = nil
 
 -- The map look: 1 Square, 0 Round. v: an options table decides for itself (mapLook 1 is
 -- Square, anything else Round); any other v (a Spell panel size, nil) means the session's.
@@ -614,8 +617,11 @@ end
 -- 0.22.0 (row b22Panels): how far the diamonds rise, before any saved offset: the shortfall
 -- of their bottom under 1, found from the built-in numbers only (0 with the row Off, and at
 -- 100% and below). The two targeting pictures rise by the same amount.
+-- v nil: the session's size (Plan.size), as the slim bars, the Arrange window and the targeting
+-- pictures ask with no argument.
 function Plan.PanelLift(v)
     if not Plan.PanelsOn() then return 0 end
+    if v == nil then v = Plan.size end
     local _, by = Plan.Base("inner left diamond")
     local face = Plan.Face(v)
     local bottom = Plan.FACE_Y + by - (face.dy + face.button / 2)
@@ -651,6 +657,7 @@ end
 Plan.PANEL_CAST_CLEAR = 2
 function Plan.SlimLift(v)
     if not Plan.PanelsOn() then return 0 end
+    if v == nil then v = Plan.size end -- the session's size, as Plan.PanelLift
     local S = Plan.SLIM
     local _, dby = Plan.Base("inner left diamond")
     local face = Plan.Face(v)
@@ -1060,7 +1067,10 @@ end
 -- so its top is 312 up and the cast bar's bottom 332. The focus frame is 232 by 100
 -- (Blizzard_UnitFrame/Mainline/TargetFrame.xml:53) at the small size the preset gives it
 -- (UseLargerFrame 0), scaled by 0.75 (TargetFrame.lua:13, 1184): 174 by 75.
--- Both agree with an Edit Mode screenshot taken on the device on 2026-11-27 (docs/SCREEN-MAP.md).
+-- An Edit Mode screenshot taken on the device on 2026-11-27 (docs/SCREEN-MAP.md) agrees for the
+-- cast bar. For the focus frame only its place agrees (within about 2 units across and 7 up):
+-- its Edit Mode box there is about 139 by 67, smaller than the 174 by 75 worked out here, and
+-- what makes the box smaller is not known. The rectangle keeps the frame's own size.
 -- The cast bar is a bottom managed frame (PlayerCastingBarFrame inherits BottomManagedFrameTemplate)
 -- that the game places itself while it is in its default position (EditModeSystemMixin:
 -- ApplySystemAnchor, Blizzard_EditMode/Shared/EditModeSystemTemplates.lua:350-365); writing the
@@ -2850,6 +2860,7 @@ Snap.View = function()
     end
     local view = Snap.view
     view.panelSize = SessionSize()
+    Plan.size = view.panelSize -- 0.22.0: for the lifts asked with no options
     view.hints, view.mapButtons = opts.hints, opts.mapButtons
     -- 0.19.0: the map look counts at once (the size it asks of Edit Mode follows the reload).
     view.mapLook = Plan.MapLook(opts)
@@ -2924,6 +2935,7 @@ local function PlaceNow()
     end
     local spots = Plan.BarSpots(SessionSize())
     placed = true
+    Snap.TimersHub() -- 0.22.0: the PE button's own move, cleared or given back for the game's timers
     RefreshHub() -- the round button takes the layout's spot
     for _, b in ipairs(BAR_FRAMES) do
         local spot = spots[b.spot]
@@ -2944,6 +2956,7 @@ local function PlaceNow()
     end
     Snap.ArrangeCall("Placed") -- 0.18.0: our own panels and bars follow a move made this session
     Snap.ArrangeBack()
+    Snap.InStep() -- 0.22.0: once a login, the layout in step with the 0.22.0 rows (defined below)
 end
 
 -- Places the bars while the feature is on and our layout is the active one,
@@ -2983,8 +2996,8 @@ end
 -- copied). The shared account-wide "Pocket Essentials" is then never written and never deleted.
 --
 -- What belongs to our layout is saved with it (Snap.OWN_KEYS: the template it was built from, the
--- offsets written into it, the copies the 0.22.0 rows keep to put pieces back, the Edit Mode
--- pieces' arranged offsets and the arrangement they count from). Row Off, they are the account's
+-- offsets written into it, the copies the 0.22.0 rows keep to put pieces back, the record of what
+-- those rows last wrote into it (opts.b22Wrote, Snap.WroteSet), the Edit Mode pieces' arranged offsets and the arrangement they count from). Row Off, they are the account's
 -- options, as before. Row On, they are this character's record, PE.charDB.ctrlOwn, which starts
 -- empty: for the session mod.opts reads and writes those keys there and every other key in the
 -- account's options (Snap.OwnStart), so every reader of the options (Plan.Pieces, Plan.Pending,
@@ -3017,7 +3030,7 @@ end
 -- EditModeManagerConstantsDocumentation.lua:1044; MAX_LAYOUTS above).
 ---------------------------------------------------------------------------
 Snap.OWN_KEYS = { template = true, offsetsWritten = true, offsets = true, arrangeBase = true,
-    b22TimersBefore = true, b22MoreBefore = true, b22MoreAlone = true }
+    b22TimersBefore = true, b22MoreBefore = true, b22MoreAlone = true, b22Wrote = true }
 Snap.OWN_TEXT = {
     note = "Pocket Essentials uses its own screen layout for this character. Your own layouts are not changed. "
         .. "Turning Controller layout off puts back the one you had.",
@@ -3316,6 +3329,7 @@ local function AddOurs(state, e)
     Plan.MarkWritten(mod.opts, Plan.Pieces(mod.opts)) -- 0.18.0: the offsets it was built with
     mod.opts.b22TimersBefore = kept -- 0.22.0: what the new layout held for the game's timers
     mod.opts.b22MoreBefore = moreKept -- 0.22.0: and for the cast bar and the focus frame
+    Snap.WroteSet({ menuLift = true, more = true, timers = true }) -- 0.22.0: built whole, as the rows are now
     if PE.debugOn then PE:Debug("ctrlLayout", "saved the Pocket Essentials layout at index " .. newIndex) end
     if own then
         local rec = Plan.own.rec
@@ -3375,6 +3389,7 @@ local function Rebuild()
     -- 0.22.0: the layout is the preset's again, so what was kept for the game's timers is its.
     mod.opts.b22TimersBefore = kept
     mod.opts.b22MoreBefore = moreKept
+    Snap.WroteSet({ menuLift = true, more = true, timers = true }) -- built whole, as the rows are now
     if kept then Snap.TimersLog(state.saved[pos], e) end
     if PE.debugOn then PE:Debug("ctrlLayout", "the Pocket Essentials layout was rebuilt from the template") end
     return true
@@ -3409,6 +3424,7 @@ local function SwitchOn(given)
         -- Already in use (picked in Edit Mode, or switched on for this character
         -- elsewhere): nothing to change. Off goes back to the Gamepad preset.
         if not ThisPrev() then SetThisPrev({ preset = e.preset.Gamepad }) end
+        if Plan.own and Plan.own.name then Plan.own.rec.name = Plan.own.name end -- 0.22.0: recorded as ours
         SyncBars()
         mod:RefreshPanel()
         return
@@ -3435,6 +3451,10 @@ local function SwitchOn(given)
             Fail("C_EditMode.SetActiveLayout failed: " .. tostring(err))
             return
         end
+        -- 0.22.0: a character's own layout found saved under its name (made at a login whose
+        -- OnLayoutAdded failed, or before its saved data was lost) is recorded as ours, so a
+        -- login with the row Off knows it (Snap.NeedsSwitch).
+        if Plan.own and Plan.own.name then Plan.own.rec.name = Plan.own.name end
     else
         SetThisPrev(prev) -- before the write: switching off must undo even a half-done change
         local called, ok, wrote, refused = pcall(AddOurs, state, e)
@@ -3544,6 +3564,7 @@ local function RememberApplied(opts)
     if type(opts) == "table" then applied.b22Timers, applied.b22BarsSide = opts.b22Timers, opts.b22BarsSide end
     if type(opts) == "table" then applied.b22More = opts.b22More end -- 0.22.0: and the cast bar and focus frame row
     if type(opts) == "table" then applied.b22Menu = opts.b22Menu end -- 0.22.0: and the target menu row
+    if type(opts) == "table" then applied.b22Panels = opts.b22Panels end -- 0.22.0: and the panels row (the timers)
 end
 
 -- Which pieces of Plan.Pieces each row rewrites: its own swing timer only (one
@@ -3574,6 +3595,8 @@ local REWRITES = {
     -- ends higher while the bars are on the left.
     b22Timers = function(p) return p.system == "CooldownViewer" or p.system == "ChatFrame" end,
     b22BarsSide = function(p) return p.system == "CooldownViewer" or p.system == "ChatFrame" end,
+    -- 0.22.0 (row b22Panels): the same, the slim bars the timers stand on rising at 120%.
+    b22Panels = function(p) return p.system == "CooldownViewer" or p.system == "ChatFrame" end,
     -- 0.22.0 (row b22More): the cast bar and the focus frame.
     b22More = function(p) return p.system == "CastBar" or (p.system == "UnitFrame" and p.index == "Focus") end,
     -- 0.19.0, Map look: the map (its size and spot) and the three swing timers (14 up with Square).
@@ -3589,11 +3612,14 @@ local REWRITES = {
 --   Snap.TimersBack(layout)  while the timers are not placed and copies are saved: puts them
 --          back into the layout, in place; true when it did (the copies are dropped after the save)
 --   Snap.TimersLog(layout, e)  the debug lines (spec item 8, "Log"); layout: the layout just
---          written (nil at login), to say which pieces it does not hold
+--          written, to say which pieces it does not hold; nil at login, where the layout is not
+--          read and the spots are said as "planned at" (Snap.InStep brings the layout in step)
 --   Snap.TimersRow(key)  a change of either row: the pieces rewritten, out of a fight, and the
 --          reload asked for; nothing while the timers are not placed and nothing is to be put back
---   Snap.TimersHub()  the first time the timers are placed: the PE button's own move (Move.lua,
---          PE.db.ui.moved.hub) is cleared once, so it goes to its new spot; opts.b22HubCleared
+--   Snap.TimersHub()  the first time the timers are placed while the layout is on and placed:
+--          the PE button's own move (Move.lua, PE.db.ui.moved.hub) is cleared once, so it goes to
+--          its new spot (opts.b22HubCleared), and kept (opts.b22HubWas) to come back once the
+--          timers are no longer placed
 Snap.TimersKept = function(layout, e)
     local sys = e and e.system and e.system.CooldownViewer
     local idx = e and e.index and e.index.CooldownViewer
@@ -3656,7 +3682,7 @@ Snap.TimersLog = function(layout, e)
                 local set = p.settings
                 local last = p.index == "BuffBar" and ("width " .. N(set.BarWidthScale + 50) .. "%")
                     or (set.IconLimit and (N(set.IconLimit) .. " per row") or "all in one row")
-                D(name .. " written at " .. N(p.anchor.x) .. ", " .. N(p.anchor.y) .. ", size " .. N(set.IconSize * 10 + 50)
+                D(name .. (layout and " written at " or " planned at ") .. N(p.anchor.x) .. ", " .. N(p.anchor.y) .. ", size " .. N(set.IconSize * 10 + 50)
                     .. "%, " .. last)
             end
         end
@@ -3687,28 +3713,57 @@ Snap.TimersRow = function(key)
     local o = mod and mod.opts
     if type(o) ~= "table" then return end
     if not Plan.TimersActive(o) and type(o.b22TimersBefore) ~= "table" then
+        -- Nothing to write: the layout holds none of the four pieces' spots (never written, or put
+        -- back already by an earlier write, for example another row's in "Turn all off").
         if PE.debugOn then
             PE:Debug("ctrlLayout", Plan.TimersOn() and "timers: nothing placed: needs Slim bars (Slim bars are Off)"
-                or "timers: the row is Off; nothing was placed, nothing to put back")
+                or "timers: the row is Off; the layout holds none of their spots, nothing more to put back")
         end
+        Snap.TimersHub()
         if not Plan.TimersOn() then RefreshHub() end -- the PE button back at its spot, whatever happened before
         return
     end
     if not Snap.RewritePieces(REWRITES[key], key) then return end -- RewritePieces, defined below
     if PE.debugOn then
-        PE:Debug("ctrlLayout", "timers: " .. key .. " is now " .. tostring(o[key]) .. "; the game's timers follow the next reload")
+        PE:Debug("ctrlLayout", "timers: " .. key .. " is now " .. tostring(o[key]) .. (wanted and "; the game's timers follow the next reload"
+            or "; Controller layout is off, so the layout is written once it is on"))
     end
     Snap.TimersHub()
     RefreshHub() -- the PE button takes its spot at once
 end
+-- The PE button's own move (Move.lua, PE.db.ui.moved.hub): cleared once, the first time the
+-- timers are placed while the layout is on and placed (before that the button stays where the
+-- player put it), and kept in opts.b22HubWas. Once the timers are no longer placed (their row Off,
+-- or Slim bars Off) that move comes back, unless the player moved the button again meanwhile:
+-- that new move is kept, and so is opts.b22HubCleared, so it is not cleared a second time.
 Snap.TimersHub = function()
     local o = mod.opts
-    if o.b22HubCleared == 1 or not Plan.TimersActive(o) then return end
-    o.b22HubCleared = 1
     local ui = PE.db and PE.db.ui
-    local had = type(ui) == "table" and type(ui.moved) == "table" and ui.moved.hub ~= nil
+    local moved = type(ui) == "table" and type(ui.moved) == "table" and ui.moved or nil
+    if not Plan.TimersActive(o) then
+        local was = o.b22HubWas
+        o.b22HubWas = nil
+        if (moved and moved.hub ~= nil) or type(ui) ~= "table" then return end -- moved again by the player: kept
+        if type(was) ~= "table" then
+            o.b22HubCleared = nil -- it had no move of its own: cleared again the next time they are placed
+            return
+        end
+        if not moved then
+            ui.moved = {}
+            moved = ui.moved
+        end
+        moved.hub = DeepCopy(was)
+        o.b22HubCleared = nil
+        if PE.debugOn then PE:Debug("ctrlLayout", "timers: the PE button's own move is back, the timers are no longer placed") end
+        RefreshHub()
+        return
+    end
+    if o.b22HubCleared == 1 or not (wanted and placed) then return end
+    o.b22HubCleared = 1
+    local had = moved ~= nil and moved.hub ~= nil
     local move = PE.Move
     if had and type(move) == "table" and type(move.ClearOffset) == "function" then
+        o.b22HubWas = DeepCopy(moved.hub)
         PE:Safe("ctrlLayout", move.ClearOffset, move, "hub")
     end
     if PE.debugOn then
@@ -3792,7 +3847,9 @@ Snap.MoreRow = function()
     local o = mod and mod.opts
     if type(o) ~= "table" then return end
     if not Plan.MoreOn() and type(o.b22MoreBefore) ~= "table" then
-        if PE.debugOn then PE:Debug("ctrlLayout", "arrange: the cast bar and focus frame row is Off; nothing was written, nothing to put back") end
+        -- The layout holds none of the row's spots: never written, or put back already by an earlier
+        -- write (for example another row's in "Turn all off").
+        if PE.debugOn then PE:Debug("ctrlLayout", "arrange: the cast bar and focus frame row is Off; the layout holds none of its spots, nothing more to put back") end
         return
     end
     if not Snap.RewritePieces(REWRITES.b22More, "b22More") then return end -- RewritePieces, defined above
@@ -3823,6 +3880,85 @@ Snap.MenuSpot = function(layout, e)
     return a.offsetX or 0, a.offsetY or 0
 end
 
+-- 0.22.0: what the 0.22.0 rows last wrote into our layout, so a login can bring it in step with
+-- them. The rows are the account's, but a layout is only written while it is the one in use:
+-- rows changed while Controller layout is off, in a fight that a reload cut short, on another
+-- character (each with a layout of its own), or while the other one of ours was in use, would
+-- otherwise never reach it. One record per layout, opts.b22Wrote (Snap.OWN_KEYS: the character's
+-- record for its own layout, the account's options for the shared one), saved after every write
+-- that succeeds (RunRewrites, AddOurs, Rebuild), for the parts that write touched:
+--   menuLift  1 when the target frame was written lifted (Plan.MenuActive: the row and Slim bars)
+--   more    1 when the cast bar and the focus frame were written (the row b22More)
+--   timers  1 when the game's timers were written (Plan.TimersActive: the row and Slim bars), and
+--           with them their side, the Spell panel size (sizes up to 100% place them alike, so they
+--           count as 100) and the row b22Panels where it moves them (Plan.SlimLift above 0: 120%)
+-- A missing field, or no record at all, is 0: a layout that 0.21.0 made holds none of it, so with
+-- every row Off nothing is to be done and nothing is written. A record of all 0 is not kept.
+--   Snap.WroteNow(o)  the record the rows ask for now
+--   Snap.WroteSet(done)  after a write: the parts in `done` (menuLift, more, timers) take the rows' values
+--   Snap.InStep()  once a login, where Snap.ArrangeBack runs (the layout placed, out of a fight):
+--          the parts whose record differs from the rows are rewritten (RewritePieces: out of a
+--          fight, the reload asked for once); nothing when they match
+Snap.WROTE_ORDER = { "menuLift", "more", "timers" }
+Snap.WROTE_FIELDS = { menuLift = { "menuLift" }, more = { "more" }, timers = { "timers", "side", "size", "panels" } }
+Snap.WROTE_NAMES = { menuLift = "target menu", more = "cast bar and focus frame", timers = "the game's timers" }
+Snap.WroteNow = function(o)
+    local timers = Plan.TimersActive(o)
+    return {
+        menuLift = Plan.MenuActive(o) and 1 or 0,
+        more = Plan.MoreOn() and 1 or 0,
+        timers = timers and 1 or 0,
+        side = timers and Plan.TimersSide(o) or 0,
+        size = timers and math.max(Plan.PanelSize(o), Plan.PANEL_SIZE_DEFAULT) or 0,
+        panels = (timers and Plan.SlimLift(o) > 0) and 1 or 0,
+    }
+end
+Snap.WroteSet = function(done)
+    local o = mod.opts
+    local now, out, any = Snap.WroteNow(o), {}, false
+    local was = type(o.b22Wrote) == "table" and o.b22Wrote or {}
+    for _, part in ipairs(Snap.WROTE_ORDER) do
+        for _, f in ipairs(Snap.WROTE_FIELDS[part]) do
+            local v = done[part] and now[f] or was[f]
+            if type(v) == "number" and v ~= 0 then
+                out[f] = v
+                any = true
+            end
+        end
+    end
+    o.b22Wrote = any and out or nil
+end
+Snap.InStep = function()
+    local o = mod and mod.opts
+    if type(o) ~= "table" or Snap.inStepDone or not Snap.RewritePieces or EditModeOpen() then return end
+    -- A layout built from an older template is rebuilt whole first (UpdateTemplate), record and all.
+    if (type(o.template) == "number" and o.template or 1) < Plan.TEMPLATE then return end
+    Snap.inStepDone = true
+    local was = type(o.b22Wrote) == "table" and o.b22Wrote or {}
+    local now = Snap.WroteNow(o)
+    local parts, names = {}, {}
+    for _, part in ipairs(Snap.WROTE_ORDER) do
+        for _, f in ipairs(Snap.WROTE_FIELDS[part]) do
+            if (type(was[f]) == "number" and was[f] or 0) ~= now[f] and not parts[part] then
+                parts[part] = true
+                names[#names + 1] = Snap.WROTE_NAMES[part]
+            end
+        end
+    end
+    if #names == 0 then return end
+    if PE.debugOn then
+        PE:Debug("ctrlLayout", "in step: the layout was last written with other 0.22.0 rows (" .. table.concat(names, ", ")
+            .. "): written again as the rows are now")
+    end
+    local filter = function(p)
+        return (parts.menuLift and REWRITES.b22Menu(p)) or (parts.more and REWRITES.b22More(p))
+            or (parts.timers and REWRITES.b22Timers(p)) or false
+    end
+    if Snap.RewritePieces(filter, nil, parts) and Snap.lastWrite and Snap.lastWrite.ok then
+        PE:Print("The controller layout was brought in line with the 0.22.0 rows. Open the settings and tap Reload now to finish.")
+    end
+end
+
 local function RunRewrites()
     if not wanted or #pendingRewrites == 0 then return end -- kept for the next switch-on
     local list = pendingRewrites
@@ -3837,7 +3973,14 @@ local function RunRewrites()
     local judged = Snap.MoreJudge(state.saved[pos], e) -- 0.22.0: the cast bar and focus frame, before the list is made
     local all = Plan.Pieces(mod.opts)
     local picked, keys = {}, {}
+    -- 0.22.0: the game's timers put back in this write (Snap.TimersBack, below) take the chat back
+    -- down with them, whichever row's write it is.
+    local chatBack = type(mod.opts.b22TimersBefore) == "table" and not Plan.TimersActive(mod.opts)
     for i, p in ipairs(all) do
+        if chatBack and p.system == "ChatFrame" then
+            picked[i] = true
+            if p.arrange then keys[p.arrange] = true end
+        end
         for _, r in ipairs(list) do
             if r.keep(p) then
                 picked[i] = true
@@ -3878,6 +4021,23 @@ local function RunRewrites()
     end
     Snap.lastWrite = { ok = true }
     Plan.MarkWritten(mod.opts, pieces, all) -- 0.18.0: which offsets our layout holds now
+    -- 0.22.0: the record of what the rows wrote (Snap.WroteSet): the parts this write touched, the
+    -- ones it put back, and the ones a request named (a row's own change, or Snap.InStep).
+    do
+        local done = { timers = timersBack, more = moreBack }
+        for _, p in ipairs(pieces) do
+            if p.system == "UnitFrame" and p.index == "Target" then done.menuLift = true end
+            if REWRITES.b22More(p) then done.more = true end
+            if p.system == "CooldownViewer" then done.timers = true end
+        end
+        for _, r in ipairs(list) do
+            if r.key == "b22Menu" then done.menuLift = true end
+            if r.key == "b22More" then done.more = true end
+            if r.key == "b22Timers" or r.key == "b22BarsSide" then done.timers = true end
+            for part in pairs(type(r.parts) == "table" and r.parts or {}) do done[part] = true end
+        end
+        Snap.WroteSet(done)
+    end
     -- 0.22.0: the game's timers, written or put back.
     if timersBack then
         mod.opts.b22TimersBefore = nil
@@ -3935,7 +4095,8 @@ end
 -- Rewrites our layout's pieces that `filter` picks, for the option `key`.
 -- Refused while Edit Mode is open: the option is put back. Returns true if
 -- the change goes ahead.
-local function RewritePieces(filter, key)
+-- parts (0.22.0, Snap.InStep): the parts of the record (Snap.WroteSet) the request is for.
+local function RewritePieces(filter, key, parts)
     if EditModeOpen() then
         if key then mod.opts[key] = applied[key] end
         rowNote = TEXT_EDIT_MODE -- the status line only, no chat line for a tap
@@ -3945,13 +4106,13 @@ local function RewritePieces(filter, key)
     rowNote = nil
     local old = key and applied[key]
     if key then applied[key] = mod.opts[key] end
-    pendingRewrites[#pendingRewrites + 1] = { keep = filter, key = key, old = old }
+    pendingRewrites[#pendingRewrites + 1] = { keep = filter, key = key, old = old, parts = parts }
     PE:RunOutOfCombat("ctrlLayout:rewrite", RunRewrites)
     return true
 end
 
 -- 0.18.0: for Snap.ArrangeBack, which is defined above it.
-Snap.RewritePieces = function(filter, key) return RewritePieces(filter, key) end
+Snap.RewritePieces = function(filter, key, parts) return RewritePieces(filter, key, parts) end
 Snap.RewritesWaiting = function() return #pendingRewrites end
 
 -- OnChange of a row: rewrites its pieces in our layout.
@@ -4120,6 +4281,14 @@ do
     batchRows.Listen("b22More", function() Snap.MoreRow() end)
     -- 0.22.0 (spec item 6): the game's target frame higher while Slim bars are On.
     batchRows.Listen("b22Menu", function() Snap.MenuRow() end)
+    -- 0.22.0 (spec item 10): the larger spell panels lift the slim bars, which the game's timers
+    -- stand on, so while the timers are placed the row writes them again and asks for the reload.
+    batchRows.Listen("b22Panels", function()
+        local o = mod.opts
+        if type(o) ~= "table" or not Plan.TimersActive(o) then return end
+        local was = type(o.b22Wrote) == "table" and o.b22Wrote.panels or 0
+        if Plan.SlimLift(o) > 0 or was ~= 0 then Snap.TimersRow("b22Panels") end -- else they stay where they are
+    end)
     -- 0.22.0 (spec item 9): a layout for each character counts from the next reload (Snap.OwnStart),
     -- so a change only asks for it, out of a fight, while the layout is on. Turned On, a layout the
     -- game did not keep before is tried once more at that reload.

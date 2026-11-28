@@ -14,7 +14,7 @@ local KEYS = { "b22Empty", "b22Arrows", "b22Dpad", "b22Strip", "b22Marks", "b22M
 -- row says what it needs: Task 8, spec item 8).
 local LABELS = { "Empty slots, clean", "Menu arrows, always", "D-pad moves by direction", "Map name strip, tidy",
     "Bigger direction marks", "Target menu above the tooltip (reload)", "Arrange: cast bar and focus frame (reload)",
-    "Place the game's timers (reload): needs Slim bars", "A layout for each character (reload)", "Large spell panels, whole",
+    "Place the game's timers (reload): needs Slim bars", "A layout for each character (reload)", "Large spell panels, whole (reload)",
     "Mount square, live" }
 
 local function opts(PE) return PE.db.options.ctrlLayout end
@@ -75,11 +75,13 @@ test("batch: every row is Off on a fresh login, and On reads only a saved 1", fu
     c:assertClean()
 end)
 
+-- (0.22.0 final fixes: b22Panels too, whose lift of the slim bars and the game's timers is
+-- written into the layout and placed at the next reload.)
 test("batch: the rows that need a reload are the five the spec names", function()
     local _, PE = T.new({})
     local reload = {}
     for _, r in ipairs(PE.Batch.ROWS) do if r.reload then reload[#reload + 1] = r.key end end
-    eq(reload, { "b22Menu", "b22More", "b22Timers", "b22OwnLayout" })
+    eq(reload, { "b22Menu", "b22More", "b22Timers", "b22OwnLayout", "b22Panels" })
 end)
 
 test("batch: the login line lists the eleven rows in table order, all off", function()

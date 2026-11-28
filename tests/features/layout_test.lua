@@ -1417,7 +1417,7 @@ test("rows: Spell panel size, the three timer rows and Start over", function()
         "heading 0.22.0", "Everything in 0.22.0",
         "Empty slots, clean", "Menu arrows, always", "D-pad moves by direction", "Map name strip, tidy", "Bigger direction marks",
         "Target menu above the tooltip (reload)", "Arrange: cast bar and focus frame (reload)", "Place the game's timers (reload)",
-        "A layout for each character (reload)", "Large spell panels, whole", "Mount square, live", "Buff timer bars",
+        "A layout for each character (reload)", "Large spell panels, whole (reload)", "Mount square, live", "Buff timer bars",
         "Mark a test section", "Save a snapshot" })
     eq(list[1].key, "panelSize")
     local n = list[1].number
@@ -6226,5 +6226,310 @@ test("0.22.0 own layout: the row changed, and a login, in a fight wait for its e
     check(OL.find(c2, OL.OWN, 2) ~= nil, "not made after the fight")
 end)
 
+---------------------------------------------------------------------------
+-- 0.22.0 final fixes: each of our layouts keeps a record of what the 0.22.0 rows last wrote into
+-- it (opts.b22Wrote, with the layout: Snap.OWN_KEYS), and once a login it is brought in step
+-- with the rows (Snap.InStep). A layout with no record holds none of it, as 0.21.0 made it.
+---------------------------------------------------------------------------
+local IS = {}
+
+function IS.target(l) return TM.entry(l, SYS.UnitFrame, 2).anchorInfo.offsetY end
+function IS.chat(l) return TM.entry(l, SYS.ChatFrame).anchorInfo.offsetY end
+function IS.icons(l) return TM.entry(l, 20, 1).anchorInfo.offsetX end
+
+-- The rows that write into the layout, Off one by one (the own-layout row left as it is).
+function IS.layoutRowsOff(c, PE)
+    for _, key in ipairs({ "b22Menu", "b22More", "b22Timers", "b22Panels" }) do choose(c, PE, key, 0) end
+end
+
+-- The debug lines of this client's own session (the saved log holds the earlier logins too).
+function IS.lines(c, pat)
+    local all, from = rawget(c.env, "PocketEssentialsDB").debug.lines, 1
+    for i, line in ipairs(all) do if line:find("---- session ---- ", 1, true) then from = i end end
+    local out = {}
+    for i = from, #all do
+        if all[i]:find(pat, 1, true) then out[#out + 1] = all[i] end
+    end
+    return out
+end
+
+test("0.22.0 in step: Turn all on, a layout of its own, Turn all off: the shared layout is as it was and nothing stays kept", function()
+    local c, PE = OL.client({ row = 0, slim = 1 })
+    switchOn(c, PE)
+    local before = deepCopy(OL.find(c, NAME, 1))
+    local c2, PE2 = OL.relogin(c)
+    eq(layoutCalls(c2), 0, "a plain login wrote")
+    PE2.Batch.SetAll(true)
+    c2:advance(0.1)
+    eq(IS.target(OL.find(c2, NAME, 1)), 230, "Turn all on did not lift the target frame")
+    local c3 = OL.relogin(c2) -- the character's own layout is made
+    check(OL.find(c3, OL.OWN, 2) ~= nil, "no own layout")
+    local c4, PE4 = OL.relogin(c3)
+    eq(layoutCalls(c4), 0, "the own layout's login wrote")
+    PE4.Batch.SetAll(false)
+    c4:advance(0.1)
+    -- The login after: the shared layout is made active again and brought in step, one write.
+    local c5, PE5 = OL.relogin(c4)
+    eq(c5.world.layouts.activeLayout, 4, "the shared layout is not active")
+    eq(#c5:callsTo("C_EditMode.SaveLayouts"), 1, "one write")
+    eq(OL.find(c5, NAME, 1), before, "the shared layout differs from before the rows were On")
+    eq(reloadReason(PE5), RELOAD)
+    local o = PE5.db.options.ctrlLayout
+    eq(o.b22TimersBefore, nil, "timer copies kept")
+    eq(o.b22MoreBefore, nil, "cast bar copies kept")
+    eq(o.b22Wrote, nil, "a record left")
+    -- In step: the next login writes nothing.
+    local c6, PE6 = OL.relogin(c5)
+    eq(layoutCalls(c6), 0, "a layout call once in step")
+    eq(reloadReason(PE6), nil)
+    -- Slim bars Off and a reload: the game's frames where 0.21.0 has them.
+    PE6:GetModule("ctrlLayout"):CancelReload()
+    choose(c6, PE6, "slim", 0)
+    local c7 = OL.relogin(c6)
+    eq(IS.target(OL.find(c7, NAME, 1)), 56)
+    eq(IS.chat(OL.find(c7, NAME, 1)), 245)
+    c7:assertClean()
+end)
+
+test("0.22.0 in step: rows turned On while Controller layout is Off are written once it is On again, and the log says planned until then", function()
+    local c, PE = OL.client({ row = 0, slim = 1 })
+    switchOn(c, PE)
+    local c2, PE2 = OL.relogin(c)
+    switchOff(c2, PE2)
+    local c3, PE3 = OL.relogin(c2)
+    PE3.Batch.SetAll(true)
+    c3:advance(0.1)
+    PE3.db.options.ctrlLayout.b22OwnLayout = 0 -- the shared layout in this case
+    eq(layoutCalls(c3), 0, "a layout call while Controller layout is off")
+    local c4, PE4 = OL.relogin(c3)
+    switchOn(c4, PE4)
+    local c5, PE5 = OL.relogin(c4)
+    c5:advance(1)
+    local l = OL.find(c5, NAME, 1)
+    eq({ IS.target(l), IS.chat(l), IS.icons(l) }, { 230, 288, 291 }, "the rows are On, the layout holds none of it")
+    eq(layoutCalls(c5), 0, "written again at the login after")
+    -- A login line worked out from the plan does not say "written".
+    for _, line in ipairs(IS.lines(c5, "ctrlLayout: timers: ")) do
+        check(not line:find(" written at "), "a login line claims a write: " .. line)
+    end
+    check(#IS.lines(c5, "timers: large timer icons planned at 291, 35") == 1, "no planned line")
+end)
+
+test("0.22.0 in step: a row tapped in a fight and a reload before its end is written at the next login, after a fight there too", function()
+    local c, PE = OL.client({ row = 0, slim = 1 })
+    switchOn(c, PE)
+    local c2, PE2 = OL.relogin(c)
+    c2:enterCombat()
+    choose(c2, PE2, "b22Menu", 1)
+    eq(layoutCalls(c2), 0, "written in the fight")
+    local c3, PE3 = OL.relogin(c2) -- reloaded before the fight ended
+    eq(IS.target(OL.find(c3, NAME, 1)), 230, "the row's spot not written at the next login")
+    eq(reloadReason(PE3), RELOAD)
+    local c4, PE4 = OL.relogin(c3)
+    eq(layoutCalls(c4), 0)
+    c4:enterCombat()
+    choose(c4, PE4, "b22Menu", 0)
+    local c5 = OL.relogin(c4, { setup = function(c6) c6.world.inCombat = true end })
+    eq(layoutCalls(c5), 0, "written in a fight at login")
+    c5:leaveCombat()
+    c5:advance(0.1)
+    eq(IS.target(OL.find(c5, NAME, 1)), 56, "not written once the fight ended")
+    eq(#c5:callsTo("C_EditMode.SaveLayouts"), 1)
+end)
+
+test("0.22.0 in step: with Edit Mode open at login nothing is written until a later look finds it closed", function()
+    local c, PE = OL.client({ row = 0, slim = 1 })
+    switchOn(c, PE)
+    local c2, PE2 = OL.relogin(c)
+    c2:enterCombat()
+    choose(c2, PE2, "b22Menu", 1)
+    local c3 = OL.relogin(c2, { setup = function(c4) c4.world.editMode = true end })
+    eq(layoutCalls(c3), 0, "written with Edit Mode open")
+    c3.world.editMode = false
+    c3:fire("EDIT_MODE_LAYOUTS_UPDATED")
+    c3:advance(0.1)
+    eq(IS.target(OL.find(c3, NAME, 1)), 230)
+    eq(#c3:callsTo("C_EditMode.SaveLayouts"), 1)
+    c3:fire("EDIT_MODE_LAYOUTS_UPDATED")
+    c3:advance(0.1)
+    eq(#c3:callsTo("C_EditMode.SaveLayouts"), 1, "written twice in one login")
+end)
+
+test("0.22.0 in step: with a layout for each character, rows changed on one character reach the other's layout at its login", function()
+    local cA, PEA = OL.client({ slim = 1 })
+    switchOn(cA, PEA)
+    local a0 = deepCopy(OL.find(cA, OL.OWN, 2))
+    PEA.Batch.SetAll(true)
+    cA:advance(0.1)
+    eq(IS.target(OL.find(cA, OL.OWN, 2)), 230)
+    -- Another character of the account: its own layout, built with the rows On; then the rows Off.
+    local cB, PEB = OL.client({ saved = rawget(cA.env, "PocketEssentialsDB"), layouts = cA.world.layouts, first = "Bee", last = "Keeper" })
+    local bOwn = OL.find(cB, "Bee Keeper -PE", 2)
+    check(bOwn ~= nil, "no layout for the second character")
+    eq(IS.target(bOwn), 230)
+    IS.layoutRowsOff(cB, PEB)
+    eq(IS.target(OL.find(cB, "Bee Keeper -PE", 2)), 56)
+    -- The first character logs in again (the game keeps its own active layout).
+    local _, aIndex = OL.find(cB, OL.OWN, 2)
+    cB.world.layouts.activeLayout = aIndex
+    local cA2, PEA2 = OL.client({ saved = rawget(cB.env, "PocketEssentialsDB"), char = charDB(cA), layouts = cB.world.layouts })
+    eq(OL.find(cA2, OL.OWN, 2), a0, "the first character's layout still holds the rows")
+    eq(reloadReason(PEA2), RELOAD)
+    eq(charDB(cA2).ctrlOwn.b22Wrote, nil)
+    local cA3 = OL.relogin(cA2)
+    eq(layoutCalls(cA3), 0)
+end)
+
+test("0.22.0 in step: a layout with no record and every row Off is left alone; a record that matches writes nothing", function()
+    -- As 0.21.0 made it: no record.
+    local c, PE = OL.client({ row = 0, slim = 1 })
+    switchOn(c, PE)
+    eq(PE.db.options.ctrlLayout.b22Wrote, nil, "a record with every row Off")
+    local c2, PE2 = OL.relogin(c)
+    eq(layoutCalls(c2), 0, "a layout call for a layout of 0.21.0 with the rows Off")
+    eq(reloadReason(PE2), nil)
+    eq(#IS.lines(c2, "in step:"), 0, "a line for nothing done")
+    -- A row On, written: the record says so, and the next login writes nothing.
+    choose(c2, PE2, "b22Menu", 1)
+    eq(PE2.db.options.ctrlLayout.b22Wrote, { menuLift = 1 })
+    local c3, PE3 = OL.relogin(c2)
+    eq(layoutCalls(c3), 0)
+    eq(reloadReason(PE3), nil)
+    -- The record is the layout's: with Slim bars Off the target frame is not lifted, so Off is all.
+    choose(c3, PE3, "slim", 0)
+    eq(PE3.db.options.ctrlLayout.b22Wrote, nil)
+    c3:assertClean()
+end)
+
+test("0.22.0 in step: the record leaves out what does not change the layout (the timers at 80%, 90% and 100%, b22Panels below 120%)", function()
+    local Plan, _, PE = TM.plan({ b22Timers = 1, b22Panels = 1 })
+    local function pick(size)
+        local out = {}
+        for _, p in ipairs(Plan.Pieces({ slim = 1, panelSize = size })) do
+            if p.system == "CooldownViewer" or p.system == "ChatFrame" then out[#out + 1] = p end
+        end
+        return out
+    end
+    eq(pick(80), pick(100))
+    eq(pick(90), pick(100))
+    check(T.show(pick(110)) ~= T.show(pick(100)) or T.show(pick(120)) ~= T.show(pick(100)), "the larger sizes change nothing")
+    -- The row b22Panels moves the timers only where it lifts the slim bars.
+    local with = { [100] = pick(100), [110] = pick(110), [120] = pick(120) }
+    eq(Plan.SlimLift({ panelSize = 110 }), 0, "a lift at 110%")
+    check(Plan.SlimLift({ panelSize = 120 }) > 0, "no lift at 120%")
+    PE.db.options.ctrlLayout.b22Panels = 0
+    eq(pick(100), with[100])
+    eq(pick(110), with[110])
+    check(T.show(pick(120)) ~= T.show(with[120]), "the row moves nothing at 120%")
+end)
+
+test("0.22.0 in step: Turn all on, then Turn all off with no reload, leaves the layout as it was, and the log is true", function()
+    local c, PE, m = TM.client()
+    local before = deepCopy(ours(c))
+    local n = #rawget(c.env, "PocketEssentialsDB").debug.lines
+    PE.Batch.SetAll(true)
+    c:advance(0.1)
+    eq(IS.chat(ours(c)), 288)
+    PE.Batch.SetAll(false)
+    c:advance(0.1)
+    eq(ours(c), before, "the layout after Turn all on and Turn all off")
+    eq(m.opts.b22TimersBefore, nil)
+    eq(m.opts.b22MoreBefore, nil)
+    eq(m.opts.b22Wrote, nil)
+    local lines = rawget(c.env, "PocketEssentialsDB").debug.lines
+    for i = n + 1, #lines do
+        check(not lines[i]:find("nothing was placed", 1, true), "untrue: " .. lines[i])
+        check(not lines[i]:find("nothing was written", 1, true), "untrue: " .. lines[i])
+    end
+end)
+
+test("0.22.0 PE button: with Controller layout Off its own move is left as it is", function()
+    local ui = { size = "medium", hubPos = "LEFT", moved = { hub = { x = 168, y = -520 } } }
+    local c, PE = T.new({ gamepadUI = true, saved = { options = { ctrlLayout = { slim = 1 } }, ui = ui, debug = { on = true } } })
+    PE:SetDebug(true)
+    check(not PE:IsModuleEnabled("ctrlLayout"), "the layout is on")
+    PE.Batch.SetAll(true)
+    c:advance(0.2)
+    eq(PE.db.ui.moved.hub, { x = 168, y = -520 }, "cleared while the layout is off")
+    eq(PE.db.options.ctrlLayout.b22HubCleared, nil)
+    PE.Batch.SetAll(false)
+    c:advance(0.2)
+    eq(PE.db.ui.moved.hub, { x = 168, y = -520 })
+    for _, line in ipairs(TM.lines(c)) do
+        check(not line:find("follow the next reload", 1, true), "a write promised while the layout is off: " .. line)
+    end
+    eq(c:callsTo("C_EditMode.SaveLayouts"), {})
+end)
+
+test("0.22.0 PE button: the move cleared for the timers comes back when they are no longer placed", function()
+    local c, PE, m = TM.client({ ui = { size = "medium", hubPos = "LEFT", moved = { hub = { x = 30, y = -20 } } } })
+    choose(c, PE, "b22Timers", 1)
+    eq(PE.db.ui.moved.hub, nil)
+    eq(m.opts.b22HubWas, { x = 30, y = -20 })
+    choose(c, PE, "b22Timers", 0)
+    eq(PE.db.ui.moved.hub, { x = 30, y = -20 }, "the player's move did not come back")
+    eq(m.opts.b22HubWas, nil)
+    eq(m.opts.b22HubCleared, nil)
+    -- On again: cleared again, and Slim bars Off (the timers no longer placed) brings it back too.
+    choose(c, PE, "b22Timers", 1)
+    eq(PE.db.ui.moved.hub, nil)
+    choose(c, PE, "slim", 0)
+    eq(PE.db.ui.moved.hub, { x = 30, y = -20 })
+end)
+
+test("0.22.0 panels: at 110% and 120% the slim bars, the pictures and the timers rise with the diamonds as the real placers ask", function()
+    for _, size in ipairs({ 110, 120 }) do
+        local saved = { options = { ctrlLayout = { slim = 1, panelSize = size, b22Panels = 1 } }, debug = { on = true } }
+        local c, PE = layoutClient({}, 3, { saved = saved })
+        switchOn(c, PE)
+        local c2, PE2 = OL.client({ saved = rawget(c.env, "PocketEssentialsDB"), layouts = c.world.layouts, char = charDB(c) })
+        c2:advance(1)
+        local P, m = PE2.LayoutPlan, PE2:GetModule("ctrlLayout")
+        eq(P.SlimRects(), P.SlimRects(m.opts), size .. ": what SlimBars.lua and Arrange.lua ask")
+        eq(P.Shoulders(), P.Shoulders(m.opts), size .. ": the targeting pictures")
+        local cast = P.SlimRects()["cast bar"]
+        local diamond = P.Rects(m.opts)["inner right diamond"]
+        check(cast[2] >= diamond[4] + 2 - 1e-6, size .. ": the cast bar is not clear of the diamonds")
+        local placed = IS.lines(c2, "slim bars: placed the cast bar: ")
+        check(#placed > 0 and placed[#placed]:find(string.format("y %.1f", cast[2]), 1, true) ~= nil,
+            size .. ": the real cast bar: " .. tostring(placed[#placed]))
+    end
+    -- The row asks for a reload.
+    local _, PE = layoutClient({}, 3)
+    eq(optRow(PE, "b22Panels").label, "Large spell panels, whole (reload)")
+end)
+
+test("0.22.0 panels: the row turned while the timers are placed writes them again and asks for the reload", function()
+    local c, PE, m = TM.client()
+    m.opts.panelSize = 120
+    choose(c, PE, "b22Timers", 1)
+    local y0 = TM.timer(c, 4).anchorInfo.offsetY
+    m:CancelReload()
+    local saves = #c:callsTo("C_EditMode.SaveLayouts")
+    choose(c, PE, "b22Panels", 1)
+    eq(#c:callsTo("C_EditMode.SaveLayouts"), saves + 1)
+    check(TM.timer(c, 4).anchorInfo.offsetY > y0, "the bars did not rise")
+    eq(reloadReason(PE), RELOAD)
+    eq(m.opts.b22Wrote.panels, 1)
+    -- With the timers not placed the row writes nothing.
+    local c2, PE2 = TM.client()
+    local saves2 = #c2:callsTo("C_EditMode.SaveLayouts")
+    choose(c2, PE2, "b22Panels", 1)
+    eq(#c2:callsTo("C_EditMode.SaveLayouts"), saves2)
+end)
+
+test("0.22.0 own layout: one found already saved under the character's name is recorded when made active", function()
+    local c, PE = OL.client({ slim = 1 })
+    switchOn(c, PE)
+    -- The character's saved data lost: the layout is found by its name and made active.
+    c.world.layouts.activeLayout = 3
+    local c2, PE2 = OL.client({ saved = rawget(c.env, "PocketEssentialsDB"), layouts = c.world.layouts })
+    eq(c2.world.layouts.activeLayout, 4)
+    eq(charDB(c2).ctrlOwn.name, OL.OWN, "the name is not recorded")
+    -- So a login with the row Off finds it ours and goes back to the shared layout.
+    local c3 = OL.relogin(c2, { row = 0 })
+    local _, shared = OL.find(c3, NAME, 1)
+    eq(c3.world.layouts.activeLayout, shared)
+end)
 
 return { known = KNOWN_FAILURES }
