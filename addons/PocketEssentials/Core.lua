@@ -317,6 +317,8 @@ function PE:SetDebug(on)
     if on then
         ResetDebugSession()
         PE:Debug("core", SWITCHED_ON_MARK .. DebugHeader())
+        -- The 0.22.0 batch rows, as at login (DebugSessionStart): the log is whole from now on.
+        if PE.Batch then PE:Debug("core", PE.Batch.Line()) end
     end
     self:RefreshSettings()
 end

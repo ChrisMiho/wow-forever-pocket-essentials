@@ -245,6 +245,7 @@ local activeGroup         -- index of the group in use, or nil (the "nothing hel
 local pending = false     -- the OnUpdate is set
 local bindDirty, picsDirty, stateDirty, cooldownDirty, swapDirty = false, false, false, false, false
 local Flush, OnUpdate     -- set below
+local emptyLogOn          -- 0.22.0 (row b22Empty): the Debug log was on at the last Flush
 
 -- Read only, for the offline tests and for looking around in /dump: the groups, their
 -- halves and pictures, and the two frames under them. Never written from outside.
@@ -818,10 +819,14 @@ local function ShowEmpty(pic, why)
         pic.cdOn = false
     end
     pic.dim:Hide()
-    if PE.debugOn and why and pic.emptyWhy ~= why then
+    -- The reason is remembered only once it is written: with the Debug log off nothing is, so a
+    -- picture already empty when the log is switched on writes its line at the next look.
+    if not PE.debugOn then
+        pic.emptyWhy = nil
+    elseif why and pic.emptyWhy ~= why then
         PE:Debug(KEY, "empty slots: " .. tostring(pic.panel) .. " " .. tostring(pic.spot) .. ": empty because " .. why)
+        pic.emptyWhy = why
     end
-    pic.emptyWhy = why
 end
 
 -- special: one of the game's special icons, drawn on a button face (see FACE_COLOUR).
@@ -1345,6 +1350,19 @@ Flush = function()
     if driver then driver:SetScript("OnUpdate", nil) end
     pending = false
     if not running or barsHidden then return end
+    -- 0.22.0 (row b22Empty): the Debug log switched on since the last look: every picture that is
+    -- empty already is looked at again, so its reason is written (ShowEmpty).
+    if PE.debugOn and not emptyLogOn and EmptyOn() then
+        for _, g in ipairs(groups) do
+            for _, pic in ipairs(g.pics) do
+                if pic.empty then
+                    pic.dIcon = true
+                    picsDirty = true
+                end
+            end
+        end
+    end
+    emptyLogOn = PE.debugOn
     -- The swap first: it needs no binding, so an error further down never holds it back.
     local changed = swapDirty or bindDirty
     if swapDirty then

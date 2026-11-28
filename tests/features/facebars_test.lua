@@ -1604,6 +1604,21 @@ test("0.22.0 empty slots: one log line per picture when its emptiness or its rea
     c:assertClean()
 end)
 
+test("0.22.0 empty slots: pictures already empty when the Debug log is switched on log their reason then", function()
+    local c, PE, Face = new()
+    emptyOn(PE, true)
+    check(Face:Start() == true, "Start failed")
+    c:advance(0.1)
+    eq(#emptyLines(c), 0, "logged while the log was off")
+    PE:SetDebug(true)
+    c:fire("SPELL_UPDATE_COOLDOWN")
+    c:advance(0.1)
+    local seen = {}
+    for _, l in ipairs(emptyLines(c)) do seen[l] = true end
+    check(seen["empty slots: main right dpad: empty because no icon shown"], "an empty picture's reason is missing once the log is on")
+    c:assertClean()
+end)
+
 -- 0.22.0 item 5 (spec 2026-11-27-0.22.0-parked-batch.md): bigger direction marks, row b22Marks.
 local function marksOn(PE, on) PE.db.options.ctrlLayout.b22Marks = on and 1 or nil end
 

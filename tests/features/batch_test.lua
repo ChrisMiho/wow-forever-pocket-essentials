@@ -196,4 +196,15 @@ test("batch: Buff timer bars has two choices and Left, by your name is the defau
     check(row.always, "not always")
 end)
 
+test("batch: the rows' line is written when the Debug log is switched on, not only at login", function()
+    local c, PE = T.new({ gamepadUI = true, saved = { options = { ctrlLayout = { b22Empty = 1, b22Mount = 1 } } } })
+    eq(#loginLines(c), 0, "a line with the log off")
+    PE:SetDebug(true)
+    local lines = loginLines(c)
+    eq(#lines, 1)
+    check(lines[1]:find("batch: 0.22.0 rows: b22Empty=on b22Arrows=off", 1, true) ~= nil, lines[1])
+    local all = rawget(c.env, "PocketEssentialsDB").debug.lines
+    check(all[#all - 1]:find("---- debug log switched on ----", 1, true) ~= nil, "not right after the header")
+end)
+
 return { known = KNOWN_FAILURES }

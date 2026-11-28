@@ -530,7 +530,8 @@ test("debug: off on first install, and nothing is stored while off", function()
 end)
 
 -- Spec "What it does": "a timestamped line for each thing"; Core.lua PE:Debug builds
--- "HH:MM:SS.mmm key: text"; SetDebug writes the "switched on" header first.
+-- "HH:MM:SS.mmm key: text"; SetDebug writes the "switched on" header first, then (0.22.0) the
+-- batch rows' line, as at login.
 test("debug: while on, lines are stored in order as HH:MM:SS.mmm key: text", function()
     local c, PE = T.new({})
     PE:SetDebug(true)
@@ -539,14 +540,15 @@ test("debug: while on, lines are stored in order as HH:MM:SS.mmm key: text", fun
     PE:Debug("probe", "first")
     PE:Debug("probe", "second")
     local lines = debugOf(c).lines
-    eq(#lines, 3)
-    eq(PE:DebugCount(), 3)
-    eq(debugOf(c).next, 4)
+    eq(#lines, 4)
+    eq(PE:DebugCount(), 4)
+    eq(debugOf(c).next, 5)
     check(lines[1]:find(LINE .. "core: %-%-%-%- debug log switched on %-%-%-%- "), "no header line: " .. lines[1])
     check(lines[1]:find("addon=0.0.0-test", 1, true), "the header does not give the addon version: " .. lines[1])
     check(lines[1]:find("features=none", 1, true), "the header does not list the features on: " .. lines[1])
-    check(lines[2]:find(LINE .. "probe: first$"), "unexpected line: " .. lines[2])
-    check(lines[3]:find(LINE .. "probe: second$"), "unexpected line: " .. lines[3])
+    check(lines[2]:find(LINE .. "core: batch: 0%.22%.0 rows: "), "no batch rows line: " .. lines[2])
+    check(lines[3]:find(LINE .. "probe: first$"), "unexpected line: " .. lines[3])
+    check(lines[4]:find(LINE .. "probe: second$"), "unexpected line: " .. lines[4])
 end)
 
 -- Spec "Size": "each cut at 200 characters" (Core.lua DEBUG_LINE_MAX).
@@ -555,10 +557,10 @@ test("debug: a line is cut at 200 characters", function()
     PE:SetDebug(true)
     PE:Debug("probe", string.rep("x", 500))
     PE:Debug("probe", "short")
-    local lines = debugOf(c).lines
-    eq(#lines[2], 200)
-    check(lines[2]:find(LINE .. "probe: x+$"), "the cut line lost its start: " .. lines[2]:sub(1, 40))
-    check(#lines[3] < 200, "a short line was padded")
+    local lines = debugOf(c).lines -- the header and the batch rows' line first
+    eq(#lines[3], 200)
+    check(lines[3]:find(LINE .. "probe: x+$"), "the cut line lost its start: " .. lines[3]:sub(1, 40))
+    check(#lines[4] < 200, "a short line was padded")
 end)
 
 -- 0.16.4 (spec 2026-11-24-0.16.4-cleanup.md, 8): 6,000 lines, a plain list oldest first. When
@@ -584,23 +586,24 @@ test("debug 0.16.4: the cap is 6,000 and the log is a plain list, next one past 
     PE:SetDebug(true)
     for i = 1, 5 do PE:Debug("probe", "line " .. i) end
     local store = debugOf(c)
-    eq(#store.lines, 6)
-    eq(store.next, 7)
+    eq(#store.lines, 7) -- the header and the batch rows' line, then the five
+    eq(store.next, 8)
 end)
 
 test("debug 0.16.4: when full, each session's start, the marks, the snapshots and the newest lines stay; the middle goes and the log says so", function()
     local lines = {}
-    for i = 1, CAP - 2 do lines[i] = stamped(i, "probe", "old " .. i) end
+    -- CAP - 3: switching the log on writes two lines (the header and the batch rows' line).
+    for i = 1, CAP - 3 do lines[i] = stamped(i, "probe", "old " .. i) end
     lines[1] = stamped(1, "core", SESSION .. " one")
     lines[500] = stamped(500, "mark", "==== section 1 ====")
     lines[700] = stamped(700, "snapshot", "==== snapshot 1 ====")
     lines[701] = stamped(701, "snapshot", "piece: map shown")
     lines[1000] = stamped(1000, "core", SESSION .. " two")
     local db = saved()
-    db.debug = { on = false, lines = lines, next = CAP - 1 }
+    db.debug = { on = false, lines = lines, next = CAP - 2 }
     local c, PE = T.new({ saved = db })
-    eq(PE:DebugCount(), CAP - 2)
-    PE:SetDebug(true)                      -- line CAP - 1: a session start of its own
+    eq(PE:DebugCount(), CAP - 3)
+    PE:SetDebug(true)                      -- lines CAP - 2 and CAP - 1: a session start of its own
     PE:Debug("probe", "the line that fills it")
     local store = debugOf(c)
     local got = store.lines
@@ -621,8 +624,9 @@ test("debug 0.16.4: when full, each session's start, the marks, the snapshots an
     -- The newest 3,000 lines are untouched and in order; the last is the newest.
     local n = #got
     check(got[n]:find("probe: the line that fills it", 1, true), "the newest line is not last: " .. got[n])
-    check(got[n - 1]:find("debug log switched on", 1, true), "the line before it is gone")
-    for back = 2, TAIL - 1 do
+    check(got[n - 1]:find("batch: 0.22.0 rows: ", 1, true), "the batch rows' line before it is gone")
+    check(got[n - 2]:find("debug log switched on", 1, true), "the line before it is gone")
+    for back = 3, TAIL - 1 do
         local want = lines[CAP - back]
         if got[n - back] ~= want then error("the newest part is out of order " .. back .. " from the end: " .. tostring(got[n - back])) end
     end
@@ -635,10 +639,10 @@ end)
 
 test("debug 0.16.4: a second fill adds the earlier note's count to the new one", function()
     local lines = {}
-    for i = 1, CAP - 2 do lines[i] = stamped(i, "probe", "old " .. i) end
+    for i = 1, CAP - 3 do lines[i] = stamped(i, "probe", "old " .. i) end -- two lines from switching on
     lines[1] = stamped(1, "core", SESSION)
     local db = saved()
-    db.debug = { on = false, lines = lines, next = CAP - 1 }
+    db.debug = { on = false, lines = lines, next = CAP - 2 }
     local c, PE = T.new({ saved = db })
     PE:SetDebug(true)
     PE:Debug("probe", "fills it")
@@ -669,11 +673,11 @@ end)
 test("debug 0.16.4: with many sessions the oldest starts go too, and a note says so first", function()
     local lines = {}
     local per = 70 -- 43 sessions in the older half: more starts than its share holds
-    for i = 1, CAP - 2 do
+    for i = 1, CAP - 3 do -- two lines from switching on
         lines[i] = (i % per == 1) and stamped(i, "core", SESSION .. " s" .. math.ceil(i / per)) or stamped(i, "probe", "old " .. i)
     end
     local db = saved()
-    db.debug = { on = false, lines = lines, next = CAP - 1 }
+    db.debug = { on = false, lines = lines, next = CAP - 2 }
     local c, PE = T.new({ saved = db })
     PE:SetDebug(true)
     PE:Debug("probe", "fills it")
@@ -988,7 +992,7 @@ test("debug: fights are written only while on, and PLAYER_REGEN_DISABLED is not 
     local got = {}
     for _, line in ipairs(debugOf(c).lines) do
         local text = line:match(LINE .. "core: (.+)$")
-        if text and not text:find("^%-%-%-%-") then got[#got + 1] = text end
+        if text and not text:find("^%-%-%-%-") and not text:find("^batch: ") then got[#got + 1] = text end
     end
     eq(got, { "fight started", "held for after the fight: probe:job", "fight ended", "fight over, running: probe:job" })
     PE:SetDebug(false)
@@ -1057,7 +1061,7 @@ test("debug: the Debug log tab has the switch (off), the line count, Save and Em
     eq(debugOf(c).on, true)
     buttons, texts = pageOf(c, panel)
     check(buttons["On"] and not buttons["Off"], "the switch does not read On after the tap")
-    check(hasText(texts, "1 of 6,000 lines"), "the count was not redrawn after the switch")
+    check(hasText(texts, "2 of 6,000 lines"), "the count was not redrawn after the switch") -- the header and the batch rows' line
     c:click(buttons["On"])
     c:advance(0.1)
     eq(PE.debugOn, false)
@@ -1073,7 +1077,7 @@ test("debug: Save reloads once; Empty empties the log and the count, and leaves 
     PE:LogError("bags", "a recorded problem")
     local panel = debugPage(c, PE)
     local buttons, texts = pageOf(c, panel)
-    check(hasText(texts, "3 of 6,000 lines"), "the count is not the number of lines held")
+    check(hasText(texts, "4 of 6,000 lines"), "the count is not the number of lines held")
     local before = #c:callsTo("C_UI.Reload")
     c:click(buttons["Save"])
     eq(#c:callsTo("C_UI.Reload") - before, 1, "reloads from one tap")
@@ -1093,17 +1097,17 @@ test("debug: a logged line does not redraw the settings window; the count is fre
     local c, PE = T.new({})
     PE:SetDebug(true)
     local panel = debugPage(c, PE)
-    check(hasText(select(2, pageOf(c, panel)), "1 of 6,000 lines"), "unexpected count at first")
+    check(hasText(select(2, pageOf(c, panel)), "2 of 6,000 lines"), "unexpected count at first")
     local asked = 0
     local refresh = PE.RefreshSettings
     PE.RefreshSettings = function(...) asked = asked + 1 return refresh(...) end
     for i = 1, 20 do PE:Debug("probe", "line " .. i) end
     c:advance(1)
     eq(asked, 0, "PE:Debug asked for a redraw")
-    check(hasText(select(2, pageOf(c, panel)), "1 of 6,000 lines"), "the page was redrawn for a logged line")
+    check(hasText(select(2, pageOf(c, panel)), "2 of 6,000 lines"), "the page was redrawn for a logged line")
     PE:CloseSettings()
     panel = debugPage(c, PE)
-    check(hasText(select(2, pageOf(c, panel)), "21 of 6,000 lines"), "the count is stale after reopening the page")
+    check(hasText(select(2, pageOf(c, panel)), "22 of 6,000 lines"), "the count is stale after reopening the page")
 end)
 
 return { known = KNOWN_FAILURES }
