@@ -81,8 +81,6 @@ rewriting the layout, then a reload). "Addon" means the addon draws or places it
 | Spell panel, inner right | 785.7 | 669 | 134 | 98 | Addon | with inner left |
 | Spell panel, outer right | 931.7 | 669 | 134 | 98 | Addon | with outer left |
 | Tooltip (taken at 200 by 100; it grows up and left from its bottom right corner) | 1155.3 | 658 | 200 | 100 | Layout | Yes |
-| Your cast bar (the game's own; row "Arrange: cast bar and focus frame" On) | 578.7 | 425 | 208 | 11 | Layout, at the Gamepad preset's spot | Yes, while the row is On |
-| Focus frame (the game's own, small size; the same row) | 1068.7 | 377 | 174 | 75 | Layout, at the Gamepad preset's spot | Yes, while the row is On; it overlaps the lower quest list as before |
 | PE button (round), default spot | 10 | 529.2 | 76.8 | 76.8 | Addon (Hub.lua) | No; it is in the "Move" window |
 
 Pieces and spots that exist or change only **while their 0.22.0 row is On** (the same numbers,
@@ -98,14 +96,17 @@ from `Plan.Rects` with the owner's switches and that row On; none tested on a de
 | Timer bars, bars on the right ("Buff timer bars: Right, by the target"); the large and small icons stay where they are | 918.7 | 505 | 176 | 82 | Layout | Yes, while the row is On |
 | Tracked buff icons, bars on the right | 1103 | 555 | 107 | 32 | Layout | Yes, while the row is On |
 | Chat, with the bars on the left (it ends higher; 43 above its spot in the main table) | 17 | 310 | 450 | 170 | Layout | Yes |
-| PE button, with the timers placed (once moved there; the owner's own moved spot is cleared once) | 61 | 576.2 | 76.8 | 76.8 | Addon (Hub.lua) | No |
-| The game's target frame, invisible with Slim bars On, 174 higher so its menu opens above the tooltip ("Target menu above the tooltip") | not in `Plan.Rects` | | | | Layout (piece written from BOTTOMLEFT y 56 to 230); its tap guard moves with it | No |
+| PE button, with the timers placed (the player's own moved spot is cleared once, while Controller layout is on and placed, and comes back when the timers are no longer placed) | 61 | 576.2 | 76.8 | 76.8 | Addon (Hub.lua) | No |
+| Your cast bar (the game's own; row "Arrange: cast bar and focus frame" On) | 578.7 | 425 | 208 | 11 | Layout, at the Gamepad preset's spot | Yes, while the row is On |
+| Focus frame (the game's own, small size; the same row) | 1068.7 | 377 | 174 | 75 | Layout, at the Gamepad preset's spot | Yes, while the row is On; it overlaps the lower quest list as before; with "Target menu above the tooltip" On too, the lifted target frame and its tap guard cover its lowest 14 |
+| The game's target frame, invisible with Slim bars On, 174 higher so its menu opens above the tooltip ("Target menu above the tooltip"; not in `Plan.Rects`, numbers at 100% from its spot, x 395 and y 230, and its 232 by 100) | 1077.7 | 438 | 232 | 100 | Layout (piece written from BOTTOMLEFT y 56 to 230); its tap guard moves with it | No |
 
 With "Large spell panels, whole" On, Spell panel size 110% and 120% change as follows (still at
 100%: nothing moves). The four diamonds rise by what they were short of the screen's bottom edge
 (4.9 at 110%, 9.8 at 120%), so the lowest button ends 1 above the edge; the LB and RB pictures rise
 by the same amount; at 120% the slim bars, the cast bar and the boxes rooms rise 9.6 so the cast
-bar stays at least 2 above the diamonds' tops. The timer icon rows end further left at 110% and
+bar stays at least 2 above the diamonds' tops, and the game's timers that stand on them (with
+"Place the game's timers" On) rise with them. The timer icon rows end further left at 110% and
 120% so they stay clear of the outer spell panels (right edge 264 and 238, not 291).
 
 The game's four real action bars sit invisible under the inner spell panels (`Plan.RealBarRects`).
@@ -125,7 +126,7 @@ The game's four real action bars sit invisible under the inner spell panels (`Pl
 |---|---|---|---|---|---|
 | Target boxes room | 918.7 | 591 | 140 | 21 | One row for the target's buff and debuff boxes, not built yet (`Plan.SLIM.boxes`). It is left of the target of target bar, above the target bar. |
 | Pet boxes room | 166.7 | 571 | 280 | 21 | The same for your side, above the pet bar. The timer bars (bars on the left) stand on it, 4 above its top, while "Place the game's timers" is On. |
-| Bottom right corner | about 1155 | about 560 | to the edge | to the edge | The tooltip grows up from here, and the game's target menu (Interact With Target, Target Marker Icon, Set Focus, Edit Mode) appears here. Put nothing new in it. The menu is the target's ordinary unit menu, pinned to the game's target frame (`TargetFrame.lua:674-676`); while "Target menu above the tooltip" is On it opens one menu height higher, about 191 up and above the tooltip, and the invisible frame's tap guard sits there too. |
+| Bottom right corner | about 1155 | about 560 | to the edge | to the edge | The tooltip grows up from here, and the game's target menu (Interact With Target, Target Marker Icon, Set Focus, Edit Mode) appears here. Put nothing new in it. The menu is the target's ordinary unit menu, pinned to the game's target frame (`TargetFrame.lua:674-676`); while "Target menu above the tooltip" is On the game's target frame is written 174 higher (its bottom from 56 to 230 up at 100%), so the menu opens that much higher, above the tooltip, and the invisible frame's tap guard sits there too. |
 
 ## Free space today
 

@@ -2652,7 +2652,7 @@ addon never switches them on or off.
 7. Arrange: cast bar and focus frame (reload)
 8. Place the game's timers (reload), and under it **Buff timer bars**
 9. A layout for each character (reload)
-10. Large spell panels, whole
+10. Large spell panels, whole (reload)
 11. Mount square, live
 
 "(reload)" means it counts from the next reload; the others work at once.
@@ -2665,19 +2665,23 @@ Section 38, every row Off: nothing should change.
    Did anything move or look different, even a little? (It should not.)
 3. Settings, Controller tab, scroll to the bottom. Screenshot the heading
    **0.22.0** and its rows. Every row should read **Off**. The timers row
-   may read "needs Slim bars" if Slim bars is Off.
+   may read "needs Slim bars" if Slim bars is Off. Does the heading look
+   right (a small gold title, with a little space above it)?
 
 Section 39, set up the log, then turn everything on.
 
 4. Settings, Debug log tab: switch **Debug log** On, and **Catch all errors**
-   On. Back on the Controller tab, tap **Snapshot**. In the log the first
-   lines should include one that starts `batch: 0.22.0 rows:` with every row
-   `off`.
+   On. Back on the Controller tab, tap **Snapshot**. Right after the line
+   that says the Debug log was switched on, the log has one that starts
+   `batch: 0.22.0 rows:` with every row `off`.
 5. **Mark** (39). Tap **Turn all on**. Every row should read **On** at once.
    Several rows ask for a reload; tap Save (it reloads).
-6. After the reload: **Mark** (40). Screenshot the whole playing screen. The
-   line at login in the log should now say every row `on`. Do not worry yet
-   if something looks different; the checks below say what to look for.
+6. After that reload the game makes this character's own layout (row 9),
+   chat says so once, and it asks for **one more reload**: open the settings
+   and tap **Reload now**. This second reload is expected. After it: **Mark**
+   (40). Screenshot the whole playing screen. The line at login in the log
+   should now say every row `on`. Do not worry yet if something looks
+   different; the checks below say what to look for.
 
 Section 40, one check for each row, in the order of the rows. Take a
 screenshot for each. If a check is wrong, say its number and what you saw.
@@ -2697,7 +2701,10 @@ screenshot for each. If a check is wrong, say its number and what you saw.
    D-pad Left, Right, Up and Down. The highlight should go to the nearest
    button in that direction, and stay where it is when there is none. Wrong:
    it walks round all the buttons in order ("circling"), or jumps across the
-   window. Try the settings window too: its tabs keep their own way.
+   window. Try the settings window too: its tabs keep their own way. Then
+   open the Chat picker and try to page through its text with the D-pad:
+   with this row On, the parts that hold only text may no longer page. Say
+   if they do not.
 10. **Map name strip, tidy.** Go where the place name is long (the one that was cut as "Powderfuse
     Po", for instance). The whole name should show, cut with "..."
     only when it is wider than the map. The sun or moon mark should sit in
@@ -2725,7 +2732,10 @@ screenshot for each. If a check is wrong, say its number and what you saw.
     pieces: **Your cast bar** and **Focus frame** should be there. Set a focus
     (Set Focus in the target menu). Does the focus frame's box look right?
     (Its size comes from the game's files and may be bigger than the box
-    Edit Mode shows.)
+    Edit Mode shows.) With row 6 On too, the invisible target frame is lifted
+    over the bottom edge of the focus frame (a strip about 14 high): try
+    tapping the focus frame's lowest part, and say if a tap there does
+    nothing.
 14. **Place the game's timers.** Needs Slim bars On and the game's own timers
     switched on. Expected, with **Buff timer bars: Left, by your name**:
     - Large timer icons in the bottom left corner, under your slim bar, up
@@ -2736,15 +2746,17 @@ screenshot for each. If a check is wrong, say its number and what you saw.
     - The tracked buff icons in a row beside the bars.
     - The round PE button to the left of your slim bars, not hugging the
       screen's edge. If you had moved it, it is put at the new spot once,
-      and you can move it again.
+      and you can move it again. When this row goes Off again, the spot you
+      had moved it to comes back (unless you moved it again meanwhile).
     Wrong: any of them over the map, over the spell panels or over each
     other. Then tap **Buff timer bars: Right, by the target**, reload, and
     check the bars now stand above the target bar. Put it back to Left.
     At Spell panel size 110% or 120% the timer icon rows shift left, which
     is expected. Screenshot all of it.
-15. **A layout for each character.** After the reload chat should say once
-    that Pocket Essentials uses its own screen layout for this character,
-    and the Controller tab should say it too. Open Edit Mode (Escape, Edit
+15. **A layout for each character.** After the first reload of step 5 chat
+    should say once that Pocket Essentials uses its own screen layout for
+    this character, and the Controller tab should say it too (this row needs
+    two reloads to settle, see step 6). Open Edit Mode (Escape, Edit
     Mode): the layout list should hold one named like "Forgot Shards -PE".
     Your own layouts must not have changed. Leave Edit Mode without
     changing anything. Everything on screen should look the same as before
@@ -2752,14 +2764,18 @@ screenshot for each. If a check is wrong, say its number and what you saw.
     character list and in again: is the layout still there and still the
     active one? If the Controller tab says the game did not keep it, the
     shared layout stays and nothing is lost: say so. If you can, log in on
-    a second character too: it should get its own layout.
+    a second character too: it should get its own layout (again two
+    reloads). If you change rows on the second character and go back to the
+    first, the first one's login may ask for a reload and chat says the
+    layout was brought in line with the 0.22.0 rows: that is expected.
 16. **Large spell panels, whole.** Set **Spell panel size** to 110%, reload,
     then to 120%, reload. Look at the bottom edge: is any spell button cut
-    off by the screen's edge? The panels rise a little, and the slim bars
-    rise a little with them at 120%. Wrong: a cut button, or something newly
-    overlapping. Note: switching this row On or Off while playing moves only
-    the spell pictures until the next reload, so reload after changing it.
-    Set the size back to 100%.
+    off by the screen's edge? The panels rise a little, and the LB and RB
+    pictures with them; at 120% the slim bars (and the game's timers on
+    them) rise a little too. Wrong: a cut button, or something newly
+    overlapping. This row counts from the next reload: switched while
+    playing, the spell pictures move at once and the rest after the reload.
+    Set the size back to 100% and reload.
 17. **Mount square, live.** With Quick slots On, open the PE window and leave
     it open. Mount up some other way (the game's own button): the square
     should change to "Get off" without closing the window. Start a fight with
@@ -2772,8 +2788,15 @@ Section 41, if something misbehaves.
 18. Do not guess which row it is. Turn the rows **Off one at a time**, in
     any order, **Reload** after each (the rows marked "(reload)" count from
     the next reload anyway), and look again. The row that makes it stop is
-    the cause. Say which. **Turn all off** and a reload should bring back
-    exactly what you had in 0.21.0.
+    the cause. Say which. Turning row 9 (a layout for each character) Off
+    takes two reloads, the same as turning it On.
+    At the end tap **Turn all off** and reload. If row 9 was still On, the
+    first login goes back to the shared layout, puts back in it what the rows
+    had written there, and asks for one more reload (chat may say the layout was brought in line
+    with the 0.22.0 rows): tap **Reload now**. After that second reload the
+    screen should be exactly what you had in 0.21.0. The layout named after
+    the character stays in Edit Mode's list, unused; you may delete it there
+    or leave it.
 
 Section 42, send it.
 
@@ -2798,7 +2821,13 @@ Things to look at while you are there:
 - **A character that already has five layouts** gets no layout of its own:
   the Controller tab says so, and the shared one stays.
 - **Switching rows Off** puts things back: the timers, the cast bar and the
-  target menu go back to where they were at the next reload.
+  target menu go back to where they were at the next reload, and the PE
+  button to the spot you had moved it to.
+- **A login that asks for a reload by itself**, with chat saying the
+  controller layout was brought in line with the 0.22.0 rows: the layout in
+  use was last written with other rows (changed on another character, in a
+  fight just before a reload, or while Controller layout was Off). One
+  reload settles it; the next login should not ask again. Say if it does.
 
 Things to watch for (known, not fixed):
 - The cause of the empty slot smear was not proven; the log line settles it.
@@ -2815,5 +2844,6 @@ Things to watch for (known, not fixed):
   addon. If it does not, the shared layout stays.
 - The target menu's lift of 174 comes from the mockup, not from a
   measurement on the device.
-- Switching **Large spell panels, whole** live moves only the spell pictures
-  until the next reload.
+- With the timers placed, switching Controller layout off (the timers row
+  still On) leaves the PE button at its default spot, not at your own moved
+  spot, until the timers row is turned Off.

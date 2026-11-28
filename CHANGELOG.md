@@ -19,9 +19,16 @@ It sits on top of 0.21.0.
   all on** and **Turn all off**. Rows that count from the next reload say
   "(reload)" in their name. If something misbehaves, turn rows Off one at a
   time and reload until it stops: the row that stopped it names the cause.
-- **A line in the Debug log at every login** that lists every row and whether
-  it is on, for example `batch: 0.22.0 rows: b22Empty=off b22Arrows=on ...`.
-  Each row writes its own lines too, only while the Debug log is On.
+- **A line in the Debug log at every login**, and when the Debug log is
+  switched on, that lists every row and whether it is on, for example
+  `batch: 0.22.0 rows: b22Empty=off b22Arrows=on ...`. Each row writes its
+  own lines too, only while the Debug log is On.
+- **Turning a row Off always undoes it.** Each of our layouts remembers what
+  these rows last wrote into it. If a layout is out of step with the rows
+  (they were changed on another character, in a fight just before a reload,
+  or while Controller layout was Off), it is put right at the next login:
+  chat says so and one more reload finishes it. A layout made by 0.21.0 is
+  left alone while every row is Off.
 - **Empty slots, clean.** An empty spell slot shows only a thin faint
   outline, with no leftover shade, glow, count or range dot. The Debug log
   says why each empty picture is empty, to find what the old smear was.
@@ -47,17 +54,22 @@ It sits on top of 0.21.0.
   Manager) get a place: large icons bottom left under your slim bar, small
   ones under them, the buff timer bars above your slim bars, and the tracked
   buff icons beside the bars, all at 80% size. The chat ends higher to make
-  room, and the PE button moves to the left of your slim bars once. Needs
-  Slim bars On. The new row **Buff timer bars** chooses left, by your name,
+  room, and the PE button moves to the left of your slim bars once (only
+  while Controller layout is on); turning the row Off gives back the spot you
+  had moved it to. Needs Slim bars On. The new row **Buff timer bars** chooses left, by your name,
   or right, by the target.
 - **A layout for each character (reload).** Each character gets its own Edit
   Mode layout, named "First Last -PE", built fresh from the built-in
   arrangement. Your own layouts are never changed. If the game does not keep
-  it, or the character already has five, the shared layout stays.
-- **Large spell panels, whole.** At Spell panel size 110% and 120% the
-  lowest button is no longer cut by the screen's edge. The panels rise just
-  enough, and the pictures and slim bars rise with them so nothing new
-  overlaps.
+  it, or the character already has five, the shared layout stays. Turning
+  it On takes two reloads (the first makes the layout), and so does turning
+  it Off (the first goes back to the shared layout and puts it right). The
+  layout stays in Edit Mode's list after the row is Off.
+- **Large spell panels, whole (reload).** At Spell panel size 110% and 120%
+  the lowest button is no longer cut by the screen's edge. The panels rise
+  just enough, the LB and RB pictures with them, and at 120% the slim bars
+  and the game's timers on them, so the plan's overlap check finds nothing
+  new.
 - **Mount square, live.** The mount square in the PE window redraws while the
   window stays open: mounted, in a fight, cannot mount here, ready.
 
@@ -73,8 +85,8 @@ It sits on top of 0.21.0.
   log says so.
 - The timers row needs **Slim bars** On. At Spell panel size 110% and 120%
   the timer icon rows shift left, and with **Large spell panels, whole** On
-  the slim bars rise. Switching **Large spell panels, whole** while playing
-  moves only the spell pictures until the next reload.
+  the slim bars rise. **Large spell panels, whole** counts from the next
+  reload: switched while playing, only the spell pictures move at once.
 - The game's own default for the buff timer bars is 150% wide; the row writes
   100%.
 - The cast bar is normally placed by the game itself, so watch it when the
