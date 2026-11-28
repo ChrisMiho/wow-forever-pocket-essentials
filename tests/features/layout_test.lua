@@ -6401,6 +6401,35 @@ test("0.22.0 in step: a layout with no record and every row Off is left alone; a
     c3:assertClean()
 end)
 
+-- Counts the reads of EditModeManagerFrame's IsShown and IsEditModeActive in a login (wrapped
+-- before the addon loads, as the re-review measured them).
+function IS.editModeReads(c)
+    local o = { n = 0 }
+    local m = rawget(c.env, "EditModeManagerFrame")
+    for _, name in ipairs({ "IsShown", "IsEditModeActive" }) do
+        local f = m[name]
+        rawset(m, name, function(...) o.n = o.n + 1 return f(...) end)
+    end
+    return o
+end
+
+test("0.22.0 in step: a login with nothing out of step reads nothing of Edit Mode's window (as 0.21.0)", function()
+    local c, PE = OL.client({ row = 0, slim = 1 })
+    switchOn(c, PE)
+    -- No record, every row Off.
+    local reads
+    local c2, PE2 = OL.relogin(c, { setup = function(c3) reads = IS.editModeReads(c3) end })
+    c2:advance(2)
+    eq(reads.n, 0, "Edit Mode read at a rows-Off login")
+    -- A record that matches the rows.
+    choose(c2, PE2, "b22Menu", 1)
+    eq(PE2.db.options.ctrlLayout.b22Wrote, { menuLift = 1 })
+    local c4 = OL.relogin(c2, { setup = function(c3) reads = IS.editModeReads(c3) end })
+    c4:advance(2)
+    eq(reads.n, 0, "Edit Mode read at a login whose record matches")
+    eq(layoutCalls(c4), 0)
+end)
+
 test("0.22.0 in step: the record leaves out what does not change the layout (the timers at 80%, 90% and 100%, b22Panels below 120%)", function()
     local Plan, _, PE = TM.plan({ b22Timers = 1, b22Panels = 1 })
     local function pick(size)

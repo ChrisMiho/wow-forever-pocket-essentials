@@ -2774,7 +2774,8 @@ screenshot for each. If a check is wrong, say its number and what you saw.
     pictures with them; at 120% the slim bars (and the game's timers on
     them) rise a little too. Wrong: a cut button, or something newly
     overlapping. This row counts from the next reload: switched while
-    playing, the spell pictures move at once and the rest after the reload.
+    playing, the spell pictures move at once and the rest at the next
+    placement or after the reload.
     Set the size back to 100% and reload.
 17. **Mount square, live.** With Quick slots On, open the PE window and leave
     it open. Mount up some other way (the game's own button): the square

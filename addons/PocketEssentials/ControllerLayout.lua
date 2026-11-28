@@ -3930,10 +3930,9 @@ Snap.WroteSet = function(done)
 end
 Snap.InStep = function()
     local o = mod and mod.opts
-    if type(o) ~= "table" or Snap.inStepDone or not Snap.RewritePieces or EditModeOpen() then return end
+    if type(o) ~= "table" or Snap.inStepDone or not Snap.RewritePieces then return end
     -- A layout built from an older template is rebuilt whole first (UpdateTemplate), record and all.
     if (type(o.template) == "number" and o.template or 1) < Plan.TEMPLATE then return end
-    Snap.inStepDone = true
     local was = type(o.b22Wrote) == "table" and o.b22Wrote or {}
     local now = Snap.WroteNow(o)
     local parts, names = {}, {}
@@ -3945,7 +3944,13 @@ Snap.InStep = function()
             end
         end
     end
-    if #names == 0 then return end
+    -- In step: done for this login, and nothing of the game is read (as 0.21.0).
+    if #names == 0 then
+        Snap.inStepDone = true
+        return
+    end
+    if EditModeOpen() then return end -- tried again at the next placement
+    Snap.inStepDone = true
     if PE.debugOn then
         PE:Debug("ctrlLayout", "in step: the layout was last written with other 0.22.0 rows (" .. table.concat(names, ", ")
             .. "): written again as the rows are now")
